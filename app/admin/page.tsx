@@ -1,15 +1,20 @@
 'use client'
 
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import Image from 'next/image'
+import { useEffect, useMemo, useState } from 'react'
+import type { Session } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
+
+type Role = 'admin' | 'worker'
+type JobStatus = 'planned' | 'in_progress' | 'done'
+type Lang = 'ru' | 'uk'
 
 type Profile = {
   id: string
-  role: 'admin' | 'worker'
+  role: Role
   full_name: string | null
   phone: string | null
-  active: boolean | null
-  created_at: string | null
+  active: boolean
 }
 
 type Site = {
@@ -18,190 +23,357 @@ type Site = {
   address: string | null
   lat: number | null
   lng: number | null
-  radius_m: number | null
+  radius_m: number
   notes: string | null
 }
 
-type TimeLog = {
-  job_id: string
-  started_at: string | null
-  ended_at: string | null
-  start_lat: number | null
-  start_lng: number | null
-  start_accuracy_m: number | null
-  start_distance_m: number | null
-  end_lat: number | null
-  end_lng: number | null
-  end_accuracy_m: number | null
-  end_distance_m: number | null
-}
-
-type Job = {
+type JobRow = {
   id: string
-  worker_id: string | null
-  site_id: string | null
+  worker_id: string
+  site_id: string
   job_date: string
   scheduled_time: string | null
-  status: 'planned' | 'in_progress' | 'done'
-  site?: Site | null
-  time_logs?: TimeLog[] | null
+  status: JobStatus
+  sites: Site | null
+  profiles: { id: string; full_name: string | null; phone: string | null } | null
 }
 
-function pad2(n: number) {
-  return String(n).padStart(2, '0')
+const UI_BUILD = 'UI v2026-02-12 RU/UA'
+
+const pad2 = (n: number) => String(n).padStart(2, '0')
+
+function formatDateDMY(isoDate: string) {
+  const [y, m, d] = isoDate.split('-')
+  if (!y || !m || !d) return isoDate
+  return `${pad2(Number(d))}-${pad2(Number(m))}-${y}`
 }
 
-function formatDMY(input: string | Date | null | undefined) {
-  if (!input) return '—'
-  const d = input instanceof Date ? input : new Date(input)
-  if (Number.isNaN(d.getTime())) return '—'
-  return `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}-${d.getFullYear()}`
+const I18N = {
+  ru: {
+    title: 'Админ-панель',
+    lang_label: 'Язык',
+    lang_ru: 'RU',
+    lang_uk: 'UA',
+    btn_refresh: 'Обновить',
+    btn_logout: 'Выйти',
+    card_error: 'Ошибка',
+    card_ok: 'ОК',
+
+    no_session_title: 'Нет сессии',
+    no_session_text: 'Откройте главную страницу, войдите и затем вернитесь в /admin.',
+
+    access_denied_title: 'Доступ запрещён',
+    access_denied_text: 'Нужен profiles.role = admin.',
+
+    sec_create_site: 'Создать объект',
+    sec_create_job: 'Создать задачу',
+    sec_jobs: 'Задачи',
+    sec_sites: 'Объекты',
+
+    site_name_ph: 'Название *',
+    site_address_ph: 'Адрес',
+    site_lat_ph: 'lat (необязательно)',
+    site_lng_ph: 'lng (необязательно)',
+    site_radius_ph: 'radius_m (по умолчанию 100)',
+    site_notes_ph: 'Примечания',
+    btn_create_site: 'Создать объект',
+
+    job_worker_ph: 'Сотрудник *',
+    job_site_ph: 'Объект *',
+    job_date_hint: 'Дата (в списках ДД-MM-ГГГГ)',
+    job_time_ph: 'Время (например 08:00, необязательно)',
+    btn_create_job: 'Создать задачу',
+
+    filter_all: 'Все',
+    filter_planned: 'Запланировано',
+    filter_in_progress: 'В работе',
+    filter_done: 'Завершено',
+
+    status_planned: 'Запланировано',
+    status_in_progress: 'В работе',
+    status_done: 'Завершено',
+
+    role_admin: 'админ',
+    role_worker: 'сотрудник',
+
+    field_worker: 'Сотрудник',
+    field_date: 'Дата',
+    field_time: 'Время',
+    field_gps: 'GPS',
+
+    gps_no: 'нет lat/lng',
+    gps_ok: 'lat/lng OK',
+    radius: 'радиус {r}м',
+
+    empty_title: 'Пусто',
+    empty_text: 'Задач нет. Создайте выше.',
+
+    msg_site_created: 'Объект создан.',
+    msg_job_created: 'Задача создана.',
+    err_site_name_required: 'Название объекта обязательно.',
+    err_radius_bad: 'radius_m должен быть положительным числом.',
+    err_lat_bad: 'lat некорректный.',
+    err_lng_bad: 'lng некорректный.',
+    err_choose_worker: 'Выберите сотрудника.',
+    err_choose_site: 'Выберите объект.',
+    err_date_required: 'Дата обязательна.',
+    err_load: 'Ошибка загрузки данных.',
+    err_profile_not_found: 'Профиль не найден.',
+    err_profile_disabled: 'Профиль отключён.',
+    err_admin_only: 'Доступ запрещён: нужен role=admin.',
+    err_create_site: 'Ошибка создания объекта.',
+    err_create_job: 'Ошибка создания задачи.',
+  },
+  uk: {
+    title: 'Адмін-панель',
+    lang_label: 'Мова',
+    lang_ru: 'RU',
+    lang_uk: 'UA',
+    btn_refresh: 'Оновити',
+    btn_logout: 'Вийти',
+    card_error: 'Помилка',
+    card_ok: 'ОК',
+
+    no_session_title: 'Немає сесії',
+    no_session_text: 'Відкрийте головну сторінку, увійдіть і потім поверніться в /admin.',
+
+    access_denied_title: 'Доступ заборонено',
+    access_denied_text: 'Потрібен profiles.role = admin.',
+
+    sec_create_site: "Створити об'єкт",
+    sec_create_job: 'Створити завдання',
+    sec_jobs: 'Завдання',
+    sec_sites: "Об'єкти",
+
+    site_name_ph: 'Назва *',
+    site_address_ph: 'Адреса',
+    site_lat_ph: 'lat (необовʼязково)',
+    site_lng_ph: 'lng (необовʼязково)',
+    site_radius_ph: 'radius_m (за замовч. 100)',
+    site_notes_ph: 'Нотатки',
+    btn_create_site: "Створити об'єкт",
+
+    job_worker_ph: 'Працівник *',
+    job_site_ph: "Об'єкт *",
+    job_date_hint: 'Дата (у списках ДД-MM-РРРР)',
+    job_time_ph: 'Час (наприклад 08:00, необовʼязково)',
+    btn_create_job: 'Створити завдання',
+
+    filter_all: 'Усі',
+    filter_planned: 'Заплановано',
+    filter_in_progress: 'У роботі',
+    filter_done: 'Завершено',
+
+    status_planned: 'Заплановано',
+    status_in_progress: 'У роботі',
+    status_done: 'Завершено',
+
+    role_admin: 'адмін',
+    role_worker: 'працівник',
+
+    field_worker: 'Працівник',
+    field_date: 'Дата',
+    field_time: 'Час',
+    field_gps: 'GPS',
+
+    gps_no: 'немає lat/lng',
+    gps_ok: 'lat/lng OK',
+    radius: 'радіус {r}м',
+
+    empty_title: 'Порожньо',
+    empty_text: 'Завдань немає. Створіть вище.',
+
+    msg_site_created: "Об'єкт створено.",
+    msg_job_created: 'Завдання створено.',
+    err_site_name_required: "Назва об'єкта обовʼязкова.",
+    err_radius_bad: 'radius_m має бути додатнім числом.',
+    err_lat_bad: 'lat некоректний.',
+    err_lng_bad: 'lng некоректний.',
+    err_choose_worker: 'Виберіть працівника.',
+    err_choose_site: "Виберіть об'єкт.",
+    err_date_required: "Дата обов'язкова.",
+    err_load: 'Помилка завантаження даних.',
+    err_profile_not_found: 'Профіль не знайдено.',
+    err_profile_disabled: 'Профіль вимкнено.',
+    err_admin_only: 'Доступ заборонено: потрібен role=admin.',
+    err_create_site: "Помилка створення об'єкта.",
+    err_create_job: 'Помилка створення завдання.',
+  },
+} as const
+
+type Key = keyof typeof I18N.ru
+
+function tpl(s: string, vars?: Record<string, string | number>) {
+  if (!vars) return s
+  return s.replace(/\{([a-zA-Z0-9_]+)\}/g, (_, k) => (vars[k] ?? `{${k}}`).toString())
 }
 
-function formatDMYHM(input: string | Date | null | undefined) {
-  if (!input) return '—'
-  const d = input instanceof Date ? input : new Date(input)
-  if (Number.isNaN(d.getTime())) return '—'
-  return `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}-${d.getFullYear()} ${pad2(
-    d.getHours()
-  )}:${pad2(d.getMinutes())}`
+function statusKey(s: JobStatus): Key {
+  if (s === 'planned') return 'status_planned'
+  if (s === 'in_progress') return 'status_in_progress'
+  return 'status_done'
 }
 
-function todayISODate() {
-  const now = new Date()
-  return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`
+function statusChipClass(s: JobStatus) {
+  if (s === 'planned') return 'chip chip-gold'
+  if (s === 'in_progress') return 'chip chip-ok'
+  return 'chip'
 }
 
-function safeNum(v: any): number | null {
-  if (v === null || v === undefined) return null
-  const n = typeof v === 'number' ? v : Number(v)
-  return Number.isFinite(n) ? n : null
-}
-
-function statusLabel(s: Job['status']) {
-  if (s === 'planned') return 'Planned'
-  if (s === 'in_progress') return 'In progress'
-  return 'Done'
-}
-
-function statusBadgeClass(s: Job['status']) {
-  if (s === 'planned') return 'badge badgePlanned'
-  if (s === 'in_progress') return 'badge badgeProgress'
-  return 'badge badgeDone'
+function LangSwitch({
+  lang,
+  onChange,
+  labelRU,
+  labelUA,
+  label,
+}: {
+  lang: Lang
+  onChange: (l: Lang) => void
+  labelRU: string
+  labelUA: string
+  label: string
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-xs text-muted hidden sm:inline">{label}</span>
+      <div className="flex rounded-2xl border border-stroke bg-card2 p-1">
+        <button className={lang === 'ru' ? 'chip chip-gold' : 'chip'} onClick={() => onChange('ru')} type="button">
+          {labelRU}
+        </button>
+        <button className={lang === 'uk' ? 'chip chip-gold' : 'chip'} onClick={() => onChange('uk')} type="button">
+          {labelUA}
+        </button>
+      </div>
+    </div>
+  )
 }
 
 export default function AdminPage() {
-  const [loading, setLoading] = useState(true)
-  const [authLoading, setAuthLoading] = useState(false)
+  const [lang, setLang] = useState<Lang>('ru')
+  const t = useMemo(() => {
+    return (key: Key, vars?: Record<string, string | number>) => {
+      const dict = I18N[lang]
+      const raw = (dict[key] ?? I18N.ru[key]) as string
+      return tpl(raw, vars)
+    }
+  }, [lang])
 
-  const [userEmail, setUserEmail] = useState('')
-  const [loginMsg, setLoginMsg] = useState<string | null>(null)
-
+  const [session, setSession] = useState<Session | null>(null)
   const [me, setMe] = useState<Profile | null>(null)
-  const [toast, setToast] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
 
-  const [workers, setWorkers] = useState<Profile[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [info, setInfo] = useState<string | null>(null)
+
   const [sites, setSites] = useState<Site[]>([])
-  const [jobs, setJobs] = useState<Job[]>([])
-
-  const [workerSearch, setWorkerSearch] = useState('')
-  const [selectedWorkerId, setSelectedWorkerId] = useState<string | null>(null)
-
-  const [dateISO, setDateISO] = useState(todayISODate())
-
-  const [newJobSiteId, setNewJobSiteId] = useState<string>('')
-  const [newJobTime, setNewJobTime] = useState<string>('09:00')
+  const [workers, setWorkers] = useState<Profile[]>([])
+  const [jobs, setJobs] = useState<JobRow[]>([])
+  const [filter, setFilter] = useState<'all' | JobStatus>('all')
 
   const [siteName, setSiteName] = useState('')
   const [siteAddress, setSiteAddress] = useState('')
   const [siteLat, setSiteLat] = useState('')
   const [siteLng, setSiteLng] = useState('')
-  const [siteRadius, setSiteRadius] = useState('80')
+  const [siteRadius, setSiteRadius] = useState('100')
+  const [siteNotes, setSiteNotes] = useState('')
 
-  const refreshLock = useRef(false)
+  const [jobWorkerId, setJobWorkerId] = useState('')
+  const [jobSiteId, setJobSiteId] = useState('')
+  const [jobDate, setJobDate] = useState('')
+  const [jobTime, setJobTime] = useState('')
 
-  const selectedWorker = useMemo(
-    () => workers.find((w) => w.id === selectedWorkerId) ?? null,
-    [workers, selectedWorkerId]
-  )
+  useEffect(() => {
+    try {
+      const saved = (localStorage.getItem('tanija_lang') as Lang | null) ?? 'ru'
+      if (saved === 'ru' || saved === 'uk') setLang(saved)
+    } catch {}
+  }, [])
 
-  const filteredWorkers = useMemo(() => {
-    const q = workerSearch.trim().toLowerCase()
-    if (!q) return workers
-    return workers.filter((w) => (w.full_name ?? '').toLowerCase().includes(q) || (w.phone ?? '').toLowerCase().includes(q))
-  }, [workers, workerSearch])
+  function setLangPersist(next: Lang) {
+    setLang(next)
+    try {
+      localStorage.setItem('tanija_lang', next)
+    } catch {}
+  }
 
-  const workerJobs = useMemo(() => {
-    if (!selectedWorkerId) return []
-    return jobs
-      .filter((j) => j.worker_id === selectedWorkerId)
-      .sort((a, b) => (a.scheduled_time ?? '').localeCompare(b.scheduled_time ?? ''))
-  }, [jobs, selectedWorkerId])
+  const filteredJobs = useMemo(() => {
+    if (filter === 'all') return jobs
+    return jobs.filter((j) => j.status === filter)
+  }, [jobs, filter])
 
-  const kpis = useMemo(() => {
-    const totalWorkers = workers.length
-    const activeWorkers = workers.filter((w) => w.active).length
-    const totalJobs = jobs.length
-    const planned = jobs.filter((j) => j.status === 'planned').length
-    const prog = jobs.filter((j) => j.status === 'in_progress').length
-    const done = jobs.filter((j) => j.status === 'done').length
-    const gpsMissingSites = sites.filter((s) => s.lat == null || s.lng == null).length
-    return { totalWorkers, activeWorkers, totalJobs, planned, prog, done, gpsMissingSites }
-  }, [workers, jobs, sites])
+  useEffect(() => {
+    let alive = true
+    supabase.auth.getSession().then(({ data }) => {
+      if (!alive) return
+      setSession(data.session ?? null)
+    })
+    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession ?? null)
+    })
+    return () => {
+      alive = false
+      data.subscription.unsubscribe()
+    }
+  }, [])
+
+  function roleLabel(r: Role) {
+    return r === 'admin' ? t('role_admin') : t('role_worker')
+  }
+
+  async function signOut() {
+    setError(null)
+    setInfo(null)
+    await supabase.auth.signOut()
+  }
 
   async function loadAll() {
-    if (refreshLock.current) return
-    refreshLock.current = true
-    setToast(null)
+    setError(null)
+    setInfo(null)
+    setLoading(true)
 
     try {
-      const { data: authData, error: authErr } = await supabase.auth.getUser()
-      if (authErr) throw authErr
-      const user = authData.user
-      if (!user) {
+      const { data: sess } = await supabase.auth.getSession()
+      const s = sess.session
+      setSession(s ?? null)
+
+      if (!s?.user) {
         setMe(null)
-        setWorkers([])
         setSites([])
+        setWorkers([])
         setJobs([])
-        setSelectedWorkerId(null)
+        setLoading(false)
         return
       }
 
-      const { data: p, error: pErr } = await supabase
+      const { data: prof, error: profErr } = await supabase
         .from('profiles')
-        .select('id, role, full_name, phone, active, created_at')
-        .eq('id', user.id)
+        .select('id, role, full_name, phone, active')
+        .eq('id', s.user.id)
         .single()
-      if (pErr) throw pErr
-      setMe(p as Profile)
 
-      const { data: ws, error: wsErr } = await supabase
-        .from('profiles')
-        .select('id, role, full_name, phone, active, created_at')
-        .eq('role', 'worker')
-        .order('full_name', { ascending: true })
-      if (wsErr) throw wsErr
-      setWorkers(ws as Profile[])
+      if (profErr) throw new Error(profErr.message)
+      if (!prof) throw new Error(t('err_profile_not_found'))
+      if (!prof.active) throw new Error(t('err_profile_disabled'))
+      if (prof.role !== 'admin') throw new Error(t('err_admin_only'))
 
-      const { data: ss, error: ssErr } = await supabase
+      setMe(prof as Profile)
+
+      const { data: sitesData, error: sitesErr } = await supabase
         .from('sites')
         .select('id, name, address, lat, lng, radius_m, notes')
         .order('name', { ascending: true })
-      if (ssErr) throw ssErr
+      if (sitesErr) throw new Error(sitesErr.message)
+      setSites((sitesData ?? []) as Site[])
 
-      const sitesMapped: Site[] =
-        (ss as any[])?.map((s) => ({
-          id: s.id,
-          name: s.name,
-          address: s.address ?? null,
-          lat: safeNum(s.lat),
-          lng: safeNum(s.lng),
-          radius_m: safeNum(s.radius_m),
-          notes: s.notes ?? null,
-        })) ?? []
-      setSites(sitesMapped)
+      const { data: workersData, error: workersErr } = await supabase
+        .from('profiles')
+        .select('id, role, full_name, phone, active')
+        .in('role', ['worker', 'admin'])
+        .order('role', { ascending: true })
+      if (workersErr) throw new Error(workersErr.message)
+      setWorkers((workersData ?? []) as Profile[])
 
-      const { data: jj, error: jjErr } = await supabase
+      const { data: jobsData, error: jobsErr } = await supabase
         .from('jobs')
         .select(
           `
@@ -211,628 +383,337 @@ export default function AdminPage() {
           job_date,
           scheduled_time,
           status,
-          sites:site_id (
-            id, name, address, lat, lng, radius_m, notes
-          ),
-          time_logs:time_logs (
-            job_id,
-            started_at,
-            ended_at,
-            start_lat,
-            start_lng,
-            start_accuracy_m,
-            start_distance_m,
-            end_lat,
-            end_lng,
-            end_accuracy_m,
-            end_distance_m
-          )
+          sites ( id, name, address, lat, lng, radius_m, notes ),
+          profiles:profiles!jobs_worker_id_fkey ( id, full_name, phone )
         `
         )
-        .eq('job_date', dateISO)
-        .order('scheduled_time', { ascending: true })
-      if (jjErr) throw jjErr
+        .order('job_date', { ascending: false })
+      if (jobsErr) throw new Error(jobsErr.message)
+      setJobs((jobsData ?? []) as unknown as JobRow[])
 
-      const mapped: Job[] =
-        (jj as any[])?.map((row) => {
-          const site: Site | null = row.sites
-            ? {
-                id: row.sites.id,
-                name: row.sites.name,
-                address: row.sites.address ?? null,
-                lat: safeNum(row.sites.lat),
-                lng: safeNum(row.sites.lng),
-                radius_m: safeNum(row.sites.radius_m),
-                notes: row.sites.notes ?? null,
-              }
-            : null
-
-          const logsRaw = Array.isArray(row.time_logs) ? row.time_logs : []
-          const logs: TimeLog[] = logsRaw.map((l: any) => ({
-            job_id: l.job_id,
-            started_at: l.started_at ?? null,
-            ended_at: l.ended_at ?? null,
-            start_lat: safeNum(l.start_lat),
-            start_lng: safeNum(l.start_lng),
-            start_accuracy_m: safeNum(l.start_accuracy_m),
-            start_distance_m: safeNum(l.start_distance_m),
-            end_lat: safeNum(l.end_lat),
-            end_lng: safeNum(l.end_lng),
-            end_accuracy_m: safeNum(l.end_accuracy_m),
-            end_distance_m: safeNum(l.end_distance_m),
-          }))
-
-          return {
-            id: row.id,
-            worker_id: row.worker_id ?? null,
-            site_id: row.site_id ?? null,
-            job_date: row.job_date,
-            scheduled_time: row.scheduled_time ?? null,
-            status: row.status,
-            site,
-            time_logs: logs,
-          } as Job
-        }) ?? []
-
-      setJobs(mapped)
-
-      if (!selectedWorkerId) {
-        const first = (ws as Profile[])?.[0]?.id ?? null
-        setSelectedWorkerId(first)
-      } else {
-        const exists = (ws as Profile[])?.some((w) => w.id === selectedWorkerId)
-        if (!exists) setSelectedWorkerId((ws as Profile[])?.[0]?.id ?? null)
-      }
-
-      if (!newJobSiteId && sitesMapped.length > 0) setNewJobSiteId(sitesMapped[0].id)
+      setLoading(false)
     } catch (e: any) {
-      setToast({ kind: 'err', text: e?.message ? String(e.message) : 'Ошибка admin-загрузки' })
-    } finally {
-      refreshLock.current = false
+      setLoading(false)
+      setError(e?.message ?? t('err_load'))
     }
   }
 
   useEffect(() => {
-    let mounted = true
-
-    ;(async () => {
-      setLoading(true)
-      await loadAll()
-      if (mounted) setLoading(false)
-    })()
-
-    const { data: sub } = supabase.auth.onAuthStateChange(async () => {
-      setLoading(true)
-      await loadAll()
-      setLoading(false)
-    })
-
-    return () => {
-      mounted = false
-      sub.subscription.unsubscribe()
-    }
+    loadAll()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateISO])
-
-  async function doLogout() {
-    setAuthLoading(true)
-    try {
-      await supabase.auth.signOut()
-      setMe(null)
-      setWorkers([])
-      setSites([])
-      setJobs([])
-      setSelectedWorkerId(null)
-    } finally {
-      setAuthLoading(false)
-    }
-  }
-
-  async function doLoginOtp() {
-    const email = userEmail.trim()
-    if (!email) {
-      setLoginMsg('Введи email')
-      return
-    }
-    setAuthLoading(true)
-    setLoginMsg(null)
-    try {
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: { emailRedirectTo: typeof window !== 'undefined' ? window.location.origin + '/admin' : undefined },
-      })
-      if (error) throw error
-      setLoginMsg('Ссылка для входа отправлена на email. Проверь почту.')
-    } catch (e: any) {
-      setLoginMsg(e?.message ? String(e.message) : 'Ошибка входа')
-    } finally {
-      setAuthLoading(false)
-    }
-  }
-
-  async function doRefresh() {
-    setToast({ kind: 'ok', text: 'Обновляю admin…' })
-    await loadAll()
-    setToast({ kind: 'ok', text: 'Admin обновлён' })
-    setTimeout(() => setToast(null), 1200)
-  }
-
-  async function toggleWorkerActive(w: Profile) {
-    setToast(null)
-    try {
-      const next = !w.active
-      const { error } = await supabase.from('profiles').update({ active: next }).eq('id', w.id)
-      if (error) throw error
-      setToast({ kind: 'ok', text: `${w.full_name ?? 'Worker'}: ${next ? 'active' : 'inactive'}` })
-      await loadAll()
-      setTimeout(() => setToast(null), 1200)
-    } catch (e: any) {
-      setToast({ kind: 'err', text: e?.message ? String(e.message) : 'Ошибка изменения worker' })
-    }
-  }
-
-  async function createJob() {
-    if (!selectedWorkerId || !newJobSiteId) return
-    setToast(null)
-    try {
-      const { error } = await supabase.from('jobs').insert({
-        worker_id: selectedWorkerId,
-        site_id: newJobSiteId,
-        job_date: dateISO,
-        scheduled_time: newJobTime || null,
-        status: 'planned',
-      })
-      if (error) throw error
-      setToast({ kind: 'ok', text: 'Job создан' })
-      await loadAll()
-      setTimeout(() => setToast(null), 1200)
-    } catch (e: any) {
-      setToast({ kind: 'err', text: e?.message ? String(e.message) : 'Ошибка создания job' })
-    }
-  }
-
-  async function setJobStatus(job: Job, status: Job['status']) {
-    setToast(null)
-    try {
-      const { error } = await supabase.from('jobs').update({ status }).eq('id', job.id)
-      if (error) throw error
-      setToast({ kind: 'ok', text: `Статус: ${statusLabel(status)}` })
-      await loadAll()
-      setTimeout(() => setToast(null), 1200)
-    } catch (e: any) {
-      setToast({ kind: 'err', text: e?.message ? String(e.message) : 'Ошибка смены статуса' })
-    }
-  }
+  }, [session?.user?.id])
 
   async function createSite() {
-    setToast(null)
+    setError(null)
+    setInfo(null)
+
+    const name = siteName.trim()
+    if (!name) {
+      setError(t('err_site_name_required'))
+      return
+    }
+    const radius = Number(siteRadius)
+    if (!Number.isFinite(radius) || radius <= 0) {
+      setError(t('err_radius_bad'))
+      return
+    }
+
+    const lat = siteLat.trim() === '' ? null : Number(siteLat)
+    const lng = siteLng.trim() === '' ? null : Number(siteLng)
+    if (lat != null && !Number.isFinite(lat)) {
+      setError(t('err_lat_bad'))
+      return
+    }
+    if (lng != null && !Number.isFinite(lng)) {
+      setError(t('err_lng_bad'))
+      return
+    }
+
     try {
-      const lat = siteLat.trim() ? Number(siteLat.trim()) : null
-      const lng = siteLng.trim() ? Number(siteLng.trim()) : null
-      const radius = siteRadius.trim() ? Number(siteRadius.trim()) : 80
-
-      const { error } = await supabase.from('sites').insert({
-        name: siteName.trim(),
+      const { error: insErr } = await supabase.from('sites').insert({
+        name,
         address: siteAddress.trim() || null,
-        lat: lat,
-        lng: lng,
-        radius_m: Number.isFinite(radius) ? Math.round(radius) : 80,
+        lat,
+        lng,
+        radius_m: radius,
+        notes: siteNotes.trim() || null,
       })
-      if (error) throw error
+      if (insErr) throw new Error(insErr.message)
 
+      setInfo(t('msg_site_created'))
       setSiteName('')
       setSiteAddress('')
       setSiteLat('')
       setSiteLng('')
-      setSiteRadius('80')
-
-      setToast({ kind: 'ok', text: 'Site создан' })
+      setSiteRadius('100')
+      setSiteNotes('')
       await loadAll()
-      setTimeout(() => setToast(null), 1200)
     } catch (e: any) {
-      setToast({ kind: 'err', text: e?.message ? String(e.message) : 'Ошибка создания site' })
+      setError(e?.message ?? t('err_create_site'))
     }
   }
 
-  if (loading) {
-    return (
-      <div className="container">
-        <div className="shell">
-          <div className="header">
-            <div className="headerRow">
-              <div className="brand">
-                <img className="brandLogo" src="/tanija-logo.png" alt="Tanija" />
-                <div className="brandText">
-                  <div className="brandTitle">TANIJA</div>
-                  <div className="brandSub">Admin Console</div>
-                </div>
-              </div>
-              <div className="headerActions">
-                <button className="btn btnGhost" disabled>Загрузка…</button>
-              </div>
-            </div>
-          </div>
+  async function createJob() {
+    setError(null)
+    setInfo(null)
 
-          <div style={{ height: 16 }} />
+    if (!jobWorkerId) {
+      setError(t('err_choose_worker'))
+      return
+    }
+    if (!jobSiteId) {
+      setError(t('err_choose_site'))
+      return
+    }
+    if (!jobDate) {
+      setError(t('err_date_required'))
+      return
+    }
 
-          <div className="card">
-            <div className="watermark"><img src="/tanija-logo.png" alt="" /></div>
-            <div className="cardInner">
-              <div className="cardTitle">Admin поднимается…</div>
-              <div className="small">Контроль, планирование, KPI — всё в золоте.</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
+    const date = jobDate.trim()
+    const time = jobTime.trim() || null
+
+    try {
+      const { error: insErr } = await supabase.from('jobs').insert({
+        worker_id: jobWorkerId,
+        site_id: jobSiteId,
+        job_date: date,
+        scheduled_time: time,
+        status: 'planned',
+      })
+      if (insErr) throw new Error(insErr.message)
+
+      setInfo(t('msg_job_created'))
+      setJobTime('')
+      await loadAll()
+    } catch (e: any) {
+      setError(e?.message ?? t('err_create_job'))
+    }
   }
 
-  if (!me) {
-    return (
-      <div className="container">
-        <div className="shell">
-          <div className="header">
-            <div className="headerRow">
-              <div className="brand">
-                <img className="brandLogo" src="/tanija-logo.png" alt="Tanija" />
-                <div className="brandText">
-                  <div className="brandTitle">TANIJA</div>
-                  <div className="brandSub">Admin Console · Secure Access</div>
-                </div>
-              </div>
-              <div className="headerActions">
-                <span className="badge"><span className="badgeDot" /><span>Supabase Auth</span></span>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid">
-            <div className="card">
-              <div className="watermark"><img src="/tanija-logo.png" alt="" /></div>
-              <div className="cardInner">
-                <div className="cardTitleRow">
-                  <div className="cardTitle">Вход в Admin</div>
-                  <div className="cardHint">Email magic link</div>
-                </div>
-
-                <div className="row">
-                  <div className="col">
-                    <div className="small" style={{ marginBottom: 8 }}>Email</div>
-                    <input
-                      className="input"
-                      placeholder="admin@company.com"
-                      value={userEmail}
-                      onChange={(e) => setUserEmail(e.target.value)}
-                      autoComplete="email"
-                      inputMode="email"
-                    />
-                    <div className="small" style={{ marginTop: 10 }}>Открыл письмо — ты в /admin.</div>
-                  </div>
-                </div>
-
-                <div className="hr" />
-
-                <div className="row">
-                  <button className="btn btnGold" onClick={doLoginOtp} disabled={authLoading}>
-                    {authLoading ? 'Отправляю…' : 'Отправить ссылку'}
-                  </button>
-                  <a className="btn" href="/">На главную</a>
-                </div>
-
-                {loginMsg && <div className="sep" />}
-                {loginMsg && (
-                  <div className={`toast ${loginMsg.toLowerCase().includes('ошибка') ? 'toastErr' : ''}`}>
-                    <div className="small">{loginMsg}</div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="card">
-              <div className="cardInner">
-                <div className="cardTitleRow">
-                  <div className="cardTitle">Admin KPI</div>
-                  <div className="cardHint">{formatDMY(new Date())}</div>
-                </div>
-                <div className="small">
-                  <div>• Workers / Sites / Jobs</div>
-                  <div style={{ marginTop: 10 }}>• Планирование смен</div>
-                  <div style={{ marginTop: 10 }}>• Контроль качества GPS</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  if (me.role !== 'admin') {
-    return (
-      <div className="container">
-        <div className="shell">
-          <div className="header">
-            <div className="headerRow">
-              <div className="brand">
-                <img className="brandLogo" src="/tanija-logo.png" alt="Tanija" />
-                <div className="brandText">
-                  <div className="brandTitle">TANIJA</div>
-                  <div className="brandSub">Admin Console</div>
-                </div>
-              </div>
-              <div className="headerActions">
-                <a className="btn" href="/">На главную</a>
-                <button className="btn btnDanger" onClick={doLogout} disabled={authLoading}>Выйти</button>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ height: 16 }} />
-
-          <div className="card">
-            <div className="cardInner">
-              <div className="cardTitleRow">
-                <div className="cardTitle">Доступ запрещён</div>
-                <div className="cardHint">role != admin</div>
-              </div>
-              <div className="toast toastErr">
-                <div className="small">Ты не admin по профилю. Governance работает.</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
+  const headerName = me?.full_name?.trim() || session?.user?.email || '—'
 
   return (
-    <div className="container">
-      <div className="shell">
-        <div className="header">
-          <div className="headerRow">
-            <div className="brand">
-              <img className="brandLogo" src="/tanija-logo.png" alt="Tanija" />
-              <div className="brandText">
-                <div className="brandTitle">TANIJA</div>
-                <div className="brandSub">Admin Console · {me.full_name ?? 'Admin'} · {formatDMY(new Date())}</div>
+    <div className="min-h-screen safe-pad">
+      <div className="mx-auto w-full max-w-6xl px-4">
+        <header className="sticky top-0 z-20 -mx-4 px-4 pt-3 pb-3 backdrop-blur-xl bg-black/30 border-b border-stroke">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="h-10 w-10 rounded-2xl bg-card border border-stroke shadow-lux overflow-hidden shrink-0">
+                <Image
+                  src="/tanija-logo.png"
+                  alt="Tanija"
+                  width={80}
+                  height={80}
+                  className="h-full w-full object-contain p-1"
+                  priority
+                />
+              </div>
+              <div className="leading-tight min-w-0">
+                <div className="text-base font-semibold truncate">
+                  {t('title')} <span className="text-gold">Tanija</span>
+                </div>
+                <div className="text-xs text-muted truncate">{headerName}</div>
               </div>
             </div>
 
-            <div className="headerActions">
-              <a className="btn" href="/">Worker UI</a>
-              <button className="btn btnGhost" onClick={doRefresh} disabled={authLoading}>Обновить</button>
-              <button className="btn btnDanger" onClick={doLogout} disabled={authLoading}>Выйти</button>
+            <div className="flex items-center gap-2 shrink-0">
+              <LangSwitch
+                lang={lang}
+                onChange={setLangPersist}
+                label={t('lang_label')}
+                labelRU={t('lang_ru')}
+                labelUA={t('lang_uk')}
+              />
+              <button className="btn-ghost" onClick={loadAll} disabled={loading}>
+                {t('btn_refresh')}
+              </button>
+              <button className="btn" onClick={signOut}>
+                {t('btn_logout')}
+              </button>
             </div>
           </div>
-        </div>
 
-        <div className="grid">
-          <div className="card">
-            <div className="watermark"><img src="/tanija-logo.png" alt="" /></div>
-            <div className="cardInner">
-              <div className="cardTitleRow">
-                <div className="cardTitle">KPI & Planning</div>
-                <div className="cardHint">Дата jobs: {formatDMY(`${dateISO}T00:00:00`)}</div>
+          {error ? (
+            <div className="mt-3 rounded-2xl border border-stroke bg-card px-4 py-3 text-sm lux-shimmer">
+              <span className="chip chip-bad">{t('card_error')}</span>
+              <div className="mt-2 text-sm">{error}</div>
+            </div>
+          ) : null}
+
+          {info ? (
+            <div className="mt-3 rounded-2xl border border-stroke bg-card px-4 py-3 text-sm">
+              <span className="chip chip-ok">{t('card_ok')}</span>
+              <div className="mt-2 text-sm">{info}</div>
+            </div>
+          ) : null}
+        </header>
+
+        {!session?.user ? (
+          <main className="mt-6">
+            <div className="rounded-3xl border border-stroke bg-card shadow-lux p-6">
+              <div className="section-title">{t('no_session_title')}</div>
+              <div className="mt-2 text-sm text-muted">{t('no_session_text')}</div>
+            </div>
+          </main>
+        ) : me?.role !== 'admin' ? (
+          <main className="mt-6">
+            <div className="rounded-3xl border border-stroke bg-card shadow-lux p-6">
+              <div className="section-title">{t('access_denied_title')}</div>
+              <div className="mt-2 text-sm text-muted">{t('access_denied_text')}</div>
+            </div>
+          </main>
+        ) : (
+          <main className="mt-6 space-y-6">
+            <section className="rounded-3xl border border-stroke bg-card shadow-lux p-5">
+              <div className="section-title">{t('sec_create_site')}</div>
+
+              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                <input className="input" placeholder={t('site_name_ph')} value={siteName} onChange={(e) => setSiteName(e.target.value)} />
+                <input className="input" placeholder={t('site_address_ph')} value={siteAddress} onChange={(e) => setSiteAddress(e.target.value)} />
+                <input className="input" inputMode="decimal" placeholder={t('site_lat_ph')} value={siteLat} onChange={(e) => setSiteLat(e.target.value)} />
+                <input className="input" inputMode="decimal" placeholder={t('site_lng_ph')} value={siteLng} onChange={(e) => setSiteLng(e.target.value)} />
+                <input className="input" inputMode="numeric" placeholder={t('site_radius_ph')} value={siteRadius} onChange={(e) => setSiteRadius(e.target.value)} />
+                <input className="input" placeholder={t('site_notes_ph')} value={siteNotes} onChange={(e) => setSiteNotes(e.target.value)} />
               </div>
 
-              <div className="row">
-                <div className="col">
-                  <div className="small" style={{ marginBottom: 8 }}>Job date (YYYY-MM-DD)</div>
-                  <input className="input" value={dateISO} onChange={(e) => setDateISO(e.target.value)} />
+              <div className="mt-4">
+                <button className="btn w-full md:w-auto" onClick={createSite} disabled={loading}>
+                  {t('btn_create_site')}
+                </button>
+              </div>
+            </section>
+
+            <section className="rounded-3xl border border-stroke bg-card shadow-lux p-5">
+              <div className="section-title">{t('sec_create_job')}</div>
+
+              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                <select className="input" value={jobWorkerId} onChange={(e) => setJobWorkerId(e.target.value)}>
+                  <option value="">{t('job_worker_ph')}</option>
+                  {workers.filter((w) => w.active).map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {(w.full_name || '—') + ` (${roleLabel(w.role)})`}
+                    </option>
+                  ))}
+                </select>
+
+                <select className="input" value={jobSiteId} onChange={(e) => setJobSiteId(e.target.value)}>
+                  <option value="">{t('job_site_ph')}</option>
+                  {sites.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+
+                <div className="rounded-2xl border border-stroke bg-card2 px-4 py-3">
+                  <div className="text-xs text-muted">{t('job_date_hint')}</div>
+                  <input className="mt-2 input" type="date" value={jobDate} onChange={(e) => setJobDate(e.target.value)} />
                 </div>
-                <div className="col">
-                  <div className="small" style={{ marginBottom: 8 }}>Поиск worker</div>
-                  <input className="input" placeholder="Имя / телефон" value={workerSearch} onChange={(e) => setWorkerSearch(e.target.value)} />
+
+                <input className="input" placeholder={t('job_time_ph')} value={jobTime} onChange={(e) => setJobTime(e.target.value)} />
+              </div>
+
+              <div className="mt-4">
+                <button className="btn w-full md:w-auto" onClick={createJob} disabled={loading}>
+                  {t('btn_create_job')}
+                </button>
+              </div>
+            </section>
+
+            <section className="rounded-3xl border border-stroke bg-card shadow-lux p-5">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="section-title">{t('sec_jobs')}</div>
+                <div className="flex flex-wrap gap-2">
+                  <button className={filter === 'all' ? 'chip chip-gold' : 'chip'} onClick={() => setFilter('all')}>
+                    {t('filter_all')}
+                  </button>
+                  <button className={filter === 'planned' ? 'chip chip-gold' : 'chip'} onClick={() => setFilter('planned')}>
+                    {t('filter_planned')}
+                  </button>
+                  <button className={filter === 'in_progress' ? 'chip chip-gold' : 'chip'} onClick={() => setFilter('in_progress')}>
+                    {t('filter_in_progress')}
+                  </button>
+                  <button className={filter === 'done' ? 'chip chip-gold' : 'chip'} onClick={() => setFilter('done')}>
+                    {t('filter_done')}
+                  </button>
                 </div>
               </div>
 
-              <div className="kpiRow">
-                <div className="kpi"><div className="kpiLabel">Workers</div><div className="kpiValue">{kpis.totalWorkers} / active {kpis.activeWorkers}</div></div>
-                <div className="kpi"><div className="kpiLabel">Jobs</div><div className="kpiValue">{kpis.totalJobs}</div></div>
-                <div className="kpi"><div className="kpiLabel">Planned</div><div className="kpiValue">{kpis.planned}</div></div>
-                <div className="kpi"><div className="kpiLabel">In progress</div><div className="kpiValue">{kpis.prog}</div></div>
-                <div className="kpi"><div className="kpiLabel">Done</div><div className="kpiValue">{kpis.done}</div></div>
-                <div className="kpi"><div className="kpiLabel">Sites without GPS</div><div className="kpiValue">{kpis.gpsMissingSites}</div></div>
-              </div>
-
-              <div className="sep" />
-
-              <div className="cardTitleRow">
-                <div className="cardTitle">Workers</div>
-                <div className="cardHint">toggle active</div>
-              </div>
-
-              <div className="list">
-                {filteredWorkers.map((w) => {
-                  const active = w.id === selectedWorkerId
-                  return (
-                    <div key={w.id} className={`item ${active ? 'itemActive' : ''}`} onClick={() => setSelectedWorkerId(w.id)}>
-                      <div className="itemTop">
-                        <div>
-                          <div className="itemTitle">{w.full_name ?? '—'}</div>
-                          <div className="itemSub">phone: {w.phone ?? '—'}</div>
+              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                {filteredJobs.map((j) => (
+                  <div key={j.id} className="rounded-3xl border border-stroke bg-card2 p-5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold">{j.sites?.name ?? '—'}</div>
+                        <div className="mt-1 text-xs text-muted">{j.sites?.address ?? '—'}</div>
+                        <div className="mt-2 text-xs">
+                          <span className="text-muted">{t('field_worker')}:</span>{' '}
+                          <span className="font-semibold">{j.profiles?.full_name ?? j.worker_id}</span>
                         </div>
-                        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                          <span className="tag">
-                            <span className="badgeDot" style={{ background: w.active ? 'var(--ok)' : 'rgba(255,255,255,0.35)' }} />
-                            <span>{w.active ? 'active' : 'inactive'}</span>
-                          </span>
-                          <button className="btn btnGold" onClick={(e) => { e.stopPropagation(); toggleWorkerActive(w) }}>
-                            Toggle
-                          </button>
+                      </div>
+                      <span className={statusChipClass(j.status)}>{t(statusKey(j.status))}</span>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
+                      <div className="rounded-2xl border border-stroke bg-card px-3 py-2">
+                        <div className="text-muted">{t('field_date')}</div>
+                        <div className="mt-1 font-semibold">{formatDateDMY(j.job_date)}</div>
+                      </div>
+                      <div className="rounded-2xl border border-stroke bg-card px-3 py-2">
+                        <div className="text-muted">{t('field_time')}</div>
+                        <div className="mt-1 font-semibold">{j.scheduled_time ?? '—'}</div>
+                      </div>
+                      <div className="rounded-2xl border border-stroke bg-card px-3 py-2 col-span-2">
+                        <div className="text-muted">{t('field_gps')}</div>
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {j.sites?.lat == null || j.sites?.lng == null ? (
+                            <span className="chip chip-bad">{t('gps_no')}</span>
+                          ) : (
+                            <span className="chip chip-ok">{t('gps_ok')}</span>
+                          )}
+                          <span className="chip chip-gold">{tpl(t('radius'), { r: j.sites?.radius_m ?? 0 })}</span>
                         </div>
                       </div>
                     </div>
-                  )
-                })}
-                {filteredWorkers.length === 0 && (
-                  <div className="toast"><div className="small">Workers не найдены</div></div>
-                )}
+                  </div>
+                ))}
+
+                {!loading && filteredJobs.length === 0 ? (
+                  <div className="rounded-3xl border border-stroke bg-card p-6 md:col-span-2">
+                    <div className="section-title">{t('empty_title')}</div>
+                    <div className="mt-2 text-sm text-muted">{t('empty_text')}</div>
+                  </div>
+                ) : null}
               </div>
-            </div>
-          </div>
+            </section>
 
-          <div className="card">
-            <div className="cardInner">
-              <div className="cardTitleRow">
-                <div className="cardTitle">Worker details</div>
-                <div className="cardHint">{selectedWorker?.full_name ?? '—'}</div>
+            <section className="rounded-3xl border border-stroke bg-card shadow-lux p-5">
+              <div className="section-title">{t('sec_sites')}</div>
+              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                {sites.map((s) => (
+                  <div key={s.id} className="rounded-3xl border border-stroke bg-card2 p-5">
+                    <div className="text-sm font-semibold">{s.name}</div>
+                    <div className="mt-1 text-xs text-muted">{s.address ?? '—'}</div>
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                      <span className="chip chip-gold">{tpl(t('radius'), { r: s.radius_m })}</span>
+                      {s.lat == null || s.lng == null ? (
+                        <span className="chip chip-bad">{t('gps_no')}</span>
+                      ) : (
+                        <span className="chip chip-ok">{t('gps_ok')}</span>
+                      )}
+                    </div>
+                    {s.notes ? <div className="mt-3 text-xs text-muted">{s.notes}</div> : null}
+                  </div>
+                ))}
               </div>
+            </section>
+          </main>
+        )}
 
-              {!selectedWorker ? (
-                <div className="toast"><div className="small">Выбери worker слева</div></div>
-              ) : (
-                <>
-                  <div className="row">
-                    <div className="col">
-                      <div className="small">Worker</div>
-                      <div style={{ fontWeight: 900, marginTop: 6 }}>{selectedWorker.full_name ?? '—'}</div>
-                      <div className="small" style={{ marginTop: 6 }}>phone: {selectedWorker.phone ?? '—'}</div>
-                    </div>
-                    <div className="col">
-                      <span className="tag">
-                        <span className="badgeDot" style={{ background: selectedWorker.active ? 'var(--ok)' : 'rgba(255,255,255,0.35)' }} />
-                        <span>{selectedWorker.active ? 'active' : 'inactive'}</span>
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="sep" />
-
-                  <div className="cardTitleRow">
-                    <div className="cardTitle">Create job</div>
-                    <div className="cardHint">planned</div>
-                  </div>
-
-                  <div className="row">
-                    <div className="col">
-                      <div className="small" style={{ marginBottom: 8 }}>Site</div>
-                      <select className="input" value={newJobSiteId} onChange={(e) => setNewJobSiteId(e.target.value)}>
-                        {sites.map((s) => (
-                          <option key={s.id} value={s.id}>{s.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="col">
-                      <div className="small" style={{ marginBottom: 8 }}>Time (HH:MM)</div>
-                      <input className="input" value={newJobTime} onChange={(e) => setNewJobTime(e.target.value)} />
-                    </div>
-                  </div>
-
-                  <div className="row" style={{ marginTop: 10 }}>
-                    <button className="btn btnGold" onClick={createJob}>Create job</button>
-                  </div>
-
-                  <div className="sep" />
-
-                  <div className="cardTitleRow">
-                    <div className="cardTitle">Jobs ({formatDMY(`${dateISO}T00:00:00`)})</div>
-                    <div className="cardHint">{workerJobs.length} items</div>
-                  </div>
-
-                  {workerJobs.length === 0 ? (
-                    <div className="toast"><div className="small">Нет jobs на выбранную дату</div></div>
-                  ) : (
-                    <table className="table">
-                      <thead>
-                        <tr>
-                          <th>Time</th>
-                          <th>Site</th>
-                          <th>Status</th>
-                          <th>Start</th>
-                          <th>Stop</th>
-                          <th>Ops</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {workerJobs.map((j) => {
-                          const log = j.time_logs?.[0] ?? null
-                          return (
-                            <tr key={j.id}>
-                              <td>{j.scheduled_time ?? '—'}</td>
-                              <td>
-                                <div style={{ fontWeight: 850 }}>{j.site?.name ?? '—'}</div>
-                                <div className="small">{j.site?.address ?? '—'}</div>
-                              </td>
-                              <td>
-                                <span className={statusBadgeClass(j.status)}>
-                                  <span className="badgeDot" />
-                                  <span>{statusLabel(j.status)}</span>
-                                </span>
-                              </td>
-                              <td>{formatDMYHM(log?.started_at)}</td>
-                              <td>{formatDMYHM(log?.ended_at)}</td>
-                              <td>
-                                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                                  <button className="btn" onClick={() => setJobStatus(j, 'planned')}>Planned</button>
-                                  <button className="btn btnGold" onClick={() => setJobStatus(j, 'in_progress')}>In prog</button>
-                                  <button className="btn btnDanger" onClick={() => setJobStatus(j, 'done')}>Done</button>
-                                </div>
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  )}
-
-                  <div className="sep" />
-
-                  <div className="cardTitleRow">
-                    <div className="cardTitle">Create site</div>
-                    <div className="cardHint">GPS ready</div>
-                  </div>
-
-                  <div className="row">
-                    <div className="col">
-                      <div className="small" style={{ marginBottom: 8 }}>Name</div>
-                      <input className="input" value={siteName} onChange={(e) => setSiteName(e.target.value)} placeholder="Site name" />
-                    </div>
-                    <div className="col">
-                      <div className="small" style={{ marginBottom: 8 }}>Address</div>
-                      <input className="input" value={siteAddress} onChange={(e) => setSiteAddress(e.target.value)} placeholder="Address" />
-                    </div>
-                  </div>
-
-                  <div className="row" style={{ marginTop: 10 }}>
-                    <div className="col">
-                      <div className="small" style={{ marginBottom: 8 }}>lat</div>
-                      <input className="input" value={siteLat} onChange={(e) => setSiteLat(e.target.value)} placeholder="52.37" />
-                    </div>
-                    <div className="col">
-                      <div className="small" style={{ marginBottom: 8 }}>lng</div>
-                      <input className="input" value={siteLng} onChange={(e) => setSiteLng(e.target.value)} placeholder="4.90" />
-                    </div>
-                    <div className="col">
-                      <div className="small" style={{ marginBottom: 8 }}>radius_m</div>
-                      <input className="input" value={siteRadius} onChange={(e) => setSiteRadius(e.target.value)} placeholder="80" />
-                    </div>
-                  </div>
-
-                  <div className="row" style={{ marginTop: 10 }}>
-                    <button className="btn btnGold" onClick={createSite} disabled={!siteName.trim()}>
-                      Create site
-                    </button>
-                  </div>
-                </>
-              )}
-
-              {toast && (
-                <>
-                  <div className="sep" />
-                  <div className={`toast ${toast.kind === 'err' ? 'toastErr' : 'toastOk'}`}>
-                    <div className="small">{toast.text}</div>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div style={{ height: 18 }} />
-        <div className="small" style={{ textAlign: 'center', color: 'rgba(255,255,255,0.45)' }}>
-          Admin Console · контроль смен, качества GPS и статусов.
-        </div>
+        <footer className="mt-8 pb-6 text-center text-xs text-muted">
+          <span className="text-gold">{UI_BUILD}</span>
+        </footer>
       </div>
     </div>
   )

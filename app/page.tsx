@@ -1,15 +1,20 @@
 'use client'
 
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import Image from 'next/image'
+import { useEffect, useMemo, useState } from 'react'
+import type { Session } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
+
+type Role = 'admin' | 'worker'
+type JobStatus = 'planned' | 'in_progress' | 'done'
+type Lang = 'ru' | 'uk'
 
 type Profile = {
   id: string
-  role: 'admin' | 'worker'
+  role: Role
   full_name: string | null
   phone: string | null
-  active: boolean | null
-  created_at: string | null
+  active: boolean
 }
 
 type Site = {
@@ -18,75 +23,45 @@ type Site = {
   address: string | null
   lat: number | null
   lng: number | null
-  radius_m: number | null
+  radius_m: number
   notes: string | null
 }
 
-type TimeLog = {
+type JobRow = {
+  id: string
+  worker_id: string
+  site_id: string
+  job_date: string
+  scheduled_time: string | null
+  status: JobStatus
+  sites: Site | null
+}
+
+type TimeLogRow = {
   job_id: string
   started_at: string | null
   ended_at: string | null
-  start_lat: number | null
-  start_lng: number | null
-  start_accuracy_m: number | null
-  start_distance_m: number | null
-  end_lat: number | null
-  end_lng: number | null
-  end_accuracy_m: number | null
-  end_distance_m: number | null
 }
 
-type Job = {
-  id: string
-  worker_id: string | null
-  site_id: string | null
-  job_date: string
-  scheduled_time: string | null
-  status: 'planned' | 'in_progress' | 'done'
-  site?: Site | null
-  time_logs?: TimeLog[] | null
+const UI_BUILD = 'UI v2026-02-12 RU/UA'
+
+const pad2 = (n: number) => String(n).padStart(2, '0')
+
+function formatDateDMY(isoDate: string) {
+  const [y, m, d] = isoDate.split('-')
+  if (!y || !m || !d) return isoDate
+  return `${pad2(Number(d))}-${pad2(Number(m))}-${y}`
 }
 
-type Filter = 'all' | 'planned' | 'in_progress' | 'done'
-
-type GeoState = {
-  ok: boolean
-  lat: number | null
-  lng: number | null
-  accuracy_m: number | null
-  distance_m: number | null
-  reason: string | null
-}
-
-function pad2(n: number) {
-  return String(n).padStart(2, '0')
-}
-
-function formatDMY(input: string | Date | null | undefined) {
-  if (!input) return '—'
-  const d = input instanceof Date ? input : new Date(input)
-  if (Number.isNaN(d.getTime())) return '—'
-  return `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}-${d.getFullYear()}`
-}
-
-function formatDMYHM(input: string | Date | null | undefined) {
-  if (!input) return '—'
-  const d = input instanceof Date ? input : new Date(input)
-  if (Number.isNaN(d.getTime())) return '—'
-  return `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}-${d.getFullYear()} ${pad2(
-    d.getHours()
-  )}:${pad2(d.getMinutes())}`
-}
-
-function todayISODate() {
-  const now = new Date()
-  return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`
-}
-
-function safeNum(v: any): number | null {
-  if (v === null || v === undefined) return null
-  const n = typeof v === 'number' ? v : Number(v)
-  return Number.isFinite(n) ? n : null
+function formatDateTimeDMYHM(isoTs: string) {
+  const dt = new Date(isoTs)
+  if (Number.isNaN(dt.getTime())) return isoTs
+  const d = pad2(dt.getDate())
+  const m = pad2(dt.getMonth() + 1)
+  const y = dt.getFullYear()
+  const hh = pad2(dt.getHours())
+  const mm = pad2(dt.getMinutes())
+  return `${d}-${m}-${y} ${hh}:${mm}`
 }
 
 function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -101,89 +76,323 @@ function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number)
   return R * c
 }
 
-function statusLabel(s: Job['status']) {
-  if (s === 'planned') return 'Planned'
-  if (s === 'in_progress') return 'In progress'
-  return 'Done'
+async function getGpsOrThrow(): Promise<{ lat: number; lng: number; accuracy: number }> {
+  if (typeof window === 'undefined') throw new Error('GPS недоступен.')
+  if (!('geolocation' in navigator)) throw new Error('GPS недоступен на этом устройстве.')
+
+  const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: true,
+      timeout: 15000,
+      maximumAge: 0,
+    })
+  })
+
+  const lat = pos.coords.latitude
+  const lng = pos.coords.longitude
+  const accuracy = pos.coords.accuracy
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || !Number.isFinite(accuracy)) {
+    throw new Error('GPS вернул некорректные данные.')
+  }
+
+  return { lat, lng, accuracy }
 }
 
-function statusBadgeClass(s: Job['status']) {
-  if (s === 'planned') return 'badge badgePlanned'
-  if (s === 'in_progress') return 'badge badgeProgress'
-  return 'badge badgeDone'
+const I18N = {
+  ru: {
+    title: 'Учёт времени',
+    subtitle_guest: 'Войдите, чтобы начать',
+    admin_mark: ' • Админ',
+
+    lang_label: 'Язык',
+    lang_ru: 'RU',
+    lang_uk: 'UA',
+
+    btn_refresh: 'Обновить',
+    btn_logout: 'Выйти',
+
+    card_error: 'Ошибка',
+    card_ok: 'ОК',
+
+    login_title: 'Вход',
+    email_ph: 'Эл. почта',
+    pass_ph: 'Пароль',
+    btn_signin: 'Войти',
+    btn_signing: 'Вхожу…',
+    login_hint: 'На телефоне: разрешите геолокацию для сайта, иначе старт/стоп будет недоступен.',
+
+    filter_all: 'Все',
+    filter_planned: 'Запланировано',
+    filter_in_progress: 'В работе',
+    filter_done: 'Завершено',
+
+    state_gps: 'Проверяю GPS…',
+    state_action: 'Фиксирую…',
+    state_loading: 'Загружаю…',
+    state_ready: 'Готово',
+
+    status_planned: 'Запланировано',
+    status_in_progress: 'В работе',
+    status_done: 'Завершено',
+
+    field_date: 'Дата',
+    field_time: 'Время',
+    field_logs: 'Логи',
+    field_gps: 'GPS',
+
+    log_start: 'Старт',
+    log_stop: 'Стоп',
+
+    gps_blocked_no_latlng: 'lat/lng отсутствуют — старт/стоп запрещён',
+    gps_policy: 'Радиус: {r}м • Точность ≤ 80м',
+
+    btn_start: 'СТАРТ',
+    btn_stop: 'СТОП',
+    btn_starting: 'СТАРТ…',
+    btn_stopping: 'СТОП…',
+
+    empty_title: 'Задач нет',
+    empty_text: 'Попросите администратора назначить задачу.',
+
+    footer: 'Сначала телефон • Формат: ДД-MM-ГГГГ • ДД-MM-ГГГГ ЧЧ:ММ',
+
+    err_start_only_planned: 'Старт доступен только для статуса "Запланировано".',
+    err_already_running: 'Уже запущено (есть открытый лог).',
+    err_site_missing: 'Объект (site) не найден.',
+    err_no_latlng: 'Старт/стоп запрещён: у объекта нет GPS (lat/lng).',
+    err_gps_inaccurate: 'GPS слишком неточный: {m}м (нужно ≤ 80м).',
+    err_out_of_radius: 'Вы вне радиуса: {d}м (лимит {r}м).',
+    msg_start_ok: 'Старт зафиксирован.',
+    msg_stop_ok: 'Стоп зафиксирован.',
+    err_stop_no_started: 'Стоп запрещён: нет started_at.',
+    err_stop_already_done: 'Уже завершено (ended_at заполнен).',
+    err_open_log_not_found: 'Открытый time_log не найден.',
+    err_load: 'Ошибка загрузки данных.',
+    msg_signin_ok: 'Вход выполнен.',
+    err_signin: 'Ошибка входа.',
+    err_start: 'Ошибка старта.',
+    err_stop: 'Ошибка стопа.',
+    err_profile_not_found: 'Профиль не найден.',
+    err_profile_disabled: 'Профиль отключён. Обратитесь к администратору.',
+  },
+  uk: {
+    title: 'Облік часу',
+    subtitle_guest: 'Увійдіть, щоб почати',
+    admin_mark: ' • Адмін',
+
+    lang_label: 'Мова',
+    lang_ru: 'RU',
+    lang_uk: 'UA',
+
+    btn_refresh: 'Оновити',
+    btn_logout: 'Вийти',
+
+    card_error: 'Помилка',
+    card_ok: 'ОК',
+
+    login_title: 'Вхід',
+    email_ph: 'Е-пошта',
+    pass_ph: 'Пароль',
+    btn_signin: 'Увійти',
+    btn_signing: 'Входжу…',
+    login_hint: 'На телефоні: дозвольте геолокацію для сайту, інакше старт/стоп буде недоступний.',
+
+    filter_all: 'Усі',
+    filter_planned: 'Заплановано',
+    filter_in_progress: 'У роботі',
+    filter_done: 'Завершено',
+
+    state_gps: 'Перевіряю GPS…',
+    state_action: 'Фіксую…',
+    state_loading: 'Завантажую…',
+    state_ready: 'Готово',
+
+    status_planned: 'Заплановано',
+    status_in_progress: 'У роботі',
+    status_done: 'Завершено',
+
+    field_date: 'Дата',
+    field_time: 'Час',
+    field_logs: 'Логи',
+    field_gps: 'GPS',
+
+    log_start: 'Старт',
+    log_stop: 'Стоп',
+
+    gps_blocked_no_latlng: 'lat/lng відсутні — старт/стоп заборонено',
+    gps_policy: 'Радіус: {r}м • Точність ≤ 80м',
+
+    btn_start: 'СТАРТ',
+    btn_stop: 'СТОП',
+    btn_starting: 'СТАРТ…',
+    btn_stopping: 'СТОП…',
+
+    empty_title: 'Завдань немає',
+    empty_text: 'Попросіть адміністратора призначити завдання.',
+
+    footer: 'Спочатку телефон • Формат: ДД-MM-РРРР • ДД-MM-РРРР ГГ:ХХ',
+
+    err_start_only_planned: 'Старт доступний лише для статусу "Заплановано".',
+    err_already_running: 'Вже запущено (є відкритий лог).',
+    err_site_missing: "Об'єкт (site) не знайдено.",
+    err_no_latlng: "Старт/стоп заборонено: у об'єкта немає GPS (lat/lng).",
+    err_gps_inaccurate: 'GPS занадто неточний: {m}м (потрібно ≤ 80м).',
+    err_out_of_radius: 'Ви поза радіусом: {d}м (ліміт {r}м).',
+    msg_start_ok: 'Старт зафіксовано.',
+    msg_stop_ok: 'Стоп зафіксовано.',
+    err_stop_no_started: 'Стоп заборонено: немає started_at.',
+    err_stop_already_done: 'Вже завершено (ended_at заповнено).',
+    err_open_log_not_found: 'Відкритий time_log не знайдено.',
+    err_load: 'Помилка завантаження даних.',
+    msg_signin_ok: 'Вхід виконано.',
+    err_signin: 'Помилка входу.',
+    err_start: 'Помилка старту.',
+    err_stop: 'Помилка стопу.',
+    err_profile_not_found: 'Профіль не знайдено.',
+    err_profile_disabled: 'Профіль вимкнено. Зверніться до адміністратора.',
+  },
+} as const
+
+type Key = keyof typeof I18N.ru
+
+function tpl(s: string, vars?: Record<string, string | number>) {
+  if (!vars) return s
+  return s.replace(/\{([a-zA-Z0-9_]+)\}/g, (_, k) => (vars[k] ?? `{${k}}`).toString())
+}
+
+function statusKey(s: JobStatus): Key {
+  if (s === 'planned') return 'status_planned'
+  if (s === 'in_progress') return 'status_in_progress'
+  return 'status_done'
+}
+
+function statusChipClass(s: JobStatus) {
+  if (s === 'planned') return 'chip chip-gold'
+  if (s === 'in_progress') return 'chip chip-ok'
+  return 'chip'
+}
+
+function LangSwitch({
+  lang,
+  onChange,
+  labelRU,
+  labelUA,
+  label,
+}: {
+  lang: Lang
+  onChange: (l: Lang) => void
+  labelRU: string
+  labelUA: string
+  label: string
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-xs text-muted hidden sm:inline">{label}</span>
+      <div className="flex rounded-2xl border border-stroke bg-card2 p-1">
+        <button className={lang === 'ru' ? 'chip chip-gold' : 'chip'} onClick={() => onChange('ru')} type="button">
+          {labelRU}
+        </button>
+        <button className={lang === 'uk' ? 'chip chip-gold' : 'chip'} onClick={() => onChange('uk')} type="button">
+          {labelUA}
+        </button>
+      </div>
+    </div>
+  )
 }
 
 export default function Page() {
-  const [loading, setLoading] = useState(true)
-  const [authLoading, setAuthLoading] = useState(false)
+  const [lang, setLang] = useState<Lang>('ru')
+  const t = useMemo(() => {
+    return (key: Key, vars?: Record<string, string | number>) => {
+      const dict = I18N[lang]
+      const raw = (dict[key] ?? I18N.ru[key]) as string
+      return tpl(raw, vars)
+    }
+  }, [lang])
 
-  const [userEmail, setUserEmail] = useState('')
-  const [loginMsg, setLoginMsg] = useState<string | null>(null)
-  const [toast, setToast] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
-
+  const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
-  const [jobs, setJobs] = useState<Job[]>([])
-  const [filter, setFilter] = useState<Filter>('all')
-  const [selectedId, setSelectedId] = useState<string | null>(null)
 
-  const [geo, setGeo] = useState<GeoState>({
-    ok: false,
-    lat: null,
-    lng: null,
-    accuracy_m: null,
-    distance_m: null,
-    reason: 'GPS ещё не запрашивался',
-  })
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [authBusy, setAuthBusy] = useState(false)
 
-  const refreshLock = useRef(false)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [info, setInfo] = useState<string | null>(null)
 
-  const selectedJob = useMemo(() => jobs.find((j) => j.id === selectedId) ?? null, [jobs, selectedId])
+  const [jobs, setJobs] = useState<JobRow[]>([])
+  const [logs, setLogs] = useState<Record<string, TimeLogRow>>({})
+  const [filter, setFilter] = useState<'all' | JobStatus>('all')
+
+  const [actionJobId, setActionJobId] = useState<string | null>(null)
+  const [gpsBusy, setGpsBusy] = useState(false)
+
+  useEffect(() => {
+    try {
+      const saved = (localStorage.getItem('tanija_lang') as Lang | null) ?? 'ru'
+      if (saved === 'ru' || saved === 'uk') setLang(saved)
+    } catch {}
+  }, [])
+
+  function setLangPersist(next: Lang) {
+    setLang(next)
+    try {
+      localStorage.setItem('tanija_lang', next)
+    } catch {}
+  }
+
+  useEffect(() => {
+    let alive = true
+    supabase.auth.getSession().then(({ data }) => {
+      if (!alive) return
+      setSession(data.session ?? null)
+    })
+    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession ?? null)
+    })
+    return () => {
+      alive = false
+      data.subscription.unsubscribe()
+    }
+  }, [])
 
   const filteredJobs = useMemo(() => {
     if (filter === 'all') return jobs
     return jobs.filter((j) => j.status === filter)
   }, [jobs, filter])
 
-  const kpis = useMemo(() => {
-    const total = jobs.length
-    const planned = jobs.filter((j) => j.status === 'planned').length
-    const prog = jobs.filter((j) => j.status === 'in_progress').length
-    const done = jobs.filter((j) => j.status === 'done').length
-    return { total, planned, prog, done }
-  }, [jobs])
-
-  function getPrimaryLog(job: Job | null): TimeLog | null {
-    if (!job?.time_logs || job.time_logs.length === 0) return null
-    return job.time_logs[0] ?? null
-  }
-
-  async function loadProfileAndJobs() {
-    if (refreshLock.current) return
-    refreshLock.current = true
-    setToast(null)
+  async function loadAll() {
+    setError(null)
+    setInfo(null)
+    setLoading(true)
 
     try {
-      const { data: authData, error: authErr } = await supabase.auth.getUser()
-      if (authErr) throw authErr
-      const user = authData.user
-      if (!user) {
+      const { data: sess } = await supabase.auth.getSession()
+      const s = sess.session
+      setSession(s ?? null)
+      if (!s?.user) {
         setProfile(null)
         setJobs([])
-        setSelectedId(null)
+        setLogs({})
+        setLoading(false)
         return
       }
 
-      const { data: p, error: pErr } = await supabase
+      const { data: prof, error: profErr } = await supabase
         .from('profiles')
-        .select('id, role, full_name, phone, active, created_at')
-        .eq('id', user.id)
+        .select('id, role, full_name, phone, active')
+        .eq('id', s.user.id)
         .single()
-      if (pErr) throw pErr
-      setProfile(p as Profile)
 
-      const d = todayISODate()
+      if (profErr) throw new Error(profErr.message)
+      if (!prof) throw new Error(t('err_profile_not_found'))
+      if (!prof.active) throw new Error(t('err_profile_disabled'))
 
-      const { data: j, error: jErr } = await supabase
+      setProfile(prof as Profile)
+
+      const { data: jobsData, error: jobsErr } = await supabase
         .from('jobs')
         .select(
           `
@@ -193,622 +402,405 @@ export default function Page() {
           job_date,
           scheduled_time,
           status,
-          sites:site_id (
+          sites (
             id, name, address, lat, lng, radius_m, notes
-          ),
-          time_logs:time_logs (
-            job_id,
-            started_at,
-            ended_at,
-            start_lat,
-            start_lng,
-            start_accuracy_m,
-            start_distance_m,
-            end_lat,
-            end_lng,
-            end_accuracy_m,
-            end_distance_m
           )
         `
         )
-        .eq('worker_id', user.id)
-        .eq('job_date', d)
-        .order('scheduled_time', { ascending: true })
+        .eq('worker_id', s.user.id)
+        .order('job_date', { ascending: false })
 
-      if (jErr) throw jErr
+      if (jobsErr) throw new Error(jobsErr.message)
 
-      const mapped: Job[] =
-        (j as any[])?.map((row) => {
-          const site: Site | null = row.sites
-            ? {
-                id: row.sites.id,
-                name: row.sites.name,
-                address: row.sites.address ?? null,
-                lat: safeNum(row.sites.lat),
-                lng: safeNum(row.sites.lng),
-                radius_m: safeNum(row.sites.radius_m),
-                notes: row.sites.notes ?? null,
-              }
-            : null
+      const jobRows = (jobsData ?? []) as unknown as JobRow[]
+      setJobs(jobRows)
 
-          const logsRaw = Array.isArray(row.time_logs) ? row.time_logs : []
-          const logs: TimeLog[] = logsRaw.map((l: any) => ({
-            job_id: l.job_id,
-            started_at: l.started_at ?? null,
-            ended_at: l.ended_at ?? null,
-            start_lat: safeNum(l.start_lat),
-            start_lng: safeNum(l.start_lng),
-            start_accuracy_m: safeNum(l.start_accuracy_m),
-            start_distance_m: safeNum(l.start_distance_m),
-            end_lat: safeNum(l.end_lat),
-            end_lng: safeNum(l.end_lng),
-            end_accuracy_m: safeNum(l.end_accuracy_m),
-            end_distance_m: safeNum(l.end_distance_m),
-          }))
+      const jobIds = jobRows.map((j) => j.id)
+      if (jobIds.length === 0) {
+        setLogs({})
+        setLoading(false)
+        return
+      }
 
-          return {
-            id: row.id,
-            worker_id: row.worker_id ?? null,
-            site_id: row.site_id ?? null,
-            job_date: row.job_date,
-            scheduled_time: row.scheduled_time ?? null,
-            status: row.status,
-            site,
-            time_logs: logs,
-          } as Job
-        }) ?? []
+      const { data: logsData, error: logsErr } = await supabase
+        .from('time_logs')
+        .select('job_id, started_at, ended_at')
+        .in('job_id', jobIds)
+        .order('started_at', { ascending: false })
 
-      setJobs(mapped)
+      if (logsErr) throw new Error(logsErr.message)
 
-      if (!selectedId && mapped.length > 0) setSelectedId(mapped[0].id)
-      if (selectedId && !mapped.some((x) => x.id === selectedId)) setSelectedId(mapped[0]?.id ?? null)
+      const map: Record<string, TimeLogRow> = {}
+      for (const row of (logsData ?? []) as unknown as TimeLogRow[]) {
+        if (!map[row.job_id]) map[row.job_id] = row
+      }
+      setLogs(map)
+
+      setLoading(false)
     } catch (e: any) {
-      setToast({ kind: 'err', text: e?.message ? String(e.message) : 'Ошибка загрузки данных' })
-    } finally {
-      refreshLock.current = false
+      setLoading(false)
+      setError(e?.message ?? t('err_load'))
     }
   }
 
   useEffect(() => {
-    let mounted = true
-
-    ;(async () => {
-      setLoading(true)
-      await loadProfileAndJobs()
-      if (mounted) setLoading(false)
-    })()
-
-    const { data: sub } = supabase.auth.onAuthStateChange(async () => {
-      setLoading(true)
-      await loadProfileAndJobs()
-      setLoading(false)
-    })
-
-    return () => {
-      mounted = false
-      sub.subscription.unsubscribe()
-    }
+    loadAll()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [session?.user?.id])
 
-  async function requestGPSAndCompute(job: Job | null): Promise<GeoState> {
-    const site = job?.site ?? null
-
-    if (!job) {
-      return { ok: false, lat: null, lng: null, accuracy_m: null, distance_m: null, reason: 'Сначала выбери задачу' }
+  async function signIn() {
+    setError(null)
+    setInfo(null)
+    setAuthBusy(true)
+    try {
+      const { error: signErr } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      })
+      if (signErr) throw new Error(signErr.message)
+      setInfo(t('msg_signin_ok'))
+      setPassword('')
+    } catch (e: any) {
+      setError(e?.message ?? t('err_signin'))
+    } finally {
+      setAuthBusy(false)
     }
+  }
 
-    if (site?.lat == null || site?.lng == null) {
-      return {
-        ok: false,
-        lat: null,
-        lng: null,
-        accuracy_m: null,
-        distance_m: null,
-        reason: 'На объекте нет координат (lat/lng). START/STOP запрещён.',
+  async function signOut() {
+    setError(null)
+    setInfo(null)
+    await supabase.auth.signOut()
+    setProfile(null)
+    setJobs([])
+    setLogs({})
+  }
+
+  async function ensureGpsForSiteOrThrow(site: Site) {
+    if (site.lat == null || site.lng == null) {
+      throw new Error(t('err_no_latlng'))
+    }
+    setGpsBusy(true)
+    try {
+      const { lat, lng, accuracy } = await getGpsOrThrow()
+      if (accuracy > 80) {
+        throw new Error(t('err_gps_inaccurate', { m: Math.round(accuracy) }))
       }
-    }
-
-    const radius = site.radius_m ?? 0
-    if (!radius || radius <= 0) {
-      return { ok: false, lat: null, lng: null, accuracy_m: null, distance_m: null, reason: 'У объекта не задан радиус. START/STOP запрещён.' }
-    }
-
-    if (!navigator.geolocation) {
-      return { ok: false, lat: null, lng: null, accuracy_m: null, distance_m: null, reason: 'Геолокация в браузере недоступна' }
-    }
-
-    const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-      navigator.geolocation.getCurrentPosition(resolve, reject, {
-        enableHighAccuracy: true,
-        timeout: 12000,
-        maximumAge: 0,
-      })
-    })
-
-    const lat = pos.coords.latitude
-    const lng = pos.coords.longitude
-    const acc = pos.coords.accuracy
-    const dist = haversineMeters(lat, lng, site.lat, site.lng)
-
-    const accOk = acc <= 80
-    const distOk = dist <= radius
-
-    let reason: string | null = null
-    if (!accOk) reason = `Точность GPS слабая: ${Math.round(acc)}м (нужно ≤ 80м)`
-    if (accOk && !distOk) reason = `Ты вне радиуса: ${Math.round(dist)}м (лимит ${Math.round(radius)}м)`
-    if (accOk && distOk) reason = 'GPS ок: можно работать'
-
-    return { ok: accOk && distOk, lat, lng, accuracy_m: acc, distance_m: dist, reason }
-  }
-
-  function canStart(job: Job | null, g: GeoState) {
-    const log = getPrimaryLog(job)
-    const site = job?.site ?? null
-    if (!job) return { ok: false, why: 'Нет задачи' }
-    if (job.status !== 'planned') return { ok: false, why: 'START доступен только для Planned' }
-    if (log?.started_at) return { ok: false, why: 'START уже сделан' }
-    if (site?.lat == null || site?.lng == null) return { ok: false, why: 'Нет координат у объекта' }
-    if (!g.ok) return { ok: false, why: g.reason ?? 'GPS не прошёл проверку' }
-    return { ok: true, why: null as any }
-  }
-
-  function canStop(job: Job | null, g: GeoState) {
-    const log = getPrimaryLog(job)
-    const site = job?.site ?? null
-    if (!job) return { ok: false, why: 'Нет задачи' }
-    if (!log?.started_at) return { ok: false, why: 'Сначала START' }
-    if (log?.ended_at) return { ok: false, why: 'STOP уже сделан' }
-    if (site?.lat == null || site?.lng == null) return { ok: false, why: 'Нет координат у объекта' }
-    if (!g.ok) return { ok: false, why: g.reason ?? 'GPS не прошёл проверку' }
-    return { ok: true, why: null as any }
-  }
-
-  async function doRefresh() {
-    setToast({ kind: 'ok', text: 'Обновляю данные…' })
-    await loadProfileAndJobs()
-    setToast({ kind: 'ok', text: 'Данные обновлены' })
-    setTimeout(() => setToast(null), 1200)
-  }
-
-  async function doLogout() {
-    setAuthLoading(true)
-    try {
-      await supabase.auth.signOut()
-      setProfile(null)
-      setJobs([])
-      setSelectedId(null)
-      setGeo({ ok: false, lat: null, lng: null, accuracy_m: null, distance_m: null, reason: 'GPS ещё не запрашивался' })
+      const distance = haversineMeters(lat, lng, site.lat, site.lng)
+      if (distance > site.radius_m) {
+        throw new Error(t('err_out_of_radius', { d: Math.round(distance), r: site.radius_m }))
+      }
+      return { lat, lng, accuracy, distance }
     } finally {
-      setAuthLoading(false)
+      setGpsBusy(false)
     }
   }
 
-  async function doLoginOtp() {
-    const email = userEmail.trim()
-    if (!email) {
-      setLoginMsg('Введи email')
+  async function onStart(job: JobRow) {
+    setError(null)
+    setInfo(null)
+    if (!profile) return
+    if (job.status !== 'planned') {
+      setError(t('err_start_only_planned'))
       return
     }
-    setAuthLoading(true)
-    setLoginMsg(null)
-    try {
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: { emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined },
-      })
-      if (error) throw error
-      setLoginMsg('Ссылка для входа отправлена на email. Проверь почту.')
-    } catch (e: any) {
-      setLoginMsg(e?.message ? String(e.message) : 'Ошибка входа')
-    } finally {
-      setAuthLoading(false)
+    const log = logs[job.id]
+    if (log?.started_at && !log?.ended_at) {
+      setError(t('err_already_running'))
+      return
     }
-  }
-
-  async function handleGPS() {
-    setToast(null)
-    try {
-      const g = await requestGPSAndCompute(selectedJob)
-      setGeo(g)
-      setToast({ kind: g.ok ? 'ok' : 'err', text: g.reason ?? (g.ok ? 'GPS ок' : 'GPS ошибка') })
-      if (g.ok) setTimeout(() => setToast(null), 1200)
-    } catch (e: any) {
-      setGeo({ ok: false, lat: null, lng: null, accuracy_m: null, distance_m: null, reason: e?.message ? String(e.message) : 'Ошибка GPS' })
-      setToast({ kind: 'err', text: e?.message ? String(e.message) : 'Ошибка GPS' })
-    }
-  }
-
-  async function doStart() {
-    if (!selectedJob) return
-    setToast(null)
-
-    const g = await requestGPSAndCompute(selectedJob)
-    setGeo(g)
-
-    const check = canStart(selectedJob, g)
-    if (!check.ok) {
-      setToast({ kind: 'err', text: check.why })
+    if (!job.sites) {
+      setError(t('err_site_missing'))
       return
     }
 
+    setActionJobId(job.id)
     try {
-      const nowIso = new Date().toISOString()
+      const gps = await ensureGpsForSiteOrThrow(job.sites)
+      const startedAt = new Date().toISOString()
 
       const { error: insErr } = await supabase.from('time_logs').insert({
-        job_id: selectedJob.id,
-        started_at: nowIso,
-        start_lat: g.lat,
-        start_lng: g.lng,
-        start_accuracy_m: g.accuracy_m,
-        start_distance_m: g.distance_m,
+        job_id: job.id,
+        started_at: startedAt,
+        start_lat: gps.lat,
+        start_lng: gps.lng,
+        start_accuracy_m: gps.accuracy,
+        start_distance_m: gps.distance,
       })
-      if (insErr) throw insErr
+      if (insErr) throw new Error(insErr.message)
 
-      const { error: upErr } = await supabase.from('jobs').update({ status: 'in_progress' }).eq('id', selectedJob.id)
-      if (upErr) throw upErr
+      const { error: updErr } = await supabase.from('jobs').update({ status: 'in_progress' }).eq('id', job.id)
+      if (updErr) throw new Error(updErr.message)
 
-      setToast({ kind: 'ok', text: 'START зафиксирован' })
-      await loadProfileAndJobs()
-      setTimeout(() => setToast(null), 1200)
+      setInfo(t('msg_start_ok'))
+      await loadAll()
     } catch (e: any) {
-      setToast({ kind: 'err', text: e?.message ? String(e.message) : 'Ошибка START' })
+      setError(e?.message ?? t('err_start'))
+    } finally {
+      setActionJobId(null)
     }
   }
 
-  async function doStop() {
-    if (!selectedJob) return
-    setToast(null)
-
-    const log = getPrimaryLog(selectedJob)
+  async function onStop(job: JobRow) {
+    setError(null)
+    setInfo(null)
+    if (!profile) return
+    const log = logs[job.id]
     if (!log?.started_at) {
-      setToast({ kind: 'err', text: 'Сначала START' })
+      setError(t('err_stop_no_started'))
+      return
+    }
+    if (log?.ended_at) {
+      setError(t('err_stop_already_done'))
+      return
+    }
+    if (!job.sites) {
+      setError(t('err_site_missing'))
       return
     }
 
-    const g = await requestGPSAndCompute(selectedJob)
-    setGeo(g)
-
-    const check = canStop(selectedJob, g)
-    if (!check.ok) {
-      setToast({ kind: 'err', text: check.why })
-      return
-    }
-
+    setActionJobId(job.id)
     try {
-      const nowIso = new Date().toISOString()
+      const gps = await ensureGpsForSiteOrThrow(job.sites)
 
-      const { error: upLogErr } = await supabase
+      const { data: openLog, error: openErr } = await supabase
+        .from('time_logs')
+        .select('job_id, started_at, ended_at')
+        .eq('job_id', job.id)
+        .is('ended_at', null)
+        .order('started_at', { ascending: false })
+        .limit(1)
+        .single()
+
+      if (openErr) throw new Error(openErr.message)
+      if (!openLog) throw new Error(t('err_open_log_not_found'))
+
+      const endedAt = new Date().toISOString()
+
+      const { error: updLogErr } = await supabase
         .from('time_logs')
         .update({
-          ended_at: nowIso,
-          end_lat: g.lat,
-          end_lng: g.lng,
-          end_accuracy_m: g.accuracy_m,
-          end_distance_m: g.distance_m,
+          ended_at: endedAt,
+          end_lat: gps.lat,
+          end_lng: gps.lng,
+          end_accuracy_m: gps.accuracy,
+          end_distance_m: gps.distance,
         })
-        .eq('job_id', selectedJob.id)
-      if (upLogErr) throw upLogErr
+        .eq('job_id', job.id)
+        .is('ended_at', null)
 
-      const { error: upJobErr } = await supabase.from('jobs').update({ status: 'done' }).eq('id', selectedJob.id)
-      if (upJobErr) throw upJobErr
+      if (updLogErr) throw new Error(updLogErr.message)
 
-      setToast({ kind: 'ok', text: 'STOP зафиксирован' })
-      await loadProfileAndJobs()
-      setTimeout(() => setToast(null), 1200)
+      const { error: updJobErr } = await supabase.from('jobs').update({ status: 'done' }).eq('id', job.id)
+      if (updJobErr) throw new Error(updJobErr.message)
+
+      setInfo(t('msg_stop_ok'))
+      await loadAll()
     } catch (e: any) {
-      setToast({ kind: 'err', text: e?.message ? String(e.message) : 'Ошибка STOP' })
+      setError(e?.message ?? t('err_stop'))
+    } finally {
+      setActionJobId(null)
     }
   }
 
-  const primaryLog = useMemo(() => getPrimaryLog(selectedJob), [selectedJob])
-  const startState = useMemo(() => canStart(selectedJob, geo), [selectedJob, geo])
-  const stopState = useMemo(() => canStop(selectedJob, geo), [selectedJob, geo])
-
-  if (loading) {
-    return (
-      <div className="container">
-        <div className="shell">
-          <div className="header">
-            <div className="headerRow">
-              <div className="brand">
-                <img className="brandLogo" src="/tanija-logo.png" alt="Tanija" />
-                <div className="brandText">
-                  <div className="brandTitle">TANIJA</div>
-                  <div className="brandSub">Cleaning Timeclock</div>
-                </div>
-              </div>
-              <div className="headerActions">
-                <button className="btn btnGhost" disabled>Загрузка…</button>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ height: 16 }} />
-
-          <div className="card">
-            <div className="watermark"><img src="/tanija-logo.png" alt="" /></div>
-            <div className="cardInner">
-              <div className="cardTitle">Делаю luxury…</div>
-              <div className="small">Тёмный+золото, watermark, микроанимации. Всё как ты хотел.</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  if (!profile) {
-    return (
-      <div className="container">
-        <div className="shell">
-          <div className="header">
-            <div className="headerRow">
-              <div className="brand">
-                <img className="brandLogo" src="/tanija-logo.png" alt="Tanija" />
-                <div className="brandText">
-                  <div className="brandTitle">TANIJA</div>
-                  <div className="brandSub">Secure Access</div>
-                </div>
-              </div>
-              <div className="headerActions">
-                <span className="badge"><span className="badgeDot" /><span>Supabase Auth</span></span>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid">
-            <div className="card">
-              <div className="watermark"><img src="/tanija-logo.png" alt="" /></div>
-              <div className="cardInner">
-                <div className="cardTitleRow">
-                  <div className="cardTitle">Вход</div>
-                  <div className="cardHint">Email magic link</div>
-                </div>
-
-                <div className="row">
-                  <div className="col">
-                    <div className="small" style={{ marginBottom: 8 }}>Email</div>
-                    <input
-                      className="input"
-                      placeholder="name@company.com"
-                      value={userEmail}
-                      onChange={(e) => setUserEmail(e.target.value)}
-                      autoComplete="email"
-                      inputMode="email"
-                    />
-                    <div className="small" style={{ marginTop: 10 }}>Открыл письмо — ты внутри.</div>
-                  </div>
-                </div>
-
-                <div className="hr" />
-
-                <div className="row">
-                  <button className="btn btnGold" onClick={doLoginOtp} disabled={authLoading}>
-                    {authLoading ? 'Отправляю…' : 'Отправить ссылку'}
-                  </button>
-                </div>
-
-                {loginMsg && <div className="sep" />}
-                {loginMsg && (
-                  <div className={`toast ${loginMsg.toLowerCase().includes('ошибка') ? 'toastErr' : ''}`}>
-                    <div className="small">{loginMsg}</div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="card">
-              <div className="cardInner">
-                <div className="cardTitleRow">
-                  <div className="cardTitle">Правила</div>
-                  <div className="cardHint">GPS governance</div>
-                </div>
-                <div className="small">
-                  <div>• Форматы: <b>ДД-ММ-ГГГГ</b> и <b>ДД-ММ-ГГГГ ЧЧ:ММ</b></div>
-                  <div style={{ marginTop: 10 }}>• START/STOP: accuracy ≤ 80м и в радиусе объекта</div>
-                  <div style={{ marginTop: 10 }}>• Если у site нет lat/lng — START/STOP заблокирован</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
+  const headerName = profile?.full_name?.trim() || session?.user?.email || '—'
+  const adminMark = profile?.role === 'admin' ? t('admin_mark') : ''
+  const subtitle = session?.user ? `${headerName}${adminMark}` : t('subtitle_guest')
 
   return (
-    <div className="container">
-      <div className="shell">
-        <div className="header">
-          <div className="headerRow">
-            <div className="brand">
-              <img className="brandLogo" src="/tanija-logo.png" alt="Tanija" />
-              <div className="brandText">
-                <div className="brandTitle">TANIJA</div>
-                <div className="brandSub">{profile.full_name ?? 'Worker'} · {formatDMY(new Date())}</div>
+    <div className="min-h-screen safe-pad">
+      <div className="mx-auto w-full max-w-6xl px-4">
+        <header className="sticky top-0 z-20 -mx-4 px-4 pt-3 pb-3 backdrop-blur-xl bg-black/30 border-b border-stroke">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="h-10 w-10 rounded-2xl bg-card border border-stroke shadow-lux overflow-hidden shrink-0">
+                <Image
+                  src="/tanija-logo.png"
+                  alt="Tanija"
+                  width={80}
+                  height={80}
+                  className="h-full w-full object-contain p-1"
+                  priority
+                />
+              </div>
+              <div className="leading-tight min-w-0">
+                <div className="text-base font-semibold truncate">
+                  {t('title')} <span className="text-gold">Tanija</span>
+                </div>
+                <div className="text-xs text-muted truncate">{subtitle}</div>
               </div>
             </div>
 
-            <div className="headerActions">
-              {profile.role === 'admin' && (
-                <a className="btn btnGold" href="/admin">Admin</a>
-              )}
-              <button className="btn btnGhost" onClick={doRefresh} disabled={authLoading}>Обновить</button>
-              <button className="btn btnDanger" onClick={doLogout} disabled={authLoading}>Выйти</button>
+            <div className="flex items-center gap-2 shrink-0">
+              <LangSwitch
+                lang={lang}
+                onChange={setLangPersist}
+                label={t('lang_label')}
+                labelRU={t('lang_ru')}
+                labelUA={t('lang_uk')}
+              />
+
+              {session?.user ? (
+                <>
+                  <button className="btn-ghost" onClick={loadAll} disabled={loading || gpsBusy}>
+                    {t('btn_refresh')}
+                  </button>
+                  <button className="btn" onClick={signOut} disabled={gpsBusy}>
+                    {t('btn_logout')}
+                  </button>
+                </>
+              ) : null}
             </div>
           </div>
-        </div>
 
-        <div className="grid">
-          <div className="card">
-            <div className="watermark"><img src="/tanija-logo.png" alt="" /></div>
-            <div className="cardInner">
-              <div className="cardTitleRow">
-                <div className="cardTitle">Jobs на сегодня</div>
-                <div className="cardHint">{formatDMY(`${todayISODate()}T00:00:00`)}</div>
+          {error ? (
+            <div className="mt-3 rounded-2xl border border-stroke bg-card px-4 py-3 text-sm lux-shimmer">
+              <span className="chip chip-bad">{t('card_error')}</span>
+              <div className="mt-2 text-sm">{error}</div>
+            </div>
+          ) : null}
+
+          {info ? (
+            <div className="mt-3 rounded-2xl border border-stroke bg-card px-4 py-3 text-sm">
+              <span className="chip chip-ok">{t('card_ok')}</span>
+              <div className="mt-2 text-sm">{info}</div>
+            </div>
+          ) : null}
+        </header>
+
+        {!session?.user ? (
+          <main className="mt-6">
+            <div className="mx-auto max-w-md rounded-3xl border border-stroke bg-card shadow-lux p-5">
+              <div className="section-title">{t('login_title')}</div>
+              <div className="mt-4 space-y-3">
+                <input
+                  className="input"
+                  inputMode="email"
+                  placeholder={t('email_ph')}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+                <input
+                  className="input"
+                  type="password"
+                  placeholder={t('pass_ph')}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                <button className="btn w-full" onClick={signIn} disabled={authBusy || !email || !password}>
+                  {authBusy ? t('btn_signing') : t('btn_signin')}
+                </button>
+                <div className="text-xs text-muted">{t('login_hint')}</div>
+              </div>
+            </div>
+          </main>
+        ) : (
+          <main className="mt-6">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="flex flex-wrap gap-2">
+                <button className={filter === 'all' ? 'chip chip-gold' : 'chip'} onClick={() => setFilter('all')}>
+                  {t('filter_all')}
+                </button>
+                <button className={filter === 'planned' ? 'chip chip-gold' : 'chip'} onClick={() => setFilter('planned')}>
+                  {t('filter_planned')}
+                </button>
+                <button className={filter === 'in_progress' ? 'chip chip-gold' : 'chip'} onClick={() => setFilter('in_progress')}>
+                  {t('filter_in_progress')}
+                </button>
+                <button className={filter === 'done' ? 'chip chip-gold' : 'chip'} onClick={() => setFilter('done')}>
+                  {t('filter_done')}
+                </button>
               </div>
 
-              <div className="pillBar">
-                <div className={`pill ${filter === 'all' ? 'pillActive' : ''}`} onClick={() => setFilter('all')}>All</div>
-                <div className={`pill ${filter === 'planned' ? 'pillActive' : ''}`} onClick={() => setFilter('planned')}>Planned</div>
-                <div className={`pill ${filter === 'in_progress' ? 'pillActive' : ''}`} onClick={() => setFilter('in_progress')}>In progress</div>
-                <div className={`pill ${filter === 'done' ? 'pillActive' : ''}`} onClick={() => setFilter('done')}>Done</div>
+              <div className="text-xs text-muted">
+                {gpsBusy ? t('state_gps') : actionJobId ? t('state_action') : loading ? t('state_loading') : t('state_ready')}
               </div>
+            </div>
 
-              <div className="kpiRow">
-                <div className="kpi"><div className="kpiLabel">Total</div><div className="kpiValue">{kpis.total}</div></div>
-                <div className="kpi"><div className="kpiLabel">Planned</div><div className="kpiValue">{kpis.planned}</div></div>
-                <div className="kpi"><div className="kpiLabel">In progress</div><div className="kpiValue">{kpis.prog}</div></div>
-                <div className="kpi"><div className="kpiLabel">Done</div><div className="kpiValue">{kpis.done}</div></div>
-              </div>
+            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+              {filteredJobs.map((job) => {
+                const site = job.sites
+                const log = logs[job.id]
+                const started = log?.started_at ? formatDateTimeDMYHM(log.started_at) : null
+                const ended = log?.ended_at ? formatDateTimeDMYHM(log.ended_at) : null
 
-              <div className="list">
-                {filteredJobs.length === 0 ? (
-                  <div className="toast"><div className="small">На сегодня задач нет.</div></div>
-                ) : (
-                  filteredJobs.map((j) => {
-                    const active = j.id === selectedId
-                    const site = j.site ?? null
-                    return (
-                      <div key={j.id} className={`item ${active ? 'itemActive' : ''}`} onClick={() => setSelectedId(j.id)}>
-                        <div className="itemTop">
+                const canStart =
+                  job.status === 'planned' && (!log?.started_at || (log?.started_at && log?.ended_at))
+                const canStop = !!log?.started_at && !log?.ended_at
+
+                const busy = actionJobId === job.id || gpsBusy
+
+                return (
+                  <div key={job.id} className="rounded-3xl border border-stroke bg-card shadow-lux p-5 lux-shimmer">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold">{site?.name ?? t('err_site_missing')}</div>
+                        <div className="mt-1 text-xs text-muted">{site?.address ?? '—'}</div>
+                      </div>
+                      <span className={statusChipClass(job.status)}>{t(statusKey(job.status))}</span>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
+                      <div className="rounded-2xl border border-stroke bg-card2 px-3 py-2">
+                        <div className="text-muted">{t('field_date')}</div>
+                        <div className="mt-1 font-semibold">{formatDateDMY(job.job_date)}</div>
+                      </div>
+                      <div className="rounded-2xl border border-stroke bg-card2 px-3 py-2">
+                        <div className="text-muted">{t('field_time')}</div>
+                        <div className="mt-1 font-semibold">{job.scheduled_time ?? '—'}</div>
+                      </div>
+
+                      <div className="rounded-2xl border border-stroke bg-card2 px-3 py-2 col-span-2">
+                        <div className="text-muted">{t('field_logs')}</div>
+                        <div className="mt-1">
                           <div>
-                            <div className="itemTitle">{site?.name ?? 'Объект не найден'}</div>
-                            <div className="itemSub">
-                              {site?.address ?? '—'} <br />
-                              Дата: {formatDMY(`${j.job_date}T00:00:00`)} · Время: {j.scheduled_time ?? '—'}
-                            </div>
+                            <span className="text-muted">{t('log_start')}:</span>{' '}
+                            <span className="font-semibold">{started ?? '—'}</span>
                           </div>
-
-                          <span className={statusBadgeClass(j.status)}>
-                            <span className="badgeDot" />
-                            <span>{statusLabel(j.status)}</span>
-                          </span>
+                          <div className="mt-1">
+                            <span className="text-muted">{t('log_stop')}:</span>{' '}
+                            <span className="font-semibold">{ended ?? '—'}</span>
+                          </div>
                         </div>
                       </div>
-                    )
-                  })
-                )}
-              </div>
+
+                      <div className="rounded-2xl border border-stroke bg-card2 px-3 py-2 col-span-2">
+                        <div className="text-muted">{t('field_gps')}</div>
+                        <div className="mt-1">
+                          {site?.lat == null || site?.lng == null ? (
+                            <span className="chip chip-bad">{t('gps_blocked_no_latlng')}</span>
+                          ) : (
+                            <span className="chip chip-gold">{t('gps_policy', { r: site.radius_m })}</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex gap-3">
+                      <button className="btn w-full" onClick={() => onStart(job)} disabled={!canStart || busy}>
+                        {busy && canStart ? t('btn_starting') : t('btn_start')}
+                      </button>
+                      <button className="btn-ghost w-full" onClick={() => onStop(job)} disabled={!canStop || busy}>
+                        {busy && canStop ? t('btn_stopping') : t('btn_stop')}
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+
+              {!loading && filteredJobs.length === 0 ? (
+                <div className="rounded-3xl border border-stroke bg-card shadow-lux p-6 md:col-span-2">
+                  <div className="section-title">{t('empty_title')}</div>
+                  <div className="mt-2 text-sm text-muted">{t('empty_text')}</div>
+                </div>
+              ) : null}
             </div>
-          </div>
+          </main>
+        )}
 
-          <div className="card">
-            <div className="cardInner">
-              <div className="cardTitleRow">
-                <div className="cardTitle">Детали</div>
-                <div className="cardHint">GPS контроль</div>
-              </div>
-
-              {!selectedJob ? (
-                <div className="toast"><div className="small">Выбери задачу слева.</div></div>
-              ) : (
-                <>
-                  <div className="row">
-                    <div className="col">
-                      <div className="small">Объект</div>
-                      <div style={{ fontWeight: 900, marginTop: 6 }}>{selectedJob.site?.name ?? '—'}</div>
-                      <div className="small" style={{ marginTop: 6 }}>{selectedJob.site?.address ?? '—'}</div>
-                    </div>
-                  </div>
-
-                  <div className="sep" />
-
-                  <div className="row">
-                    <div className="col">
-                      <span className={statusBadgeClass(selectedJob.status)}>
-                        <span className="badgeDot" />
-                        <span>{statusLabel(selectedJob.status)}</span>
-                      </span>
-                      <div className="small" style={{ marginTop: 10 }}>
-                        Дата: {formatDMY(`${selectedJob.job_date}T00:00:00`)} · Время: {selectedJob.scheduled_time ?? '—'}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="sep" />
-
-                  <div className="row">
-                    <div className="col">
-                      <div className="small">START</div>
-                      <div style={{ fontWeight: 850, marginTop: 6 }}>{formatDMYHM(primaryLog?.started_at)}</div>
-                    </div>
-                    <div className="col">
-                      <div className="small">STOP</div>
-                      <div style={{ fontWeight: 850, marginTop: 6 }}>{formatDMYHM(primaryLog?.ended_at)}</div>
-                    </div>
-                  </div>
-
-                  <div className="sep" />
-
-                  <div className="row">
-                    <button className="btn" onClick={handleGPS}>Проверить GPS</button>
-                  </div>
-
-                  <div className="kpiRow">
-                    <div className="kpi">
-                      <div className="kpiLabel">Accuracy</div>
-                      <div className="kpiValue">{geo.accuracy_m == null ? '—' : `${Math.round(geo.accuracy_m)} м`}</div>
-                    </div>
-                    <div className="kpi">
-                      <div className="kpiLabel">Distance</div>
-                      <div className="kpiValue">{geo.distance_m == null ? '—' : `${Math.round(geo.distance_m)} м`}</div>
-                    </div>
-                  </div>
-
-                  <div className="small" style={{ marginTop: 10 }}>{geo.reason ?? '—'}</div>
-
-                  <div className="sep" />
-
-                  <div className="row">
-                    <button className="btn btnGold" onClick={doStart} disabled={!startState.ok}>START</button>
-                    <button className="btn btnDanger" onClick={doStop} disabled={!stopState.ok}>STOP</button>
-                  </div>
-
-                  <div className="small" style={{ marginTop: 10 }}>
-                    {!startState.ok && !primaryLog?.started_at ? `START: ${startState.why}` : null}
-                    {!stopState.ok && primaryLog?.started_at && !primaryLog?.ended_at ? `STOP: ${stopState.why}` : null}
-                  </div>
-
-                  <div className="sep" />
-
-                  <div className="row">
-                    <div className="col">
-                      <div className="small">Координаты объекта</div>
-                      <div className="small" style={{ marginTop: 6 }}>
-                        lat: {selectedJob.site?.lat ?? '—'} · lng: {selectedJob.site?.lng ?? '—'} · radius: {selectedJob.site?.radius_m ?? '—'}м
-                      </div>
-                    </div>
-                  </div>
-
-                  {(selectedJob.site?.lat == null || selectedJob.site?.lng == null) && (
-                    <>
-                      <div className="sep" />
-                      <div className="toast toastErr">
-                        <div className="small">У объекта нет lat/lng — START/STOP заблокирован.</div>
-                      </div>
-                    </>
-                  )}
-                </>
-              )}
-
-              {toast && (
-                <>
-                  <div className="sep" />
-                  <div className={`toast ${toast.kind === 'err' ? 'toastErr' : 'toastOk'}`}>
-                    <div className="small">{toast.text}</div>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div style={{ height: 18 }} />
-        <div className="small" style={{ textAlign: 'center', color: 'rgba(255,255,255,0.45)' }}>
-          Tanija · luxury control, zero excuses.
-        </div>
+        <footer className="mt-8 pb-6 text-center text-xs text-muted">
+          {t('footer')} • <span className="text-gold">{UI_BUILD}</span>
+        </footer>
       </div>
     </div>
   )
