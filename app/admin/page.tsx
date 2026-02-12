@@ -439,7 +439,7 @@ export default function AdminPage() {
                     </div>
 
                     <div className="mt-4 overflow-hidden rounded-2xl border border-zinc-800/80 bg-black/20">
-                      <div className="h-[320px] w-full">
+                      <div className="h-[80px] w-full">
                         <iframe
                           title="map"
                           src={osmEmbed(geoPreview.lat, geoPreview.lng)}
