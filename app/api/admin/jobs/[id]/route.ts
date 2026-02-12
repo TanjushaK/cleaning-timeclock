@@ -1,12 +1,15 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { ApiError, requireAdmin } from '@/lib/supabase-server'
 
-export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const { supabase } = await requireAdmin(req.headers)
-
-    const id = params?.id
+    const { id } = await params
     if (!id) throw new ApiError(400, 'id_required')
+
+    const { supabase } = await requireAdmin(req.headers)
 
     const { error: tlErr } = await supabase.from('time_logs').delete().eq('job_id', id)
     if (tlErr) throw new ApiError(400, tlErr.message)

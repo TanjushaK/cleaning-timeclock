@@ -1,34 +1,25 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { ApiError, requireAdmin } from '@/lib/supabase-server'
 
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const { supabase } = await requireAdmin(req.headers)
-
-    const id = params?.id
+    const { id } = await params
     if (!id) throw new ApiError(400, 'id_required')
 
-    const body = await req.json().catch(() => ({}))
+    const { supabase } = await requireAdmin(req.headers)
 
-    const updProfile: Record<string, any> = {}
-    if (typeof body?.active === 'boolean') updProfile.active = body.active
-    if (typeof body?.full_name === 'string') updProfile.full_name = body.full_name.trim() || null
-    if (typeof body?.phone === 'string') updProfile.phone = body.phone.trim() || null
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, full_name, phone, role')
+      .eq('id', id)
+      .single()
 
-    if (Object.keys(updProfile).length > 0) {
-      const { error: pErr } = await supabase.from('profiles').update(updProfile).eq('id', id)
-      if (pErr) throw new ApiError(400, pErr.message)
-    }
+    if (error) throw new ApiError(400, error.message)
 
-    if (typeof body?.password === 'string') {
-      const password = body.password.trim()
-      if (password.length < 6) throw new ApiError(400, 'password_min_6')
-
-      const { error: uErr } = await supabase.auth.admin.updateUserById(id, { password })
-      if (uErr) throw new ApiError(400, uErr.message)
-    }
-
-    return NextResponse.json({ ok: true })
+    return NextResponse.json({ worker: data })
   } catch (e: any) {
     const status = typeof e?.status === 'number' ? e.status : 500
     const msg = e?.message || 'error'
@@ -36,31 +27,65 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   }
 }
 
-export async function DELETE(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const { supabase } = await requireAdmin(req.headers)
-
-    const id = params?.id
+    const { id } = await params
     if (!id) throw new ApiError(400, 'id_required')
 
-    const { data: jobRows, error: jErr } = await supabase.from('jobs').select('id').eq('worker_id', id)
-    if (jErr) throw new ApiError(400, jErr.message)
+    const { supabase } = await requireAdmin(req.headers)
 
-    const jobIds = (jobRows ?? []).map((r: any) => r.id).filter(Boolean)
-
-    if (jobIds.length > 0) {
-      const { error: tlErr } = await supabase.from('time_logs').delete().in('job_id', jobIds)
-      if (tlErr) throw new ApiError(400, tlErr.message)
+    let body: any = null
+    try {
+      body = await req.json()
+    } catch {
+      body = null
     }
+    if (!body || typeof body !== 'object') throw new ApiError(400, 'invalid_body')
 
-    const { error: delJobsErr } = await supabase.from('jobs').delete().eq('worker_id', id)
-    if (delJobsErr) throw new ApiError(400, delJobsErr.message)
+    const updates: Partial<{
+      full_name: string
+      phone: string
+      role: 'admin' | 'worker'
+    }> = {}
 
-    const { error: delProfileErr } = await supabase.from('profiles').delete().eq('id', id)
-    if (delProfileErr) throw new ApiError(400, delProfileErr.message)
+    if (typeof body.full_name === 'string') updates.full_name = body.full_name.trim()
+    if (typeof body.phone === 'string') updates.phone = body.phone.trim()
+    if (body.role === 'admin' || body.role === 'worker') updates.role = body.role
 
-    const { error: delAuthErr } = await supabase.auth.admin.deleteUser(id)
-    if (delAuthErr) throw new ApiError(400, delAuthErr.message)
+    if (Object.keys(updates).length === 0) throw new ApiError(400, 'no_updates')
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .update(updates)
+      .eq('id', id)
+      .select('id, full_name, phone, role')
+      .single()
+
+    if (error) throw new ApiError(400, error.message)
+
+    return NextResponse.json({ ok: true, worker: data })
+  } catch (e: any) {
+    const status = typeof e?.status === 'number' ? e.status : 500
+    const msg = e?.message || 'error'
+    return NextResponse.json({ error: msg }, { status })
+  }
+}
+
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+    if (!id) throw new ApiError(400, 'id_required')
+
+    const { supabase } = await requireAdmin(req.headers)
+
+    const { error } = await supabase.from('profiles').delete().eq('id', id)
+    if (error) throw new ApiError(400, error.message)
 
     return NextResponse.json({ ok: true })
   } catch (e: any) {
