@@ -1,7 +1,8 @@
 'use client'
 
 import Image from 'next/image'
-import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
 
@@ -15,6 +16,7 @@ type Profile = {
   full_name: string | null
   phone: string | null
   active: boolean
+  avatar_url: string | null
 }
 
 type Site = {
@@ -33,6 +35,7 @@ type JobRow = {
   site_id: string
   job_date: string
   scheduled_time: string | null
+  planned_minutes: number | null
   status: JobStatus
   sites: Site | null
 }
@@ -111,6 +114,7 @@ const I18N = {
 
     btn_refresh: 'Обновить',
     btn_logout: 'Выйти',
+    btn_admin: 'Админка',
 
     card_error: 'Ошибка',
     card_ok: 'ОК',
@@ -121,6 +125,13 @@ const I18N = {
     btn_signin: 'Войти',
     btn_signing: 'Вхожу…',
     login_hint: 'На телефоне: разрешите геолокацию для сайта, иначе старт/стоп будет недоступен.',
+
+    sec_profile: 'Профиль',
+    profile_photo_hint: 'Фото видно в админке. Лучше квадрат 512×512.',
+    btn_upload_photo: 'Загрузить фото',
+    btn_uploading_photo: 'Загружаю…',
+    msg_photo_ok: 'Фото обновлено.',
+    err_photo: 'Ошибка загрузки фото.',
 
     filter_all: 'Все',
     filter_planned: 'Запланировано',
@@ -187,6 +198,7 @@ const I18N = {
 
     btn_refresh: 'Оновити',
     btn_logout: 'Вийти',
+    btn_admin: 'Адмінка',
 
     card_error: 'Помилка',
     card_ok: 'ОК',
@@ -197,6 +209,13 @@ const I18N = {
     btn_signin: 'Увійти',
     btn_signing: 'Входжу…',
     login_hint: 'На телефоні: дозвольте геолокацію для сайту, інакше старт/стоп буде недоступний.',
+
+    sec_profile: 'Профіль',
+    profile_photo_hint: 'Фото видно в адмінці. Краще квадрат 512×512.',
+    btn_upload_photo: 'Завантажити фото',
+    btn_uploading_photo: 'Завантажую…',
+    msg_photo_ok: 'Фото оновлено.',
+    err_photo: 'Помилка завантаження фото.',
 
     filter_all: 'Усі',
     filter_planned: 'Заплановано',
@@ -301,6 +320,15 @@ function LangSwitch({
   )
 }
 
+function initials(nameOrEmail: string) {
+  const s = (nameOrEmail ?? '').trim()
+  if (!s) return '—'
+  const parts = s.split(/\s+/g).filter(Boolean)
+  const a = parts[0]?.[0] ?? s[0]
+  const b = parts.length > 1 ? parts[parts.length - 1]?.[0] : s.length > 1 ? s[1] : ''
+  return (a + b).toUpperCase()
+}
+
 export default function Page() {
   const [lang, setLang] = useState<Lang>('ru')
   const t = useMemo(() => {
@@ -328,6 +356,9 @@ export default function Page() {
 
   const [actionJobId, setActionJobId] = useState<string | null>(null)
   const [gpsBusy, setGpsBusy] = useState(false)
+
+  const [photoBusy, setPhotoBusy] = useState(false)
+  const fileRef = useRef<HTMLInputElement | null>(null)
 
   useEffect(() => {
     try {
@@ -382,7 +413,7 @@ export default function Page() {
 
       const { data: prof, error: profErr } = await supabase
         .from('profiles')
-        .select('id, role, full_name, phone, active')
+        .select('id, role, full_name, phone, active, avatar_url')
         .eq('id', s.user.id)
         .single()
 
@@ -401,6 +432,7 @@ export default function Page() {
           site_id,
           job_date,
           scheduled_time,
+          planned_minutes,
           status,
           sites (
             id, name, address, lat, lng, radius_m, notes
@@ -603,9 +635,55 @@ export default function Page() {
     }
   }
 
+  async function onPickPhoto(file: File) {
+    setError(null)
+    setInfo(null)
+    if (!session?.user) return
+
+    try {
+      setPhotoBusy(true)
+
+      const ext = (file.name.split('.').pop() ?? 'jpg').toLowerCase()
+      const safeExt = ['png', 'jpg', 'jpeg', 'webp'].includes(ext) ? ext : 'jpg'
+      const path = `${session.user.id}/avatar.${safeExt}`
+
+      const { error: upErr } = await supabase.storage.from('avatars').upload(path, file, {
+        upsert: true,
+        contentType: file.type || 'image/jpeg',
+      })
+      if (upErr) throw new Error(upErr.message)
+
+      const { data } = supabase.storage.from('avatars').getPublicUrl(path)
+      const publicUrl = data.publicUrl
+      if (!publicUrl) throw new Error('PUBLIC_URL_MISSING')
+
+      const token = session.access_token
+      const res = await fetch('/api/me/avatar', {
+        method: 'PATCH',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ avatar_url: publicUrl }),
+      })
+      const js = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(js?.error ?? t('err_photo'))
+
+      setInfo(t('msg_photo_ok'))
+      await loadAll()
+    } catch (e: any) {
+      setError(e?.message ?? t('err_photo'))
+    } finally {
+      setPhotoBusy(false)
+      if (fileRef.current) fileRef.current.value = ''
+    }
+  }
+
   const headerName = profile?.full_name?.trim() || session?.user?.email || '—'
   const adminMark = profile?.role === 'admin' ? t('admin_mark') : ''
   const subtitle = session?.user ? `${headerName}${adminMark}` : t('subtitle_guest')
+
+  const avatarSrc = profile?.avatar_url || ''
 
   return (
     <div className="min-h-screen safe-pad">
@@ -614,14 +692,14 @@ export default function Page() {
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
               <div className="h-10 w-10 rounded-2xl bg-card border border-stroke shadow-lux overflow-hidden shrink-0">
-                <Image
-                  src="/tanija-logo.png"
-                  alt="Tanija"
-                  width={80}
-                  height={80}
-                  className="h-full w-full object-contain p-1"
-                  priority
-                />
+                {avatarSrc ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={avatarSrc} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <div className="h-full w-full grid place-items-center text-xs font-extrabold text-gold">
+                    {initials(headerName)}
+                  </div>
+                )}
               </div>
               <div className="leading-tight min-w-0">
                 <div className="text-base font-semibold truncate">
@@ -642,10 +720,15 @@ export default function Page() {
 
               {session?.user ? (
                 <>
-                  <button className="btn-ghost" onClick={loadAll} disabled={loading || gpsBusy}>
+                  {profile?.role === 'admin' ? (
+                    <Link className="btn-ghost" href="/admin">
+                      {t('btn_admin')}
+                    </Link>
+                  ) : null}
+                  <button className="btn-ghost" onClick={loadAll} disabled={loading || gpsBusy || photoBusy}>
                     {t('btn_refresh')}
                   </button>
-                  <button className="btn" onClick={signOut} disabled={gpsBusy}>
+                  <button className="btn" onClick={signOut} disabled={gpsBusy || photoBusy}>
                     {t('btn_logout')}
                   </button>
                 </>
@@ -696,7 +779,46 @@ export default function Page() {
           </main>
         ) : (
           <main className="mt-6">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <section className="rounded-3xl border border-stroke bg-card shadow-lux p-5">
+              <div className="section-title">{t('sec_profile')}</div>
+              <div className="mt-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="h-14 w-14 rounded-3xl bg-card2 border border-stroke overflow-hidden shrink-0">
+                    {avatarSrc ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={avatarSrc} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="h-full w-full grid place-items-center text-sm font-extrabold text-gold">
+                        {initials(headerName)}
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold truncate">{headerName}</div>
+                    <div className="text-xs text-muted truncate">{session.user.email ?? ''}</div>
+                    <div className="mt-1 text-xs text-muted">{t('profile_photo_hint')}</div>
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0]
+                      if (f) void onPickPhoto(f)
+                    }}
+                  />
+                  <button className="btn" type="button" onClick={() => fileRef.current?.click()} disabled={photoBusy}>
+                    {photoBusy ? t('btn_uploading_photo') : t('btn_upload_photo')}
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <div className="mt-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div className="flex flex-wrap gap-2">
                 <button className={filter === 'all' ? 'chip chip-gold' : 'chip'} onClick={() => setFilter('all')}>
                   {t('filter_all')}
@@ -704,7 +826,10 @@ export default function Page() {
                 <button className={filter === 'planned' ? 'chip chip-gold' : 'chip'} onClick={() => setFilter('planned')}>
                   {t('filter_planned')}
                 </button>
-                <button className={filter === 'in_progress' ? 'chip chip-gold' : 'chip'} onClick={() => setFilter('in_progress')}>
+                <button
+                  className={filter === 'in_progress' ? 'chip chip-gold' : 'chip'}
+                  onClick={() => setFilter('in_progress')}
+                >
                   {t('filter_in_progress')}
                 </button>
                 <button className={filter === 'done' ? 'chip chip-gold' : 'chip'} onClick={() => setFilter('done')}>
@@ -724,8 +849,7 @@ export default function Page() {
                 const started = log?.started_at ? formatDateTimeDMYHM(log.started_at) : null
                 const ended = log?.ended_at ? formatDateTimeDMYHM(log.ended_at) : null
 
-                const canStart =
-                  job.status === 'planned' && (!log?.started_at || (log?.started_at && log?.ended_at))
+                const canStart = job.status === 'planned' && (!log?.started_at || (log?.started_at && log?.ended_at))
                 const canStop = !!log?.started_at && !log?.ended_at
 
                 const busy = actionJobId === job.id || gpsBusy
@@ -754,12 +878,10 @@ export default function Page() {
                         <div className="text-muted">{t('field_logs')}</div>
                         <div className="mt-1">
                           <div>
-                            <span className="text-muted">{t('log_start')}:</span>{' '}
-                            <span className="font-semibold">{started ?? '—'}</span>
+                            <span className="text-muted">{t('log_start')}:</span> <span className="font-semibold">{started ?? '—'}</span>
                           </div>
                           <div className="mt-1">
-                            <span className="text-muted">{t('log_stop')}:</span>{' '}
-                            <span className="font-semibold">{ended ?? '—'}</span>
+                            <span className="text-muted">{t('log_stop')}:</span> <span className="font-semibold">{ended ?? '—'}</span>
                           </div>
                         </div>
                       </div>
