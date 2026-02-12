@@ -35,10 +35,6 @@ type Job = {
   sites?: Site
 }
 
-function pad2(n: number) {
-  return n < 10 ? `0${n}` : `${n}`
-}
-
 function formatDMY(isoDate: string) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate)
   if (!m) return isoDate
@@ -72,6 +68,28 @@ function isHHMM(v: string) {
   return hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59
 }
 
+function navUrl(site: { lat: number | null; lng: number | null; address: string }) {
+  if (site.lat != null && site.lng != null) {
+    return `https://www.google.com/maps/dir/?api=1&destination=${site.lat},${site.lng}`
+  }
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(site.address)}`
+}
+
+// OSM embed без ключей
+function osmEmbedSrc(lat: number, lng: number) {
+  const d = 0.01
+  const left = lng - d
+  const right = lng + d
+  const top = lat + d
+  const bottom = lat - d
+  const bbox = `${left},${bottom},${right},${top}`
+  return `https://www.openstreetmap.org/export/embed.html?bbox=${encodeURIComponent(bbox)}&layer=mapnik&marker=${lat},${lng}`
+}
+
+function osmOpenUrl(lat: number, lng: number) {
+  return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=18/${lat}/${lng}`
+}
+
 export default function AdminPage() {
   const [token, setToken] = useState<string | null>(null)
   const [role, setRole] = useState<Role | null>(null)
@@ -96,12 +114,26 @@ export default function AdminPage() {
     lng: '',
   })
 
+  const [geoPreview, setGeoPreview] = useState<{
+    status: 'idle' | 'loading' | 'ok' | 'err'
+    address: string
+    lat: number | null
+    lng: number | null
+    display_name: string | null
+    error: string | null
+  }>({ status: 'idle', address: '', lat: null, lng: null, display_name: null, error: null })
+
   const [newJob, setNewJob] = useState({
     dmy: '',
     time: '',
     worker_id: '',
     site_id: '',
   })
+
+  function popToast(m: string) {
+    setToast(m)
+    setTimeout(() => setToast(null), 1200)
+  }
 
   const filteredJobs = useMemo(() => {
     const list = [...jobs]
@@ -136,6 +168,13 @@ export default function AdminPage() {
     return j
   }
 
+  async function geocodeAddress(address: string): Promise<{ lat: number; lng: number; display_name?: string | null }> {
+    const r = await fetch(`/api/geocode?q=${encodeURIComponent(address)}`)
+    const j = await r.json().catch(() => ({}))
+    if (!r.ok) throw new Error(j?.error || `geocode_http_${r.status}`)
+    return { lat: Number(j.lat), lng: Number(j.lng), display_name: j.display_name || null }
+  }
+
   async function loadRoleAndToken() {
     setLoading(true)
     setErr(null)
@@ -168,7 +207,6 @@ export default function AdminPage() {
 
   async function loadAll() {
     setErr(null)
-    setToast(null)
     setBusy(true)
     try {
       const w = await apiGet('/api/admin/workers')
@@ -182,8 +220,7 @@ export default function AdminPage() {
       setWorkers(Array.isArray(wArr) ? wArr : [])
       setSites(Array.isArray(sArr) ? sArr : [])
       setJobs(Array.isArray(jArr) ? jArr : [])
-      setToast('Данные обновлены')
-      setTimeout(() => setToast(null), 1200)
+      popToast('Данные обновлены')
     } catch (e: any) {
       setErr(e?.message || 'Ошибка загрузки')
     } finally {
@@ -201,6 +238,7 @@ export default function AdminPage() {
     if (!token) return
     if (role !== 'admin') return
     loadAll()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, role])
 
   async function setWorkerRole(workerId: string, newRole: Role) {
@@ -210,42 +248,9 @@ export default function AdminPage() {
       const res = await apiSend(`/api/admin/workers/${workerId}`, 'PATCH', { role: newRole })
       const updated: Worker | undefined = res.worker
       setWorkers((prev) => prev.map((w) => (w.id === workerId ? (updated || { ...w, role: newRole }) : w)))
-      setToast(newRole === 'admin' ? 'Назначен админ' : 'Назначен worker')
-      setTimeout(() => setToast(null), 1200)
+      popToast(newRole === 'admin' ? 'Назначен админ' : 'Назначен worker')
     } catch (e: any) {
       setErr(e?.message || 'Ошибка изменения роли')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function createSite() {
-    setErr(null)
-    const name = newSite.name.trim()
-    const address = newSite.address.trim()
-    if (!name || !address) {
-      setErr('Заполни name и address')
-      return
-    }
-
-    const lat = newSite.lat.trim() ? Number(newSite.lat.trim()) : null
-    const lng = newSite.lng.trim() ? Number(newSite.lng.trim()) : null
-    const radius = Number(newSite.radius)
-
-    setBusy(true)
-    try {
-      const body: any = { name, address, radius }
-      if (Number.isFinite(lat as any)) body.lat = lat
-      if (Number.isFinite(lng as any)) body.lng = lng
-      const res = await apiSend('/api/admin/sites', 'POST', body)
-      const created: Site | undefined = res.site
-      setToast('Объект создан')
-      setTimeout(() => setToast(null), 1200)
-      setNewSite({ name: '', address: '', radius: 100, lat: '', lng: '' })
-      if (created) setSites((prev) => [created, ...prev])
-      else await loadAll()
-    } catch (e: any) {
-      setErr(e?.message || 'Ошибка создания объекта')
     } finally {
       setBusy(false)
     }
@@ -257,8 +262,7 @@ export default function AdminPage() {
     try {
       await apiSend(`/api/admin/sites/${siteId}`, 'PUT', { lat, lng })
       setSites((prev) => prev.map((s) => (s.id === siteId ? { ...s, lat, lng } : s)))
-      setToast('Сохранено')
-      setTimeout(() => setToast(null), 1200)
+      popToast('Сохранено')
     } catch (e: any) {
       setErr(e?.message || 'Ошибка сохранения')
     } finally {
@@ -266,8 +270,97 @@ export default function AdminPage() {
     }
   }
 
+  async function autoCoordsForSite(site: Site) {
+    setErr(null)
+    setBusy(true)
+    try {
+      const g = await geocodeAddress(site.address)
+      await updateSiteCoords(site.id, g.lat, g.lng)
+      popToast('Координаты определены')
+    } catch (e: any) {
+      setErr(e?.message || 'Не смог определить координаты')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function checkAddress() {
+    const address = newSite.address.trim()
+    if (!address) {
+      setErr('Заполни address')
+      return
+    }
+
+    setErr(null)
+    setGeoPreview({ status: 'loading', address, lat: null, lng: null, display_name: null, error: null })
+
+    try {
+      const g = await geocodeAddress(address)
+      setGeoPreview({
+        status: 'ok',
+        address,
+        lat: g.lat,
+        lng: g.lng,
+        display_name: g.display_name || null,
+        error: null,
+      })
+      setNewSite((p) => ({ ...p, lat: String(g.lat), lng: String(g.lng) }))
+      popToast('Адрес найден')
+    } catch (e: any) {
+      setGeoPreview({
+        status: 'err',
+        address,
+        lat: null,
+        lng: null,
+        display_name: null,
+        error: e?.message || 'Ошибка геокодинга',
+      })
+      setErr(e?.message || 'Ошибка геокодинга')
+    }
+  }
+
+  async function createSite() {
+    setErr(null)
+
+    const name = newSite.name.trim()
+    const address = newSite.address.trim()
+    if (!name || !address) {
+      setErr('Заполни name и address')
+      return
+    }
+
+    let lat: number | null = newSite.lat.trim() ? Number(newSite.lat.trim()) : null
+    let lng: number | null = newSite.lng.trim() ? Number(newSite.lng.trim()) : null
+    const radius = Number(newSite.radius)
+
+    setBusy(true)
+    try {
+      if (lat == null || lng == null) {
+        const g = await geocodeAddress(address)
+        lat = g.lat
+        lng = g.lng
+      }
+
+      const body: any = { name, address, radius, lat, lng }
+      const res = await apiSend('/api/admin/sites', 'POST', body)
+      const created: Site | undefined = res.site
+
+      popToast('Объект создан')
+      setNewSite({ name: '', address: '', radius: 100, lat: '', lng: '' })
+      setGeoPreview({ status: 'idle', address: '', lat: null, lng: null, display_name: null, error: null })
+
+      if (created) setSites((prev) => [created, ...prev])
+      else await loadAll()
+    } catch (e: any) {
+      setErr(e?.message || 'Ошибка создания объекта')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function createJob() {
     setErr(null)
+
     const iso = parseDMY(newJob.dmy)
     if (!iso) {
       setErr('Дата должна быть ДД-ММ-ГГГГ')
@@ -297,8 +390,7 @@ export default function AdminPage() {
       }
       const res = await apiSend('/api/admin/jobs', 'POST', body)
       const created: Job | undefined = res.job
-      setToast('Задача создана')
-      setTimeout(() => setToast(null), 1200)
+      popToast('Задача создана')
       setNewJob({ dmy: '', time: '', worker_id: '', site_id: '' })
       if (created) setJobs((prev) => [created, ...prev])
       else await loadAll()
@@ -312,7 +404,7 @@ export default function AdminPage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-[#07070b] text-zinc-200">
-        <div className="mx-auto max-w-5xl px-5 py-10">
+        <div className="mx-auto max-w-6xl px-5 py-10">
           <div className="rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-6">Загрузка…</div>
         </div>
       </div>
@@ -322,7 +414,7 @@ export default function AdminPage() {
   if (!token) {
     return (
       <div className="min-h-screen bg-[#07070b] text-zinc-200">
-        <div className="mx-auto max-w-5xl px-5 py-10">
+        <div className="mx-auto max-w-6xl px-5 py-10">
           <div className="rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-6">
             <div className="text-xl font-semibold text-amber-200">/admin</div>
             <div className="mt-2 text-zinc-400">Нет сессии. Сначала войди на главной странице.</div>
@@ -341,7 +433,7 @@ export default function AdminPage() {
   if (role !== 'admin') {
     return (
       <div className="min-h-screen bg-[#07070b] text-zinc-200">
-        <div className="mx-auto max-w-5xl px-5 py-10">
+        <div className="mx-auto max-w-6xl px-5 py-10">
           <div className="rounded-3xl border border-red-400/15 bg-[#0b0b12] p-6">
             <div className="text-xl font-semibold text-red-200">Доступ запрещён</div>
             <div className="mt-2 text-zinc-400">Роль должна быть admin.</div>
@@ -480,7 +572,11 @@ export default function AdminPage() {
                 />
                 <input
                   value={newSite.address}
-                  onChange={(e) => setNewSite((p) => ({ ...p, address: e.target.value }))}
+                  onChange={(e) => {
+                    const v = e.target.value
+                    setNewSite((p) => ({ ...p, address: v }))
+                    setGeoPreview((g) => (g.status === 'idle' ? g : { ...g, status: 'idle', error: null }))
+                  }}
                   placeholder="Address"
                   className="w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 outline-none transition focus:border-amber-300/60"
                 />
@@ -496,26 +592,81 @@ export default function AdminPage() {
                   <input
                     value={newSite.lat}
                     onChange={(e) => setNewSite((p) => ({ ...p, lat: e.target.value }))}
-                    placeholder="Lat (optional)"
+                    placeholder="Lat (опц.)"
                     className="col-span-1 w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 outline-none transition focus:border-amber-300/60"
                     inputMode="decimal"
                   />
                   <input
                     value={newSite.lng}
                     onChange={(e) => setNewSite((p) => ({ ...p, lng: e.target.value }))}
-                    placeholder="Lng (optional)"
+                    placeholder="Lng (опц.)"
                     className="col-span-1 w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 outline-none transition focus:border-amber-300/60"
                     inputMode="decimal"
                   />
                 </div>
 
-                <button
-                  onClick={createSite}
-                  disabled={busy}
-                  className="w-full rounded-2xl border border-amber-300/30 bg-amber-300/10 px-4 py-3 font-semibold text-amber-200 transition hover:bg-amber-300/15 disabled:opacity-50"
-                >
-                  Создать объект
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={checkAddress}
+                    disabled={busy || geoPreview.status === 'loading'}
+                    className="rounded-2xl border border-zinc-700/60 bg-black/30 px-4 py-3 text-sm font-semibold text-zinc-200 transition hover:bg-black/40 disabled:opacity-50"
+                  >
+                    {geoPreview.status === 'loading' ? 'Проверяю…' : 'Проверить адрес'}
+                  </button>
+
+                  <button
+                    onClick={createSite}
+                    disabled={busy}
+                    className="flex-1 rounded-2xl border border-amber-300/30 bg-amber-300/10 px-4 py-3 font-semibold text-amber-200 transition hover:bg-amber-300/15 disabled:opacity-50"
+                  >
+                    Создать объект
+                  </button>
+                </div>
+
+                {geoPreview.status === 'ok' && geoPreview.lat != null && geoPreview.lng != null ? (
+                  <div className="rounded-3xl border border-emerald-400/20 bg-emerald-500/5 p-4">
+                    <div className="text-sm font-semibold text-emerald-200">Найдено</div>
+                    <div className="mt-1 text-xs text-zinc-300 break-words">{geoPreview.display_name || '—'}</div>
+                    <div className="mt-2 text-xs text-zinc-400">
+                      lat: <span className="text-zinc-200">{geoPreview.lat}</span> • lng:{' '}
+                      <span className="text-zinc-200">{geoPreview.lng}</span>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <a
+                        className="rounded-2xl border border-emerald-400/25 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-500/15"
+                        href={navUrl({ lat: geoPreview.lat, lng: geoPreview.lng, address: geoPreview.address })}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Открыть навигацию
+                      </a>
+                      <a
+                        className="rounded-2xl border border-zinc-700/60 bg-black/30 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-black/40"
+                        href={osmOpenUrl(geoPreview.lat, geoPreview.lng)}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Открыть карту
+                      </a>
+                    </div>
+
+                    <iframe
+                      title="map-preview"
+                      className="mt-3 h-64 w-full rounded-2xl border border-zinc-800/80 bg-black/20"
+                      src={osmEmbedSrc(geoPreview.lat, geoPreview.lng)}
+                    />
+                    <div className="mt-2 text-xs text-zinc-500">
+                      Если попал “не туда” — поправь Address или вручную Lat/Lng.
+                    </div>
+                  </div>
+                ) : null}
+
+                {geoPreview.status === 'err' ? (
+                  <div className="rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                    {geoPreview.error || 'Ошибка проверки адреса'}
+                  </div>
+                ) : null}
               </div>
             </div>
 
@@ -546,14 +697,26 @@ export default function AdminPage() {
                         </div>
                       </div>
 
-                      <a
-                        className="text-sm text-amber-200 underline decoration-amber-300/40 underline-offset-4 hover:text-amber-100"
-                        href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(s.address)}`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Maps
-                      </a>
+                      <div className="flex flex-wrap gap-2">
+                        <a
+                          className="rounded-2xl border border-zinc-700/60 bg-black/30 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-black/40"
+                          href={navUrl(s)}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Навигация
+                        </a>
+
+                        {s.lat == null || s.lng == null ? (
+                          <button
+                            onClick={() => autoCoordsForSite(s)}
+                            disabled={busy}
+                            className="rounded-2xl border border-amber-300/30 bg-amber-300/10 px-4 py-2 text-sm font-semibold text-amber-200 transition hover:bg-amber-300/15 disabled:opacity-50"
+                          >
+                            Авто-координаты
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
 
                     <div className="mt-3 grid grid-cols-2 gap-2">
@@ -583,7 +746,7 @@ export default function AdminPage() {
                       />
                     </div>
 
-                    <div className="mt-2 text-xs text-zinc-500">Сохраняется при уходе из поля (blur)</div>
+                    <div className="mt-2 text-xs text-zinc-500">Можно вручную поправить (если геокодер промахнулся)</div>
                   </div>
                 ))}
                 {sites.length === 0 ? <div className="text-zinc-400">Пока пусто</div> : null}
@@ -617,13 +780,11 @@ export default function AdminPage() {
                   className="w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 outline-none transition focus:border-amber-300/60"
                 >
                   <option value="">Выбери worker</option>
-                  {workers
-                    .filter((w) => w.role === 'worker' || w.role === 'admin')
-                    .map((w) => (
-                      <option key={w.id} value={w.id}>
-                        {(w.full_name || w.id).slice(0, 60)}
-                      </option>
-                    ))}
+                  {workers.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {(w.full_name || w.id).slice(0, 60)}
+                    </option>
+                  ))}
                 </select>
 
                 <select
@@ -681,23 +842,19 @@ export default function AdminPage() {
 
                   return (
                     <div key={j.id} className="rounded-3xl border border-zinc-800/80 bg-black/20 p-4">
-                      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                        <div>
-                          <div className="font-semibold text-zinc-100">
-                            {dt}
-                            {tm ? ` ${tm}` : ''}
-                          </div>
-                          <div className="mt-1 text-sm text-zinc-400">
-                            {site ? `${site.name} — ${site.address}` : `site_id: ${j.site_id}`}
-                          </div>
-                          <div className="text-sm text-zinc-500">
-                            {worker ? `worker: ${worker.full_name || worker.id}` : `worker_id: ${j.worker_id}`}
-                          </div>
+                      <div className="font-semibold text-zinc-100">
+                        {dt}
+                        {tm ? ` ${tm}` : ''}
+                      </div>
+                      <div className="mt-1 text-sm text-zinc-400">
+                        {site ? `${site.name} — ${site.address}` : `site_id: ${j.site_id}`}
+                      </div>
+                      <div className="text-sm text-zinc-500">
+                        {worker ? `worker: ${worker.full_name || worker.id}` : `worker_id: ${j.worker_id}`}
+                      </div>
 
-                          <div className="mt-2 inline-flex rounded-full border border-amber-300/20 bg-amber-300/5 px-3 py-1 text-xs font-semibold text-amber-200">
-                            {j.status}
-                          </div>
-                        </div>
+                      <div className="mt-2 inline-flex rounded-full border border-amber-300/20 bg-amber-300/5 px-3 py-1 text-xs font-semibold text-amber-200">
+                        {j.status}
                       </div>
                     </div>
                   )

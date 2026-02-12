@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
+import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 
 type Role = 'admin' | 'worker'
@@ -20,37 +21,32 @@ type Job = {
   job_date: string
   scheduled_time: string | null
   status: JobStatus
-  worker_id: string
   site_id: string
+  worker_id: string
   sites?: Site | null
 }
 
-type TimeLog = {
+type ActiveLog = {
   id: string
   job_id: string
-  worker_id: string
   start_at: string
-  stop_at: string | null
-  start_lat: number | null
-  start_lng: number | null
-  start_accuracy: number | null
-  stop_lat: number | null
-  stop_lng: number | null
-  stop_accuracy: number | null
-}
-
-type StartEligibility =
-  | { ok: true; dist: number; radius: number }
-  | { ok: false; reason: string }
-
-function pad2(n: number) {
-  return n < 10 ? `0${n}` : `${n}`
 }
 
 function formatDMY(isoDate: string) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate)
   if (!m) return isoDate
   return `${m[3]}-${m[2]}-${m[1]}`
+}
+
+function formatDMYHM(iso: string) {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const yyyy = d.getFullYear()
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mi = String(d.getMinutes()).padStart(2, '0')
+  return `${dd}-${mm}-${yyyy} ${hh}:${mi}`
 }
 
 function normalizeTime(t: string | null) {
@@ -60,72 +56,86 @@ function normalizeTime(t: string | null) {
   return `${m[1]}:${m[2]}`
 }
 
-function formatDT(iso: string) {
-  const d = new Date(iso)
-  return `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}-${d.getFullYear()} ${pad2(d.getHours())}:${pad2(
-    d.getMinutes()
-  )}`
-}
-
 function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
   const R = 6371000
   const toRad = (x: number) => (x * Math.PI) / 180
   const dLat = toRad(lat2 - lat1)
   const dLon = toRad(lon2 - lon1)
   const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2)
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
   return R * c
+}
+
+function navUrl(site: { lat: number | null; lng: number | null; address: string }) {
+  if (site.lat != null && site.lng != null) {
+    return `https://www.google.com/maps/dir/?api=1&destination=${site.lat},${site.lng}`
+  }
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(site.address)}`
+}
+
+async function getGeo(): Promise<{ lat: number; lng: number; accuracy: number }> {
+  return await new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('geolocation_not_supported'))
+      return
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        resolve({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+        })
+      },
+      (err) => reject(new Error(err?.message || 'geolocation_error')),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    )
+  })
 }
 
 export default function HomePage() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState<string | null>(null)
-  const [toast, setToast] = useState<string | null>(null)
+  const [busyJobId, setBusyJobId] = useState<string | null>(null)
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [err, setErr] = useState<string | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
 
   const [userId, setUserId] = useState<string | null>(null)
   const [sessionEmail, setSessionEmail] = useState<string | null>(null)
   const [role, setRole] = useState<Role | null>(null)
 
   const [jobs, setJobs] = useState<Job[]>([])
-  const [activeLogs, setActiveLogs] = useState<Record<string, TimeLog>>({})
-  const [filter, setFilter] = useState<JobStatus | 'all'>('all')
+  const [activeLogs, setActiveLogs] = useState<Record<string, ActiveLog>>({})
 
-  const [gps, setGps] = useState<{
-    ok: boolean
-    lat: number | null
-    lng: number | null
-    accuracy: number | null
-    updatedAt: number | null
-    message: string | null
-  }>({ ok: false, lat: null, lng: null, accuracy: null, updatedAt: null, message: null })
-
-  const watchIdRef = useRef<number | null>(null)
-
-  const canLogin = useMemo(() => email.trim().includes('@') && password.length >= 6, [email, password])
-
-  const filteredJobs = useMemo(() => {
-    if (filter === 'all') return jobs
-    return jobs.filter((j) => j.status === filter)
-  }, [jobs, filter])
+  const jobsByStatus = useMemo(() => {
+    const planned: Job[] = []
+    const inProgress: Job[] = []
+    const done: Job[] = []
+    for (const j of jobs) {
+      if (j.status === 'planned') planned.push(j)
+      else if (j.status === 'in_progress') inProgress.push(j)
+      else done.push(j)
+    }
+    return { planned, inProgress, done }
+  }, [jobs])
 
   function popToast(m: string) {
     setToast(m)
     setTimeout(() => setToast(null), 1200)
   }
 
-  async function refreshSession() {
+  async function syncSession() {
     setLoading(true)
     setErr(null)
     try {
       const { data } = await supabase.auth.getSession()
       const s = data?.session
-      if (!s) {
+      if (!s?.user) {
         setUserId(null)
         setSessionEmail(null)
         setRole(null)
@@ -138,16 +148,11 @@ export default function HomePage() {
       setUserId(s.user.id)
       setSessionEmail(s.user.email || null)
 
-      const { data: profile, error: pErr } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', s.user.id)
-        .single()
-
+      const { data: prof, error: pErr } = await supabase.from('profiles').select('role').eq('id', s.user.id).single()
       if (pErr) throw pErr
-      setRole((profile?.role as Role) || null)
+      setRole((prof?.role as Role) || null)
     } catch (e: any) {
-      setErr(e?.message || 'Ошибка сессии')
+      setErr(e?.message || 'session_error')
     } finally {
       setLoading(false)
     }
@@ -155,134 +160,45 @@ export default function HomePage() {
 
   async function loadWorkerData(uid: string) {
     setErr(null)
+    setBusy(true)
     try {
-      const { data: jobsData, error: jobsErr } = await supabase
+      const { data: jData, error: jErr } = await supabase
         .from('jobs')
-        .select('id, job_date, scheduled_time, status, worker_id, site_id, sites(id,name,address,lat,lng,radius)')
+        .select('id, job_date, scheduled_time, status, site_id, worker_id, sites (id, name, address, lat, lng, radius)')
         .eq('worker_id', uid)
-        .order('job_date', { ascending: false })
-        .order('scheduled_time', { ascending: true })
+        .order('job_date', { ascending: true })
 
-      if (jobsErr) throw jobsErr
-      setJobs((jobsData as any) || [])
+      if (jErr) throw jErr
+      const list: Job[] = (jData || []) as any
+      setJobs(list)
 
-      const { data: logsData, error: logsErr } = await supabase
+      const { data: lData, error: lErr } = await supabase
         .from('time_logs')
-        .select(
-          'id, job_id, worker_id, start_at, stop_at, start_lat, start_lng, start_accuracy, stop_lat, stop_lng, stop_accuracy'
-        )
+        .select('id, job_id, start_at')
         .eq('worker_id', uid)
         .is('stop_at', null)
 
-      if (logsErr) throw logsErr
+      if (lErr) throw lErr
 
-      const map: Record<string, TimeLog> = {}
-      ;((logsData as any) || []).forEach((l: TimeLog) => {
-        map[l.job_id] = l
-      })
+      const map: Record<string, ActiveLog> = {}
+      for (const row of (lData || []) as any[]) {
+        map[row.job_id] = { id: row.id, job_id: row.job_id, start_at: row.start_at }
+      }
       setActiveLogs(map)
+
+      popToast('Данные обновлены')
     } catch (e: any) {
-      setErr(e?.message || 'Ошибка загрузки задач')
+      setErr(e?.message || 'load_error')
+    } finally {
+      setBusy(false)
     }
-  }
-
-  function stopWatch() {
-    if (watchIdRef.current != null && typeof navigator !== 'undefined' && navigator.geolocation) {
-      navigator.geolocation.clearWatch(watchIdRef.current)
-      watchIdRef.current = null
-    }
-  }
-
-  function startWatch() {
-    if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      setGps((p) => ({ ...p, ok: false, message: 'Геолокация недоступна' }))
-      return
-    }
-    stopWatch()
-
-    watchIdRef.current = navigator.geolocation.watchPosition(
-      (pos) => {
-        setGps({
-          ok: true,
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-          accuracy: pos.coords.accuracy,
-          updatedAt: Date.now(),
-          message: null,
-        })
-      },
-      (e) => {
-        setGps((p) => ({
-          ...p,
-          ok: false,
-          message: e?.message || 'Нет доступа к геолокации',
-          updatedAt: Date.now(),
-        }))
-      },
-      { enableHighAccuracy: true, maximumAge: 10_000, timeout: 15_000 }
-    )
-  }
-
-  async function refreshGPSOnce() {
-    setErr(null)
-    if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      setGps((p) => ({ ...p, ok: false, message: 'Геолокация недоступна' }))
-      return
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setGps({
-          ok: true,
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-          accuracy: pos.coords.accuracy,
-          updatedAt: Date.now(),
-          message: null,
-        })
-      },
-      (e) => {
-        setGps((p) => ({
-          ...p,
-          ok: false,
-          message: e?.message || 'Нет доступа к геолокации',
-          updatedAt: Date.now(),
-        }))
-      },
-      { enableHighAccuracy: true, maximumAge: 0, timeout: 15_000 }
-    )
-  }
-
-  function startEligibility(job: Job): StartEligibility {
-    const site = job.sites || null
-    if (!site) return { ok: false, reason: 'Нет объекта (site)' }
-    if (site.lat == null || site.lng == null) return { ok: false, reason: 'Запрещено: нет lat/lng' }
-    if (!gps.ok || gps.lat == null || gps.lng == null || gps.accuracy == null) return { ok: false, reason: 'Нет GPS' }
-    if (gps.accuracy > 80) return { ok: false, reason: `GPS accuracy > 80м (${Math.round(gps.accuracy)}м)` }
-
-    const dist = haversineMeters(gps.lat, gps.lng, site.lat, site.lng)
-    const radius = site.radius ?? 0
-    if (radius <= 0) return { ok: false, reason: 'Радиус не задан' }
-    if (dist > radius) return { ok: false, reason: `Ты вне радиуса (${Math.round(dist)}м > ${radius}м)` }
-
-    return { ok: true, dist, radius }
   }
 
   useEffect(() => {
-    refreshSession()
-    const sub = supabase.auth.onAuthStateChange(() => refreshSession())
+    syncSession()
+    const sub = supabase.auth.onAuthStateChange(() => syncSession())
     return () => sub.data.subscription.unsubscribe()
   }, [])
-
-  useEffect(() => {
-    if (!userId) {
-      stopWatch()
-      return
-    }
-    startWatch()
-    return () => stopWatch()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId])
 
   useEffect(() => {
     if (!userId) return
@@ -290,278 +206,273 @@ export default function HomePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId])
 
-  async function onLogin() {
+  async function signIn() {
     setErr(null)
-    if (!canLogin) return
     setBusy(true)
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      })
+      const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
       if (error) throw error
       popToast('Вход выполнен')
-      setEmail('')
-      setPassword('')
     } catch (e: any) {
-      setErr(e?.message || 'Ошибка входа')
+      setErr(e?.message || 'login_error')
     } finally {
       setBusy(false)
     }
   }
 
-  async function onLogout() {
+  async function signOut() {
     setBusy(true)
     try {
       await supabase.auth.signOut()
-      stopWatch()
-      popToast('Вышел')
+      popToast('Выход')
     } finally {
       setBusy(false)
     }
   }
 
-  async function onStart(job: Job) {
-    if (!userId) return
+  async function startJob(job: Job) {
     setErr(null)
+    if (!userId) return
+    const site = job.sites || null
 
-    const check = startEligibility(job)
-    if (!check.ok) {
-      setErr(check.reason)
+    if (!site) {
+      setErr('site_missing')
+      return
+    }
+    if (site.lat == null || site.lng == null) {
+      setErr('На объекте нет координат (lat/lng). START запрещён.')
+      return
+    }
+    const radius = site.radius ?? 0
+    if (radius <= 0) {
+      setErr('У объекта radius=0. START запрещён.')
       return
     }
 
     setBusy(true)
+    setBusyJobId(job.id)
     try {
+      const g = await getGeo()
+      if (g.accuracy > 80) {
+        setErr(`GPS точность плохая: ${Math.round(g.accuracy)}м (нужно ≤ 80м)`)
+        return
+      }
+
+      const dist = haversineMeters(g.lat, g.lng, site.lat, site.lng)
+      if (dist > radius) {
+        setErr(`Ты далеко от объекта: ${Math.round(dist)}м (нужно ≤ ${radius}м)`)
+        return
+      }
+
       const now = new Date().toISOString()
 
       const { error: insErr } = await supabase.from('time_logs').insert({
         job_id: job.id,
         worker_id: userId,
         start_at: now,
-        start_lat: gps.lat,
-        start_lng: gps.lng,
-        start_accuracy: gps.accuracy,
-      })
-
+        start_lat: g.lat,
+        start_lng: g.lng,
+        start_accuracy: g.accuracy,
+      } as any)
       if (insErr) throw insErr
 
-      const { error: updErr } = await supabase.from('jobs').update({ status: 'in_progress' }).eq('id', job.id)
-      if (updErr) throw updErr
+      const { error: upErr } = await supabase.from('jobs').update({ status: 'in_progress' }).eq('id', job.id)
+      if (upErr) throw upErr
 
-      popToast('START')
+      popToast('START OK')
       await loadWorkerData(userId)
     } catch (e: any) {
-      setErr(e?.message || 'Ошибка START')
+      setErr(e?.message || 'start_error')
     } finally {
       setBusy(false)
+      setBusyJobId(null)
     }
   }
 
-  async function onStop(job: Job) {
-    if (!userId) return
+  async function stopJob(job: Job) {
     setErr(null)
-
-    const log = activeLogs[job.id]
-    if (!log) {
-      setErr('Нет активного time_log для STOP')
-      return
-    }
-
-    if (!gps.ok || gps.lat == null || gps.lng == null || gps.accuracy == null) {
-      setErr('Нет GPS для STOP')
-      return
-    }
-    if (gps.accuracy > 80) {
-      setErr(`GPS accuracy > 80м (${Math.round(gps.accuracy)}м)`)
+    if (!userId) return
+    const active = activeLogs[job.id]
+    if (!active?.id) {
+      setErr('active_log_not_found')
       return
     }
 
     setBusy(true)
+    setBusyJobId(job.id)
     try {
+      const g = await getGeo()
+      if (g.accuracy > 80) {
+        setErr(`GPS точность плохая: ${Math.round(g.accuracy)}м (нужно ≤ 80м)`)
+        return
+      }
+
       const now = new Date().toISOString()
 
-      const { error: updLogErr } = await supabase
+      const { error: logErr } = await supabase
         .from('time_logs')
         .update({
           stop_at: now,
-          stop_lat: gps.lat,
-          stop_lng: gps.lng,
-          stop_accuracy: gps.accuracy,
-        })
-        .eq('id', log.id)
+          stop_lat: g.lat,
+          stop_lng: g.lng,
+          stop_accuracy: g.accuracy,
+        } as any)
+        .eq('id', active.id)
+      if (logErr) throw logErr
 
-      if (updLogErr) throw updLogErr
+      const { error: upErr } = await supabase.from('jobs').update({ status: 'done' }).eq('id', job.id)
+      if (upErr) throw upErr
 
-      const { error: updJobErr } = await supabase.from('jobs').update({ status: 'done' }).eq('id', job.id)
-      if (updJobErr) throw updJobErr
-
-      popToast('STOP')
+      popToast('STOP OK')
       await loadWorkerData(userId)
     } catch (e: any) {
-      setErr(e?.message || 'Ошибка STOP')
+      setErr(e?.message || 'stop_error')
     } finally {
       setBusy(false)
+      setBusyJobId(null)
     }
   }
 
-  const gpsBadge = useMemo(() => {
-    if (!gps.updatedAt) return { text: 'GPS: —', tone: 'zinc' as const }
-    if (!gps.ok) return { text: `GPS: нет доступа`, tone: 'red' as const }
-    const acc = gps.accuracy ?? 999
-    return {
-      text: `GPS: ok • acc ${Math.round(acc)}м`,
-      tone: acc <= 80 ? ('green' as const) : ('amber' as const),
-    }
-  }, [gps])
-
   return (
     <div className="min-h-screen bg-[#07070b] text-zinc-100">
-      <div className="mx-auto max-w-5xl px-5 py-10">
-        <div className="rounded-3xl border border-amber-400/20 bg-gradient-to-b from-[#0b0b12] to-[#07070b] p-6 shadow-2xl">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-center gap-3">
-              <img src="/tanija-logo.png" alt="Tanija" className="h-11 w-11 rounded-2xl" />
-              <div>
-                <div className="text-2xl font-semibold tracking-tight text-amber-200">Cleaning Timeclock</div>
-                <div className="text-sm text-zinc-500">Tanija</div>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <span
-                className={[
-                  'inline-flex rounded-full border px-3 py-1 text-xs font-semibold',
-                  gpsBadge.tone === 'green'
-                    ? 'border-emerald-400/20 bg-emerald-500/10 text-emerald-200'
-                    : gpsBadge.tone === 'amber'
-                    ? 'border-amber-400/20 bg-amber-500/10 text-amber-200'
-                    : gpsBadge.tone === 'red'
-                    ? 'border-red-400/20 bg-red-500/10 text-red-200'
-                    : 'border-zinc-700/60 bg-black/30 text-zinc-200',
-                ].join(' ')}
-              >
-                {gpsBadge.text}
-              </span>
-
-              <button
-                onClick={refreshGPSOnce}
-                disabled={busy}
-                className="rounded-2xl border border-zinc-700/60 bg-black/30 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-black/40 disabled:opacity-50"
-              >
-                Обновить GPS
-              </button>
-
-              {userId ? (
-                <button
-                  onClick={onLogout}
-                  disabled={busy}
-                  className="rounded-2xl border border-zinc-700/60 bg-black/30 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-black/40 disabled:opacity-50"
-                >
-                  Выйти
-                </button>
-              ) : null}
+      <div className="mx-auto max-w-6xl px-5 py-10">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3">
+            <img src="/tanija-logo.png" alt="Tanija" className="h-11 w-11 rounded-2xl" />
+            <div>
+              <div className="text-2xl font-semibold tracking-tight text-amber-200">Tanija</div>
+              <div className="text-sm text-zinc-500">Cleaning Timeclock</div>
             </div>
           </div>
 
-          {toast ? (
-            <div className="mt-4 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
-              {toast}
-            </div>
-          ) : null}
-
-          {err ? (
-            <div className="mt-4 rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-              {err}
-            </div>
-          ) : null}
-
-          {loading ? (
-            <div className="mt-6 rounded-2xl border border-amber-400/15 bg-amber-300/5 px-4 py-3 text-sm text-zinc-300">
-              Загрузка…
-            </div>
-          ) : userId ? (
-            <div className="mt-6">
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div className="rounded-2xl border border-amber-400/15 bg-amber-300/5 px-4 py-3">
-                  <div className="text-sm text-zinc-400">Ты вошёл как</div>
-                  <div className="font-semibold text-zinc-100">{sessionEmail}</div>
-                  <div className="mt-2 inline-flex rounded-full border border-amber-300/20 bg-amber-300/5 px-3 py-1 text-xs font-semibold text-amber-200">
-                    {role || '—'}
-                  </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {userId ? (
+              <>
+                <div className="rounded-2xl border border-amber-300/15 bg-amber-300/5 px-4 py-2 text-sm text-zinc-200">
+                  {sessionEmail || '—'} {role ? <span className="text-zinc-500">• {role}</span> : null}
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2">
-                  {role === 'admin' ? (
-                    <a
-                      href="/admin"
-                      className="rounded-2xl border border-amber-300/30 bg-amber-300/10 px-4 py-2 text-sm font-semibold text-amber-200 transition hover:bg-amber-300/15"
-                    >
-                      Открыть /admin
-                    </a>
-                  ) : null}
+                <button
+                  onClick={() => userId && loadWorkerData(userId)}
+                  disabled={busy}
+                  className="rounded-2xl border border-amber-300/30 bg-amber-300/10 px-4 py-2 font-semibold text-amber-200 transition hover:bg-amber-300/15 disabled:opacity-50"
+                >
+                  {busy ? '…' : 'Обновить'}
+                </button>
 
-                  <button
-                    onClick={async () => {
-                      if (!userId) return
-                      setBusy(true)
-                      try {
-                        await loadWorkerData(userId)
-                        popToast('Данные обновлены')
-                      } finally {
-                        setBusy(false)
-                      }
-                    }}
-                    disabled={busy}
-                    className="rounded-2xl border border-amber-300/30 bg-amber-300/10 px-4 py-2 text-sm font-semibold text-amber-200 transition hover:bg-amber-300/15 disabled:opacity-50"
+                {role === 'admin' ? (
+                  <Link
+                    href="/admin"
+                    className="rounded-2xl border border-zinc-700/60 bg-black/30 px-4 py-2 font-semibold text-zinc-200 transition hover:bg-black/40"
                   >
-                    {busy ? 'Обновляю…' : 'Обновить данные'}
-                  </button>
+                    Админка
+                  </Link>
+                ) : null}
+
+                <button
+                  onClick={signOut}
+                  disabled={busy}
+                  className="rounded-2xl border border-zinc-700/60 bg-black/30 px-4 py-2 font-semibold text-zinc-200 transition hover:bg-black/40 disabled:opacity-50"
+                >
+                  Выйти
+                </button>
+              </>
+            ) : null}
+          </div>
+        </div>
+
+        {toast ? (
+          <div className="mt-4 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
+            {toast}
+          </div>
+        ) : null}
+
+        {err ? (
+          <div className="mt-4 rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+            {err}
+          </div>
+        ) : null}
+
+        {loading ? (
+          <div className="mt-6 rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-6">Загрузка…</div>
+        ) : null}
+
+        {!loading && !userId ? (
+          <div className="mt-6 grid gap-6 lg:grid-cols-2">
+            <div className="rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-8">
+              <div className="text-xl font-semibold text-amber-200">Вход</div>
+              <div className="mt-2 text-sm text-zinc-500">Формат дат: ДД-ММ-ГГГГ • ДД-ММ-ГГГГ ЧЧ:ММ</div>
+
+              <div className="mt-6 space-y-3">
+                <input
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Email"
+                  className="w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 outline-none transition focus:border-amber-300/60"
+                  autoComplete="email"
+                />
+                <input
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Password"
+                  type="password"
+                  className="w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 outline-none transition focus:border-amber-300/60"
+                  autoComplete="current-password"
+                />
+
+                <button
+                  onClick={signIn}
+                  disabled={busy || !email.trim() || !password}
+                  className="w-full rounded-2xl border border-amber-300/30 bg-amber-300/10 px-4 py-3 font-semibold text-amber-200 transition hover:bg-amber-300/15 disabled:opacity-50"
+                >
+                  {busy ? 'Вхожу…' : 'Войти'}
+                </button>
+
+                <div className="flex items-center justify-between text-sm">
+                  <Link href="/forgot-password" className="text-zinc-400 hover:text-amber-200 transition">
+                    Забыли пароль?
+                  </Link>
+                  <span className="text-zinc-600">GPS должен быть включён</span>
                 </div>
               </div>
+            </div>
 
-              <div className="mt-6 flex flex-wrap gap-2">
-                {(['all', 'planned', 'in_progress', 'done'] as const).map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setFilter(s)}
-                    className={[
-                      'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
-                      filter === s
-                        ? 'border-amber-300/40 bg-amber-300/10 text-amber-200'
-                        : 'border-zinc-700/60 bg-black/30 text-zinc-200 hover:bg-black/40',
-                    ].join(' ')}
-                  >
-                    {s === 'all' ? 'All' : s}
-                  </button>
-                ))}
+            <div className="rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-8">
+              <div className="text-xl font-semibold text-amber-200">Как работает</div>
+              <div className="mt-4 space-y-2 text-sm text-zinc-400">
+                <div>1) Войти</div>
+                <div>2) Открыть задачу</div>
+                <div>3) START (GPS ≤ 80м и дистанция ≤ радиус)</div>
+                <div>4) STOP (закрывает time log и ставит DONE)</div>
               </div>
+            </div>
+          </div>
+        ) : null}
+
+        {!loading && userId ? (
+          <div className="mt-6 space-y-6">
+            <div className="rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-6">
+              <div className="text-lg font-semibold text-amber-200">Мои задачи</div>
+
+              {jobs.length === 0 ? <div className="mt-4 text-zinc-400">Задач нет</div> : null}
 
               <div className="mt-4 space-y-3">
-                {filteredJobs.map((j) => {
+                {jobs.map((j) => {
                   const site = j.sites || null
-                  const dt = formatDMY(j.job_date)
-                  const tm = normalizeTime(j.scheduled_time)
-                  const active = !!activeLogs[j.id]
-
-                  const eligibility = j.status === 'planned' ? startEligibility(j) : null
-
-                  let distanceInfo: string | null = null
-                  if (site?.lat != null && site?.lng != null && gps.ok && gps.lat != null && gps.lng != null) {
-                    const d = haversineMeters(gps.lat, gps.lng, site.lat, site.lng)
-                    distanceInfo = `dist ${Math.round(d)}м`
-                  }
+                  const t = normalizeTime(j.scheduled_time)
+                  const active = activeLogs[j.id]
+                  const isBusy = busy && busyJobId === j.id
 
                   return (
                     <div key={j.id} className="rounded-3xl border border-zinc-800/80 bg-black/20 p-4">
                       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                         <div>
                           <div className="font-semibold text-zinc-100">
-                            {dt}
-                            {tm ? ` ${tm}` : ''}
+                            {formatDMY(j.job_date)}
+                            {t ? ` ${t}` : ''}
                           </div>
                           <div className="mt-1 text-sm text-zinc-400">
-                            {site ? `${site.name} — ${site.address}` : `site_id: ${j.site_id}`}
+                            {site ? `${site.name} — ${site.address}` : 'Объект не найден'}
                           </div>
 
                           <div className="mt-2 flex flex-wrap gap-2">
@@ -576,51 +487,48 @@ export default function HomePage() {
                             ) : null}
 
                             {site ? (
-                              <span className="inline-flex rounded-full border border-zinc-700/60 bg-black/30 px-3 py-1 text-xs font-semibold text-zinc-200">
+                              <span className="inline-flex rounded-full border border-amber-300/20 bg-amber-300/5 px-3 py-1 text-xs font-semibold text-amber-200">
                                 радиус {site.radius ?? 0}м
                               </span>
                             ) : null}
 
-                            {distanceInfo ? (
-                              <span className="inline-flex rounded-full border border-zinc-700/60 bg-black/30 px-3 py-1 text-xs font-semibold text-zinc-200">
-                                {distanceInfo}
-                              </span>
-                            ) : null}
-
-                            {active ? (
+                            {active?.start_at ? (
                               <span className="inline-flex rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200">
-                                active
+                                started {formatDMYHM(active.start_at)}
                               </span>
                             ) : null}
                           </div>
-
-                          {active ? (
-                            <div className="mt-2 text-sm text-zinc-400">START: {formatDT(activeLogs[j.id].start_at)}</div>
-                          ) : null}
-
-                          {j.status === 'planned' && eligibility && !eligibility.ok ? (
-                            <div className="mt-2 text-sm text-zinc-400">START: {eligibility.reason}</div>
-                          ) : null}
                         </div>
 
                         <div className="flex flex-wrap gap-2">
+                          {site ? (
+                            <a
+                              href={navUrl(site)}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="rounded-2xl border border-zinc-700/60 bg-black/30 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-black/40"
+                            >
+                              Навигация
+                            </a>
+                          ) : null}
+
                           {j.status === 'planned' ? (
                             <button
-                              onClick={() => onStart(j)}
-                              disabled={busy || !(eligibility && eligibility.ok)}
+                              onClick={() => startJob(j)}
+                              disabled={isBusy}
                               className="rounded-2xl border border-amber-300/30 bg-amber-300/10 px-4 py-2 text-sm font-semibold text-amber-200 transition hover:bg-amber-300/15 disabled:opacity-50"
                             >
-                              START
+                              {isBusy ? 'START…' : 'START'}
                             </button>
                           ) : null}
 
                           {j.status === 'in_progress' ? (
                             <button
-                              onClick={() => onStop(j)}
-                              disabled={busy || !active}
+                              onClick={() => stopJob(j)}
+                              disabled={isBusy}
                               className="rounded-2xl border border-emerald-400/25 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-500/15 disabled:opacity-50"
                             >
-                              STOP
+                              {isBusy ? 'STOP…' : 'STOP'}
                             </button>
                           ) : null}
                         </div>
@@ -628,57 +536,14 @@ export default function HomePage() {
                     </div>
                   )
                 })}
-
-                {filteredJobs.length === 0 ? (
-                  <div className="rounded-2xl border border-zinc-800/80 bg-black/20 px-4 py-3 text-sm text-zinc-400">
-                    Задач нет
-                  </div>
-                ) : null}
               </div>
             </div>
-          ) : (
-            <div className="mt-6 space-y-3">
-              <label className="block text-sm text-zinc-300">Email</label>
-              <input
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="name@example.com"
-                className="w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 outline-none transition focus:border-amber-300/60"
-                autoComplete="email"
-                inputMode="email"
-              />
 
-              <label className="block text-sm text-zinc-300">Пароль</label>
-              <input
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                type="password"
-                className="w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 outline-none transition focus:border-amber-300/60"
-                autoComplete="current-password"
-              />
-
-              <button
-                onClick={onLogin}
-                disabled={busy || !canLogin}
-                className="mt-2 w-full rounded-2xl border border-amber-300/30 bg-amber-300/10 px-4 py-3 font-semibold text-amber-200 transition hover:bg-amber-300/15 disabled:opacity-50"
-              >
-                {busy ? 'Вхожу…' : 'Войти'}
-              </button>
-
-              <a
-                href="/forgot-password"
-                className="block text-center text-sm text-zinc-400 underline decoration-amber-300/40 underline-offset-4 hover:text-zinc-200"
-              >
-                Забыли пароль?
-              </a>
+            <div className="text-center text-xs text-zinc-600">
+              Формат: ДД-ММ-ГГГГ и ДД-ММ-ГГГГ ЧЧ:ММ • GPS accuracy ≤ 80м
             </div>
-          )}
-        </div>
-
-        <div className="mt-4 text-center text-xs text-zinc-500">
-          Форматы: <span className="text-zinc-300">ДД-ММ-ГГГГ</span> и <span className="text-zinc-300">ДД-ММ-ГГГГ ЧЧ:ММ</span>
-        </div>
+          </div>
+        ) : null}
       </div>
     </div>
   )
