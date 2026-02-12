@@ -1,19 +1,18 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import Link from 'next/link'
 
 type Role = 'admin' | 'worker'
-type JobStatus = 'planned' | 'in_progress' | 'done'
 
-type Worker = {
+type WorkerRow = {
   id: string
   full_name: string | null
   phone: string | null
   role: Role
 }
 
-type Site = {
+type SiteRow = {
   id: string
   name: string
   address: string
@@ -22,432 +21,225 @@ type Site = {
   radius: number | null
 }
 
-type Job = {
-  id: string
-  job_date: string
-  scheduled_time: string | null
-  status: JobStatus
-  worker_id: string
-  site_id: string
-  worker?: Worker
-  site?: Site
-  profiles?: Worker
-  sites?: Site
+function cls(...a: Array<string | false | null | undefined>) {
+  return a.filter(Boolean).join(' ')
 }
 
-function formatDMY(isoDate: string) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate)
-  if (!m) return isoDate
-  return `${m[3]}-${m[2]}-${m[1]}`
+function formatNum(n: number | null) {
+  if (n == null) return '—'
+  return String(Math.round(n * 1e6) / 1e6)
 }
 
-function normalizeTime(t: string | null) {
-  if (!t) return null
-  const m = /^(\d{2}):(\d{2})/.exec(t)
-  if (!m) return t
-  return `${m[1]}:${m[2]}`
-}
-
-function parseDMY(dmy: string) {
-  const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(dmy.trim())
-  if (!m) return null
-  const dd = Number(m[1])
-  const mm = Number(m[2])
-  const yyyy = Number(m[3])
-  if (yyyy < 2000 || yyyy > 2100) return null
-  if (mm < 1 || mm > 12) return null
-  if (dd < 1 || dd > 31) return null
-  return `${m[3]}-${m[2]}-${m[1]}`
-}
-
-function isHHMM(v: string) {
-  const m = /^(\d{2}):(\d{2})$/.exec(v.trim())
-  if (!m) return false
-  const hh = Number(m[1])
-  const mm = Number(m[2])
-  return hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59
-}
-
-function navUrl(site: { lat: number | null; lng: number | null; address: string }) {
-  if (site.lat != null && site.lng != null) {
-    return `https://www.google.com/maps/dir/?api=1&destination=${site.lat},${site.lng}`
-  }
-  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(site.address)}`
-}
-
-// OSM embed без ключей
-function osmEmbedSrc(lat: number, lng: number) {
-  const d = 0.01
+function osmEmbed(lat: number, lng: number) {
+  const d = 0.003
   const left = lng - d
   const right = lng + d
   const top = lat + d
   const bottom = lat - d
-  const bbox = `${left},${bottom},${right},${top}`
-  return `https://www.openstreetmap.org/export/embed.html?bbox=${encodeURIComponent(bbox)}&layer=mapnik&marker=${lat},${lng}`
+  const marker = `${lat},${lng}`
+  return `https://www.openstreetmap.org/export/embed.html?bbox=${left}%2C${bottom}%2C${right}%2C${top}&layer=mapnik&marker=${marker}`
 }
 
-function osmOpenUrl(lat: number, lng: number) {
+function osmOpen(lat: number, lng: number) {
   return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=18/${lat}/${lng}`
 }
 
 export default function AdminPage() {
-  const [token, setToken] = useState<string | null>(null)
-  const [role, setRole] = useState<Role | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<'workers' | 'sites' | 'jobs' | 'reports' | 'schedule'>('workers')
-
-  const [workers, setWorkers] = useState<Worker[]>([])
-  const [sites, setSites] = useState<Site[]>([])
-  const [jobs, setJobs] = useState<Job[]>([])
-
+  const [tab, setTab] = useState<'workers' | 'sites'>('workers')
   const [busy, setBusy] = useState(false)
-  const [toast, setToast] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
 
-  const [jobStatusFilter, setJobStatusFilter] = useState<JobStatus | 'all'>('all')
+  const [workers, setWorkers] = useState<WorkerRow[]>([])
+  const [sites, setSites] = useState<SiteRow[]>([])
 
-  const [newSite, setNewSite] = useState({
-    name: '',
-    address: '',
-    radius: 100,
-    lat: '',
-    lng: '',
-  })
+  // Workers form
+  const [wEmail, setWEmail] = useState('')
+  const [wName, setWName] = useState('')
+  const [wPhone, setWPhone] = useState('')
 
+  // Sites form
+  const [sName, setSName] = useState('')
+  const [sAddr, setSAddr] = useState('')
+  const [sRadius, setSRadius] = useState('100')
   const [geoPreview, setGeoPreview] = useState<{
-    status: 'idle' | 'loading' | 'ok' | 'err'
-    address: string
-    lat: number | null
-    lng: number | null
-    display_name: string | null
-    error: string | null
-  }>({ status: 'idle', address: '', lat: null, lng: null, display_name: null, error: null })
-
-  const [newJob, setNewJob] = useState({
-    dmy: '',
-    time: '',
-    worker_id: '',
-    site_id: '',
-  })
+    display_name: string
+    lat: number
+    lng: number
+  } | null>(null)
 
   function popToast(m: string) {
     setToast(m)
-    setTimeout(() => setToast(null), 1200)
+    setTimeout(() => setToast(null), 1600)
   }
 
-  const filteredJobs = useMemo(() => {
-    const list = [...jobs]
-    if (jobStatusFilter === 'all') return list
-    return list.filter((j) => j.status === jobStatusFilter)
-  }, [jobs, jobStatusFilter])
-
-  function apiHeaders(extra?: Record<string, string>) {
-    const h: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...(extra || {}),
-    }
-    if (token) h.Authorization = `Bearer ${token}`
-    return h
-  }
-
-  async function apiGet(url: string) {
-    const r = await fetch(url, { headers: apiHeaders() })
-    const j = await r.json().catch(() => ({}))
-    if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`)
-    return j
-  }
-
-  async function apiSend(url: string, method: string, body?: any) {
+  async function api<T = any>(url: string, opts?: RequestInit): Promise<T> {
     const r = await fetch(url, {
-      method,
-      headers: apiHeaders(),
-      body: body ? JSON.stringify(body) : undefined,
+      ...opts,
+      headers: {
+        'content-type': 'application/json',
+        ...(opts?.headers || {}),
+      },
     })
     const j = await r.json().catch(() => ({}))
-    if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`)
-    return j
+    if (!r.ok) throw new Error(j?.error || `HTTP_${r.status}`)
+    return j as T
   }
 
-  async function geocodeAddress(address: string): Promise<{ lat: number; lng: number; display_name?: string | null }> {
-    const r = await fetch(`/api/geocode?q=${encodeURIComponent(address)}`)
-    const j = await r.json().catch(() => ({}))
-    if (!r.ok) throw new Error(j?.error || `geocode_http_${r.status}`)
-    return { lat: Number(j.lat), lng: Number(j.lng), display_name: j.display_name || null }
-  }
-
-  async function loadRoleAndToken() {
-    setLoading(true)
-    setErr(null)
-    try {
-      const { data } = await supabase.auth.getSession()
-      const sess = data?.session
-      if (!sess) {
-        setToken(null)
-        setRole(null)
-        setLoading(false)
-        return
-      }
-
-      setToken(sess.access_token)
-
-      const { data: profile, error: pErr } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', sess.user.id)
-        .single()
-
-      if (pErr) throw pErr
-      setRole((profile?.role as Role) || null)
-    } catch (e: any) {
-      setErr(e?.message || 'Ошибка сессии')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function loadAll() {
+  async function loadWorkers() {
     setErr(null)
     setBusy(true)
     try {
-      const w = await apiGet('/api/admin/workers')
-      const s = await apiGet('/api/admin/sites')
-      const j = await apiGet('/api/admin/jobs')
-
-      const wArr: Worker[] = (w.workers ?? w.data ?? w.items ?? w) || []
-      const sArr: Site[] = (s.sites ?? s.data ?? s.items ?? s) || []
-      const jArr: Job[] = (j.jobs ?? j.data ?? j.items ?? j) || []
-
-      setWorkers(Array.isArray(wArr) ? wArr : [])
-      setSites(Array.isArray(sArr) ? sArr : [])
-      setJobs(Array.isArray(jArr) ? jArr : [])
-      popToast('Данные обновлены')
+      const j = await api<{ workers: WorkerRow[] }>('/api/admin/workers')
+      setWorkers(j.workers || [])
     } catch (e: any) {
-      setErr(e?.message || 'Ошибка загрузки')
+      setErr(e?.message || 'load_workers_error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function loadSites() {
+    setErr(null)
+    setBusy(true)
+    try {
+      const j = await api<{ sites: SiteRow[] }>('/api/admin/sites')
+      setSites(j.sites || [])
+    } catch (e: any) {
+      setErr(e?.message || 'load_sites_error')
     } finally {
       setBusy(false)
     }
   }
 
   useEffect(() => {
-    loadRoleAndToken()
-    const sub = supabase.auth.onAuthStateChange(() => loadRoleAndToken())
-    return () => sub.data.subscription.unsubscribe()
+    loadWorkers()
+    loadSites()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  useEffect(() => {
-    if (!token) return
-    if (role !== 'admin') return
-    loadAll()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, role])
-
-  async function setWorkerRole(workerId: string, newRole: Role) {
+  async function inviteWorker() {
     setErr(null)
     setBusy(true)
     try {
-      const res = await apiSend(`/api/admin/workers/${workerId}`, 'PATCH', { role: newRole })
-      const updated: Worker | undefined = res.worker
-      setWorkers((prev) => prev.map((w) => (w.id === workerId ? (updated || { ...w, role: newRole }) : w)))
-      popToast(newRole === 'admin' ? 'Назначен админ' : 'Назначен worker')
+      const email = wEmail.trim().toLowerCase()
+      const full_name = wName.trim()
+      const phone = wPhone.trim()
+
+      if (!email) throw new Error('email_required')
+      if (!email.includes('@')) throw new Error('email_invalid')
+      if (!full_name) throw new Error('full_name_required')
+
+      await api('/api/admin/workers/invite', {
+        method: 'POST',
+        body: JSON.stringify({ email, full_name, phone }),
+      })
+
+      popToast('Работник создан. Письмо отправлено.')
+      setWEmail('')
+      setWName('')
+      setWPhone('')
+      await loadWorkers()
     } catch (e: any) {
-      setErr(e?.message || 'Ошибка изменения роли')
+      setErr(e?.message || 'invite_error')
     } finally {
       setBusy(false)
     }
   }
 
-  async function updateSiteCoords(siteId: string, lat: number | null, lng: number | null) {
+  async function promoteToAdmin(id: string) {
     setErr(null)
     setBusy(true)
     try {
-      await apiSend(`/api/admin/sites/${siteId}`, 'PUT', { lat, lng })
-      setSites((prev) => prev.map((s) => (s.id === siteId ? { ...s, lat, lng } : s)))
-      popToast('Сохранено')
+      await api(`/api/admin/workers/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ role: 'admin' }),
+      })
+      popToast('Роль обновлена: admin')
+      await loadWorkers()
     } catch (e: any) {
-      setErr(e?.message || 'Ошибка сохранения')
+      setErr(e?.message || 'promote_error')
     } finally {
       setBusy(false)
     }
   }
 
-  async function autoCoordsForSite(site: Site) {
+  async function createSite() {
     setErr(null)
     setBusy(true)
     try {
-      const g = await geocodeAddress(site.address)
-      await updateSiteCoords(site.id, g.lat, g.lng)
-      popToast('Координаты определены')
+      const name = sName.trim()
+      const address = sAddr.trim()
+      const radius = Number(sRadius || '0')
+
+      if (!name) throw new Error('name_required')
+      if (!address) throw new Error('address_required')
+      if (!Number.isFinite(radius) || radius <= 0) throw new Error('radius_invalid')
+
+      const payload: any = {
+        name,
+        address,
+        radius,
+      }
+
+      if (geoPreview) {
+        payload.lat = geoPreview.lat
+        payload.lng = geoPreview.lng
+      }
+
+      await api('/api/admin/sites', { method: 'POST', body: JSON.stringify(payload) })
+      popToast('Объект создан')
+      setSName('')
+      setSAddr('')
+      setSRadius('100')
+      setGeoPreview(null)
+      await loadSites()
     } catch (e: any) {
-      setErr(e?.message || 'Не смог определить координаты')
+      setErr(e?.message || 'create_site_error')
     } finally {
       setBusy(false)
     }
   }
 
   async function checkAddress() {
-    const address = newSite.address.trim()
-    if (!address) {
-      setErr('Заполни address')
-      return
-    }
-
     setErr(null)
-    setGeoPreview({ status: 'loading', address, lat: null, lng: null, display_name: null, error: null })
-
+    setBusy(true)
     try {
-      const g = await geocodeAddress(address)
+      const q = sAddr.trim()
+      if (!q) throw new Error('address_required')
+
+      const j = await api<{ ok: boolean; display_name?: string; lat?: number; lng?: number }>(
+        '/api/geocode',
+        { method: 'POST', body: JSON.stringify({ q }) }
+      )
+
+      if (!j?.ok || j.lat == null || j.lng == null) throw new Error('geocode_not_found')
+
       setGeoPreview({
-        status: 'ok',
-        address,
-        lat: g.lat,
-        lng: g.lng,
-        display_name: g.display_name || null,
-        error: null,
+        display_name: String(j.display_name || q),
+        lat: Number(j.lat),
+        lng: Number(j.lng),
       })
-      setNewSite((p) => ({ ...p, lat: String(g.lat), lng: String(g.lng) }))
       popToast('Адрес найден')
     } catch (e: any) {
-      setGeoPreview({
-        status: 'err',
-        address,
-        lat: null,
-        lng: null,
-        display_name: null,
-        error: e?.message || 'Ошибка геокодинга',
-      })
-      setErr(e?.message || 'Ошибка геокодинга')
-    }
-  }
-
-  async function createSite() {
-    setErr(null)
-
-    const name = newSite.name.trim()
-    const address = newSite.address.trim()
-    if (!name || !address) {
-      setErr('Заполни name и address')
-      return
-    }
-
-    let lat: number | null = newSite.lat.trim() ? Number(newSite.lat.trim()) : null
-    let lng: number | null = newSite.lng.trim() ? Number(newSite.lng.trim()) : null
-    const radius = Number(newSite.radius)
-
-    setBusy(true)
-    try {
-      if (lat == null || lng == null) {
-        const g = await geocodeAddress(address)
-        lat = g.lat
-        lng = g.lng
-      }
-
-      const body: any = { name, address, radius, lat, lng }
-      const res = await apiSend('/api/admin/sites', 'POST', body)
-      const created: Site | undefined = res.site
-
-      popToast('Объект создан')
-      setNewSite({ name: '', address: '', radius: 100, lat: '', lng: '' })
-      setGeoPreview({ status: 'idle', address: '', lat: null, lng: null, display_name: null, error: null })
-
-      if (created) setSites((prev) => [created, ...prev])
-      else await loadAll()
-    } catch (e: any) {
-      setErr(e?.message || 'Ошибка создания объекта')
+      setGeoPreview(null)
+      setErr(e?.message || 'geocode_error')
     } finally {
       setBusy(false)
     }
   }
 
-  async function createJob() {
-    setErr(null)
+  const workersSorted = useMemo(() => {
+    const arr = [...workers]
+    arr.sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''))
+    return arr
+  }, [workers])
 
-    const iso = parseDMY(newJob.dmy)
-    if (!iso) {
-      setErr('Дата должна быть ДД-ММ-ГГГГ')
-      return
-    }
-    if (newJob.time.trim() && !isHHMM(newJob.time)) {
-      setErr('Время должно быть ЧЧ:ММ')
-      return
-    }
-    if (!newJob.worker_id) {
-      setErr('Выбери worker')
-      return
-    }
-    if (!newJob.site_id) {
-      setErr('Выбери объект')
-      return
-    }
-
-    setBusy(true)
-    try {
-      const body: any = {
-        job_date: iso,
-        scheduled_time: newJob.time.trim() ? `${newJob.time.trim()}:00` : null,
-        worker_id: newJob.worker_id,
-        site_id: newJob.site_id,
-        status: 'planned',
-      }
-      const res = await apiSend('/api/admin/jobs', 'POST', body)
-      const created: Job | undefined = res.job
-      popToast('Задача создана')
-      setNewJob({ dmy: '', time: '', worker_id: '', site_id: '' })
-      if (created) setJobs((prev) => [created, ...prev])
-      else await loadAll()
-    } catch (e: any) {
-      setErr(e?.message || 'Ошибка создания задачи')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#07070b] text-zinc-200">
-        <div className="mx-auto max-w-6xl px-5 py-10">
-          <div className="rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-6">Загрузка…</div>
-        </div>
-      </div>
-    )
-  }
-
-  if (!token) {
-    return (
-      <div className="min-h-screen bg-[#07070b] text-zinc-200">
-        <div className="mx-auto max-w-6xl px-5 py-10">
-          <div className="rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-6">
-            <div className="text-xl font-semibold text-amber-200">/admin</div>
-            <div className="mt-2 text-zinc-400">Нет сессии. Сначала войди на главной странице.</div>
-            <a
-              href="/"
-              className="mt-5 inline-flex rounded-2xl border border-amber-300/30 bg-amber-300/10 px-4 py-2 font-semibold text-amber-200 transition hover:bg-amber-300/15"
-            >
-              На главную
-            </a>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  if (role !== 'admin') {
-    return (
-      <div className="min-h-screen bg-[#07070b] text-zinc-200">
-        <div className="mx-auto max-w-6xl px-5 py-10">
-          <div className="rounded-3xl border border-red-400/15 bg-[#0b0b12] p-6">
-            <div className="text-xl font-semibold text-red-200">Доступ запрещён</div>
-            <div className="mt-2 text-zinc-400">Роль должна быть admin.</div>
-            <a
-              href="/"
-              className="mt-5 inline-flex rounded-2xl border border-amber-300/30 bg-amber-300/10 px-4 py-2 font-semibold text-amber-200 transition hover:bg-amber-300/15"
-            >
-              На главную
-            </a>
-          </div>
-        </div>
-      </div>
-    )
-  }
+  const sitesSorted = useMemo(() => {
+    const arr = [...sites]
+    arr.sort((a, b) => a.name.localeCompare(b.name))
+    return arr
+  }, [sites])
 
   return (
     <div className="min-h-screen bg-[#07070b] text-zinc-100">
@@ -456,54 +248,30 @@ export default function AdminPage() {
           <div className="flex items-center gap-3">
             <img src="/tanija-logo.png" alt="Tanija" className="h-11 w-11 rounded-2xl" />
             <div>
-              <div className="text-2xl font-semibold tracking-tight text-amber-200">Admin</div>
-              <div className="text-sm text-zinc-500">Workers • Objects • Jobs</div>
+              <div className="text-2xl font-semibold tracking-tight text-amber-200">Tanija</div>
+              <div className="text-sm text-zinc-500">Admin Panel</div>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/"
+              className="rounded-2xl border border-zinc-700/60 bg-black/30 px-4 py-2 font-semibold text-zinc-200 transition hover:bg-black/40"
+            >
+              ← На главную
+            </Link>
+
             <button
-              onClick={loadAll}
+              onClick={() => {
+                loadWorkers()
+                loadSites()
+              }}
               disabled={busy}
               className="rounded-2xl border border-amber-300/30 bg-amber-300/10 px-4 py-2 font-semibold text-amber-200 transition hover:bg-amber-300/15 disabled:opacity-50"
             >
-              {busy ? 'Обновляю…' : 'Обновить данные'}
-            </button>
-            <button
-              onClick={async () => {
-                await supabase.auth.signOut()
-                window.location.href = '/'
-              }}
-              className="rounded-2xl border border-zinc-700/60 bg-black/30 px-4 py-2 font-semibold text-zinc-200 transition hover:bg-black/40"
-            >
-              Выйти
+              {busy ? '…' : 'Обновить'}
             </button>
           </div>
-        </div>
-
-        <div className="mt-6 flex flex-wrap gap-2">
-          {(
-            [
-              ['workers', `Workers (${workers.length})`],
-              ['sites', `Objects (${sites.length})`],
-              ['jobs', `Jobs (${jobs.length})`],
-              ['reports', 'Reports'],
-              ['schedule', 'Schedule'],
-            ] as const
-          ).map(([k, label]) => (
-            <button
-              key={k}
-              onClick={() => setTab(k)}
-              className={[
-                'rounded-2xl border px-4 py-2 text-sm font-semibold transition',
-                tab === k
-                  ? 'border-amber-300/40 bg-amber-300/10 text-amber-200'
-                  : 'border-zinc-700/60 bg-black/30 text-zinc-200 hover:bg-black/40',
-              ].join(' ')}
-            >
-              {label}
-            </button>
-          ))}
         </div>
 
         {toast ? (
@@ -518,362 +286,237 @@ export default function AdminPage() {
           </div>
         ) : null}
 
-        {tab === 'workers' ? (
-          <div className="mt-6 rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-6">
-            <div className="text-lg font-semibold text-amber-200">Workers</div>
-            <div className="mt-4 divide-y divide-zinc-800/80">
-              {workers.map((w) => (
-                <div key={w.id} className="flex flex-col gap-3 py-4 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <div className="font-semibold text-zinc-100">{w.full_name || '(без имени)'}</div>
-                    <div className="text-sm text-zinc-400">{w.phone || '—'}</div>
-                    <div className="mt-1 inline-flex rounded-full border border-amber-300/20 bg-amber-300/5 px-3 py-1 text-xs font-semibold text-amber-200">
-                      {w.role}
-                    </div>
-                  </div>
+        <div className="mt-6 flex flex-wrap gap-2">
+          <button
+            onClick={() => setTab('workers')}
+            className={cls(
+              'rounded-2xl border px-4 py-2 text-sm font-semibold transition',
+              tab === 'workers'
+                ? 'border-amber-300/30 bg-amber-300/10 text-amber-200'
+                : 'border-zinc-800/80 bg-black/20 text-zinc-300 hover:bg-black/30'
+            )}
+          >
+            Workers
+          </button>
+          <button
+            onClick={() => setTab('sites')}
+            className={cls(
+              'rounded-2xl border px-4 py-2 text-sm font-semibold transition',
+              tab === 'sites'
+                ? 'border-amber-300/30 bg-amber-300/10 text-amber-200'
+                : 'border-zinc-800/80 bg-black/20 text-zinc-300 hover:bg-black/30'
+            )}
+          >
+            Objects
+          </button>
+        </div>
 
-                  <div className="flex flex-wrap gap-2">
-                    {w.role !== 'admin' ? (
-                      <button
-                        onClick={() => setWorkerRole(w.id, 'admin')}
-                        disabled={busy}
-                        className="rounded-2xl border border-amber-300/30 bg-amber-300/10 px-4 py-2 text-sm font-semibold text-amber-200 transition hover:bg-amber-300/15 disabled:opacity-50"
-                      >
-                        Сделать админом
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => setWorkerRole(w.id, 'worker')}
-                        disabled={busy}
-                        className="rounded-2xl border border-zinc-700/60 bg-black/30 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-black/40 disabled:opacity-50"
-                      >
-                        Сделать worker
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-              {workers.length === 0 ? <div className="py-6 text-zinc-400">Пока пусто</div> : null}
+        {tab === 'workers' ? (
+          <div className="mt-6 grid gap-6 lg:grid-cols-2">
+            <div className="rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-8">
+              <div className="text-xl font-semibold text-amber-200">Создать работника</div>
+              <div className="mt-2 text-sm text-zinc-500">
+                Работнику уйдёт письмо, он сам задаст пароль. Supabase доступ не нужен.
+              </div>
+
+              <div className="mt-6 space-y-3">
+                <input
+                  value={wEmail}
+                  onChange={(e) => setWEmail(e.target.value)}
+                  placeholder="Email работника"
+                  className="w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 outline-none transition focus:border-amber-300/60"
+                  autoComplete="email"
+                />
+                <input
+                  value={wName}
+                  onChange={(e) => setWName(e.target.value)}
+                  placeholder="ФИО"
+                  className="w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 outline-none transition focus:border-amber-300/60"
+                />
+                <input
+                  value={wPhone}
+                  onChange={(e) => setWPhone(e.target.value)}
+                  placeholder="Телефон (опционально)"
+                  className="w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 outline-none transition focus:border-amber-300/60"
+                />
+
+                <button
+                  onClick={inviteWorker}
+                  disabled={busy || !wEmail.trim() || !wName.trim()}
+                  className="w-full rounded-2xl border border-amber-300/30 bg-amber-300/10 px-4 py-3 font-semibold text-amber-200 transition hover:bg-amber-300/15 disabled:opacity-50"
+                >
+                  {busy ? 'Создаю…' : 'Создать и отправить письмо'}
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-8">
+              <div className="text-xl font-semibold text-amber-200">Workers</div>
+              <div className="mt-4 space-y-3">
+                {workersSorted.length === 0 ? (
+                  <div className="text-zinc-400">Пока пусто</div>
+                ) : (
+                  workersSorted.map((w) => (
+                    <div key={w.id} className="rounded-3xl border border-zinc-800/80 bg-black/20 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="font-semibold text-zinc-100">{w.full_name || '—'}</div>
+                          <div className="mt-1 text-sm text-zinc-400">{w.phone || '—'}</div>
+                          <div className="mt-2 inline-flex rounded-full border border-amber-300/20 bg-amber-300/5 px-3 py-1 text-xs font-semibold text-amber-200">
+                            {w.role}
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col gap-2">
+                          {w.role !== 'admin' ? (
+                            <button
+                              onClick={() => promoteToAdmin(w.id)}
+                              disabled={busy}
+                              className="rounded-2xl border border-zinc-700/60 bg-black/30 px-3 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-black/40 disabled:opacity-50"
+                            >
+                              Сделать админом
+                            </button>
+                          ) : (
+                            <div className="text-xs text-zinc-600 text-right">admin</div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="mt-4 text-xs text-zinc-600">
+                Если /admin не открывается: сначала войди на главной, потом открывай /admin.
+              </div>
             </div>
           </div>
         ) : null}
 
         {tab === 'sites' ? (
           <div className="mt-6 grid gap-6 lg:grid-cols-2">
-            <div className="rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-6">
-              <div className="text-lg font-semibold text-amber-200">Создать объект</div>
+            <div className="rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-8">
+              <div className="text-xl font-semibold text-amber-200">Создать объект</div>
+              <div className="mt-2 text-sm text-zinc-500">
+                Сначала введи адрес → “Проверить адрес” → увидишь, куда попал геокодер → потом “Создать”.
+              </div>
 
-              <div className="mt-4 space-y-3">
+              <div className="mt-6 space-y-3">
                 <input
-                  value={newSite.name}
-                  onChange={(e) => setNewSite((p) => ({ ...p, name: e.target.value }))}
-                  placeholder="Name"
+                  value={sName}
+                  onChange={(e) => setSName(e.target.value)}
+                  placeholder="Название"
                   className="w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 outline-none transition focus:border-amber-300/60"
                 />
                 <input
-                  value={newSite.address}
-                  onChange={(e) => {
-                    const v = e.target.value
-                    setNewSite((p) => ({ ...p, address: v }))
-                    setGeoPreview((g) => (g.status === 'idle' ? g : { ...g, status: 'idle', error: null }))
-                  }}
-                  placeholder="Address"
+                  value={sAddr}
+                  onChange={(e) => setSAddr(e.target.value)}
+                  placeholder="Адрес"
                   className="w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 outline-none transition focus:border-amber-300/60"
                 />
-
-                <div className="grid grid-cols-3 gap-2">
+                <div className="flex gap-2">
                   <input
-                    value={String(newSite.radius)}
-                    onChange={(e) => setNewSite((p) => ({ ...p, radius: Number(e.target.value || 0) }))}
-                    placeholder="Radius (m)"
-                    className="col-span-1 w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 outline-none transition focus:border-amber-300/60"
-                    inputMode="numeric"
+                    value={sRadius}
+                    onChange={(e) => setSRadius(e.target.value)}
+                    placeholder="Радиус (м)"
+                    className="w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 outline-none transition focus:border-amber-300/60"
                   />
-                  <input
-                    value={newSite.lat}
-                    onChange={(e) => setNewSite((p) => ({ ...p, lat: e.target.value }))}
-                    placeholder="Lat (опц.)"
-                    className="col-span-1 w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 outline-none transition focus:border-amber-300/60"
-                    inputMode="decimal"
-                  />
-                  <input
-                    value={newSite.lng}
-                    onChange={(e) => setNewSite((p) => ({ ...p, lng: e.target.value }))}
-                    placeholder="Lng (опц.)"
-                    className="col-span-1 w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 outline-none transition focus:border-amber-300/60"
-                    inputMode="decimal"
-                  />
-                </div>
-
-                <div className="flex flex-wrap gap-2">
                   <button
                     onClick={checkAddress}
-                    disabled={busy || geoPreview.status === 'loading'}
-                    className="rounded-2xl border border-zinc-700/60 bg-black/30 px-4 py-3 text-sm font-semibold text-zinc-200 transition hover:bg-black/40 disabled:opacity-50"
+                    disabled={busy || !sAddr.trim()}
+                    className="shrink-0 rounded-2xl border border-zinc-700/60 bg-black/30 px-4 py-3 text-sm font-semibold text-zinc-200 transition hover:bg-black/40 disabled:opacity-50"
                   >
-                    {geoPreview.status === 'loading' ? 'Проверяю…' : 'Проверить адрес'}
-                  </button>
-
-                  <button
-                    onClick={createSite}
-                    disabled={busy}
-                    className="flex-1 rounded-2xl border border-amber-300/30 bg-amber-300/10 px-4 py-3 font-semibold text-amber-200 transition hover:bg-amber-300/15 disabled:opacity-50"
-                  >
-                    Создать объект
+                    {busy ? '…' : 'Проверить адрес'}
                   </button>
                 </div>
 
-                {geoPreview.status === 'ok' && geoPreview.lat != null && geoPreview.lng != null ? (
-                  <div className="rounded-3xl border border-emerald-400/20 bg-emerald-500/5 p-4">
-                    <div className="text-sm font-semibold text-emerald-200">Найдено</div>
-                    <div className="mt-1 text-xs text-zinc-300 break-words">{geoPreview.display_name || '—'}</div>
+                {geoPreview ? (
+                  <div className="rounded-3xl border border-amber-300/15 bg-amber-300/5 p-4">
+                    <div className="text-sm font-semibold text-amber-200">Найдено</div>
+                    <div className="mt-1 text-sm text-zinc-200">{geoPreview.display_name}</div>
                     <div className="mt-2 text-xs text-zinc-400">
-                      lat: <span className="text-zinc-200">{geoPreview.lat}</span> • lng:{' '}
-                      <span className="text-zinc-200">{geoPreview.lng}</span>
+                      lat: {formatNum(geoPreview.lat)} • lng: {formatNum(geoPreview.lng)}
                     </div>
 
-                    <div className="mt-3 flex flex-wrap gap-2">
+                    <div className="mt-4 overflow-hidden rounded-2xl border border-zinc-800/80 bg-black/20">
+                      <div className="h-[320px] w-full">
+                        <iframe
+                          title="map"
+                          src={osmEmbed(geoPreview.lat, geoPreview.lng)}
+                          className="h-full w-full"
+                          loading="lazy"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex justify-between gap-2">
                       <a
-                        className="rounded-2xl border border-emerald-400/25 bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-200 transition hover:bg-emerald-500/15"
-                        href={navUrl({ lat: geoPreview.lat, lng: geoPreview.lng, address: geoPreview.address })}
+                        href={osmOpen(geoPreview.lat, geoPreview.lng)}
                         target="_blank"
                         rel="noreferrer"
-                      >
-                        Открыть навигацию
-                      </a>
-                      <a
                         className="rounded-2xl border border-zinc-700/60 bg-black/30 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-black/40"
-                        href={osmOpenUrl(geoPreview.lat, geoPreview.lng)}
-                        target="_blank"
-                        rel="noreferrer"
                       >
-                        Открыть карту
+                        Открыть в карте
                       </a>
-                    </div>
 
-                    <iframe
-                      title="map-preview"
-                      className="mt-3 h-64 w-full rounded-2xl border border-zinc-800/80 bg-black/20"
-                      src={osmEmbedSrc(geoPreview.lat, geoPreview.lng)}
-                    />
-                    <div className="mt-2 text-xs text-zinc-500">
-                      Если попал “не туда” — поправь Address или вручную Lat/Lng.
+                      <button
+                        onClick={() => setGeoPreview(null)}
+                        className="rounded-2xl border border-zinc-700/60 bg-black/30 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-black/40"
+                      >
+                        Сбросить
+                      </button>
                     </div>
                   </div>
-                ) : null}
-
-                {geoPreview.status === 'err' ? (
-                  <div className="rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-                    {geoPreview.error || 'Ошибка проверки адреса'}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-6">
-              <div className="text-lg font-semibold text-amber-200">Objects</div>
-
-              <div className="mt-4 space-y-3">
-                {sites.map((s) => (
-                  <div key={s.id} className="rounded-3xl border border-zinc-800/80 bg-black/20 p-4">
-                    <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                      <div>
-                        <div className="font-semibold text-zinc-100">{s.name}</div>
-                        <div className="text-sm text-zinc-400">{s.address}</div>
-
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {s.lat == null || s.lng == null ? (
-                            <span className="inline-flex rounded-full border border-red-400/20 bg-red-500/10 px-3 py-1 text-xs font-semibold text-red-200">
-                              нет lat/lng
-                            </span>
-                          ) : (
-                            <span className="inline-flex rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200">
-                              gps ok
-                            </span>
-                          )}
-                          <span className="inline-flex rounded-full border border-amber-300/20 bg-amber-300/5 px-3 py-1 text-xs font-semibold text-amber-200">
-                            радиус {s.radius ?? 0}м
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap gap-2">
-                        <a
-                          className="rounded-2xl border border-zinc-700/60 bg-black/30 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-black/40"
-                          href={navUrl(s)}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          Навигация
-                        </a>
-
-                        {s.lat == null || s.lng == null ? (
-                          <button
-                            onClick={() => autoCoordsForSite(s)}
-                            disabled={busy}
-                            className="rounded-2xl border border-amber-300/30 bg-amber-300/10 px-4 py-2 text-sm font-semibold text-amber-200 transition hover:bg-amber-300/15 disabled:opacity-50"
-                          >
-                            Авто-координаты
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    <div className="mt-3 grid grid-cols-2 gap-2">
-                      <input
-                        defaultValue={s.lat ?? ''}
-                        placeholder="Lat"
-                        className="w-full rounded-2xl border border-zinc-700/60 bg-black/30 px-4 py-2 text-sm outline-none focus:border-amber-300/60"
-                        inputMode="decimal"
-                        onBlur={(e) => {
-                          const v = e.target.value.trim()
-                          const lat = v ? Number(v) : null
-                          if (v && !Number.isFinite(lat as any)) return
-                          updateSiteCoords(s.id, lat, s.lng)
-                        }}
-                      />
-                      <input
-                        defaultValue={s.lng ?? ''}
-                        placeholder="Lng"
-                        className="w-full rounded-2xl border border-zinc-700/60 bg-black/30 px-4 py-2 text-sm outline-none focus:border-amber-300/60"
-                        inputMode="decimal"
-                        onBlur={(e) => {
-                          const v = e.target.value.trim()
-                          const lng = v ? Number(v) : null
-                          if (v && !Number.isFinite(lng as any)) return
-                          updateSiteCoords(s.id, s.lat, lng)
-                        }}
-                      />
-                    </div>
-
-                    <div className="mt-2 text-xs text-zinc-500">Можно вручную поправить (если геокодер промахнулся)</div>
-                  </div>
-                ))}
-                {sites.length === 0 ? <div className="text-zinc-400">Пока пусто</div> : null}
-              </div>
-            </div>
-          </div>
-        ) : null}
-
-        {tab === 'jobs' ? (
-          <div className="mt-6 grid gap-6 lg:grid-cols-2">
-            <div className="rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-6">
-              <div className="text-lg font-semibold text-amber-200">Создать задачу</div>
-
-              <div className="mt-4 space-y-3">
-                <input
-                  value={newJob.dmy}
-                  onChange={(e) => setNewJob((p) => ({ ...p, dmy: e.target.value }))}
-                  placeholder="Дата (ДД-ММ-ГГГГ)"
-                  className="w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 outline-none transition focus:border-amber-300/60"
-                />
-                <input
-                  value={newJob.time}
-                  onChange={(e) => setNewJob((p) => ({ ...p, time: e.target.value }))}
-                  placeholder="Время (ЧЧ:ММ) — опционально"
-                  className="w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 outline-none transition focus:border-amber-300/60"
-                />
-
-                <select
-                  value={newJob.worker_id}
-                  onChange={(e) => setNewJob((p) => ({ ...p, worker_id: e.target.value }))}
-                  className="w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 outline-none transition focus:border-amber-300/60"
-                >
-                  <option value="">Выбери worker</option>
-                  {workers.map((w) => (
-                    <option key={w.id} value={w.id}>
-                      {(w.full_name || w.id).slice(0, 60)}
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  value={newJob.site_id}
-                  onChange={(e) => setNewJob((p) => ({ ...p, site_id: e.target.value }))}
-                  className="w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 outline-none transition focus:border-amber-300/60"
-                >
-                  <option value="">Выбери объект</option>
-                  {sites.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
+                ) : (
+                  <div className="text-xs text-zinc-600">Карта появится после “Проверить адрес”.</div>
+                )}
 
                 <button
-                  onClick={createJob}
-                  disabled={busy}
+                  onClick={createSite}
+                  disabled={busy || !sName.trim() || !sAddr.trim()}
                   className="w-full rounded-2xl border border-amber-300/30 bg-amber-300/10 px-4 py-3 font-semibold text-amber-200 transition hover:bg-amber-300/15 disabled:opacity-50"
                 >
-                  Создать задачу
+                  {busy ? 'Создаю…' : 'Создать объект'}
                 </button>
               </div>
             </div>
 
-            <div className="rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-6">
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div className="text-lg font-semibold text-amber-200">Jobs</div>
-
-                <div className="flex flex-wrap gap-2">
-                  {(['all', 'planned', 'in_progress', 'done'] as const).map((s) => (
-                    <button
-                      key={s}
-                      onClick={() => setJobStatusFilter(s)}
-                      className={[
-                        'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
-                        jobStatusFilter === s
-                          ? 'border-amber-300/40 bg-amber-300/10 text-amber-200'
-                          : 'border-zinc-700/60 bg-black/30 text-zinc-200 hover:bg-black/40',
-                      ].join(' ')}
-                    >
-                      {s === 'all' ? 'All' : s}
-                    </button>
-                  ))}
-                </div>
-              </div>
+            <div className="rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-8">
+              <div className="text-xl font-semibold text-amber-200">Objects</div>
 
               <div className="mt-4 space-y-3">
-                {filteredJobs.map((j) => {
-                  const site = (j.site || j.sites) as Site | undefined
-                  const worker = (j.worker || j.profiles) as Worker | undefined
+                {sitesSorted.length === 0 ? (
+                  <div className="text-zinc-400">Пока пусто</div>
+                ) : (
+                  sitesSorted.map((s) => (
+                    <div key={s.id} className="rounded-3xl border border-zinc-800/80 bg-black/20 p-4">
+                      <div className="font-semibold text-zinc-100">{s.name}</div>
+                      <div className="mt-1 text-sm text-zinc-400">{s.address}</div>
 
-                  const dt = formatDMY(j.job_date)
-                  const tm = normalizeTime(j.scheduled_time)
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {s.lat == null || s.lng == null ? (
+                          <span className="inline-flex rounded-full border border-red-400/20 bg-red-500/10 px-3 py-1 text-xs font-semibold text-red-200">
+                            нет lat/lng
+                          </span>
+                        ) : (
+                          <span className="inline-flex rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200">
+                            lat/lng OK
+                          </span>
+                        )}
 
-                  return (
-                    <div key={j.id} className="rounded-3xl border border-zinc-800/80 bg-black/20 p-4">
-                      <div className="font-semibold text-zinc-100">
-                        {dt}
-                        {tm ? ` ${tm}` : ''}
-                      </div>
-                      <div className="mt-1 text-sm text-zinc-400">
-                        {site ? `${site.name} — ${site.address}` : `site_id: ${j.site_id}`}
-                      </div>
-                      <div className="text-sm text-zinc-500">
-                        {worker ? `worker: ${worker.full_name || worker.id}` : `worker_id: ${j.worker_id}`}
-                      </div>
-
-                      <div className="mt-2 inline-flex rounded-full border border-amber-300/20 bg-amber-300/5 px-3 py-1 text-xs font-semibold text-amber-200">
-                        {j.status}
+                        <span className="inline-flex rounded-full border border-amber-300/20 bg-amber-300/5 px-3 py-1 text-xs font-semibold text-amber-200">
+                          радиус {s.radius ?? 0}м
+                        </span>
                       </div>
                     </div>
-                  )
-                })}
-                {filteredJobs.length === 0 ? <div className="text-zinc-400">Пока пусто</div> : null}
+                  ))
+                )}
+              </div>
+
+              <div className="mt-4 text-xs text-zinc-600">
+                START у работника разрешён только если у объекта есть lat/lng + GPS ≤ 80м + дистанция ≤ радиус.
               </div>
             </div>
-          </div>
-        ) : null}
-
-        {tab === 'reports' ? (
-          <div className="mt-6 rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-6 text-zinc-400">
-            Reports — в разработке
-          </div>
-        ) : null}
-
-        {tab === 'schedule' ? (
-          <div className="mt-6 rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-6 text-zinc-400">
-            Schedule — в разработке
           </div>
         ) : null}
       </div>
