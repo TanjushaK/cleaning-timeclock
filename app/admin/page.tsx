@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 
 type Role = 'admin' | 'worker'
 
@@ -20,6 +21,8 @@ type SiteRow = {
   lng: number | null
   radius: number | null
 }
+
+type Tab = 'workers' | 'sites' | 'jobs' | 'schedule' | 'reports' | 'settings'
 
 function cls(...a: Array<string | false | null | undefined>) {
   return a.filter(Boolean).join(' ')
@@ -44,8 +47,25 @@ function osmOpen(lat: number, lng: number) {
   return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=18/${lat}/${lng}`
 }
 
+function safeTab(v: string | null): Tab | null {
+  if (!v) return null
+  const t = v.toLowerCase()
+  if (t === 'workers') return 'workers'
+  if (t === 'sites') return 'sites'
+  if (t === 'objects') return 'sites'
+  if (t === 'jobs') return 'jobs'
+  if (t === 'schedule') return 'schedule'
+  if (t === 'reports') return 'reports'
+  if (t === 'settings') return 'settings'
+  return null
+}
+
 export default function AdminPage() {
-  const [tab, setTab] = useState<'workers' | 'sites'>('workers')
+  const router = useRouter()
+  const pathname = usePathname()
+  const sp = useSearchParams()
+
+  const [tab, setTab] = useState<Tab>('workers')
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
@@ -71,6 +91,13 @@ export default function AdminPage() {
   function popToast(m: string) {
     setToast(m)
     setTimeout(() => setToast(null), 1600)
+  }
+
+  function setTabAndUrl(next: Tab) {
+    setTab(next)
+    const params = new URLSearchParams(sp ? sp.toString() : '')
+    params.set('tab', next)
+    router.replace(`${pathname}?${params.toString()}`)
   }
 
   async function api<T = any>(url: string, opts?: RequestInit): Promise<T> {
@@ -113,6 +140,13 @@ export default function AdminPage() {
   }
 
   useEffect(() => {
+    const fromUrl = safeTab(sp?.get('tab') || null)
+    if (fromUrl) setTab(fromUrl)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    // На старте подтягиваем списки — они нужны для workers/sites, остальные вкладки пока заглушки.
     loadWorkers()
     loadSites()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -176,12 +210,7 @@ export default function AdminPage() {
       if (!address) throw new Error('address_required')
       if (!Number.isFinite(radius) || radius <= 0) throw new Error('radius_invalid')
 
-      const payload: any = {
-        name,
-        address,
-        radius,
-      }
-
+      const payload: any = { name, address, radius }
       if (geoPreview) {
         payload.lat = geoPreview.lat
         payload.lng = geoPreview.lng
@@ -286,9 +315,10 @@ export default function AdminPage() {
           </div>
         ) : null}
 
+        {/* Corporate tabs */}
         <div className="mt-6 flex flex-wrap gap-2">
           <button
-            onClick={() => setTab('workers')}
+            onClick={() => setTabAndUrl('workers')}
             className={cls(
               'rounded-2xl border px-4 py-2 text-sm font-semibold transition',
               tab === 'workers'
@@ -298,8 +328,9 @@ export default function AdminPage() {
           >
             Workers
           </button>
+
           <button
-            onClick={() => setTab('sites')}
+            onClick={() => setTabAndUrl('sites')}
             className={cls(
               'rounded-2xl border px-4 py-2 text-sm font-semibold transition',
               tab === 'sites'
@@ -309,8 +340,57 @@ export default function AdminPage() {
           >
             Objects
           </button>
+
+          <button
+            onClick={() => setTabAndUrl('jobs')}
+            className={cls(
+              'rounded-2xl border px-4 py-2 text-sm font-semibold transition',
+              tab === 'jobs'
+                ? 'border-amber-300/30 bg-amber-300/10 text-amber-200'
+                : 'border-zinc-800/80 bg-black/20 text-zinc-300 hover:bg-black/30'
+            )}
+          >
+            Jobs
+          </button>
+
+          <button
+            onClick={() => setTabAndUrl('schedule')}
+            className={cls(
+              'rounded-2xl border px-4 py-2 text-sm font-semibold transition',
+              tab === 'schedule'
+                ? 'border-amber-300/30 bg-amber-300/10 text-amber-200'
+                : 'border-zinc-800/80 bg-black/20 text-zinc-300 hover:bg-black/30'
+            )}
+          >
+            Schedule
+          </button>
+
+          <button
+            onClick={() => setTabAndUrl('reports')}
+            className={cls(
+              'rounded-2xl border px-4 py-2 text-sm font-semibold transition',
+              tab === 'reports'
+                ? 'border-amber-300/30 bg-amber-300/10 text-amber-200'
+                : 'border-zinc-800/80 bg-black/20 text-zinc-300 hover:bg-black/30'
+            )}
+          >
+            Reports
+          </button>
+
+          <button
+            onClick={() => setTabAndUrl('settings')}
+            className={cls(
+              'rounded-2xl border px-4 py-2 text-sm font-semibold transition',
+              tab === 'settings'
+                ? 'border-amber-300/30 bg-amber-300/10 text-amber-200'
+                : 'border-zinc-800/80 bg-black/20 text-zinc-300 hover:bg-black/30'
+            )}
+          >
+            Settings
+          </button>
         </div>
 
+        {/* WORKERS */}
         {tab === 'workers' ? (
           <div className="mt-6 grid gap-6 lg:grid-cols-2">
             <div className="rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-8">
@@ -393,12 +473,13 @@ export default function AdminPage() {
           </div>
         ) : null}
 
+        {/* SITES */}
         {tab === 'sites' ? (
           <div className="mt-6 grid gap-6 lg:grid-cols-2">
             <div className="rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-8">
               <div className="text-xl font-semibold text-amber-200">Создать объект</div>
               <div className="mt-2 text-sm text-zinc-500">
-                Сначала введи адрес → “Проверить адрес” → увидишь, куда попал геокодер → потом “Создать”.
+                Введи адрес → “Проверить адрес” → увидишь, куда попал геокодер → потом “Создать”.
               </div>
 
               <div className="mt-6 space-y-3">
@@ -439,7 +520,7 @@ export default function AdminPage() {
                     </div>
 
                     <div className="mt-4 overflow-hidden rounded-2xl border border-zinc-800/80 bg-black/20">
-                      <div className="h-[80px] w-full">
+                      <div className="h-20 w-full">
                         <iframe
                           title="map"
                           src={osmEmbed(geoPreview.lat, geoPreview.lng)}
@@ -514,7 +595,66 @@ export default function AdminPage() {
               </div>
 
               <div className="mt-4 text-xs text-zinc-600">
-                START у работника разрешён только если у объекта есть lat/lng + GPS ≤ 80м + дистанция ≤ радиус.
+                START у работника: lat/lng обязателен + GPS ≤ 80м + дистанция ≤ радиус.
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {/* JOBS */}
+        {tab === 'jobs' ? (
+          <div className="mt-6 rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-8">
+            <div className="text-xl font-semibold text-amber-200">Jobs</div>
+            <div className="mt-2 text-sm text-zinc-500">
+              Экран в разработке. API уже есть: <span className="text-zinc-300">/api/admin/jobs</span>
+            </div>
+            <div className="mt-6 rounded-2xl border border-zinc-800/80 bg-black/20 p-4 text-sm text-zinc-300">
+              Следующий шаг: список задач + создание задачи + назначение worker + статус planned/in_progress/done.
+            </div>
+          </div>
+        ) : null}
+
+        {/* SCHEDULE */}
+        {tab === 'schedule' ? (
+          <div className="mt-6 rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-8">
+            <div className="text-xl font-semibold text-amber-200">Schedule</div>
+            <div className="mt-2 text-sm text-zinc-500">
+              Экран в разработке. API уже есть: <span className="text-zinc-300">/api/admin/schedule</span>
+            </div>
+          </div>
+        ) : null}
+
+        {/* REPORTS */}
+        {tab === 'reports' ? (
+          <div className="mt-6 rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-8">
+            <div className="text-xl font-semibold text-amber-200">Reports</div>
+            <div className="mt-2 text-sm text-zinc-500">
+              Экран в разработке. API уже есть: <span className="text-zinc-300">/api/admin/reports</span>
+            </div>
+          </div>
+        ) : null}
+
+        {/* SETTINGS */}
+        {tab === 'settings' ? (
+          <div className="mt-6 rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-8">
+            <div className="text-xl font-semibold text-amber-200">Settings</div>
+            <div className="mt-2 text-sm text-zinc-500">
+              Тут будет “корпоративка”: управление админами, политика логинов, интеграции (Twilio), и т.д.
+            </div>
+
+            <div className="mt-6 grid gap-3 md:grid-cols-2">
+              <div className="rounded-2xl border border-zinc-800/80 bg-black/20 p-4">
+                <div className="font-semibold text-zinc-200">Админы</div>
+                <div className="mt-1 text-sm text-zinc-500">
+                  Сейчас кнопка “Сделать админом” находится во вкладке Workers.
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-zinc-800/80 bg-black/20 p-4">
+                <div className="font-semibold text-zinc-200">Геокодер</div>
+                <div className="mt-1 text-sm text-zinc-500">
+                  Используется /api/geocode + NOMINATIM_USER_AGENT на Vercel.
+                </div>
               </div>
             </div>
           </div>
