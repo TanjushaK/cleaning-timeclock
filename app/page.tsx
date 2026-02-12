@@ -39,6 +39,10 @@ type TimeLog = {
   stop_accuracy: number | null
 }
 
+type StartEligibility =
+  | { ok: true; dist: number; radius: number }
+  | { ok: false; reason: string }
+
 function pad2(n: number) {
   return n < 10 ? `0${n}` : `${n}`
 }
@@ -164,7 +168,9 @@ export default function HomePage() {
 
       const { data: logsData, error: logsErr } = await supabase
         .from('time_logs')
-        .select('id, job_id, worker_id, start_at, stop_at, start_lat, start_lng, start_accuracy, stop_lat, stop_lng, stop_accuracy')
+        .select(
+          'id, job_id, worker_id, start_at, stop_at, start_lat, start_lng, start_accuracy, stop_lat, stop_lng, stop_accuracy'
+        )
         .eq('worker_id', uid)
         .is('stop_at', null)
 
@@ -247,6 +253,21 @@ export default function HomePage() {
     )
   }
 
+  function startEligibility(job: Job): StartEligibility {
+    const site = job.sites || null
+    if (!site) return { ok: false, reason: 'Нет объекта (site)' }
+    if (site.lat == null || site.lng == null) return { ok: false, reason: 'Запрещено: нет lat/lng' }
+    if (!gps.ok || gps.lat == null || gps.lng == null || gps.accuracy == null) return { ok: false, reason: 'Нет GPS' }
+    if (gps.accuracy > 80) return { ok: false, reason: `GPS accuracy > 80м (${Math.round(gps.accuracy)}м)` }
+
+    const dist = haversineMeters(gps.lat, gps.lng, site.lat, site.lng)
+    const radius = site.radius ?? 0
+    if (radius <= 0) return { ok: false, reason: 'Радиус не задан' }
+    if (dist > radius) return { ok: false, reason: `Ты вне радиуса (${Math.round(dist)}м > ${radius}м)` }
+
+    return { ok: true, dist, radius }
+  }
+
   useEffect(() => {
     refreshSession()
     const sub = supabase.auth.onAuthStateChange(() => refreshSession())
@@ -298,19 +319,6 @@ export default function HomePage() {
     } finally {
       setBusy(false)
     }
-  }
-
-  function startEligibility(job: Job) {
-    const site = job.sites || null
-    if (!site) return { ok: false, reason: 'Нет объекта (site)' }
-    if (site.lat == null || site.lng == null) return { ok: false, reason: 'Запрещено: нет lat/lng' }
-    if (!gps.ok || gps.lat == null || gps.lng == null || gps.accuracy == null) return { ok: false, reason: 'Нет GPS' }
-    if (gps.accuracy > 80) return { ok: false, reason: `GPS accuracy > 80м (${Math.round(gps.accuracy)}м)` }
-    const dist = haversineMeters(gps.lat, gps.lng, site.lat, site.lng)
-    const radius = site.radius ?? 0
-    if (radius <= 0) return { ok: false, reason: 'Радиус не задан' }
-    if (dist > radius) return { ok: false, reason: `Ты вне радиуса (${Math.round(dist)}м > ${radius}м)` }
-    return { ok: true, dist, radius }
   }
 
   async function onStart(job: Job) {
@@ -400,7 +408,11 @@ export default function HomePage() {
   const gpsBadge = useMemo(() => {
     if (!gps.updatedAt) return { text: 'GPS: —', tone: 'zinc' as const }
     if (!gps.ok) return { text: `GPS: нет доступа`, tone: 'red' as const }
-    return { text: `GPS: ok • acc ${Math.round(gps.accuracy || 0)}м`, tone: (gps.accuracy || 999) <= 80 ? 'green' : 'amber' as const }
+    const acc = gps.accuracy ?? 999
+    return {
+      text: `GPS: ok • acc ${Math.round(acc)}м`,
+      tone: acc <= 80 ? ('green' as const) : ('amber' as const),
+    }
   }, [gps])
 
   return (
@@ -583,9 +595,7 @@ export default function HomePage() {
                           </div>
 
                           {active ? (
-                            <div className="mt-2 text-sm text-zinc-400">
-                              START: {formatDT(activeLogs[j.id].start_at)}
-                            </div>
+                            <div className="mt-2 text-sm text-zinc-400">START: {formatDT(activeLogs[j.id].start_at)}</div>
                           ) : null}
 
                           {j.status === 'planned' && eligibility && !eligibility.ok ? (
