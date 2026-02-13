@@ -65,7 +65,7 @@ function fmtD(v?: string | null) {
 async function authFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const { data } = await supabase.auth.getSession()
   const token = data?.session?.access_token
-  if (!token) throw new Error('Нет токена (Authorization: Bearer …)')
+  if (!token) throw new Error('Нет входа. Авторизуйся в админке.')
 
   const res = await fetch(url, {
     ...init,
@@ -86,6 +86,12 @@ async function authFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 
 export default function AdminPage() {
   const [tab, setTab] = useState<TabKey>('sites')
+
+  const [sessionLoading, setSessionLoading] = useState(true)
+  const [sessionToken, setSessionToken] = useState<string | null>(null)
+
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -140,10 +146,7 @@ export default function AdminPage() {
   const jobsInProgress = useMemo(() => jobs.filter((j) => j.status === 'in_progress'), [jobs])
   const jobsDone = useMemo(() => jobs.filter((j) => j.status === 'done'), [jobs])
 
-  const activeSitesForAssign = useMemo(
-    () => sites.filter((s) => !s.archived_at),
-    [sites]
-  )
+  const activeSitesForAssign = useMemo(() => sites.filter((s) => !s.archived_at), [sites])
 
   async function refreshAll() {
     setBusy(true)
@@ -168,10 +171,76 @@ export default function AdminPage() {
     }
   }
 
+  async function boot() {
+    setSessionLoading(true)
+    try {
+      const { data } = await supabase.auth.getSession()
+      const token = data?.session?.access_token ?? null
+      setSessionToken(token)
+      if (token) await refreshAll()
+    } finally {
+      setSessionLoading(false)
+    }
+  }
+
   useEffect(() => {
-    void refreshAll()
+    void boot()
+
+    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
+      const token = newSession?.access_token ?? null
+      setSessionToken(token)
+      setError(null)
+
+      if (token) {
+        await refreshAll()
+      } else {
+        setSites([])
+        setWorkers([])
+        setAssignments([])
+        setJobs([])
+      }
+    })
+
+    return () => sub?.subscription?.unsubscribe()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    if (sessionToken) void refreshAll()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showArchivedSites])
+
+  async function onLogin(e: React.FormEvent) {
+    e.preventDefault()
+    setBusy(true)
+    setError(null)
+    try {
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
+      if (signInError) {
+        setError(signInError.message || 'Ошибка входа')
+        return
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Ошибка входа')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function onLogout() {
+    setBusy(true)
+    setError(null)
+    try {
+      await supabase.auth.signOut()
+      setSessionToken(null)
+      setSites([])
+      setWorkers([])
+      setAssignments([])
+      setJobs([])
+    } finally {
+      setBusy(false)
+    }
+  }
 
   async function quickAssign() {
     if (!qaSite || !qaWorker) return
@@ -228,28 +297,6 @@ export default function AdminPage() {
     }
   }
 
-  async function deleteSiteHard(siteId: string) {
-    const ok1 = window.confirm('Удалить объект НАВСЕГДА? Рекомендуется только для тестовых данных.')
-    if (!ok1) return
-    const ok2 = window.confirm('Последний шанс: точно удалить? Если есть jobs — сервер запретит.')
-    if (!ok2) return
-
-    setBusy(true)
-    setError(null)
-    try {
-      await authFetchJson('/api/admin/sites/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ site_id: siteId }),
-      })
-      await refreshAll()
-    } catch (e: any) {
-      setError(e?.message || 'Удаление не выполнено')
-    } finally {
-      setBusy(false)
-    }
-  }
-
   async function setWorkerActive(workerId: string, active: boolean) {
     const ok = window.confirm(active ? 'Включить работника обратно?' : 'Отключить работника? (рекомендовано вместо удаления)')
     if (!ok) return
@@ -291,6 +338,83 @@ export default function AdminPage() {
     }
   }
 
+  if (sessionLoading) {
+    return (
+      <main className="min-h-screen bg-gradient-to-b from-zinc-950 via-black to-zinc-950 text-zinc-100">
+        <div className="mx-auto max-w-5xl px-4 py-10">
+          <div className="rounded-3xl border border-yellow-400/20 bg-zinc-950/50 p-6 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur">
+            <div className="text-sm text-zinc-300">Проверяю вход…</div>
+          </div>
+        </div>
+      </main>
+    )
+  }
+
+  if (!sessionToken) {
+    return (
+      <main className="min-h-screen bg-gradient-to-b from-zinc-950 via-black to-zinc-950 text-zinc-100">
+        <div className="mx-auto max-w-5xl px-4 py-10">
+          <div className="mb-8 flex items-center gap-3">
+            <div className="relative h-12 w-12 overflow-hidden rounded-2xl border border-yellow-400/30 bg-black/40 shadow-[0_0_0_1px_rgba(255,215,0,0.12)]">
+              <Image src="/tanija-logo.png" alt="Tanija" fill className="object-contain p-2" priority />
+            </div>
+            <div>
+              <div className="text-lg font-semibold tracking-wide">Админ-панель</div>
+              <div className="text-xs text-yellow-200/70">Tanija • объекты • работники • смены</div>
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-yellow-400/20 bg-zinc-950/50 p-6 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur">
+            <h1 className="text-xl font-semibold text-yellow-100">Вход в админку</h1>
+            <p className="mt-2 text-sm text-zinc-300">Вводишь email/пароль — и попадаешь в панель.</p>
+
+            {error ? (
+              <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-950/30 px-4 py-3 text-sm text-red-100">
+                {error}
+              </div>
+            ) : null}
+
+            <form onSubmit={onLogin} className="mt-5 grid gap-3">
+              <label className="grid gap-1">
+                <span className="text-xs text-zinc-300">Email</span>
+                <input
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  type="email"
+                  autoComplete="email"
+                  className="rounded-2xl border border-yellow-400/20 bg-black/40 px-4 py-3 text-sm outline-none transition focus:border-yellow-300/60"
+                  placeholder="you@domain.com"
+                  required
+                />
+              </label>
+
+              <label className="grid gap-1">
+                <span className="text-xs text-zinc-300">Пароль</span>
+                <input
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  type="password"
+                  autoComplete="current-password"
+                  className="rounded-2xl border border-yellow-400/20 bg-black/40 px-4 py-3 text-sm outline-none transition focus:border-yellow-300/60"
+                  placeholder="••••••••"
+                  required
+                />
+              </label>
+
+              <button
+                type="submit"
+                disabled={busy}
+                className="mt-2 rounded-2xl border border-yellow-300/40 bg-gradient-to-r from-yellow-500/10 via-yellow-400/10 to-yellow-300/10 px-4 py-3 text-sm font-semibold text-yellow-100 shadow-[0_0_0_1px_rgba(255,215,0,0.18)] transition hover:border-yellow-200/70 hover:bg-yellow-400/10 disabled:opacity-60"
+              >
+                {busy ? 'Вхожу…' : 'Войти'}
+              </button>
+            </form>
+          </div>
+        </div>
+      </main>
+    )
+  }
+
   return (
     <main className="min-h-screen bg-gradient-to-b from-zinc-950 via-black to-zinc-950 text-zinc-100">
       <div className="mx-auto max-w-6xl px-4 py-8">
@@ -300,8 +424,8 @@ export default function AdminPage() {
               <Image src="/tanija-logo.png" alt="Tanija" fill className="object-contain p-2" priority />
             </div>
             <div>
-              <div className="text-lg font-semibold tracking-wide">Admin Panel</div>
-              <div className="text-xs text-yellow-200/70">Tanija • sites • workers • jobs</div>
+              <div className="text-lg font-semibold tracking-wide">Админ-панель</div>
+              <div className="text-xs text-yellow-200/70">Tanija • объекты • работники • смены</div>
             </div>
           </div>
 
@@ -312,6 +436,14 @@ export default function AdminPage() {
               className="rounded-xl border border-yellow-400/40 bg-black/40 px-4 py-2 text-sm text-yellow-100 transition hover:border-yellow-300/70 hover:bg-black/60 disabled:opacity-60"
             >
               {busy ? 'Обновляю…' : 'Обновить данные'}
+            </button>
+
+            <button
+              onClick={onLogout}
+              disabled={busy}
+              className="rounded-xl border border-yellow-400/25 bg-black/30 px-4 py-2 text-sm text-yellow-100/90 transition hover:border-yellow-300/60 hover:bg-black/50 disabled:opacity-60"
+            >
+              Выйти
             </button>
           </div>
         </div>
@@ -330,7 +462,7 @@ export default function AdminPage() {
                       : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40',
                   ].join(' ')}
                 >
-                  {k === 'sites' ? 'Объекты' : k === 'workers' ? 'Работники' : 'Смены (Kanban)'}
+                  {k === 'sites' ? 'Объекты' : k === 'workers' ? 'Работники' : 'Смены (доска)'}
                 </button>
               ))}
             </div>
@@ -349,7 +481,7 @@ export default function AdminPage() {
               ) : null}
 
               <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-[11px] text-zinc-200">
-                Sites: {sites.length} • Workers: {workers.length} • Jobs: {jobs.length}
+                Объекты: {sites.length} • Работники: {workers.length} • Смены: {jobs.length}
               </div>
             </div>
           </div>
@@ -365,7 +497,7 @@ export default function AdminPage() {
               <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
                 <div className="flex flex-wrap items-end justify-between gap-3">
                   <div>
-                    <div className="text-sm font-semibold text-yellow-100">QuickAssign</div>
+                    <div className="text-sm font-semibold text-yellow-100">Быстрое назначение</div>
                     <div className="mt-1 text-xs text-zinc-300">Только активные объекты (архивные не назначаем).</div>
                   </div>
 
@@ -393,7 +525,7 @@ export default function AdminPage() {
                         .filter((w) => (w.role || 'worker') !== 'admin')
                         .map((w) => (
                           <option key={w.id} value={w.id}>
-                            {(w.full_name || 'Worker') + (w.active === false ? ' (off)' : '')}
+                            {(w.full_name || 'Работник') + (w.active === false ? ' (отключён)' : '')}
                           </option>
                         ))}
                     </select>
@@ -425,11 +557,11 @@ export default function AdminPage() {
                           {s.name || 'Объект'}{' '}
                           {archived ? (
                             <span className="ml-2 rounded-xl border border-red-400/20 bg-red-500/10 px-2 py-1 text-[11px] text-red-100">
-                              archived
+                              архив
                             </span>
                           ) : (
                             <span className="ml-2 rounded-xl border border-yellow-400/15 bg-black/30 px-2 py-1 text-[11px] text-zinc-200">
-                              active
+                              активен
                             </span>
                           )}
                         </div>
@@ -439,7 +571,7 @@ export default function AdminPage() {
                           <span className={gpsOk ? 'text-zinc-100' : 'text-red-200'}>
                             {gpsOk ? `${s.lat}, ${s.lng}` : 'нет lat/lng'}
                           </span>{' '}
-                          • radius: <span className="text-zinc-100">{s.radius ?? '—'}</span>
+                          • радиус: <span className="text-zinc-100">{s.radius ?? '—'}</span>
                         </div>
 
                         {archived && s.archived_at ? (
@@ -458,7 +590,7 @@ export default function AdminPage() {
                                 key={w.id}
                                 className="flex items-center gap-2 rounded-2xl border border-yellow-400/10 bg-black/35 px-3 py-2 text-xs"
                               >
-                                <span className="text-zinc-100">{w.full_name || 'Worker'}</span>
+                                <span className="text-zinc-100">{w.full_name || 'Работник'}</span>
                                 <button
                                   onClick={() => unassign(s.id, w.id)}
                                   disabled={busy}
@@ -482,23 +614,13 @@ export default function AdminPage() {
                             В архив
                           </button>
                         ) : (
-                          <>
-                            <button
-                              onClick={() => setSiteArchived(s.id, false)}
-                              disabled={busy}
-                              className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
-                            >
-                              Вернуть
-                            </button>
-
-                            <button
-                              onClick={() => deleteSiteHard(s.id)}
-                              disabled={busy}
-                              className="rounded-2xl border border-red-400/25 bg-red-500/10 px-4 py-2 text-xs font-semibold text-red-100 transition hover:border-red-300/50 disabled:opacity-60"
-                            >
-                              Удалить навсегда
-                            </button>
-                          </>
+                          <button
+                            onClick={() => setSiteArchived(s.id, false)}
+                            disabled={busy}
+                            className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
+                          >
+                            Вернуть
+                          </button>
                         )}
                       </div>
                     </div>
@@ -524,16 +646,16 @@ export default function AdminPage() {
                           {w.full_name || 'Без имени'}{' '}
                           {isAdmin ? (
                             <span className="ml-2 rounded-xl border border-yellow-400/30 bg-yellow-400/10 px-2 py-1 text-[11px] text-yellow-100">
-                              admin
+                              админ
                             </span>
                           ) : (
                             <span className="ml-2 rounded-xl border border-yellow-400/15 bg-black/30 px-2 py-1 text-[11px] text-zinc-200">
-                              worker
+                              работник
                             </span>
                           )}
                           {w.active === false ? (
                             <span className="ml-2 rounded-xl border border-red-400/20 bg-red-500/10 px-2 py-1 text-[11px] text-red-100">
-                              disabled
+                              отключён
                             </span>
                           ) : null}
                         </div>
@@ -590,9 +712,9 @@ export default function AdminPage() {
           {tab === 'jobs' ? (
             <div className="mt-6 grid gap-4 lg:grid-cols-3">
               {[
-                { key: 'planned', title: 'Planned', list: jobsPlanned },
-                { key: 'in_progress', title: 'In progress', list: jobsInProgress },
-                { key: 'done', title: 'Done', list: jobsDone },
+                { key: 'planned', title: 'Запланировано', list: jobsPlanned },
+                { key: 'in_progress', title: 'В процессе', list: jobsInProgress },
+                { key: 'done', title: 'Завершено', list: jobsDone },
               ].map((col) => (
                 <div key={col.key} className="rounded-3xl border border-yellow-400/15 bg-black/20 p-4">
                   <div className="mb-3 flex items-center justify-between">
@@ -613,10 +735,7 @@ export default function AdminPage() {
                             : '—'
 
                       return (
-                        <div
-                          key={j.id}
-                          className="rounded-2xl border border-yellow-400/10 bg-black/35 p-3 text-sm"
-                        >
+                        <div key={j.id} className="rounded-2xl border border-yellow-400/10 bg-black/35 p-3 text-sm">
                           <div className="text-sm font-semibold text-zinc-100">{siteName}</div>
                           <div className="mt-1 text-[11px] text-zinc-300">{when}</div>
                         </div>
@@ -635,7 +754,7 @@ export default function AdminPage() {
         </div>
 
         <div className="mt-6 text-center text-xs text-zinc-500">
-          Архив ≠ удаление. Архивируем — и живём спокойно (а отчёты не плачут).
+          Архив ≠ удаление. Архивируем — и отчёты не страдают.
         </div>
       </div>
     </main>
