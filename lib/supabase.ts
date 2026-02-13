@@ -22,3 +22,6 @@ export function getSupabaseBrowser(): SupabaseClient {
 
   return browserClient;
 }
+
+// backward-compat: старый импорт { supabase } (forgot/reset pages)
+export const supabase: SupabaseClient = getSupabaseBrowser();
