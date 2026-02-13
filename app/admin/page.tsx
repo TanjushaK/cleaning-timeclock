@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 
 type TabKey = 'sites' | 'workers' | 'jobs'
+type JobsView = 'board' | 'table'
 
 type Site = {
   id: string
@@ -27,6 +28,21 @@ type Assignment = {
   worker_id: string
 }
 
+type JobStatus = 'planned' | 'in_progress' | 'done'
+
+type ScheduleItem = {
+  id: string
+  status: JobStatus
+  job_date: string | null
+  scheduled_time: string | null
+  site_id: string | null
+  site_name: string | null
+  worker_id: string | null
+  worker_name: string | null
+  started_at: string | null
+  stopped_at: string | null
+}
+
 function pad2(n: number) {
   return String(n).padStart(2, '0')
 }
@@ -36,6 +52,45 @@ function fmtDT(v?: string | null) {
   const d = new Date(v)
   if (Number.isNaN(d.getTime())) return '—'
   return `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}-${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+}
+
+function fmtD(v?: string | null) {
+  if (!v) return '—'
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v)
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`
+  const d = new Date(v)
+  if (Number.isNaN(d.getTime())) return '—'
+  return `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}-${d.getFullYear()}`
+}
+
+function toISODate(d: Date) {
+  const y = d.getFullYear()
+  const m = pad2(d.getMonth() + 1)
+  const day = pad2(d.getDate())
+  return `${y}-${m}-${day}`
+}
+
+function startOfWeek(d: Date) {
+  const x = new Date(d)
+  const day = x.getDay() // 0..6
+  const diff = (day === 0 ? -6 : 1) - day // Monday
+  x.setDate(x.getDate() + diff)
+  return new Date(x.getFullYear(), x.getMonth(), x.getDate())
+}
+
+function endOfWeek(d: Date) {
+  const s = startOfWeek(d)
+  const e = new Date(s)
+  e.setDate(e.getDate() + 6)
+  return e
+}
+
+function startOfMonth(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth(), 1)
+}
+
+function endOfMonth(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0)
 }
 
 async function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
@@ -69,6 +124,7 @@ async function authFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 
 export default function AdminPage() {
   const [tab, setTab] = useState<TabKey>('sites')
+  const [jobsView, setJobsView] = useState<JobsView>('board')
 
   const [sessionLoading, setSessionLoading] = useState(true)
   const [sessionToken, setSessionToken] = useState<string | null>(null)
@@ -85,10 +141,22 @@ export default function AdminPage() {
   const [workers, setWorkers] = useState<Worker[]>([])
   const [assignments, setAssignments] = useState<Assignment[]>([])
 
+  const [schedule, setSchedule] = useState<ScheduleItem[]>([])
+  const [dateFrom, setDateFrom] = useState<string>(toISODate(startOfWeek(new Date())))
+  const [dateTo, setDateTo] = useState<string>(toISODate(endOfWeek(new Date())))
+
+  const [filterSite, setFilterSite] = useState<string>('')
+  const [filterWorker, setFilterWorker] = useState<string>('')
+
   const [qaSite, setQaSite] = useState<string>('')
   const [qaWorker, setQaWorker] = useState<string>('')
 
   const [workerPickSite, setWorkerPickSite] = useState<Record<string, string>>({})
+
+  const [newSiteId, setNewSiteId] = useState<string>('')
+  const [newWorkers, setNewWorkers] = useState<string[]>([])
+  const [newDate, setNewDate] = useState<string>(toISODate(new Date()))
+  const [newTime, setNewTime] = useState<string>('09:00')
 
   const sitesById = useMemo(() => {
     const m = new Map<string, Site>()
@@ -128,19 +196,53 @@ export default function AdminPage() {
 
   const activeSites = useMemo(() => sites.filter((s) => !s.archived_at), [sites])
 
+  const workersForSelect = useMemo(() => {
+    return workers
+      .filter((w) => (w.role || 'worker') !== 'admin')
+      .filter((w) => w.active !== false)
+      .sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''))
+  }, [workers])
+
+  const scheduleFiltered = useMemo(() => {
+    return schedule.filter((x) => {
+      if (filterSite && x.site_id !== filterSite) return false
+      if (filterWorker && x.worker_id !== filterWorker) return false
+      return true
+    })
+  }, [schedule, filterSite, filterWorker])
+
+  const planned = useMemo(() => scheduleFiltered.filter((x) => x.status === 'planned'), [scheduleFiltered])
+  const inProgress = useMemo(() => scheduleFiltered.filter((x) => x.status === 'in_progress'), [scheduleFiltered])
+  const done = useMemo(() => scheduleFiltered.filter((x) => x.status === 'done'), [scheduleFiltered])
+
+  async function refreshCore() {
+    const sitesUrl = showArchivedSites ? '/api/admin/sites/list?include_archived=1' : '/api/admin/sites/list'
+    const [s, w, a] = await Promise.all([
+      authFetchJson<{ sites: Site[] }>(sitesUrl),
+      authFetchJson<{ workers: Worker[] }>('/api/admin/workers/list'),
+      authFetchJson<{ assignments: Assignment[] }>('/api/admin/assignments'),
+    ])
+    setSites(Array.isArray(s?.sites) ? s.sites : [])
+    setWorkers(Array.isArray(w?.workers) ? w.workers : [])
+    setAssignments(Array.isArray(a?.assignments) ? a.assignments : [])
+  }
+
+  async function refreshSchedule() {
+    const url =
+      `/api/admin/schedule?date_from=${encodeURIComponent(dateFrom)}` +
+      `&date_to=${encodeURIComponent(dateTo)}` +
+      (filterSite ? `&site_id=${encodeURIComponent(filterSite)}` : '') +
+      (filterWorker ? `&worker_id=${encodeURIComponent(filterWorker)}` : '')
+    const sch = await authFetchJson<{ items: ScheduleItem[] }>(url)
+    setSchedule(Array.isArray(sch?.items) ? sch.items : [])
+  }
+
   async function refreshAll() {
     setBusy(true)
     setError(null)
     try {
-      const sitesUrl = showArchivedSites ? '/api/admin/sites/list?include_archived=1' : '/api/admin/sites/list'
-      const [s, w, a] = await Promise.all([
-        authFetchJson<{ sites: Site[] }>(sitesUrl),
-        authFetchJson<{ workers: Worker[] }>('/api/admin/workers/list'),
-        authFetchJson<{ assignments: Assignment[] }>('/api/admin/assignments'),
-      ])
-      setSites(Array.isArray(s?.sites) ? s.sites : [])
-      setWorkers(Array.isArray(w?.workers) ? w.workers : [])
-      setAssignments(Array.isArray(a?.assignments) ? a.assignments : [])
+      await refreshCore()
+      await refreshSchedule()
     } catch (e: any) {
       setError(e?.message || 'Ошибка загрузки')
     } finally {
@@ -173,6 +275,7 @@ export default function AdminPage() {
         setSites([])
         setWorkers([])
         setAssignments([])
+        setSchedule([])
       }
     })
 
@@ -184,6 +287,16 @@ export default function AdminPage() {
     if (sessionToken) void refreshAll()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showArchivedSites])
+
+  useEffect(() => {
+    if (sessionToken) void refreshSchedule()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateFrom, dateTo])
+
+  useEffect(() => {
+    if (sessionToken) void refreshSchedule()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterSite, filterWorker])
 
   async function onLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -208,6 +321,7 @@ export default function AdminPage() {
       setSites([])
       setWorkers([])
       setAssignments([])
+      setSchedule([])
     } finally {
       setBusy(false)
     }
@@ -222,7 +336,7 @@ export default function AdminPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'assign', site_id: siteId, worker_id: workerId }),
       })
-      await refreshAll()
+      await refreshCore()
     } catch (e: any) {
       setError(e?.message || 'Ошибка назначения')
     } finally {
@@ -239,7 +353,7 @@ export default function AdminPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'unassign', site_id: siteId, worker_id: workerId }),
       })
-      await refreshAll()
+      await refreshCore()
     } catch (e: any) {
       setError(e?.message || 'Ошибка снятия назначения')
     } finally {
@@ -250,6 +364,52 @@ export default function AdminPage() {
   async function quickAssign() {
     if (!qaSite || !qaWorker) return
     await assign(qaSite, qaWorker)
+  }
+
+  function setRangeToday() {
+    const t = new Date()
+    const d = toISODate(t)
+    setDateFrom(d)
+    setDateTo(d)
+  }
+
+  function setRangeWeek() {
+    const t = new Date()
+    setDateFrom(toISODate(startOfWeek(t)))
+    setDateTo(toISODate(endOfWeek(t)))
+  }
+
+  function setRangeMonth() {
+    const t = new Date()
+    setDateFrom(toISODate(startOfMonth(t)))
+    setDateTo(toISODate(endOfMonth(t)))
+  }
+
+  async function createJobs() {
+    if (!newSiteId || newWorkers.length === 0 || !newDate || !newTime) return
+    setBusy(true)
+    setError(null)
+    try {
+      await authFetchJson('/api/admin/jobs/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          site_id: newSiteId,
+          worker_ids: newWorkers,
+          job_date: newDate,
+          scheduled_time: newTime,
+        }),
+      })
+
+      setNewWorkers([])
+      setTab('jobs')
+      setJobsView('table')
+      await refreshAll()
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось создать смену')
+    } finally {
+      setBusy(false)
+    }
   }
 
   if (sessionLoading) {
@@ -394,7 +554,7 @@ export default function AdminPage() {
               ) : null}
 
               <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-[11px] text-zinc-200">
-                Объекты: {sites.length} • Работники: {workers.length} • Назначения: {assignments.length}
+                Объекты: {sites.length} • Работники: {workers.length} • Смены: {scheduleFiltered.length}
               </div>
             </div>
           </div>
@@ -434,13 +594,11 @@ export default function AdminPage() {
                       className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                     >
                       <option value="">Работник…</option>
-                      {workers
-                        .filter((w) => (w.role || 'worker') !== 'admin')
-                        .map((w) => (
-                          <option key={w.id} value={w.id}>
-                            {(w.full_name || 'Работник') + (w.active === false ? ' (отключён)' : '')}
-                          </option>
-                        ))}
+                      {workersForSelect.map((w) => (
+                        <option key={w.id} value={w.id}>
+                          {w.full_name || 'Работник'}
+                        </option>
+                      ))}
                     </select>
 
                     <button
@@ -506,7 +664,7 @@ export default function AdminPage() {
                       </div>
 
                       <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-xs text-zinc-300">
-                        Назначение можно делать и тут, и во вкладке “Работники”.
+                        Расписание: вкладка “Смены”
                       </div>
                     </div>
                   </div>
@@ -593,7 +751,7 @@ export default function AdminPage() {
                         </div>
                       ) : (
                         <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-xs text-zinc-300">
-                          Админа не назначаем 🙂
+                          Админа не назначаем
                         </div>
                       )}
                     </div>
@@ -604,8 +762,279 @@ export default function AdminPage() {
           ) : null}
 
           {tab === 'jobs' ? (
-            <div className="mt-6 rounded-3xl border border-yellow-400/15 bg-black/25 p-5 text-sm text-zinc-200">
-              Вкладка “Смены” будет выглядеть профессионально, когда у тебя будут стабильные поля jobs/time_logs. После SQL-блока это уже без сюрпризов.
+            <div className="mt-6 grid gap-4">
+              <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
+                <div className="flex flex-wrap items-end justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-yellow-100">Создать смену</div>
+                    <div className="mt-1 text-xs text-zinc-300">Объект + дата + время + несколько работников.</div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={setRangeToday}
+                      disabled={busy}
+                      className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 transition hover:border-yellow-300/40 disabled:opacity-60"
+                    >
+                      Сегодня
+                    </button>
+                    <button
+                      onClick={setRangeWeek}
+                      disabled={busy}
+                      className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 transition hover:border-yellow-300/40 disabled:opacity-60"
+                    >
+                      Неделя
+                    </button>
+                    <button
+                      onClick={setRangeMonth}
+                      disabled={busy}
+                      className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 transition hover:border-yellow-300/40 disabled:opacity-60"
+                    >
+                      Месяц
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-4">
+                  <label className="grid gap-1">
+                    <span className="text-[11px] text-zinc-300">Объект</span>
+                    <select
+                      value={newSiteId}
+                      onChange={(e) => {
+                        setNewSiteId(e.target.value)
+                        setNewWorkers([])
+                      }}
+                      className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
+                    >
+                      <option value="">Выбери объект…</option>
+                      {activeSites.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name || s.id}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="grid gap-1 md:col-span-2">
+                    <span className="text-[11px] text-zinc-300">Работники (можно несколько)</span>
+                    <select
+                      multiple
+                      value={newWorkers}
+                      onChange={(e) => {
+                        const opts = Array.from(e.target.selectedOptions).map((o) => o.value)
+                        setNewWorkers(opts)
+                      }}
+                      className="h-[52px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
+                    >
+                      {workersForSelect.map((w) => (
+                        <option key={w.id} value={w.id}>
+                          {w.full_name || 'Работник'}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="grid gap-1">
+                      <span className="text-[11px] text-zinc-300">Дата</span>
+                      <input
+                        type="date"
+                        value={newDate}
+                        onChange={(e) => setNewDate(e.target.value)}
+                        className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
+                      />
+                    </label>
+                    <label className="grid gap-1">
+                      <span className="text-[11px] text-zinc-300">Время</span>
+                      <input
+                        type="time"
+                        value={newTime}
+                        onChange={(e) => setNewTime(e.target.value)}
+                        className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setJobsView('board')}
+                      className={[
+                        'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
+                        jobsView === 'board'
+                          ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100'
+                          : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40',
+                      ].join(' ')}
+                    >
+                      Доска
+                    </button>
+                    <button
+                      onClick={() => setJobsView('table')}
+                      className={[
+                        'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
+                        jobsView === 'table'
+                          ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100'
+                          : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40',
+                      ].join(' ')}
+                    >
+                      Расписание
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={createJobs}
+                    disabled={busy || !newSiteId || newWorkers.length === 0 || !newDate || !newTime}
+                    className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
+                  >
+                    Создать смену
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-yellow-400/15 bg-black/20 p-4">
+                <div className="flex flex-wrap items-end justify-between gap-3">
+                  <div className="text-sm font-semibold text-yellow-100">Фильтры</div>
+
+                  <div className="flex flex-wrap items-end gap-2">
+                    <label className="grid gap-1">
+                      <span className="text-[11px] text-zinc-300">С</span>
+                      <input
+                        type="date"
+                        value={dateFrom}
+                        onChange={(e) => setDateFrom(e.target.value)}
+                        className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+                      />
+                    </label>
+
+                    <label className="grid gap-1">
+                      <span className="text-[11px] text-zinc-300">По</span>
+                      <input
+                        type="date"
+                        value={dateTo}
+                        onChange={(e) => setDateTo(e.target.value)}
+                        className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+                      />
+                    </label>
+
+                    <label className="grid gap-1">
+                      <span className="text-[11px] text-zinc-300">Объект</span>
+                      <select
+                        value={filterSite}
+                        onChange={(e) => setFilterSite(e.target.value)}
+                        className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+                      >
+                        <option value="">Все</option>
+                        {activeSites.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name || s.id}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="grid gap-1">
+                      <span className="text-[11px] text-zinc-300">Работник</span>
+                      <select
+                        value={filterWorker}
+                        onChange={(e) => setFilterWorker(e.target.value)}
+                        className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+                      >
+                        <option value="">Все</option>
+                        {workersForSelect.map((w) => (
+                          <option key={w.id} value={w.id}>
+                            {w.full_name || 'Работник'}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {jobsView === 'board' ? (
+                <div className="grid gap-4 lg:grid-cols-3">
+                  {[
+                    { title: 'Запланировано', list: planned },
+                    { title: 'В процессе', list: inProgress },
+                    { title: 'Завершено', list: done },
+                  ].map((col) => (
+                    <div key={col.title} className="rounded-3xl border border-yellow-400/15 bg-black/20 p-4">
+                      <div className="mb-3 flex items-center justify-between">
+                        <div className="text-sm font-semibold text-yellow-100">{col.title}</div>
+                        <div className="rounded-xl border border-yellow-400/10 bg-black/30 px-2 py-1 text-[11px] text-zinc-200">
+                          {col.list.length}
+                        </div>
+                      </div>
+
+                      <div className="grid gap-3">
+                        {col.list.length === 0 ? (
+                          <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-3 text-xs text-zinc-500">—</div>
+                        ) : null}
+
+                        {col.list.map((j) => (
+                          <div key={j.id} className="rounded-2xl border border-yellow-400/10 bg-black/35 p-3 text-sm">
+                            <div className="text-sm font-semibold text-zinc-100">{j.site_name || 'Объект'}</div>
+                            <div className="mt-1 text-[11px] text-zinc-300">
+                              {fmtD(j.job_date)} {j.scheduled_time ? String(j.scheduled_time).slice(0, 5) : ''}
+                            </div>
+                            <div className="mt-1 text-[11px] text-zinc-300">
+                              Работник: <span className="text-zinc-100">{j.worker_name || '—'}</span>
+                            </div>
+                            <div className="mt-1 text-[11px] text-zinc-300">
+                              Начал: <span className="text-zinc-100">{fmtDT(j.started_at)}</span> • Закончил:{' '}
+                              <span className="text-zinc-100">{fmtDT(j.stopped_at)}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-3xl border border-yellow-400/15 bg-black/20 p-4">
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse text-sm">
+                      <thead>
+                        <tr className="text-left text-xs text-zinc-300">
+                          <th className="py-2 pr-3">Дата</th>
+                          <th className="py-2 pr-3">Время</th>
+                          <th className="py-2 pr-3">Объект</th>
+                          <th className="py-2 pr-3">Работник</th>
+                          <th className="py-2 pr-3">Статус</th>
+                          <th className="py-2 pr-3">Начал</th>
+                          <th className="py-2 pr-3">Закончил</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {scheduleFiltered.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="py-4 text-xs text-zinc-500">
+                              Нет смен в выбранном диапазоне.
+                            </td>
+                          </tr>
+                        ) : null}
+
+                        {scheduleFiltered.map((j) => {
+                          const st =
+                            j.status === 'planned' ? 'Запланировано' : j.status === 'in_progress' ? 'В процессе' : 'Завершено'
+                          return (
+                            <tr key={j.id} className="border-t border-yellow-400/10">
+                              <td className="py-3 pr-3 text-zinc-100">{fmtD(j.job_date)}</td>
+                              <td className="py-3 pr-3 text-zinc-100">{j.scheduled_time ? String(j.scheduled_time).slice(0, 5) : '—'}</td>
+                              <td className="py-3 pr-3 text-zinc-100">{j.site_name || '—'}</td>
+                              <td className="py-3 pr-3 text-zinc-100">{j.worker_name || '—'}</td>
+                              <td className="py-3 pr-3 text-zinc-100">{st}</td>
+                              <td className="py-3 pr-3 text-zinc-100">{fmtDT(j.started_at)}</td>
+                              <td className="py-3 pr-3 text-zinc-100">{fmtDT(j.stopped_at)}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           ) : null}
         </div>

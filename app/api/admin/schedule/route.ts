@@ -1,4 +1,3 @@
-// app/api/admin/schedule/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -29,12 +28,7 @@ async function assertAdmin(req: NextRequest) {
   const { data: userData, error: userErr } = await sb.auth.getUser(token)
   if (userErr || !userData?.user) return { ok: false as const, status: 401, error: 'Невалидный токен' }
 
-  const { data: prof, error: profErr } = await sb
-    .from('profiles')
-    .select('id, role, active')
-    .eq('id', userData.user.id)
-    .single()
-
+  const { data: prof, error: profErr } = await sb.from('profiles').select('id, role, active').eq('id', userData.user.id).single()
   if (profErr || !prof) return { ok: false as const, status: 403, error: 'Профиль не найден' }
   if (prof.role !== 'admin' || prof.active !== true) return { ok: false as const, status: 403, error: 'Доступ запрещён' }
 
@@ -55,9 +49,7 @@ export async function GET(req: NextRequest) {
 
     const url = envOrThrow('NEXT_PUBLIC_SUPABASE_URL')
     const service = envOrThrow('SUPABASE_SERVICE_ROLE_KEY')
-    const admin = createClient(url, service, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    })
+    const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } })
 
     const qp = req.nextUrl.searchParams
     const today = new Date()
@@ -66,8 +58,10 @@ export async function GET(req: NextRequest) {
 
     const dateFrom = (qp.get('date_from') || defFrom).trim()
     const dateTo = (qp.get('date_to') || defTo).trim()
+    const siteId = (qp.get('site_id') || '').trim()
+    const workerId = (qp.get('worker_id') || '').trim()
 
-    const { data: jobs, error: jobsErr } = await admin
+    let q = admin
       .from('jobs')
       .select('id,status,site_id,worker_id,job_date,scheduled_time')
       .gte('job_date', dateFrom)
@@ -75,6 +69,10 @@ export async function GET(req: NextRequest) {
       .order('job_date', { ascending: true })
       .order('scheduled_time', { ascending: true })
 
+    if (siteId) q = q.eq('site_id', siteId)
+    if (workerId) q = q.eq('worker_id', workerId)
+
+    const { data: jobs, error: jobsErr } = await q
     if (jobsErr) return NextResponse.json({ error: jobsErr.message }, { status: 500 })
 
     const jobList = (jobs ?? []) as any[]
@@ -83,14 +81,16 @@ export async function GET(req: NextRequest) {
     const jobIds = jobList.map((j) => j.id)
 
     const [sitesRes, profRes, logsRes] = await Promise.all([
-      siteIds.length
-        ? admin.from('sites').select('id,name').in('id', siteIds)
-        : Promise.resolve({ data: [] as any[], error: null as any }),
+      siteIds.length ? admin.from('sites').select('id,name').in('id', siteIds) : Promise.resolve({ data: [] as any[], error: null as any }),
       workerIds.length
         ? admin.from('profiles').select('id,full_name,role,active').in('id', workerIds)
         : Promise.resolve({ data: [] as any[], error: null as any }),
       jobIds.length
-        ? admin.from('time_logs').select('job_id,worker_id,started_at,stopped_at').in('job_id', jobIds).order('started_at', { ascending: false })
+        ? admin
+            .from('time_logs')
+            .select('job_id,worker_id,started_at,stopped_at')
+            .in('job_id', jobIds)
+            .order('started_at', { ascending: false })
         : Promise.resolve({ data: [] as any[], error: null as any }),
     ])
 
@@ -101,6 +101,7 @@ export async function GET(req: NextRequest) {
     const siteMap = new Map<string, any>((sitesRes.data ?? []).map((s: any) => [s.id, s]))
     const workerMap = new Map<string, any>((profRes.data ?? []).map((p: any) => [p.id, p]))
 
+    // Берём самый свежий лог на пару job_id+worker_id
     const latestLogMap = new Map<string, any>()
     for (const r of logsRes.data ?? []) {
       const key = `${r.job_id}:${r.worker_id || ''}`
@@ -128,6 +129,6 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ ok: true, date_from: dateFrom, date_to: dateTo, items })
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'Server error' }, { status: 500 })
+    return NextResponse.json({ error: e?.message || 'Ошибка сервера' }, { status: 500 })
   }
 }
