@@ -1,84 +1,100 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 export class ApiError extends Error {
-  status: number
-  code?: string
+  status: number;
 
-  constructor(status: number, message: string, code?: string) {
-    super(message)
-    this.name = 'ApiError'
-    this.status = status
-    this.code = code
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
   }
 }
 
-export function supabaseService() {
-  return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+function env(name: string): string {
+  const v = process.env[name];
+  if (!v) throw new Error(`Missing env: ${name}`);
+  return v;
+}
+
+export function supabaseService(): SupabaseClient {
+  const url = env('SUPABASE_URL');
+  const key = env('SUPABASE_SERVICE_ROLE_KEY');
+
+  return createClient(url, key, {
     auth: {
       persistSession: false,
       autoRefreshToken: false,
       detectSessionInUrl: false,
     },
-  })
+  });
 }
 
-export function supabaseAnon() {
-  return createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+export function supabaseAnon(accessToken?: string): SupabaseClient {
+  const url = env('SUPABASE_URL');
+  const key = env('SUPABASE_ANON_KEY');
+
+  return createClient(url, key, {
+    global: accessToken
+      ? {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }
+      : undefined,
     auth: {
       persistSession: false,
       autoRefreshToken: false,
       detectSessionInUrl: false,
     },
-  })
+  });
 }
 
-function getHeaders(input: Request | Headers) {
-  return input instanceof Headers ? input : input.headers
+function extractBearer(headers: Headers): string | null {
+  const h = headers.get('authorization') || headers.get('Authorization');
+  if (!h) return null;
+  const m = h.match(/^Bearer\s+(.+)$/i);
+  return m?.[1] ?? null;
 }
 
-function bearerToken(input: Request | Headers) {
-  const h = getHeaders(input)
-  const authHeader = h.get('authorization') || ''
-  return authHeader.startsWith('Bearer ') ? authHeader.slice(7) : ''
+export async function requireUser(input: Request | Headers): Promise<{
+  userId: string;
+  supabase: SupabaseClient;
+  admin: any;
+}> {
+  const headers = input instanceof Headers ? input : input.headers;
+  const token = extractBearer(headers);
+
+  if (!token) throw new ApiError(401, 'Нет токена. Нужен Authorization: Bearer ...');
+
+  const anon = supabaseAnon(token);
+  const { data, error } = await anon.auth.getUser();
+
+  if (error || !data?.user?.id) {
+    throw new ApiError(401, 'Сессия недействительна. Перелогиньтесь.');
+  }
+
+  const svc = supabaseService();
+  const admin = (svc.auth as any).admin as any;
+
+  return { userId: data.user.id, supabase: svc, admin };
 }
 
-export type GuardResult = {
-  userId: string
-  supabase: SupabaseClient<any, 'public', 'public', any, any>
-  admin: any
-}
+export async function requireAdmin(input: Request | Headers): Promise<{
+  userId: string;
+  supabase: SupabaseClient;
+  admin: any;
+}> {
+  const { userId, supabase, admin } = await requireUser(input);
 
-export async function requireUser(input: Request | Headers): Promise<GuardResult> {
-  const token = bearerToken(input)
-  if (!token) throw new ApiError(401, 'Нет токена авторизации')
-
-  const anon = supabaseAnon()
-  const { data: userData, error: userErr } = await anon.auth.getUser(token)
-
-  if (userErr || !userData?.user?.id) throw new ApiError(401, 'Неверный токен')
-
-  const supabase = supabaseService()
-  const admin = (supabase as any).auth.admin
-
-  return { userId: userData.user.id, supabase, admin }
-}
-
-export async function requireAdmin(input: Request | Headers): Promise<GuardResult> {
-  const { userId, supabase, admin } = await requireUser(input)
-
-  const { data: profile, error: profErr } = await supabase
+  const { data, error } = await supabase
     .from('profiles')
-    .select('*')
+    .select('id, role, active')
     .eq('id', userId)
-    .maybeSingle()
+    .maybeSingle();
 
-  if (profErr || !profile) throw new ApiError(403, 'Профиль не найден')
-  if (profile.active === false) throw new ApiError(403, 'Профиль неактивен')
-  if (profile.role !== 'admin') throw new ApiError(403, 'Доступ только для администратора')
+  if (error) throw new ApiError(500, 'Не смог прочитать profiles');
+  if (!data) throw new ApiError(403, 'Профиль не найден');
+  if (data.role !== 'admin') throw new ApiError(403, 'Доступ только для админа');
+  if (data.active !== true) throw new ApiError(403, 'Админ отключён (active=false)');
 
-  return { userId, supabase, admin }
+  return { userId, supabase, admin };
 }

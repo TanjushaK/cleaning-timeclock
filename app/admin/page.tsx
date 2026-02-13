@@ -1,788 +1,690 @@
-'use client'
-export const dynamic = 'force-dynamic'
+'use client';
 
-import React, { Suspense, useEffect, useMemo, useState } from 'react'
-import { useSearchParams, useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+export const dynamic = 'force-dynamic';
 
-type Worker = {
-  id: string
-  role?: 'admin' | 'worker'
-  active?: boolean
-  email?: string | null
-  full_name?: string | null
-  [k: string]: any
-}
+import React, { Suspense, useEffect, useMemo, useState } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import Image from 'next/image';
+import { getSupabaseBrowser } from '@/lib/supabase';
+import { isoDateToRu, isoTimeToRu, ruDateTimeFromIso } from '@/lib/ru-format';
+
+type WorkerMini = { id: string; full_name: string | null; email: string | null; active?: boolean | null };
+type SiteMini = { id: string; name: string | null; address: string | null };
 
 type Site = {
-  id: string
-  display_name?: string | null
-  address?: string | null
-  name?: string | null
-  radius?: number | null
-  radius_m?: number | null
-  lat?: number | null
-  lng?: number | null
-  [k: string]: any
+  id: string;
+  name: string | null;
+  address: string | null;
+  lat: number | null;
+  lng: number | null;
+  radius: number | null;
+  assigned_workers: WorkerMini[];
+};
+
+type Worker = {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  role: string | null;
+  active: boolean | null;
+  avatar_url: string | null;
+  assigned_sites: SiteMini[];
+};
+
+type Job = {
+  id: string;
+  site_id: string;
+  worker_id: string;
+  job_date: string | null;
+  scheduled_time: string | null;
+  status: string;
+  site: (SiteMini & { lat?: number | null; lng?: number | null; radius?: number | null }) | null;
+  worker: (WorkerMini & { active?: boolean | null }) | null;
+};
+
+function pill(text: string) {
+  return (
+    <span className="inline-flex items-center rounded-full border border-amber-400/25 bg-amber-400/10 px-3 py-1 text-xs text-amber-200">
+      {text}
+    </span>
+  );
 }
 
-type Assignment = {
-  site_id: string
-  worker_id: string
-  created_at?: string
+function btnBase() {
+  return 'inline-flex items-center justify-center rounded-xl border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-sm text-amber-100 hover:bg-amber-400/15 active:scale-[0.99] transition';
 }
 
-const TABS = [
-  { key: 'workers', label: 'Работники' },
-  { key: 'sites', label: 'Объекты' },
-  { key: 'jobs', label: 'Задания' },
-  { key: 'schedule', label: 'Расписание' },
-  { key: 'reports', label: 'Отчёты' },
-  { key: 'settings', label: 'Настройки' },
-] as const
-
-function cn(...xs: Array<string | false | null | undefined>) {
-  return xs.filter(Boolean).join(' ')
+function btnPrimary() {
+  return 'inline-flex items-center justify-center rounded-xl bg-amber-400 px-3 py-2 text-sm font-semibold text-black hover:brightness-110 active:scale-[0.99] transition';
 }
 
-function shortId(id: string) {
-  if (!id) return ''
-  return id.length <= 10 ? id : `${id.slice(0, 8)}…`
+function card() {
+  return 'rounded-2xl border border-white/10 bg-white/5 p-4 shadow-sm';
 }
 
-function prettySiteName(s: Site) {
-  return (s.display_name || s.name || s.address || 'Объект без названия').toString()
+function inputBase() {
+  return 'w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-amber-400/40';
 }
 
-function sitePillLabel(s?: Site | null, fallbackId?: string) {
-  if (s) return prettySiteName(s)
-  if (fallbackId) return `Объект ${shortId(fallbackId)}`
-  return 'Объект'
+function selectBase() {
+  return 'w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-400/40';
 }
 
-function workerPillLabel(w?: Worker | null, fallbackId?: string) {
-  if (w) return (w.full_name || w.email || `Работник ${shortId(w.id)}`).toString()
-  if (fallbackId) return `Работник ${shortId(fallbackId)}`
-  return 'Работник'
-}
+function AdminInner() {
+  const sp = useSearchParams();
+  const router = useRouter();
 
-function prettyWorkerName(w: Worker) {
-  const base = (w.full_name || w.email || w.id).toString()
-  const role = w.role === 'admin' ? ' (админ)' : ''
-  const active = w.active === false ? ' (неактивен)' : ''
-  return `${base}${role}${active}`
-}
+  const tab = (sp.get('tab') || 'sites') as 'sites' | 'workers' | 'jobs';
+  const jobsStatus = sp.get('status') || 'all';
 
-function radiusMeters(s: Site): number | null {
-  const r = (s.radius ?? s.radius_m) as any
-  if (typeof r === 'number' && Number.isFinite(r)) return r
-  const n = Number(r)
-  return Number.isFinite(n) ? n : null
-}
+  const supabase = useMemo(() => getSupabaseBrowser(), []);
+  const [token, setToken] = useState<string>('');
 
-function hasCoords(s: Site) {
-  return typeof s.lat === 'number' && typeof s.lng === 'number'
-}
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>('');
+  const [ok, setOk] = useState<string>('');
 
-async function authedFetch(path: string, token: string, init?: RequestInit) {
-  const res = await fetch(path, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-      ...(init?.headers || {}),
-    },
-    cache: 'no-store',
-  })
+  const [sites, setSites] = useState<Site[]>([]);
+  const [workers, setWorkers] = useState<Worker[]>([]);
+  const [jobs, setJobs] = useState<Job[]>([]);
 
-  const json = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(json?.error || `Ошибка ${res.status}`)
-  return json
-}
+  const [assignWorkerBySite, setAssignWorkerBySite] = useState<Record<string, string>>({});
+  const [assignSiteByWorker, setAssignSiteByWorker] = useState<Record<string, string>>({});
 
-async function copyToClipboard(text: string) {
-  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text)
-    return
+  const [jobForm, setJobForm] = useState<{ site_id: string; worker_id: string; job_date: string; scheduled_time: string }>(
+    { site_id: '', worker_id: '', job_date: '', scheduled_time: '' }
+  );
+
+  const [jobPatch, setJobPatch] = useState<Record<string, Partial<Job> & { status?: string }>>({});
+
+  function setTab(next: 'sites' | 'workers' | 'jobs') {
+    const url = next === 'jobs'
+      ? `/admin?tab=jobs`
+      : `/admin?tab=${next}`;
+    router.push(url);
   }
-  const ta = document.createElement('textarea')
-  ta.value = text
-  ta.style.position = 'fixed'
-  ta.style.left = '-9999px'
-  document.body.appendChild(ta)
-  ta.select()
-  document.execCommand('copy')
-  document.body.removeChild(ta)
+
+  function setJobsStatus(next: string) {
+    const base = `/admin?tab=jobs`;
+    router.push(next === 'all' ? base : `${base}&status=${encodeURIComponent(next)}`);
+  }
+
+  async function ensureToken(): Promise<string> {
+    const { data } = await supabase.auth.getSession();
+    const t = data.session?.access_token || '';
+    setToken(t);
+    return t;
+  }
+
+  async function apiFetch(path: string, init?: RequestInit) {
+    const t = token || (await ensureToken());
+    const headers = new Headers(init?.headers || {});
+    headers.set('Authorization', `Bearer ${t}`);
+    headers.set('Content-Type', 'application/json');
+    return fetch(path, { ...init, headers, cache: 'no-store' });
+  }
+
+  async function loadAll() {
+    setBusy(true);
+    setError('');
+    setOk('');
+    try {
+      await ensureToken();
+
+      const [sRes, wRes, jRes] = await Promise.all([
+        apiFetch('/api/admin/sites/list'),
+        apiFetch('/api/admin/workers/list'),
+        tab === 'jobs'
+          ? apiFetch(jobsStatus === 'all' ? '/api/admin/jobs' : `/api/admin/jobs?status=${encodeURIComponent(jobsStatus)}`)
+          : Promise.resolve(null as any),
+      ]);
+
+      if (!sRes.ok) throw new Error((await sRes.json()).error || 'Sites: ошибка');
+      if (!wRes.ok) throw new Error((await wRes.json()).error || 'Workers: ошибка');
+
+      const sJson = await sRes.json();
+      const wJson = await wRes.json();
+
+      setSites(sJson.sites || []);
+      setWorkers(wJson.workers || []);
+
+      if (jRes) {
+        if (!jRes.ok) throw new Error((await jRes.json()).error || 'Jobs: ошибка');
+        const jJson = await jRes.json();
+        setJobs(jJson.jobs || []);
+      } else {
+        setJobs([]);
+      }
+
+      setOk('Данные обновлены');
+      setTimeout(() => setOk(''), 1500);
+    } catch (e: any) {
+      setError(e?.message || 'Ошибка загрузки');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    loadAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, jobsStatus]);
+
+  const activeWorkers = useMemo(
+    () => workers.filter((w) => (w.active ?? true) && (w.role ?? 'worker') !== 'admin'),
+    [workers]
+  );
+
+  const sitesMini = useMemo(() => sites.map((s) => ({ id: s.id, name: s.name, address: s.address })), [sites]);
+
+  async function assign(site_id: string, worker_id: string) {
+    setBusy(true);
+    setError('');
+    try {
+      const res = await apiFetch('/api/admin/assignments', {
+        method: 'POST',
+        body: JSON.stringify({ site_id, worker_id }),
+      });
+      const js = await res.json();
+      if (!res.ok) throw new Error(js.error || 'Не смог назначить');
+      await loadAll();
+    } catch (e: any) {
+      setError(e?.message || 'Ошибка');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function unassign(site_id: string, worker_id: string) {
+    setBusy(true);
+    setError('');
+    try {
+      const res = await apiFetch('/api/admin/assignments', {
+        method: 'DELETE',
+        body: JSON.stringify({ site_id, worker_id }),
+      });
+      const js = await res.json();
+      if (!res.ok) throw new Error(js.error || 'Не смог снять назначение');
+      await loadAll();
+    } catch (e: any) {
+      setError(e?.message || 'Ошибка');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createJob() {
+    setBusy(true);
+    setError('');
+    try {
+      const res = await apiFetch('/api/admin/jobs', {
+        method: 'POST',
+        body: JSON.stringify(jobForm),
+      });
+      const js = await res.json();
+      if (!res.ok) throw new Error(js.error || 'Не смог создать job');
+      setJobForm({ site_id: '', worker_id: '', job_date: '', scheduled_time: '' });
+      await loadAll();
+    } catch (e: any) {
+      setError(e?.message || 'Ошибка');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function patchJob(id: string) {
+    setBusy(true);
+    setError('');
+    try {
+      const patch = jobPatch[id] || {};
+      const body: any = { id };
+      if (patch.site_id) body.site_id = patch.site_id;
+      if (patch.worker_id) body.worker_id = patch.worker_id;
+      if (patch.job_date) body.job_date = patch.job_date;
+      if (patch.scheduled_time) body.scheduled_time = patch.scheduled_time;
+      if ((patch as any).status) body.status = (patch as any).status;
+
+      const res = await apiFetch('/api/admin/jobs', {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      });
+      const js = await res.json();
+      if (!res.ok) throw new Error(js.error || 'Не смог обновить job');
+      setJobPatch((p) => {
+        const copy = { ...p };
+        delete copy[id];
+        return copy;
+      });
+      await loadAll();
+    } catch (e: any) {
+      setError(e?.message || 'Ошибка');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteJob(id: string) {
+    if (!confirm('Удалить смену?')) return;
+    setBusy(true);
+    setError('');
+    try {
+      const res = await apiFetch('/api/admin/jobs', {
+        method: 'DELETE',
+        body: JSON.stringify({ id }),
+      });
+      const js = await res.json();
+      if (!res.ok) throw new Error(js.error || 'Не смог удалить job');
+      await loadAll();
+    } catch (e: any) {
+      setError(e?.message || 'Ошибка');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copyCoords(lat: number | null, lng: number | null) {
+    if (lat == null || lng == null) return;
+    try {
+      await navigator.clipboard.writeText(`${lat},${lng}`);
+      setOk('Координаты скопированы');
+      setTimeout(() => setOk(''), 1200);
+    } catch {
+      setError('Не смог скопировать координаты');
+    }
+  }
+
+  async function logout() {
+    await supabase.auth.signOut();
+    location.href = '/';
+  }
+
+  return (
+    <div className="min-h-screen bg-black text-white">
+      <div className="mx-auto max-w-6xl px-4 py-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="relative h-10 w-10 overflow-hidden rounded-xl border border-amber-400/25 bg-white/5">
+              <Image src="/tanija-logo.png" alt="Tanija" fill className="object-contain p-1" />
+            </div>
+            <div>
+              <div className="text-lg font-semibold tracking-wide">Tanija — Админка</div>
+              <div className="text-xs text-white/50">Сайты · Работники · Смены</div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button className={btnBase()} onClick={loadAll} disabled={busy}>
+              Обновить данные
+            </button>
+            <button className={btnBase()} onClick={logout}>
+              Выйти
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            className={`${btnBase()} ${tab === 'sites' ? 'ring-2 ring-amber-400/40' : ''}`}
+            onClick={() => setTab('sites')}
+          >
+            Объекты
+          </button>
+          <button
+            className={`${btnBase()} ${tab === 'workers' ? 'ring-2 ring-amber-400/40' : ''}`}
+            onClick={() => setTab('workers')}
+          >
+            Работники
+          </button>
+          <button
+            className={`${btnBase()} ${tab === 'jobs' ? 'ring-2 ring-amber-400/40' : ''}`}
+            onClick={() => setTab('jobs')}
+          >
+            Смены (Jobs)
+          </button>
+        </div>
+
+        {(error || ok) && (
+          <div className="mt-4">
+            {error && <div className="rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">{error}</div>}
+            {ok && <div className="mt-2 rounded-xl border border-emerald-400/25 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">{ok}</div>}
+          </div>
+        )}
+
+        {tab === 'sites' && (
+          <div className="mt-6 grid gap-4">
+            {sites.map((s) => (
+              <div key={s.id} className={card()}>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="text-base font-semibold">{s.name || 'Без названия'}</div>
+                    <div className="text-sm text-white/60">{s.address || 'Без адреса'}</div>
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {(s.assigned_workers || []).length === 0 ? (
+                        <span className="text-sm text-white/40">Нет назначений</span>
+                      ) : (
+                        s.assigned_workers.map((w) => (
+                          <span key={w.id} className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs">
+                            <span className="text-white/90">{w.full_name || 'Без имени'}</span>
+                            <span className="text-white/40">{w.email || ''}</span>
+                            <button
+                              className="ml-1 rounded-full border border-amber-400/25 bg-amber-400/10 px-2 py-0.5 text-[11px] text-amber-200 hover:bg-amber-400/15"
+                              onClick={() => unassign(s.id, w.id)}
+                              disabled={busy}
+                            >
+                              Снять
+                            </button>
+                          </span>
+                        ))
+                      )}
+                    </div>
+
+                    <details className="mt-3">
+                      <summary className="cursor-pointer text-sm text-amber-200/90 hover:text-amber-200">Техданные</summary>
+                      <div className="mt-2 grid gap-2 text-sm text-white/70">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {pill(`UUID: ${s.id}`)}
+                          {pill(`Радиус: ${s.radius ?? '—'} м`)}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {pill(`lat: ${s.lat ?? '—'}`)}
+                          {pill(`lng: ${s.lng ?? '—'}`)}
+                          <button className={btnBase()} onClick={() => copyCoords(s.lat, s.lng)} disabled={s.lat == null || s.lng == null}>
+                            Скопировать координаты
+                          </button>
+                        </div>
+                      </div>
+                    </details>
+                  </div>
+
+                  <div className="w-full sm:w-80">
+                    <div className="text-sm text-white/60">Назначить работника</div>
+                    <div className="mt-2 flex gap-2">
+                      <select
+                        className={selectBase()}
+                        value={assignWorkerBySite[s.id] || ''}
+                        onChange={(e) => setAssignWorkerBySite((p) => ({ ...p, [s.id]: e.target.value }))}
+                      >
+                        <option value="">Выбери работника…</option>
+                        {activeWorkers.map((w) => (
+                          <option key={w.id} value={w.id}>
+                            {(w.full_name || 'Без имени') + (w.email ? ` — ${w.email}` : '')}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        className={btnPrimary()}
+                        onClick={() => assign(s.id, assignWorkerBySite[s.id] || '')}
+                        disabled={busy || !assignWorkerBySite[s.id]}
+                      >
+                        Назначить
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {sites.length === 0 && <div className="text-sm text-white/50">Объектов нет</div>}
+          </div>
+        )}
+
+        {tab === 'workers' && (
+          <div className="mt-6 grid gap-4">
+            {workers.map((w) => (
+              <div key={w.id} className={card()}>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="text-base font-semibold">
+                      {w.full_name || 'Без имени'}{' '}
+                      <span className="text-xs text-white/50">{w.active === false ? '(выключен)' : ''}</span>
+                    </div>
+                    <div className="text-sm text-white/60">{w.email || 'Без email'}</div>
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {(w.assigned_sites || []).length === 0 ? (
+                        <span className="text-sm text-white/40">Нет назначений</span>
+                      ) : (
+                        w.assigned_sites.map((s) => (
+                          <span key={s.id} className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs">
+                            <span className="text-white/90">{s.name || 'Без названия'}</span>
+                            <span className="text-white/40">{s.address || ''}</span>
+                            <button
+                              className="ml-1 rounded-full border border-amber-400/25 bg-amber-400/10 px-2 py-0.5 text-[11px] text-amber-200 hover:bg-amber-400/15"
+                              onClick={() => unassign(s.id, w.id)}
+                              disabled={busy}
+                            >
+                              Снять
+                            </button>
+                          </span>
+                        ))
+                      )}
+                    </div>
+
+                    <details className="mt-3">
+                      <summary className="cursor-pointer text-sm text-amber-200/90 hover:text-amber-200">Техданные</summary>
+                      <div className="mt-2 flex flex-wrap gap-2 text-sm text-white/70">
+                        {pill(`UUID: ${w.id}`)}
+                        {pill(`роль: ${w.role ?? '—'}`)}
+                      </div>
+                    </details>
+                  </div>
+
+                  <div className="w-full sm:w-80">
+                    <div className="text-sm text-white/60">Назначить объект</div>
+                    <div className="mt-2 flex gap-2">
+                      <select
+                        className={selectBase()}
+                        value={assignSiteByWorker[w.id] || ''}
+                        onChange={(e) => setAssignSiteByWorker((p) => ({ ...p, [w.id]: e.target.value }))}
+                      >
+                        <option value="">Выбери объект…</option>
+                        {sitesMini.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {(s.name || 'Без названия') + (s.address ? ` — ${s.address}` : '')}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        className={btnPrimary()}
+                        onClick={() => assign(assignSiteByWorker[w.id] || '', w.id)}
+                        disabled={busy || !assignSiteByWorker[w.id]}
+                      >
+                        Назначить
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {workers.length === 0 && <div className="text-sm text-white/50">Работников нет</div>}
+          </div>
+        )}
+
+        {tab === 'jobs' && (
+          <div className="mt-6 grid gap-4">
+            <div className={card()}>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="text-base font-semibold">Создать смену</div>
+                  <div className="text-xs text-white/50">Дата — ДД-ММ-ГГГГ, время — ЧЧ:ММ</div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button className={`${btnBase()} ${jobsStatus === 'all' ? 'ring-2 ring-amber-400/40' : ''}`} onClick={() => setJobsStatus('all')}>
+                    Все
+                  </button>
+                  <button className={`${btnBase()} ${jobsStatus === 'planned' ? 'ring-2 ring-amber-400/40' : ''}`} onClick={() => setJobsStatus('planned')}>
+                    Planned
+                  </button>
+                  <button className={`${btnBase()} ${jobsStatus === 'in_progress' ? 'ring-2 ring-amber-400/40' : ''}`} onClick={() => setJobsStatus('in_progress')}>
+                    In progress
+                  </button>
+                  <button className={`${btnBase()} ${jobsStatus === 'done' ? 'ring-2 ring-amber-400/40' : ''}`} onClick={() => setJobsStatus('done')}>
+                    Done
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-4">
+                <div>
+                  <div className="mb-1 text-xs text-white/60">Объект</div>
+                  <select className={selectBase()} value={jobForm.site_id} onChange={(e) => setJobForm((p) => ({ ...p, site_id: e.target.value }))}>
+                    <option value="">Выбери объект…</option>
+                    {sitesMini.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {(s.name || 'Без названия') + (s.address ? ` — ${s.address}` : '')}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <div className="mb-1 text-xs text-white/60">Работник</div>
+                  <select className={selectBase()} value={jobForm.worker_id} onChange={(e) => setJobForm((p) => ({ ...p, worker_id: e.target.value }))}>
+                    <option value="">Выбери работника…</option>
+                    {activeWorkers.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {(w.full_name || 'Без имени') + (w.email ? ` — ${w.email}` : '')}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <div className="mb-1 text-xs text-white/60">Дата</div>
+                  <input className={inputBase()} type="date" value={jobForm.job_date} onChange={(e) => setJobForm((p) => ({ ...p, job_date: e.target.value }))} />
+                </div>
+
+                <div>
+                  <div className="mb-1 text-xs text-white/60">Время</div>
+                  <input className={inputBase()} type="time" value={jobForm.scheduled_time} onChange={(e) => setJobForm((p) => ({ ...p, scheduled_time: e.target.value }))} />
+                </div>
+              </div>
+
+              <div className="mt-4 flex items-center justify-end">
+                <button
+                  className={btnPrimary()}
+                  onClick={createJob}
+                  disabled={busy || !jobForm.site_id || !jobForm.worker_id || !jobForm.job_date || !jobForm.scheduled_time}
+                >
+                  Создать
+                </button>
+              </div>
+            </div>
+
+            {jobs.map((j) => {
+              const dt = ruDateTimeFromIso(j.job_date, j.scheduled_time);
+              const siteLabel = j.site ? `${j.site.name || 'Без названия'}${j.site.address ? ` — ${j.site.address}` : ''}` : j.site_id;
+              const workerLabel = j.worker ? `${j.worker.full_name || 'Без имени'}${j.worker.email ? ` — ${j.worker.email}` : ''}` : j.worker_id;
+
+              const p = jobPatch[j.id] || {};
+              const curStatus = (p as any).status ?? j.status;
+              const curSiteId = p.site_id ?? j.site_id;
+              const curWorkerId = p.worker_id ?? j.worker_id;
+
+              return (
+                <div key={j.id} className={card()}>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="text-base font-semibold">{dt || `${isoDateToRu(j.job_date)} ${isoTimeToRu(j.scheduled_time)}`}</div>
+                        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80">
+                          {curStatus === 'planned' ? 'Planned' : curStatus === 'in_progress' ? 'In progress' : curStatus === 'done' ? 'Done' : curStatus}
+                        </span>
+                      </div>
+
+                      <div className="mt-1 text-sm text-white/60">{siteLabel}</div>
+                      <div className="mt-1 text-sm text-white/60">{workerLabel}</div>
+
+                      <details className="mt-3">
+                        <summary className="cursor-pointer text-sm text-amber-200/90 hover:text-amber-200">Техданные</summary>
+                        <div className="mt-2 flex flex-wrap gap-2 text-sm text-white/70">{pill(`UUID: ${j.id}`)}</div>
+                      </details>
+                    </div>
+
+                    <div className="w-full sm:w-[420px]">
+                      <div className="grid gap-2">
+                        <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                          <div>
+                            <div className="mb-1 text-xs text-white/60">Статус</div>
+                            <select
+                              className={selectBase()}
+                              value={curStatus}
+                              onChange={(e) => setJobPatch((pp) => ({ ...pp, [j.id]: { ...(pp[j.id] || {}), status: e.target.value } }))}
+                            >
+                              <option value="planned">planned</option>
+                              <option value="in_progress">in_progress</option>
+                              <option value="done">done</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <div className="mb-1 text-xs text-white/60">Объект</div>
+                            <select
+                              className={selectBase()}
+                              value={curSiteId}
+                              onChange={(e) => setJobPatch((pp) => ({ ...pp, [j.id]: { ...(pp[j.id] || {}), site_id: e.target.value } }))}
+                            >
+                              {sitesMini.map((s) => (
+                                <option key={s.id} value={s.id}>
+                                  {(s.name || 'Без названия') + (s.address ? ` — ${s.address}` : '')}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <div className="mb-1 text-xs text-white/60">Работник</div>
+                            <select
+                              className={selectBase()}
+                              value={curWorkerId}
+                              onChange={(e) => setJobPatch((pp) => ({ ...pp, [j.id]: { ...(pp[j.id] || {}), worker_id: e.target.value } }))}
+                            >
+                              {activeWorkers.map((w) => (
+                                <option key={w.id} value={w.id}>
+                                  {(w.full_name || 'Без имени') + (w.email ? ` — ${w.email}` : '')}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          <button className={btnBase()} onClick={() => deleteJob(j.id)} disabled={busy}>
+                            Удалить
+                          </button>
+                          <button className={btnPrimary()} onClick={() => patchJob(j.id)} disabled={busy || !jobPatch[j.id]}>
+                            Сохранить
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {jobs.length === 0 && <div className="text-sm text-white/50">Смен нет</div>}
+          </div>
+        )}
+
+        <div className="mt-10 text-center text-xs text-white/35">© Tanija · Luxury dark & gold</div>
+      </div>
+    </div>
+  );
 }
 
 export default function AdminPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-zinc-950 text-zinc-100">
-          <div className="mx-auto max-w-6xl px-4 py-10">
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6 text-zinc-300">
-              Загрузка админки…
-            </div>
-          </div>
+        <div className="min-h-screen bg-black text-white">
+          <div className="mx-auto max-w-6xl px-4 py-10 text-sm text-white/60">Загрузка…</div>
         </div>
       }
     >
       <AdminInner />
     </Suspense>
-  )
-}
-
-function AdminInner() {
-  const sp = useSearchParams()
-  const router = useRouter()
-
-  const [tab, setTab] = useState<string>(sp.get('tab') || 'workers')
-
-  const [token, setToken] = useState<string>('')
-  const [loading, setLoading] = useState(true)
-  const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState<string>('')
-
-  const [toast, setToast] = useState<string>('')
-
-  const [workers, setWorkers] = useState<Worker[]>([])
-  const [sites, setSites] = useState<Site[]>([])
-  const [assignments, setAssignments] = useState<Assignment[]>([])
-
-  const [inviteEmail, setInviteEmail] = useState('')
-  const [siteAssignPick, setSiteAssignPick] = useState<Record<string, string>>({})
-  const [workerAssignPick, setWorkerAssignPick] = useState<Record<string, string>>({})
-
-  useEffect(() => {
-    setTab(sp.get('tab') || 'workers')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sp])
-
-  useEffect(() => {
-    if (!toast) return
-    const t = setTimeout(() => setToast(''), 1800)
-    return () => clearTimeout(t)
-  }, [toast])
-
-  function goTab(next: string) {
-    router.replace(`/admin?tab=${encodeURIComponent(next)}`)
-  }
-
-  async function ensureSession() {
-    const { data } = await supabase.auth.getSession()
-    const accessToken = data.session?.access_token || ''
-    setToken(accessToken)
-    return accessToken
-  }
-
-  async function refreshAll(tkn?: string) {
-    const t = tkn || token || (await ensureSession())
-    if (!t) throw new Error('Нет сессии. Войдите заново.')
-
-    const [w, s, a] = await Promise.all([
-      authedFetch('/api/admin/workers/list', t),
-      authedFetch('/api/admin/sites/list', t),
-      authedFetch('/api/admin/assignments', t),
-    ])
-
-    setWorkers(w.workers || [])
-    setSites(s.sites || [])
-    setAssignments(a.assignments || [])
-  }
-
-  useEffect(() => {
-    ;(async () => {
-      try {
-        setLoading(true)
-        setErr('')
-        const t = await ensureSession()
-        if (!t) {
-          setLoading(false)
-          return
-        }
-        await refreshAll(t)
-      } catch (e: any) {
-        setErr(e?.message || 'Ошибка загрузки')
-      } finally {
-        setLoading(false)
-      }
-    })()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  const workersOnly = useMemo(() => workers.filter((w) => w.role === 'worker'), [workers])
-  const activeWorkersOnly = useMemo(() => workersOnly.filter((w) => w.active !== false), [workersOnly])
-
-  const workerById = useMemo(() => {
-    const m = new Map<string, Worker>()
-    for (const w of workers) m.set(w.id, w)
-    return m
-  }, [workers])
-
-  const siteById = useMemo(() => {
-    const m = new Map<string, Site>()
-    for (const s of sites) m.set(s.id, s)
-    return m
-  }, [sites])
-
-  const assignmentsBySite = useMemo(() => {
-    const m = new Map<string, Set<string>>()
-    for (const a of assignments) {
-      if (!m.has(a.site_id)) m.set(a.site_id, new Set())
-      m.get(a.site_id)!.add(a.worker_id)
-    }
-    return m
-  }, [assignments])
-
-  const assignmentsByWorker = useMemo(() => {
-    const m = new Map<string, Set<string>>()
-    for (const a of assignments) {
-      if (!m.has(a.worker_id)) m.set(a.worker_id, new Set())
-      m.get(a.worker_id)!.add(a.site_id)
-    }
-    return m
-  }, [assignments])
-
-  async function doRefresh() {
-    try {
-      setBusy(true)
-      setErr('')
-      await refreshAll()
-      setToast('Обновлено')
-    } catch (e: any) {
-      setErr(e?.message || 'Ошибка обновления')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function doAssign(siteId: string, workerId: string) {
-    try {
-      setBusy(true)
-      setErr('')
-      if (!token) throw new Error('Нет токена')
-      await authedFetch('/api/admin/assignments', token, {
-        method: 'POST',
-        body: JSON.stringify({ site_id: siteId, worker_id: workerId }),
-      })
-      await refreshAll()
-      setToast('Назначено')
-    } catch (e: any) {
-      setErr(e?.message || 'Ошибка назначения')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function doUnassign(siteId: string, workerId: string) {
-    try {
-      setBusy(true)
-      setErr('')
-      if (!token) throw new Error('Нет токена')
-      await authedFetch('/api/admin/assignments', token, {
-        method: 'DELETE',
-        body: JSON.stringify({ site_id: siteId, worker_id: workerId }),
-      })
-      await refreshAll()
-      setToast('Снято')
-    } catch (e: any) {
-      setErr(e?.message || 'Ошибка снятия')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function doInvite() {
-    try {
-      setBusy(true)
-      setErr('')
-      if (!token) throw new Error('Нет токена')
-      const email = inviteEmail.trim()
-      if (!email) throw new Error('Введите email')
-      await authedFetch('/api/admin/workers/invite', token, {
-        method: 'POST',
-        body: JSON.stringify({ email }),
-      })
-      setInviteEmail('')
-      await refreshAll()
-      setToast('Приглашение отправлено')
-    } catch (e: any) {
-      setErr(e?.message || 'Ошибка приглашения')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function doLogout() {
-    await supabase.auth.signOut()
-    setToken('')
-    setWorkers([])
-    setSites([])
-    setAssignments([])
-    router.replace('/admin?tab=workers')
-  }
-
-  return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      <div className="mx-auto max-w-6xl px-4 py-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <div className="text-xs tracking-widest text-zinc-400">TANIJA</div>
-            <h1 className="text-2xl font-semibold">
-              Админ-панель <span className="text-amber-400">Cleaning Timeclock</span>
-            </h1>
-            <div className="mt-1 text-sm text-zinc-400">Управленческий блок: объекты ↔ работники</div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={doRefresh}
-              disabled={busy || loading}
-              className={cn(
-                'rounded-xl border px-4 py-2 text-sm shadow',
-                'border-amber-500/30 bg-zinc-900 hover:bg-zinc-800',
-                (busy || loading) && 'opacity-60'
-              )}
-            >
-              Обновить данные
-            </button>
-            <button
-              onClick={doLogout}
-              className="rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-2 text-sm hover:bg-zinc-800"
-            >
-              Выйти
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-6 flex flex-wrap gap-2">
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => goTab(t.key)}
-              className={cn(
-                'rounded-xl px-4 py-2 text-sm transition',
-                tab === t.key
-                  ? 'bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/40'
-                  : 'bg-zinc-900 text-zinc-300 hover:bg-zinc-800 ring-1 ring-zinc-800'
-              )}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        {toast ? (
-          <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
-            {toast}
-          </div>
-        ) : null}
-
-        {err ? (
-          <div className="mt-4 rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-200">
-            {err}
-          </div>
-        ) : null}
-
-        {loading ? (
-          <div className="mt-6 rounded-2xl border border-zinc-800 bg-zinc-900 p-6 text-zinc-300">Загрузка…</div>
-        ) : !token ? (
-          <LoginBlock
-            onLoggedIn={async () => {
-              const t = await ensureSession()
-              if (t) await refreshAll(t)
-            }}
-          />
-        ) : tab === 'sites' ? (
-          <SitesTab
-            busy={busy}
-            sites={sites}
-            workers={activeWorkersOnly}
-            workerById={workerById}
-            assignmentsBySite={assignmentsBySite}
-            onAssign={doAssign}
-            onUnassign={doUnassign}
-            pick={siteAssignPick}
-            setPick={setSiteAssignPick}
-            onCopyCoords={async (s) => {
-              if (!hasCoords(s)) return
-              await copyToClipboard(`${s.lat}, ${s.lng}`)
-              setToast('Координаты скопированы')
-            }}
-          />
-        ) : tab === 'workers' ? (
-          <WorkersTab
-            busy={busy}
-            inviteEmail={inviteEmail}
-            setInviteEmail={setInviteEmail}
-            onInvite={doInvite}
-            workers={workersOnly}
-            siteById={siteById}
-            sites={sites}
-            assignmentsByWorker={assignmentsByWorker}
-            onAssign={doAssign}
-            onUnassign={doUnassign}
-            pick={workerAssignPick}
-            setPick={setWorkerAssignPick}
-          />
-        ) : tab === 'reports' ? (
-          <Stub title="Отчёты" text="Следующий шаг: часы по работникам/объектам + экспорт CSV." />
-        ) : tab === 'jobs' ? (
-          <Stub title="Задания" text="Следующий шаг: planned → in_progress → done + назначение на работника." />
-        ) : tab === 'schedule' ? (
-          <Stub title="Расписание" text="Следующий шаг: календарный вид (неделя/день) по объектам и работникам." />
-        ) : (
-          <Stub title="Настройки" text="Следующий шаг: политики безопасности, авто-выход, аудит-лог." />
-        )}
-      </div>
-    </div>
-  )
-}
-
-function Card(props: { title: string; subtitle?: string; children: any }) {
-  return (
-    <div className="rounded-2xl border border-zinc-800 bg-zinc-900 shadow">
-      <div className="border-b border-zinc-800 p-4">
-        <div className="text-base font-semibold">{props.title}</div>
-        {props.subtitle ? <div className="mt-1 text-sm text-zinc-400">{props.subtitle}</div> : null}
-      </div>
-      <div className="p-4">{props.children}</div>
-    </div>
-  )
-}
-
-function Pill(props: { children: any }) {
-  return (
-    <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs text-amber-200">
-      {props.children}
-    </span>
-  )
-}
-
-function Stub({ title, text }: { title: string; text: string }) {
-  return (
-    <div className="mt-6">
-      <Card title={title} subtitle="В работе">
-        <div className="text-sm text-zinc-300">{text}</div>
-      </Card>
-    </div>
-  )
-}
-
-function LoginBlock({ onLoggedIn }: { onLoggedIn: () => Promise<void> | void }) {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState('')
-
-  async function login() {
-    try {
-      setBusy(true)
-      setErr('')
-      const e = email.trim()
-      if (!e || !password) throw new Error('Введите email и пароль')
-      const { error } = await supabase.auth.signInWithPassword({ email: e, password })
-      if (error) throw new Error(error.message)
-      await onLoggedIn()
-    } catch (e: any) {
-      setErr(e?.message || 'Ошибка входа')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <div className="mt-6">
-      <Card title="Вход администратора" subtitle="Только для роли admin">
-        <div className="grid gap-3 sm:max-w-md">
-          {err ? (
-            <div className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200">{err}</div>
-          ) : null}
-          <input
-            className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3 text-sm outline-none focus:border-amber-500/40"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            autoComplete="email"
-          />
-          <input
-            className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3 text-sm outline-none focus:border-amber-500/40"
-            placeholder="Пароль"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            type="password"
-            autoComplete="current-password"
-          />
-          <button
-            onClick={login}
-            disabled={busy}
-            className={cn(
-              'rounded-xl border px-4 py-3 text-sm shadow',
-              'border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/15',
-              busy && 'opacity-60'
-            )}
-          >
-            Войти
-          </button>
-        </div>
-      </Card>
-    </div>
-  )
-}
-
-function SitesTab(props: {
-  busy: boolean
-  sites: Site[]
-  workers: Worker[]
-  workerById: Map<string, Worker>
-  assignmentsBySite: Map<string, Set<string>>
-  onAssign: (siteId: string, workerId: string) => void
-  onUnassign: (siteId: string, workerId: string) => void
-  pick: Record<string, string>
-  setPick: (v: Record<string, string>) => void
-  onCopyCoords: (s: Site) => void
-}) {
-  return (
-    <div className="mt-6 grid gap-4">
-      <Card title="Объекты" subtitle="Назначение работников на объект. Техданные спрятаны в раскрывашку.">
-        {props.sites.length === 0 ? (
-          <div className="text-sm text-zinc-400">Объектов пока нет.</div>
-        ) : (
-          <div className="grid gap-3">
-            {props.sites.map((s) => {
-              const assigned = props.assignmentsBySite.get(s.id) || new Set<string>()
-              const pickVal = props.pick[s.id] || ''
-              const available = props.workers.filter((w) => !assigned.has(w.id))
-
-              const r = radiusMeters(s)
-              const coordsOk = hasCoords(s)
-
-              return (
-                <div key={s.id} className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0">
-                      <div className="text-base font-semibold text-zinc-100">{prettySiteName(s)}</div>
-
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {Array.from(assigned).length === 0 ? (
-                          <span className="text-sm text-zinc-400">Пока никто не назначен</span>
-                        ) : (
-                          Array.from(assigned).map((wid) => {
-                            const w = props.workerById.get(wid) || null
-                            return (
-                              <span key={wid} className="flex items-center gap-2">
-                                <Pill>{workerPillLabel(w, wid)}</Pill>
-                                <button
-                                  onClick={() => props.onUnassign(s.id, wid)}
-                                  disabled={props.busy}
-                                  className={cn(
-                                    'rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs hover:bg-zinc-800',
-                                    props.busy && 'opacity-60'
-                                  )}
-                                >
-                                  Снять
-                                </button>
-                              </span>
-                            )
-                          })
-                        )}
-                      </div>
-
-                      <details className="mt-3 rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
-                        <summary className="cursor-pointer text-sm text-zinc-300 select-none">Техданные</summary>
-                        <div className="mt-2 grid gap-2 text-xs text-zinc-400">
-                          <div>
-                            Код объекта: <span className="text-zinc-200">{s.id}</span>
-                          </div>
-                          <div>
-                            Радиус допуска: <span className="text-zinc-200">{r ?? '—'} м</span>
-                          </div>
-                          <div>
-                            Координаты:{' '}
-                            <span className="text-zinc-200">
-                              {coordsOk ? `${s.lat!.toFixed(5)}, ${s.lng!.toFixed(5)}` : '—'}
-                            </span>
-                          </div>
-                          <div className="flex flex-wrap gap-2">
-                            <button
-                              onClick={() => props.onCopyCoords(s)}
-                              disabled={!coordsOk}
-                              className={cn(
-                                'rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs hover:bg-zinc-800',
-                                !coordsOk && 'opacity-60'
-                              )}
-                            >
-                              Скопировать координаты
-                            </button>
-                          </div>
-                        </div>
-                      </details>
-                    </div>
-
-                    <div className="w-full sm:w-96">
-                      <div className="grid gap-2">
-                        <select
-                          className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm outline-none focus:border-amber-500/40"
-                          value={pickVal}
-                          onChange={(e) => props.setPick({ ...props.pick, [s.id]: e.target.value })}
-                        >
-                          <option value="">Выбери работника…</option>
-                          {available.map((w) => (
-                            <option key={w.id} value={w.id}>
-                              {prettyWorkerName(w)}
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          onClick={() => pickVal && props.onAssign(s.id, pickVal)}
-                          disabled={props.busy || !pickVal}
-                          className={cn(
-                            'rounded-xl border px-4 py-3 text-sm shadow',
-                            'border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/15',
-                            (props.busy || !pickVal) && 'opacity-60'
-                          )}
-                        >
-                          Назначить
-                        </button>
-                      </div>
-                      <div className="mt-2 text-xs text-zinc-500">Список скрывает уже назначенных работников.</div>
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </Card>
-    </div>
-  )
-}
-
-function WorkersTab(props: {
-  busy: boolean
-  inviteEmail: string
-  setInviteEmail: (v: string) => void
-  onInvite: () => void
-  workers: Worker[]
-  sites: Site[]
-  siteById: Map<string, Site>
-  assignmentsByWorker: Map<string, Set<string>>
-  onAssign: (siteId: string, workerId: string) => void
-  onUnassign: (siteId: string, workerId: string) => void
-  pick: Record<string, string>
-  setPick: (v: Record<string, string>) => void
-}) {
-  return (
-    <div className="mt-6 grid gap-4">
-      <Card title="Работники" subtitle="Приглашение + назначение объектов работнику.">
-        <div className="grid gap-3 sm:flex sm:items-end sm:gap-3">
-          <div className="flex-1">
-            <div className="text-sm text-zinc-400">Пригласить работника (email)</div>
-            <input
-              className="mt-2 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3 text-sm outline-none focus:border-amber-500/40"
-              placeholder="worker@example.com"
-              value={props.inviteEmail}
-              onChange={(e) => props.setInviteEmail(e.target.value)}
-            />
-          </div>
-          <button
-            onClick={props.onInvite}
-            disabled={props.busy}
-            className={cn(
-              'rounded-xl border px-4 py-3 text-sm shadow',
-              'border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/15',
-              props.busy && 'opacity-60'
-            )}
-          >
-            Отправить приглашение
-          </button>
-        </div>
-
-        <div className="mt-6 grid gap-3">
-          {props.workers.length === 0 ? (
-            <div className="text-sm text-zinc-400">Работников пока нет.</div>
-          ) : (
-            props.workers.map((w) => {
-              const assigned = props.assignmentsByWorker.get(w.id) || new Set<string>()
-              const pickVal = props.pick[w.id] || ''
-              const availableSites = props.sites.filter((s) => !assigned.has(s.id))
-
-              return (
-                <div key={w.id} className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0">
-                      <div className="text-base font-semibold">{prettyWorkerName(w)}</div>
-
-                      <details className="mt-3 rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
-                        <summary className="cursor-pointer text-sm text-zinc-300 select-none">Техданные</summary>
-                        <div className="mt-2 text-xs text-zinc-400">
-                          Код работника: <span className="text-zinc-200">{w.id}</span>
-                        </div>
-                      </details>
-
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {Array.from(assigned).length === 0 ? (
-                          <span className="text-sm text-zinc-400">Пока нет назначенных объектов</span>
-                        ) : (
-                          Array.from(assigned).map((sid) => {
-                            const s = props.siteById.get(sid) || null
-                            return (
-                              <span key={sid} className="flex items-center gap-2">
-                                <Pill>{sitePillLabel(s, sid)}</Pill>
-                                <button
-                                  onClick={() => props.onUnassign(sid, w.id)}
-                                  disabled={props.busy}
-                                  className={cn(
-                                    'rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs hover:bg-zinc-800',
-                                    props.busy && 'opacity-60'
-                                  )}
-                                >
-                                  Снять
-                                </button>
-                              </span>
-                            )
-                          })
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="w-full sm:w-96">
-                      <div className="grid gap-2">
-                        <select
-                          className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm outline-none focus:border-amber-500/40"
-                          value={pickVal}
-                          onChange={(e) => props.setPick({ ...props.pick, [w.id]: e.target.value })}
-                        >
-                          <option value="">Выбери объект…</option>
-                          {availableSites.map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {prettySiteName(s)}
-                            </option>
-                          ))}
-                        </select>
-
-                        <button
-                          onClick={() => pickVal && props.onAssign(pickVal, w.id)}
-                          disabled={props.busy || !pickVal}
-                          className={cn(
-                            'rounded-xl border px-4 py-3 text-sm shadow',
-                            'border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/15',
-                            (props.busy || !pickVal) && 'opacity-60'
-                          )}
-                        >
-                          Назначить объект
-                        </button>
-                      </div>
-                      <div className="mt-2 text-xs text-zinc-500">Список скрывает уже назначенные объекты.</div>
-                    </div>
-                  </div>
-                </div>
-              )
-            })
-          )}
-        </div>
-      </Card>
-    </div>
-  )
+  );
 }

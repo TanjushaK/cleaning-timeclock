@@ -1,45 +1,81 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { ApiError, requireAdmin } from '@/lib/supabase-server'
+import { NextResponse } from 'next/server';
+import { ApiError, requireAdmin } from '@/lib/supabase-server';
 
-export const dynamic = 'force-dynamic'
+type WorkerRow = {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  role: string | null;
+  active: boolean | null;
+  avatar_url: string | null;
+};
 
-function jsonErr(status: number, message: string) {
-  return NextResponse.json({ error: message }, { status })
-}
+type SiteMini = {
+  id: string;
+  name: string | null;
+  address: string | null;
+};
 
-export async function GET(req: NextRequest) {
+export async function GET(req: Request) {
   try {
-    const { supabase } = await requireAdmin(req)
+    const { supabase } = await requireAdmin(req);
 
-    const { data: profiles, error: profErr } = await supabase
+    const { data: workers, error: wErr } = await supabase
       .from('profiles')
-      .select('*')
-      .order('role', { ascending: true })
+      .select('id, full_name, email, role, active, avatar_url')
+      .neq('role', 'admin')
+      .order('full_name', { ascending: true });
 
-    if (profErr) return jsonErr(500, profErr.message)
+    if (wErr) throw new ApiError(500, 'Не смог прочитать profiles');
 
-    const { data: usersData, error: usersErr } = await supabase.auth.admin.listUsers({
-      page: 1,
-      perPage: 1000,
-    })
+    const { data: asg, error: aErr } = await supabase.from('assignments').select('site_id, worker_id');
+    if (aErr) throw new ApiError(500, 'Не смог прочитать assignments');
 
-    if (usersErr) {
-      return NextResponse.json({
-        workers: (profiles || []).map((p: any) => ({ ...p, email: null })),
-      })
+    const siteIds = Array.from(new Set((asg ?? []).map((x: any) => String(x.site_id)).filter(Boolean)));
+
+    let sites: SiteMini[] = [];
+    if (siteIds.length > 0) {
+      const { data: s, error: sErr } = await supabase.from('sites').select('id, name, address').in('id', siteIds);
+      if (sErr) throw new ApiError(500, 'Не смог прочитать sites');
+      sites = (s ?? []).map((x: any) => ({
+        id: String(x.id),
+        name: x.name ?? null,
+        address: x.address ?? null,
+      }));
     }
 
-    const emailById = new Map<string, string | null>()
-    for (const u of usersData.users) emailById.set(u.id, u.email ?? null)
+    const siteById = new Map(sites.map((s) => [s.id, s]));
+    const sitesByWorker = new Map<string, SiteMini[]>();
 
-    const merged = (profiles || []).map((p: any) => ({
-      ...p,
-      email: emailById.get(p.id) ?? null,
-    }))
+    for (const a of asg ?? []) {
+      const workerId = String((a as any).worker_id);
+      const siteId = String((a as any).site_id);
+      const site = siteById.get(siteId);
+      if (!workerId || !site) continue;
+      const arr = sitesByWorker.get(workerId) ?? [];
+      arr.push(site);
+      sitesByWorker.set(workerId, arr);
+    }
 
-    return NextResponse.json({ workers: merged }, { status: 200 })
+    const result = (workers ?? []).map((w: any) => {
+      const row: WorkerRow = {
+        id: String(w.id),
+        full_name: w.full_name ?? null,
+        email: w.email ?? null,
+        role: w.role ?? null,
+        active: w.active ?? null,
+        avatar_url: w.avatar_url ?? null,
+      };
+
+      return {
+        ...row,
+        assigned_sites: sitesByWorker.get(row.id) ?? [],
+      };
+    });
+
+    return NextResponse.json({ workers: result }, { status: 200 });
   } catch (e: any) {
-    if (e instanceof ApiError) return jsonErr(e.status, e.message)
-    return jsonErr(500, e?.message || 'Внутренняя ошибка')
+    const status = e?.status ?? 500;
+    return NextResponse.json({ error: e?.message ?? 'Ошибка' }, { status });
   }
 }
