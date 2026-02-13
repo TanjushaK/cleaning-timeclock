@@ -41,17 +41,38 @@ export async function POST(req: NextRequest) {
     if (!guard.ok) return NextResponse.json({ error: guard.error }, { status: guard.status })
 
     const body = await req.json().catch(() => ({} as any))
-    const jobId = String(body?.job_id || '').trim()
-    if (!jobId) return NextResponse.json({ error: 'job_id обязателен' }, { status: 400 })
+    const fromWorker = String(body?.from_worker_id || '').trim()
+    const toWorker = String(body?.to_worker_id || '').trim()
+    const jobDate = String(body?.job_date || '').trim()
+    const onlyPlanned = !!body?.only_planned
+
+    if (!fromWorker || !toWorker || !jobDate) return NextResponse.json({ error: 'from_worker_id, to_worker_id, job_date обязательны' }, { status: 400 })
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(jobDate)) return NextResponse.json({ error: 'job_date неверный формат' }, { status: 400 })
 
     const url = envOrThrow('NEXT_PUBLIC_SUPABASE_URL')
     const service = envOrThrow('SUPABASE_SERVICE_ROLE_KEY')
     const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } })
 
-    const { error } = await admin.from('jobs').update({ status: 'cancelled' }).eq('id', jobId)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    let q = admin.from('jobs').select('id,site_id').eq('worker_id', fromWorker).eq('job_date', jobDate)
+    if (onlyPlanned) q = q.eq('status', 'planned')
 
-    return NextResponse.json({ ok: true })
+    const { data: rows, error: selErr } = await q
+    if (selErr) return NextResponse.json({ error: selErr.message }, { status: 500 })
+
+    const ids = (rows || []).map((r: any) => r.id)
+    const siteIds = Array.from(new Set((rows || []).map((r: any) => r.site_id).filter(Boolean)))
+
+    if (ids.length === 0) return NextResponse.json({ ok: true, moved: 0 })
+
+    const { error: updErr } = await admin.from('jobs').update({ worker_id: toWorker }).in('id', ids)
+    if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
+
+    if (siteIds.length) {
+      const upserts = siteIds.map((sid) => ({ site_id: sid, worker_id: toWorker }))
+      await admin.from('assignments').upsert(upserts, { onConflict: 'site_id,worker_id', ignoreDuplicates: true } as any)
+    }
+
+    return NextResponse.json({ ok: true, moved: ids.length })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Ошибка сервера' }, { status: 500 })
   }

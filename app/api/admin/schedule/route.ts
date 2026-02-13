@@ -35,13 +35,6 @@ async function assertAdmin(req: NextRequest) {
   return { ok: true as const }
 }
 
-function isoDate(d: Date) {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
-
 export async function GET(req: NextRequest) {
   try {
     const guard = await assertAdmin(req)
@@ -51,23 +44,19 @@ export async function GET(req: NextRequest) {
     const service = envOrThrow('SUPABASE_SERVICE_ROLE_KEY')
     const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } })
 
-    const qp = req.nextUrl.searchParams
-    const today = new Date()
-    const defFrom = isoDate(today)
-    const defTo = isoDate(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 6))
+    const sp = req.nextUrl.searchParams
+    const dateFrom = (sp.get('date_from') || '').trim()
+    const dateTo = (sp.get('date_to') || '').trim()
+    const siteId = (sp.get('site_id') || '').trim()
+    const workerId = (sp.get('worker_id') || '').trim()
 
-    const dateFrom = (qp.get('date_from') || defFrom).trim()
-    const dateTo = (qp.get('date_to') || defTo).trim()
-    const siteId = (qp.get('site_id') || '').trim()
-    const workerId = (qp.get('worker_id') || '').trim()
+    if (!dateFrom || !dateTo) return NextResponse.json({ error: 'date_from и date_to обязательны' }, { status: 400 })
 
     let q = admin
       .from('jobs')
-      .select('id,status,site_id,worker_id,job_date,scheduled_time')
+      .select('id,status,job_date,scheduled_time,site_id,worker_id')
       .gte('job_date', dateFrom)
       .lte('job_date', dateTo)
-      .order('job_date', { ascending: true })
-      .order('scheduled_time', { ascending: true })
 
     if (siteId) q = q.eq('site_id', siteId)
     if (workerId) q = q.eq('worker_id', workerId)
@@ -75,59 +64,56 @@ export async function GET(req: NextRequest) {
     const { data: jobs, error: jobsErr } = await q
     if (jobsErr) return NextResponse.json({ error: jobsErr.message }, { status: 500 })
 
-    const jobList = (jobs ?? []) as any[]
-    const siteIds = Array.from(new Set(jobList.map((j) => j.site_id).filter(Boolean)))
-    const workerIds = Array.from(new Set(jobList.map((j) => j.worker_id).filter(Boolean)))
-    const jobIds = jobList.map((j) => j.id)
+    const jobIds = (jobs || []).map((j: any) => j.id)
+    const siteIds = Array.from(new Set((jobs || []).map((j: any) => j.site_id).filter(Boolean)))
+    const workerIds = Array.from(new Set((jobs || []).map((j: any) => j.worker_id).filter(Boolean)))
 
-    const [sitesRes, profRes, logsRes] = await Promise.all([
-      siteIds.length ? admin.from('sites').select('id,name').in('id', siteIds) : Promise.resolve({ data: [] as any[], error: null as any }),
-      workerIds.length
-        ? admin.from('profiles').select('id,full_name,role,active').in('id', workerIds)
-        : Promise.resolve({ data: [] as any[], error: null as any }),
-      jobIds.length
-        ? admin
-            .from('time_logs')
-            .select('job_id,worker_id,started_at,stopped_at')
-            .in('job_id', jobIds)
-            .order('started_at', { ascending: false })
-        : Promise.resolve({ data: [] as any[], error: null as any }),
+    const [sitesRes, workersRes, logsRes] = await Promise.all([
+      siteIds.length ? admin.from('sites').select('id,name').in('id', siteIds) : Promise.resolve({ data: [], error: null } as any),
+      workerIds.length ? admin.from('profiles').select('id,full_name').in('id', workerIds) : Promise.resolve({ data: [], error: null } as any),
+      jobIds.length ? admin.from('time_logs').select('job_id,started_at,stopped_at').in('job_id', jobIds) : Promise.resolve({ data: [], error: null } as any),
     ])
 
     if (sitesRes.error) return NextResponse.json({ error: sitesRes.error.message }, { status: 500 })
-    if (profRes.error) return NextResponse.json({ error: profRes.error.message }, { status: 500 })
+    if (workersRes.error) return NextResponse.json({ error: workersRes.error.message }, { status: 500 })
     if (logsRes.error) return NextResponse.json({ error: logsRes.error.message }, { status: 500 })
 
-    const siteMap = new Map<string, any>((sitesRes.data ?? []).map((s: any) => [s.id, s]))
-    const workerMap = new Map<string, any>((profRes.data ?? []).map((p: any) => [p.id, p]))
+    const siteName = new Map<string, string>()
+    for (const s of (sitesRes.data || []) as any[]) siteName.set(s.id, s.name || '')
 
-    // Берём самый свежий лог на пару job_id+worker_id
-    const latestLogMap = new Map<string, any>()
-    for (const r of logsRes.data ?? []) {
-      const key = `${r.job_id}:${r.worker_id || ''}`
-      if (!latestLogMap.has(key)) latestLogMap.set(key, r)
+    const workerName = new Map<string, string>()
+    for (const w of (workersRes.data || []) as any[]) workerName.set(w.id, w.full_name || '')
+
+    const logAgg = new Map<string, { started_at: string | null; stopped_at: string | null }>()
+    for (const l of (logsRes.data || []) as any[]) {
+      const id = String(l.job_id)
+      const cur = logAgg.get(id) || { started_at: null, stopped_at: null }
+      if (l.started_at) {
+        if (!cur.started_at || String(l.started_at) < cur.started_at) cur.started_at = String(l.started_at)
+      }
+      if (l.stopped_at) {
+        if (!cur.stopped_at || String(l.stopped_at) > cur.stopped_at) cur.stopped_at = String(l.stopped_at)
+      }
+      logAgg.set(id, cur)
     }
 
-    const items = jobList.map((j) => {
-      const site = siteMap.get(j.site_id) || null
-      const worker = j.worker_id ? workerMap.get(j.worker_id) || null : null
-      const log = latestLogMap.get(`${j.id}:${j.worker_id || ''}`) || null
-
+    const items = (jobs || []).map((j: any) => {
+      const agg = logAgg.get(String(j.id)) || { started_at: null, stopped_at: null }
       return {
-        id: j.id,
+        id: String(j.id),
         status: j.status,
         job_date: j.job_date,
         scheduled_time: j.scheduled_time,
         site_id: j.site_id,
-        site_name: site?.name || null,
+        site_name: j.site_id ? siteName.get(String(j.site_id)) || null : null,
         worker_id: j.worker_id,
-        worker_name: worker?.full_name || null,
-        started_at: log?.started_at || null,
-        stopped_at: log?.stopped_at || null,
+        worker_name: j.worker_id ? workerName.get(String(j.worker_id)) || null : null,
+        started_at: agg.started_at,
+        stopped_at: agg.stopped_at,
       }
     })
 
-    return NextResponse.json({ ok: true, date_from: dateFrom, date_to: dateTo, items })
+    return NextResponse.json({ items })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Ошибка сервера' }, { status: 500 })
   }
