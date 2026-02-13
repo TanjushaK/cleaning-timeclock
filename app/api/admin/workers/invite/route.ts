@@ -1,61 +1,48 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { ApiError, requireAdmin } from '@/lib/supabase-server'
+import { NextResponse } from 'next/server';
+import { ApiError, requireAdmin } from '@/lib/supabase-server';
 
-function jsonOk(data: any) {
-  return NextResponse.json(data, { status: 200 })
-}
-
-function jsonErr(e: any) {
-  const status = typeof e?.status === 'number' ? e.status : 500
-  const msg = e?.message || 'error'
-  return NextResponse.json({ error: msg }, { status })
-}
-
-export async function POST(req: NextRequest) {
+function getOrigin(req: Request) {
+  const proto = req.headers.get('x-forwarded-proto') || 'https';
+  const host = req.headers.get('x-forwarded-host') || req.headers.get('host');
+  if (host) return `${proto}://${host}`;
   try {
-    const { supabase, admin } = await requireAdmin(req.headers)
+    return new URL(req.url).origin;
+  } catch {
+    return '';
+  }
+}
 
-    const body = await req.json().catch(() => ({}))
-    const email = String(body?.email || '').trim().toLowerCase()
-    const full_name = String(body?.full_name || '').trim()
-    const phone = String(body?.phone || '').trim()
+export async function POST(req: Request) {
+  try {
+    const { supabase, admin } = await requireAdmin(req);
+    const body = await req.json();
 
-    if (!email) throw new ApiError(400, 'email_required')
-    if (!email.includes('@')) throw new ApiError(400, 'email_invalid')
-    if (!full_name) throw new ApiError(400, 'full_name_required')
+    const email = (body?.email ?? '').toString().trim().toLowerCase();
+    const full_name = body?.full_name == null ? null : String(body.full_name).trim() || null;
 
-    // 1) Приглашение / письмо на установку пароля
-    // Supabase Admin API: inviteUserByEmail (письмо "Set password" / "Invite")
-    const redirectTo =
-      process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
-      process.env.NEXT_PUBLIC_VERCEL_URL?.trim()
-        ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
-        : undefined
+    if (!email) throw new ApiError(400, 'Нужен email');
 
-    const { data: inv, error: invErr } = await admin.auth.admin.inviteUserByEmail(email, {
-      redirectTo: redirectTo ? `${redirectTo}/reset-password` : undefined,
-      data: { full_name, phone },
-    })
+    const origin = getOrigin(req);
+    const redirectTo = origin ? `${origin}/reset-password` : undefined;
 
-    if (invErr) throw new ApiError(400, invErr.message)
+    const { data, error } = await admin.inviteUserByEmail(email, redirectTo ? { redirectTo } : undefined);
+    if (error) throw new ApiError(500, error.message || 'Не смог отправить приглашение');
 
-    const invitedUserId = inv?.user?.id
-    if (!invitedUserId) throw new ApiError(500, 'invite_no_user')
+    const userId = data?.user?.id;
+    if (!userId) throw new ApiError(500, 'Invite: нет user id');
 
-    // 2) Профиль (worker) — upsert, чтобы не падать при повторном приглашении
-    const { error: upErr } = await supabase.from('profiles').upsert(
-      {
-        id: invitedUserId,
-        full_name,
-        phone,
-        role: 'worker',
-      },
-      { onConflict: 'id' }
-    )
-    if (upErr) throw new ApiError(400, upErr.message)
+    const { error: pErr } = await supabase
+      .from('profiles')
+      .upsert(
+        { id: userId, email, full_name, role: 'worker', active: true },
+        { onConflict: 'id' }
+      );
 
-    return jsonOk({ ok: true, user_id: invitedUserId })
+    if (pErr) throw new ApiError(500, 'Invite: не смог обновить profiles');
+
+    return NextResponse.json({ ok: true, userId }, { status: 200 });
   } catch (e: any) {
-    return jsonErr(e)
+    const status = e?.status ?? 500;
+    return NextResponse.json({ error: e?.message ?? 'Ошибка' }, { status });
   }
 }

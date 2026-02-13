@@ -1,100 +1,68 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
 
 export class ApiError extends Error {
   status: number;
-
   constructor(status: number, message: string) {
     super(message);
     this.status = status;
   }
 }
 
-function env(name: string): string {
+function mustEnv(name: string) {
   const v = process.env[name];
-  if (!v) throw new Error(`Missing env: ${name}`);
+  if (!v) throw new ApiError(500, `Нет env: ${name}`);
   return v;
 }
 
-export function supabaseService(): SupabaseClient {
-  const url = env('SUPABASE_URL');
-  const key = env('SUPABASE_SERVICE_ROLE_KEY');
-
+export function supabaseService() {
+  const url = mustEnv('NEXT_PUBLIC_SUPABASE_URL');
+  const key = mustEnv('SUPABASE_SERVICE_ROLE_KEY');
   return createClient(url, key, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-    },
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   });
 }
 
-export function supabaseAnon(accessToken?: string): SupabaseClient {
-  const url = env('SUPABASE_URL');
-  const key = env('SUPABASE_ANON_KEY');
-
+export function supabaseAnon() {
+  const url = mustEnv('NEXT_PUBLIC_SUPABASE_URL');
+  const key = mustEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
   return createClient(url, key, {
-    global: accessToken
-      ? {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        }
-      : undefined,
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false,
-    },
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   });
 }
 
-function extractBearer(headers: Headers): string | null {
-  const h = headers.get('authorization') || headers.get('Authorization');
-  if (!h) return null;
-  const m = h.match(/^Bearer\s+(.+)$/i);
-  return m?.[1] ?? null;
+function getBearer(h: Headers) {
+  const a = h.get('authorization') || h.get('Authorization') || '';
+  const m = a.match(/^Bearer\s+(.+)$/i);
+  return m?.[1] || '';
 }
 
-export async function requireUser(input: Request | Headers): Promise<{
-  userId: string;
-  supabase: SupabaseClient;
-  admin: any;
-}> {
-  const headers = input instanceof Headers ? input : input.headers;
-  const token = extractBearer(headers);
+export async function requireUser(reqOrHeaders: Request | Headers) {
+  const headers = reqOrHeaders instanceof Headers ? reqOrHeaders : reqOrHeaders.headers;
+  const token = getBearer(headers);
+  if (!token) throw new ApiError(401, 'Нет токена (Authorization: Bearer ...)');
 
-  if (!token) throw new ApiError(401, 'Нет токена. Нужен Authorization: Bearer ...');
+  const anon = supabaseAnon();
+  const { data, error } = await anon.auth.getUser(token);
 
-  const anon = supabaseAnon(token);
-  const { data, error } = await anon.auth.getUser();
+  if (error || !data?.user?.id) throw new ApiError(401, 'Сессия невалидна');
 
-  if (error || !data?.user?.id) {
-    throw new ApiError(401, 'Сессия недействительна. Перелогиньтесь.');
-  }
+  const supabase = supabaseService();
+  const admin: any = (supabase as any).auth?.admin;
 
-  const svc = supabaseService();
-  const admin = (svc.auth as any).admin as any;
-
-  return { userId: data.user.id, supabase: svc, admin };
+  return { userId: data.user.id, supabase, admin };
 }
 
-export async function requireAdmin(input: Request | Headers): Promise<{
-  userId: string;
-  supabase: SupabaseClient;
-  admin: any;
-}> {
-  const { userId, supabase, admin } = await requireUser(input);
+export async function requireAdmin(reqOrHeaders: Request | Headers) {
+  const { userId, supabase, admin } = await requireUser(reqOrHeaders);
 
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, role, active')
+    .select('role, active')
     .eq('id', userId)
     .maybeSingle();
 
   if (error) throw new ApiError(500, 'Не смог прочитать profiles');
-  if (!data) throw new ApiError(403, 'Профиль не найден');
-  if (data.role !== 'admin') throw new ApiError(403, 'Доступ только для админа');
-  if (data.active !== true) throw new ApiError(403, 'Админ отключён (active=false)');
+  if (!data || data.role !== 'admin' || data.active === false) throw new ApiError(403, 'Нет прав админа');
 
   return { userId, supabase, admin };
 }

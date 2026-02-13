@@ -1,75 +1,41 @@
-import { NextResponse } from 'next/server'
-import { ApiError, requireAdmin } from '@/lib/supabase-server'
-
-type Site = {
-  id: string
-  name: string
-  address: string | null
-  lat: number | null
-  lng: number | null
-  radius_m: number
-  notes: string | null
-}
-
-export async function GET(req: Request) {
-  try {
-    const { supabase } = await requireAdmin(req.headers)
-
-    const { data, error } = await supabase
-      .from('sites')
-      .select('id, name, address, lat, lng, radius_m, notes')
-      .order('name', { ascending: true })
-
-    if (error) throw new ApiError(400, error.message)
-
-    return NextResponse.json({ sites: (data ?? []) as Site[] })
-  } catch (e: any) {
-    const status = typeof e?.status === 'number' ? e.status : 500
-    const msg = e?.message || 'error'
-    return NextResponse.json({ error: msg }, { status })
-  }
-}
+import { NextResponse } from 'next/server';
+import { ApiError, requireAdmin } from '@/lib/supabase-server';
 
 export async function POST(req: Request) {
   try {
-    const { supabase } = await requireAdmin(req.headers)
+    const { supabase } = await requireAdmin(req);
+    const body = await req.json();
 
-    const body = await req.json().catch(() => ({}))
+    const name = (body?.name ?? '').toString().trim();
+    const address = body?.address == null ? null : String(body.address).trim() || null;
 
-    const name = typeof body?.name === 'string' ? body.name.trim() : ''
-    if (!name) throw new ApiError(400, 'site_name_required')
+    const lat = body?.lat == null ? null : Number(body.lat);
+    const lng = body?.lng == null ? null : Number(body.lng);
+    const radius = body?.radius == null ? null : Number(body.radius);
 
-    const address = typeof body?.address === 'string' ? body.address.trim() : ''
-    const notes = typeof body?.notes === 'string' ? body.notes.trim() : ''
+    if (!name) throw new ApiError(400, 'Нужно название объекта');
 
-    const lat = body?.lat === '' || body?.lat == null ? null : Number(body.lat)
-    const lng = body?.lng === '' || body?.lng == null ? null : Number(body.lng)
-
-    if (lat != null && !Number.isFinite(lat)) throw new ApiError(400, 'lat_bad')
-    if (lng != null && !Number.isFinite(lng)) throw new ApiError(400, 'lng_bad')
-
-    const radius = body?.radius_m == null || body?.radius_m === '' ? 100 : Number(body.radius_m)
-    if (!Number.isFinite(radius) || radius <= 0) throw new ApiError(400, 'radius_bad')
+    const safeLat = lat != null && Number.isFinite(lat) ? lat : null;
+    const safeLng = lng != null && Number.isFinite(lng) ? lng : null;
+    const safeRadius = radius != null && Number.isFinite(radius) ? radius : 150;
 
     const { data, error } = await supabase
       .from('sites')
       .insert({
         name,
-        address: address || null,
-        lat,
-        lng,
-        radius_m: radius,
-        notes: notes || null,
+        address,
+        lat: safeLat,
+        lng: safeLng,
+        radius: safeRadius,
       })
-      .select('id')
-      .single()
+      .select('id, name, address, lat, lng, radius')
+      .single();
 
-    if (error) throw new ApiError(400, error.message)
+    if (error) throw new ApiError(500, error.message || 'Не смог создать объект');
 
-    return NextResponse.json({ ok: true, id: data?.id })
+    return NextResponse.json({ site: data }, { status: 200 });
   } catch (e: any) {
-    const status = typeof e?.status === 'number' ? e.status : 500
-    const msg = e?.message || 'error'
-    return NextResponse.json({ error: msg }, { status })
+    const status = e?.status ?? 500;
+    return NextResponse.json({ error: e?.message ?? 'Ошибка' }, { status });
   }
 }
