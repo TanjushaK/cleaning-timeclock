@@ -1,4 +1,3 @@
-// app/api/admin/sites/list/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -16,7 +15,7 @@ function envOrThrow(name: string) {
 
 async function assertAdmin(req: NextRequest) {
   const token = bearer(req)
-  if (!token) return { ok: false as const, status: 401, error: 'Нет токена (Authorization: Bearer ...)' }
+  if (!token) return { ok: false as const, status: 401, error: 'Нет входа. Авторизуйся в админке.' }
 
   const url = envOrThrow('NEXT_PUBLIC_SUPABASE_URL')
   const anon = envOrThrow('NEXT_PUBLIC_SUPABASE_ANON_KEY')
@@ -29,14 +28,9 @@ async function assertAdmin(req: NextRequest) {
   const { data: userData, error: userErr } = await sb.auth.getUser(token)
   if (userErr || !userData?.user) return { ok: false as const, status: 401, error: 'Невалидный токен' }
 
-  const { data: prof, error: profErr } = await sb
-    .from('profiles')
-    .select('id, role, active')
-    .eq('id', userData.user.id)
-    .single()
-
+  const { data: prof, error: profErr } = await sb.from('profiles').select('id, role, active').eq('id', userData.user.id).single()
   if (profErr || !prof) return { ok: false as const, status: 403, error: 'Профиль не найден' }
-  if (prof.role !== 'admin' || prof.active !== true) return { ok: false as const, status: 403, error: 'FORBIDDEN' }
+  if (prof.role !== 'admin' || prof.active !== true) return { ok: false as const, status: 403, error: 'Доступ запрещён' }
 
   return { ok: true as const }
 }
@@ -46,20 +40,24 @@ export async function GET(req: NextRequest) {
     const guard = await assertAdmin(req)
     if (!guard.ok) return NextResponse.json({ error: guard.error }, { status: guard.status })
 
-    const includeArchived = req.nextUrl.searchParams.get('include_archived') === '1'
-
     const url = envOrThrow('NEXT_PUBLIC_SUPABASE_URL')
     const service = envOrThrow('SUPABASE_SERVICE_ROLE_KEY')
+
     const admin = createClient(url, service, {
       auth: { persistSession: false, autoRefreshToken: false },
     })
 
+    const includeArchived = req.nextUrl.searchParams.get('include_archived') === '1'
+
     let q = admin
       .from('sites')
-      .select('id, name, lat, lng, radius, archived_at')
-      .order('name', { ascending: true, nullsFirst: true })
+      .select('id,name,lat,lng,radius,archived_at')
+      .order('name', { ascending: true })
 
-    if (!includeArchived) q = q.is('archived_at', null)
+    if (!includeArchived) {
+      // ВАЖНО: NULL ищется только через .is(..., null)
+      q = q.is('archived_at', null)
+    }
 
     const { data, error } = await q
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
