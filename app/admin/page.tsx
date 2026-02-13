@@ -13,6 +13,7 @@ type Site = {
   lat?: number | null
   lng?: number | null
   radius?: number | null
+  archived_at?: string | null
 }
 
 type Worker = {
@@ -89,6 +90,8 @@ export default function AdminPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const [showArchivedSites, setShowArchivedSites] = useState(false)
+
   const [sites, setSites] = useState<Site[]>([])
   const [workers, setWorkers] = useState<Worker[]>([])
   const [assignments, setAssignments] = useState<Assignment[]>([])
@@ -137,12 +140,18 @@ export default function AdminPage() {
   const jobsInProgress = useMemo(() => jobs.filter((j) => j.status === 'in_progress'), [jobs])
   const jobsDone = useMemo(() => jobs.filter((j) => j.status === 'done'), [jobs])
 
+  const activeSitesForAssign = useMemo(
+    () => sites.filter((s) => !s.archived_at),
+    [sites]
+  )
+
   async function refreshAll() {
     setBusy(true)
     setError(null)
     try {
+      const sitesUrl = showArchivedSites ? '/api/admin/sites/list?include_archived=1' : '/api/admin/sites/list'
       const [s, w, a, j] = await Promise.all([
-        authFetchJson<{ sites: Site[] }>('/api/admin/sites/list'),
+        authFetchJson<{ sites: Site[] }>(sitesUrl),
         authFetchJson<{ workers: Worker[] }>('/api/admin/workers/list'),
         authFetchJson<{ assignments: Assignment[] }>('/api/admin/assignments'),
         authFetchJson<{ jobs: Job[] }>('/api/admin/jobs'),
@@ -162,7 +171,7 @@ export default function AdminPage() {
   useEffect(() => {
     void refreshAll()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [showArchivedSites])
 
   async function quickAssign() {
     if (!qaSite || !qaWorker) return
@@ -199,9 +208,32 @@ export default function AdminPage() {
     }
   }
 
-  async function deleteSite(siteId: string) {
-    const ok = window.confirm('Удалить объект? Если по нему есть смены — сервер запретит.')
+  async function setSiteArchived(siteId: string, archived: boolean) {
+    const ok = window.confirm(archived ? 'Отправить объект в архив?' : 'Вернуть объект из архива?')
     if (!ok) return
+
+    setBusy(true)
+    setError(null)
+    try {
+      await authFetchJson('/api/admin/sites/set-archived', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ site_id: siteId, archived }),
+      })
+      await refreshAll()
+    } catch (e: any) {
+      setError(e?.message || 'Операция не выполнена')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function deleteSiteHard(siteId: string) {
+    const ok1 = window.confirm('Удалить объект НАВСЕГДА? Рекомендуется только для тестовых данных.')
+    if (!ok1) return
+    const ok2 = window.confirm('Последний шанс: точно удалить? Если есть jobs — сервер запретит.')
+    if (!ok2) return
+
     setBusy(true)
     setError(null)
     try {
@@ -303,8 +335,22 @@ export default function AdminPage() {
               ))}
             </div>
 
-            <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-[11px] text-zinc-200">
-              Sites: {sites.length} • Workers: {workers.length} • Jobs: {jobs.length}
+            <div className="flex items-center gap-3">
+              {tab === 'sites' ? (
+                <label className="flex items-center gap-2 rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-[11px] text-zinc-200">
+                  <input
+                    type="checkbox"
+                    checked={showArchivedSites}
+                    onChange={(e) => setShowArchivedSites(e.target.checked)}
+                    className="h-4 w-4 accent-yellow-400"
+                  />
+                  Показать архив
+                </label>
+              ) : null}
+
+              <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-[11px] text-zinc-200">
+                Sites: {sites.length} • Workers: {workers.length} • Jobs: {jobs.length}
+              </div>
             </div>
           </div>
 
@@ -320,7 +366,7 @@ export default function AdminPage() {
                 <div className="flex flex-wrap items-end justify-between gap-3">
                   <div>
                     <div className="text-sm font-semibold text-yellow-100">QuickAssign</div>
-                    <div className="mt-1 text-xs text-zinc-300">Выбери объект и работника → назначить.</div>
+                    <div className="mt-1 text-xs text-zinc-300">Только активные объекты (архивные не назначаем).</div>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
@@ -330,7 +376,7 @@ export default function AdminPage() {
                       className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                     >
                       <option value="">Объект…</option>
-                      {sites.map((s) => (
+                      {activeSitesForAssign.map((s) => (
                         <option key={s.id} value={s.id}>
                           {s.name || s.id}
                         </option>
@@ -366,6 +412,8 @@ export default function AdminPage() {
               {sites.map((s) => {
                 const assigned = siteWorkers.get(s.id) || []
                 const gpsOk = s.lat != null && s.lng != null
+                const archived = Boolean(s.archived_at)
+
                 return (
                   <div
                     key={s.id}
@@ -373,7 +421,19 @@ export default function AdminPage() {
                   >
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
-                        <div className="text-base font-semibold text-yellow-100">{s.name || 'Объект'}</div>
+                        <div className="text-base font-semibold text-yellow-100">
+                          {s.name || 'Объект'}{' '}
+                          {archived ? (
+                            <span className="ml-2 rounded-xl border border-red-400/20 bg-red-500/10 px-2 py-1 text-[11px] text-red-100">
+                              archived
+                            </span>
+                          ) : (
+                            <span className="ml-2 rounded-xl border border-yellow-400/15 bg-black/30 px-2 py-1 text-[11px] text-zinc-200">
+                              active
+                            </span>
+                          )}
+                        </div>
+
                         <div className="mt-1 text-xs text-zinc-300">
                           GPS:{' '}
                           <span className={gpsOk ? 'text-zinc-100' : 'text-red-200'}>
@@ -381,6 +441,12 @@ export default function AdminPage() {
                           </span>{' '}
                           • radius: <span className="text-zinc-100">{s.radius ?? '—'}</span>
                         </div>
+
+                        {archived && s.archived_at ? (
+                          <div className="mt-1 text-xs text-zinc-300">
+                            Архив: <span className="text-zinc-100">{fmtDT(s.archived_at)}</span>
+                          </div>
+                        ) : null}
 
                         <div className="mt-3 text-xs text-zinc-300">Назначены:</div>
                         {assigned.length === 0 ? (
@@ -406,14 +472,34 @@ export default function AdminPage() {
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => deleteSite(s.id)}
-                          disabled={busy}
-                          className="rounded-2xl border border-red-400/25 bg-red-500/10 px-4 py-2 text-xs font-semibold text-red-100 transition hover:border-red-300/50 disabled:opacity-60"
-                        >
-                          Удалить объект
-                        </button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {!archived ? (
+                          <button
+                            onClick={() => setSiteArchived(s.id, true)}
+                            disabled={busy}
+                            className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
+                          >
+                            В архив
+                          </button>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => setSiteArchived(s.id, false)}
+                              disabled={busy}
+                              className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
+                            >
+                              Вернуть
+                            </button>
+
+                            <button
+                              onClick={() => deleteSiteHard(s.id)}
+                              disabled={busy}
+                              className="rounded-2xl border border-red-400/25 bg-red-500/10 px-4 py-2 text-xs font-semibold text-red-100 transition hover:border-red-300/50 disabled:opacity-60"
+                            >
+                              Удалить навсегда
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -549,7 +635,7 @@ export default function AdminPage() {
         </div>
 
         <div className="mt-6 text-center text-xs text-zinc-500">
-          Админка: удаление безопасное — объект удалится только если нет смен, работник лучше отключать.
+          Архив ≠ удаление. Архивируем — и живём спокойно (а отчёты не плачут).
         </div>
       </div>
     </main>

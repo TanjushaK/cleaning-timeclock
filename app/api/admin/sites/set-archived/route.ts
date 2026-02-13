@@ -1,4 +1,4 @@
-// app/api/admin/sites/list/route.ts
+// app/api/admin/sites/set-archived/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -41,12 +41,16 @@ async function assertAdmin(req: NextRequest) {
   return { ok: true as const }
 }
 
-export async function GET(req: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
     const guard = await assertAdmin(req)
     if (!guard.ok) return NextResponse.json({ error: guard.error }, { status: guard.status })
 
-    const includeArchived = req.nextUrl.searchParams.get('include_archived') === '1'
+    const body = await req.json().catch(() => ({} as any))
+    const siteId = String(body?.site_id || '').trim()
+    const archived = Boolean(body?.archived)
+
+    if (!siteId) return NextResponse.json({ error: 'site_id обязателен' }, { status: 400 })
 
     const url = envOrThrow('NEXT_PUBLIC_SUPABASE_URL')
     const service = envOrThrow('SUPABASE_SERVICE_ROLE_KEY')
@@ -54,17 +58,23 @@ export async function GET(req: NextRequest) {
       auth: { persistSession: false, autoRefreshToken: false },
     })
 
-    let q = admin
+    // Архивируем: чистим назначения (чтобы не попадали в оперативку)
+    if (archived) {
+      await admin.from('assignments').delete().eq('site_id', siteId)
+    }
+
+    const patch = archived ? { archived_at: new Date().toISOString() } : { archived_at: null }
+
+    const { data, error } = await admin
       .from('sites')
+      .update(patch)
+      .eq('id', siteId)
       .select('id, name, lat, lng, radius, archived_at')
-      .order('name', { ascending: true, nullsFirst: true })
+      .single()
 
-    if (!includeArchived) q = q.is('archived_at', null)
-
-    const { data, error } = await q
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-    return NextResponse.json({ sites: data ?? [] })
+    return NextResponse.json({ ok: true, site: data })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Server error' }, { status: 500 })
   }
