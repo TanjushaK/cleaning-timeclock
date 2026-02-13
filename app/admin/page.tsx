@@ -45,8 +45,25 @@ function cn(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(' ')
 }
 
+function shortId(id: string) {
+  if (!id) return ''
+  return id.length <= 10 ? id : `${id.slice(0, 8)}…`
+}
+
 function prettySiteName(s: Site) {
   return (s.display_name || s.name || s.address || 'Объект без названия').toString()
+}
+
+function sitePillLabel(s?: Site | null, fallbackId?: string) {
+  if (s) return prettySiteName(s)
+  if (fallbackId) return `Объект ${shortId(fallbackId)}`
+  return 'Объект'
+}
+
+function workerPillLabel(w?: Worker | null, fallbackId?: string) {
+  if (w) return (w.full_name || w.email || `Работник ${shortId(w.id)}`).toString()
+  if (fallbackId) return `Работник ${shortId(fallbackId)}`
+  return 'Работник'
 }
 
 function prettyWorkerName(w: Worker) {
@@ -196,6 +213,18 @@ function AdminInner() {
 
   const workersOnly = useMemo(() => workers.filter((w) => w.role === 'worker'), [workers])
   const activeWorkersOnly = useMemo(() => workersOnly.filter((w) => w.active !== false), [workersOnly])
+
+  const workerById = useMemo(() => {
+    const m = new Map<string, Worker>()
+    for (const w of workers) m.set(w.id, w)
+    return m
+  }, [workers])
+
+  const siteById = useMemo(() => {
+    const m = new Map<string, Site>()
+    for (const s of sites) m.set(s.id, s)
+    return m
+  }, [sites])
 
   const assignmentsBySite = useMemo(() => {
     const m = new Map<string, Set<string>>()
@@ -370,6 +399,7 @@ function AdminInner() {
             busy={busy}
             sites={sites}
             workers={activeWorkersOnly}
+            workerById={workerById}
             assignmentsBySite={assignmentsBySite}
             onAssign={doAssign}
             onUnassign={doUnassign}
@@ -388,6 +418,7 @@ function AdminInner() {
             setInviteEmail={setInviteEmail}
             onInvite={doInvite}
             workers={workersOnly}
+            siteById={siteById}
             sites={sites}
             assignmentsByWorker={assignmentsByWorker}
             onAssign={doAssign}
@@ -504,6 +535,7 @@ function SitesTab(props: {
   busy: boolean
   sites: Site[]
   workers: Worker[]
+  workerById: Map<string, Worker>
   assignmentsBySite: Map<string, Set<string>>
   onAssign: (siteId: string, workerId: string) => void
   onUnassign: (siteId: string, workerId: string) => void
@@ -536,35 +568,39 @@ function SitesTab(props: {
                         {Array.from(assigned).length === 0 ? (
                           <span className="text-sm text-zinc-400">Пока никто не назначен</span>
                         ) : (
-                          Array.from(assigned).map((wid) => (
-                            <span key={wid} className="flex items-center gap-2">
-                              <Pill>{wid}</Pill>
-                              <button
-                                onClick={() => props.onUnassign(s.id, wid)}
-                                disabled={props.busy}
-                                className={cn(
-                                  'rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs hover:bg-zinc-800',
-                                  props.busy && 'opacity-60'
-                                )}
-                              >
-                                Снять
-                              </button>
-                            </span>
-                          ))
+                          Array.from(assigned).map((wid) => {
+                            const w = props.workerById.get(wid) || null
+                            return (
+                              <span key={wid} className="flex items-center gap-2">
+                                <Pill>{workerPillLabel(w, wid)}</Pill>
+                                <button
+                                  onClick={() => props.onUnassign(s.id, wid)}
+                                  disabled={props.busy}
+                                  className={cn(
+                                    'rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs hover:bg-zinc-800',
+                                    props.busy && 'opacity-60'
+                                  )}
+                                >
+                                  Снять
+                                </button>
+                              </span>
+                            )
+                          })
                         )}
                       </div>
 
                       <details className="mt-3 rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
-                        <summary className="cursor-pointer text-sm text-zinc-300 select-none">
-                          Техданные
-                        </summary>
+                        <summary className="cursor-pointer text-sm text-zinc-300 select-none">Техданные</summary>
                         <div className="mt-2 grid gap-2 text-xs text-zinc-400">
-                          <div>Код объекта: <span className="text-zinc-200">{s.id}</span></div>
+                          <div>
+                            Код объекта: <span className="text-zinc-200">{s.id}</span>
+                          </div>
                           <div>
                             Радиус допуска: <span className="text-zinc-200">{r ?? '—'} м</span>
                           </div>
                           <div>
-                            Координаты: <span className="text-zinc-200">
+                            Координаты:{' '}
+                            <span className="text-zinc-200">
                               {coordsOk ? `${s.lat!.toFixed(5)}, ${s.lng!.toFixed(5)}` : '—'}
                             </span>
                           </div>
@@ -630,6 +666,7 @@ function WorkersTab(props: {
   onInvite: () => void
   workers: Worker[]
   sites: Site[]
+  siteById: Map<string, Site>
   assignmentsByWorker: Map<string, Set<string>>
   onAssign: (siteId: string, workerId: string) => void
   onUnassign: (siteId: string, workerId: string) => void
@@ -678,9 +715,7 @@ function WorkersTab(props: {
                       <div className="text-base font-semibold">{prettyWorkerName(w)}</div>
 
                       <details className="mt-3 rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
-                        <summary className="cursor-pointer text-sm text-zinc-300 select-none">
-                          Техданные
-                        </summary>
+                        <summary className="cursor-pointer text-sm text-zinc-300 select-none">Техданные</summary>
                         <div className="mt-2 text-xs text-zinc-400">
                           Код работника: <span className="text-zinc-200">{w.id}</span>
                         </div>
@@ -690,21 +725,24 @@ function WorkersTab(props: {
                         {Array.from(assigned).length === 0 ? (
                           <span className="text-sm text-zinc-400">Пока нет назначенных объектов</span>
                         ) : (
-                          Array.from(assigned).map((sid) => (
-                            <span key={sid} className="flex items-center gap-2">
-                              <Pill>{sid}</Pill>
-                              <button
-                                onClick={() => props.onUnassign(sid, w.id)}
-                                disabled={props.busy}
-                                className={cn(
-                                  'rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs hover:bg-zinc-800',
-                                  props.busy && 'opacity-60'
-                                )}
-                              >
-                                Снять
-                              </button>
-                            </span>
-                          ))
+                          Array.from(assigned).map((sid) => {
+                            const s = props.siteById.get(sid) || null
+                            return (
+                              <span key={sid} className="flex items-center gap-2">
+                                <Pill>{sitePillLabel(s, sid)}</Pill>
+                                <button
+                                  onClick={() => props.onUnassign(sid, w.id)}
+                                  disabled={props.busy}
+                                  className={cn(
+                                    'rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs hover:bg-zinc-800',
+                                    props.busy && 'opacity-60'
+                                  )}
+                                >
+                                  Снять
+                                </button>
+                              </span>
+                            )
+                          })
                         )}
                       </div>
                     </div>
