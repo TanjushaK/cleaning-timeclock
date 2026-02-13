@@ -2,757 +2,681 @@
 export const dynamic = 'force-dynamic'
 
 import { useEffect, useMemo, useState } from 'react'
-import Link from 'next/link'
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { useSearchParams, useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase'
 
-type Role = 'admin' | 'worker'
-type Tab = 'jobs' | 'workers' | 'sites' | 'schedule' | 'reports' | 'settings'
-
-type WorkerRow = {
+type Worker = {
   id: string
-  full_name: string | null
-  phone: string | null
-  role: Role
+  role?: 'admin' | 'worker'
   active?: boolean
   email?: string | null
+  full_name?: string | null
+  [k: string]: any
 }
 
-type SiteRow = {
+type Site = {
   id: string
-  name: string
-  address: string
-  lat: number | null
-  lng: number | null
-  radius: number | null
+  display_name?: string | null
+  address?: string | null
+  name?: string | null
+  radius?: number | null
+  radius_m?: number | null
+  lat?: number | null
+  lng?: number | null
+  [k: string]: any
 }
 
-function cls(...a: Array<string | false | null | undefined>) {
-  return a.filter(Boolean).join(' ')
+type Assignment = {
+  site_id: string
+  worker_id: string
+  created_at?: string
 }
 
-function formatNum(n: number | null) {
-  if (n == null) return '—'
-  return String(Math.round(n * 1e6) / 1e6)
+const TABS = [
+  { key: 'workers', label: 'Работники' },
+  { key: 'sites', label: 'Объекты' },
+  { key: 'jobs', label: 'Задания' },
+  { key: 'schedule', label: 'Расписание' },
+  { key: 'reports', label: 'Отчёты' },
+  { key: 'settings', label: 'Настройки' },
+] as const
+
+function cn(...xs: Array<string | false | null | undefined>) {
+  return xs.filter(Boolean).join(' ')
 }
 
-function osmEmbed(lat: number, lng: number) {
-  const d = 0.004
-  const left = lng - d
-  const right = lng + d
-  const top = lat + d
-  const bottom = lat - d
-  const marker = `${lat},${lng}`
-  return `https://www.openstreetmap.org/export/embed.html?bbox=${left}%2C${bottom}%2C${right}%2C${top}&layer=mapnik&marker=${marker}`
+function prettySiteName(s: Site) {
+  return (s.display_name || s.name || s.address || s.id).toString()
 }
 
-function osmOpen(lat: number, lng: number) {
-  return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=18/${lat}/${lng}`
+function prettyWorkerName(w: Worker) {
+  const base = (w.full_name || w.email || w.id).toString()
+  const role = w.role === 'admin' ? ' (админ)' : ''
+  const active = w.active === false ? ' (неактивен)' : ''
+  return `${base}${role}${active}`
 }
 
-function googleNav(address: string) {
-  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`
-}
+async function authedFetch(path: string, token: string, init?: RequestInit) {
+  const res = await fetch(path, {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+      ...(init?.headers || {}),
+    },
+    cache: 'no-store',
+  })
 
-function safeTab(v: string | null): Tab {
-  const t = (v || '').toLowerCase()
-  if (t === 'jobs') return 'jobs'
-  if (t === 'workers') return 'workers'
-  if (t === 'sites') return 'sites'
-  if (t === 'schedule') return 'schedule'
-  if (t === 'reports') return 'reports'
-  if (t === 'settings') return 'settings'
-  return 'workers'
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(json?.error || `Ошибка ${res.status}`)
+  }
+  return json
 }
-
-const TABS: Array<{ id: Tab; label: string }> = [
-  { id: 'jobs', label: 'Jobs' },
-  { id: 'workers', label: 'Workers' },
-  { id: 'sites', label: 'Objects' },
-  { id: 'schedule', label: 'Schedule' },
-  { id: 'reports', label: 'Reports' },
-  { id: 'settings', label: 'Settings' },
-]
 
 export default function AdminPage() {
-  const supabase = useMemo<SupabaseClient>(() => {
-    const url =
-      process.env.NEXT_PUBLIC_SUPABASE_URL ||
-      process.env.NEXT_PUBLIC_SUPABASE_URL ||
-      ''
-    const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-    return createClient(url, anon, {
-      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
-    })
+  const sp = useSearchParams()
+  const router = useRouter()
+
+  const [tab, setTab] = useState<string>(sp.get('tab') || 'workers')
+
+  const [token, setToken] = useState<string>('')
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string>('')
+
+  const [workers, setWorkers] = useState<Worker[]>([])
+  const [sites, setSites] = useState<Site[]>([])
+  const [assignments, setAssignments] = useState<Assignment[]>([])
+
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [siteAssignPick, setSiteAssignPick] = useState<Record<string, string>>({})
+  const [workerAssignPick, setWorkerAssignPick] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    setTab(sp.get('tab') || 'workers')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sp])
+
+  function goTab(next: string) {
+    const url = `/admin?tab=${encodeURIComponent(next)}`
+    router.replace(url)
+  }
+
+  async function ensureSession() {
+    const { data } = await supabase.auth.getSession()
+    const accessToken = data.session?.access_token || ''
+    setToken(accessToken)
+    return accessToken
+  }
+
+  async function refreshAll(tkn?: string) {
+    const t = tkn || token || (await ensureSession())
+    if (!t) throw new Error('Нет сессии. Войдите заново.')
+
+    const [w, s, a] = await Promise.all([
+      authedFetch('/api/admin/workers/list', t),
+      authedFetch('/api/admin/sites/list', t),
+      authedFetch('/api/admin/assignments', t),
+    ])
+
+    setWorkers(w.workers || [])
+    setSites(s.sites || [])
+    setAssignments(a.assignments || [])
+  }
+
+  useEffect(() => {
+    ;(async () => {
+      try {
+        setLoading(true)
+        setErr('')
+        const t = await ensureSession()
+        if (!t) {
+          setLoading(false)
+          return
+        }
+        await refreshAll(t)
+      } catch (e: any) {
+        setErr(e?.message || 'Ошибка загрузки')
+      } finally {
+        setLoading(false)
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const [authState, setAuthState] = useState<'loading' | 'signed_in' | 'signed_out'>('loading')
-  const [token, setToken] = useState<string | null>(null)
-  const [sessionEmail, setSessionEmail] = useState<string | null>(null)
+  const workersOnly = useMemo(
+    () => workers.filter((w) => w.role === 'worker'),
+    [workers]
+  )
 
-  const [tab, setTab] = useState<Tab>('workers')
-  const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState<string | null>(null)
-  const [toast, setToast] = useState<string | null>(null)
+  const activeWorkersOnly = useMemo(
+    () => workersOnly.filter((w) => w.active !== false),
+    [workersOnly]
+  )
 
-  const [workers, setWorkers] = useState<WorkerRow[]>([])
-  const [sites, setSites] = useState<SiteRow[]>([])
-
-  // Workers form
-  const [wEmail, setWEmail] = useState('')
-  const [wName, setWName] = useState('')
-  const [wPhone, setWPhone] = useState('')
-
-  // Sites form
-  const [sName, setSName] = useState('')
-  const [sAddr, setSAddr] = useState('')
-  const [sRadius, setSRadius] = useState('100')
-  const [geoPreview, setGeoPreview] = useState<{
-    display_name: string
-    lat: number
-    lng: number
-  } | null>(null)
-
-  function popToast(m: string) {
-    setToast(m)
-    window.setTimeout(() => setToast(null), 1800)
-  }
-
-  function setTabAndUrl(next: Tab) {
-    setTab(next)
-    if (typeof window === 'undefined') return
-    const u = new URL(window.location.href)
-    u.pathname = '/admin'
-    u.searchParams.set('tab', next)
-    window.history.replaceState(null, '', `${u.pathname}?${u.searchParams.toString()}`)
-  }
-
-  async function api<T = any>(url: string, opts?: RequestInit): Promise<T> {
-    if (!token) throw new Error('NO_SESSION')
-    const r = await fetch(url, {
-      ...opts,
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${token}`,
-        ...(opts?.headers || {}),
-      },
-    })
-    const j = await r.json().catch(() => ({}))
-    if (!r.ok) {
-      const msg = String(j?.error || `HTTP_${r.status}`)
-      // если токен протух — не заставляем тебя танцевать с “Clear data”
-      if (r.status === 401) {
-        try {
-          await supabase.auth.signOut()
-        } catch {}
-        setAuthState('signed_out')
-        setToken(null)
-        setSessionEmail(null)
-      }
-      throw new Error(msg)
+  const assignmentsBySite = useMemo(() => {
+    const m = new Map<string, Set<string>>()
+    for (const a of assignments) {
+      if (!m.has(a.site_id)) m.set(a.site_id, new Set())
+      m.get(a.site_id)!.add(a.worker_id)
     }
-    return j as T
-  }
+    return m
+  }, [assignments])
 
-  async function apiPublic<T = any>(url: string, opts?: RequestInit): Promise<T> {
-    const r = await fetch(url, {
-      ...opts,
-      headers: {
-        'content-type': 'application/json',
-        ...(opts?.headers || {}),
-      },
-    })
-    const j = await r.json().catch(() => ({}))
-    if (!r.ok) throw new Error(String(j?.error || `HTTP_${r.status}`))
-    return j as T
-  }
+  const assignmentsByWorker = useMemo(() => {
+    const m = new Map<string, Set<string>>()
+    for (const a of assignments) {
+      if (!m.has(a.worker_id)) m.set(a.worker_id, new Set())
+      m.get(a.worker_id)!.add(a.site_id)
+    }
+    return m
+  }, [assignments])
 
-  async function loadWorkers() {
-    if (!token) return
-    setErr(null)
-    setBusy(true)
+  async function doRefresh() {
     try {
-      const j = await api<{ workers: WorkerRow[] }>('/api/admin/workers')
-      setWorkers(j.workers || [])
+      setBusy(true)
+      setErr('')
+      await refreshAll()
     } catch (e: any) {
-      setErr(e?.message || 'load_workers_error')
+      setErr(e?.message || 'Ошибка обновления')
     } finally {
       setBusy(false)
     }
   }
 
-  async function loadSites() {
-    if (!token) return
-    setErr(null)
-    setBusy(true)
+  async function doAssign(siteId: string, workerId: string) {
     try {
-      const j = await api<{ sites: SiteRow[] }>('/api/admin/sites')
-      setSites(j.sites || [])
-    } catch (e: any) {
-      setErr(e?.message || 'load_sites_error')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function inviteWorker() {
-    setErr(null)
-    setBusy(true)
-    try {
-      const email = wEmail.trim().toLowerCase()
-      const full_name = wName.trim()
-      const phone = wPhone.trim()
-
-      if (!email) throw new Error('email_required')
-      if (!email.includes('@')) throw new Error('email_invalid')
-      if (!full_name) throw new Error('full_name_required')
-
-      await api('/api/admin/workers/invite', {
+      setBusy(true)
+      setErr('')
+      if (!token) throw new Error('Нет токена')
+      await authedFetch('/api/admin/assignments', token, {
         method: 'POST',
-        body: JSON.stringify({ email, full_name, phone }),
+        body: JSON.stringify({ site_id: siteId, worker_id: workerId }),
       })
-
-      popToast('Работник создан. Письмо отправлено.')
-      setWEmail('')
-      setWName('')
-      setWPhone('')
-      await loadWorkers()
+      await refreshAll()
     } catch (e: any) {
-      setErr(e?.message || 'invite_error')
+      setErr(e?.message || 'Ошибка назначения')
     } finally {
       setBusy(false)
     }
   }
 
-  async function promoteToAdmin(id: string) {
-    setErr(null)
-    setBusy(true)
+  async function doUnassign(siteId: string, workerId: string) {
     try {
-      await api(`/api/admin/workers/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ role: 'admin' }),
+      setBusy(true)
+      setErr('')
+      if (!token) throw new Error('Нет токена')
+      await authedFetch('/api/admin/assignments', token, {
+        method: 'DELETE',
+        body: JSON.stringify({ site_id: siteId, worker_id: workerId }),
       })
-      popToast('Роль обновлена: admin')
-      await loadWorkers()
+      await refreshAll()
     } catch (e: any) {
-      setErr(e?.message || 'promote_error')
+      setErr(e?.message || 'Ошибка снятия назначения')
     } finally {
       setBusy(false)
     }
   }
 
-  async function checkAddress() {
-    setErr(null)
-    setBusy(true)
+  async function doInvite() {
     try {
-      const q = sAddr.trim()
-      if (!q) throw new Error('address_required')
-
-      const j = await apiPublic<{ ok: boolean; display_name?: string; lat?: number; lng?: number }>(
-        '/api/geocode',
-        { method: 'POST', body: JSON.stringify({ q }) }
-      )
-
-      if (!j?.ok || j.lat == null || j.lng == null) throw new Error('geocode_not_found')
-
-      setGeoPreview({
-        display_name: String(j.display_name || q),
-        lat: Number(j.lat),
-        lng: Number(j.lng),
+      setBusy(true)
+      setErr('')
+      if (!token) throw new Error('Нет токена')
+      const email = inviteEmail.trim()
+      if (!email) throw new Error('Введите email')
+      await authedFetch('/api/admin/workers/invite', token, {
+        method: 'POST',
+        body: JSON.stringify({ email }),
       })
-      popToast('Адрес найден')
+      setInviteEmail('')
+      await refreshAll()
     } catch (e: any) {
-      setGeoPreview(null)
-      setErr(e?.message || 'geocode_error')
+      setErr(e?.message || 'Ошибка приглашения')
     } finally {
       setBusy(false)
     }
   }
 
-  async function createSite() {
-    setErr(null)
-    setBusy(true)
-    try {
-      const name = sName.trim()
-      const address = sAddr.trim()
-      const radius = Number(sRadius || '0')
-
-      if (!name) throw new Error('name_required')
-      if (!address) throw new Error('address_required')
-      if (!Number.isFinite(radius) || radius <= 0) throw new Error('radius_invalid')
-
-      const payload: any = { name, address, radius }
-      if (geoPreview) {
-        payload.lat = geoPreview.lat
-        payload.lng = geoPreview.lng
-      }
-
-      await api('/api/admin/sites', { method: 'POST', body: JSON.stringify(payload) })
-      popToast('Объект создан')
-      setSName('')
-      setSAddr('')
-      setSRadius('100')
-      setGeoPreview(null)
-      await loadSites()
-    } catch (e: any) {
-      setErr(e?.message || 'create_site_error')
-    } finally {
-      setBusy(false)
-    }
+  async function doLogout() {
+    await supabase.auth.signOut()
+    setToken('')
+    setWorkers([])
+    setSites([])
+    setAssignments([])
+    router.replace('/admin?tab=workers')
   }
 
-  const workersSorted = useMemo(() => {
-    const arr = [...workers]
-    arr.sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''))
-    return arr
-  }, [workers])
+  return (
+    <div className="min-h-screen bg-zinc-950 text-zinc-100">
+      <div className="mx-auto max-w-6xl px-4 py-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="text-xs tracking-widest text-zinc-400">TANIJA</div>
+            <h1 className="text-2xl font-semibold">
+              Админ-панель <span className="text-amber-400">Cleaning Timeclock</span>
+            </h1>
+            <div className="mt-1 text-sm text-zinc-400">
+              Управленческий блок: объекты ↔ работники (назначение)
+            </div>
+          </div>
 
-  const sitesSorted = useMemo(() => {
-    const arr = [...sites]
-    arr.sort((a, b) => a.name.localeCompare(b.name))
-    return arr
-  }, [sites])
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={doRefresh}
+              disabled={busy || loading}
+              className={cn(
+                'rounded-xl border px-4 py-2 text-sm shadow',
+                'border-amber-500/30 bg-zinc-900 hover:bg-zinc-800',
+                (busy || loading) && 'opacity-60'
+              )}
+            >
+              Обновить данные
+            </button>
+            <button
+              onClick={doLogout}
+              className="rounded-xl border border-zinc-700 bg-zinc-900 px-4 py-2 text-sm hover:bg-zinc-800"
+            >
+              Выйти
+            </button>
+          </div>
+        </div>
 
-  useEffect(() => {
-    // читаем tab из URL без useSearchParams (чтобы Vercel не падал на пререндере)
-    if (typeof window !== 'undefined') {
-      const u = new URL(window.location.href)
-      setTab(safeTab(u.searchParams.get('tab')))
-    }
+        <div className="mt-6 flex flex-wrap gap-2">
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => goTab(t.key)}
+              className={cn(
+                'rounded-xl px-4 py-2 text-sm transition',
+                tab === t.key
+                  ? 'bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/40'
+                  : 'bg-zinc-900 text-zinc-300 hover:bg-zinc-800 ring-1 ring-zinc-800'
+              )}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
 
-    const boot = async () => {
-      const { data } = await supabase.auth.getSession()
-      const s = data?.session
-      if (!s?.access_token) {
-        setAuthState('signed_out')
-        setToken(null)
-        setSessionEmail(null)
-        return
-      }
-      setToken(s.access_token)
-      setSessionEmail(s.user?.email || null)
-      setAuthState('signed_in')
-    }
+        {err ? (
+          <div className="mt-4 rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-200">
+            {err}
+          </div>
+        ) : null}
 
-    boot().catch(() => {
-      setAuthState('signed_out')
-      setToken(null)
-      setSessionEmail(null)
-    })
+        {loading ? (
+          <div className="mt-6 rounded-2xl border border-zinc-800 bg-zinc-900 p-6 text-zinc-300">
+            Загрузка…
+          </div>
+        ) : !token ? (
+          <LoginBlock onLoggedIn={async () => {
+            const t = await ensureSession()
+            if (t) await refreshAll(t)
+          }} />
+        ) : tab === 'sites' ? (
+          <SitesTab
+            busy={busy}
+            sites={sites}
+            workers={activeWorkersOnly}
+            assignmentsBySite={assignmentsBySite}
+            onAssign={(siteId, workerId) => doAssign(siteId, workerId)}
+            onUnassign={(siteId, workerId) => doUnassign(siteId, workerId)}
+            pick={siteAssignPick}
+            setPick={setSiteAssignPick}
+          />
+        ) : tab === 'workers' ? (
+          <WorkersTab
+            busy={busy}
+            inviteEmail={inviteEmail}
+            setInviteEmail={setInviteEmail}
+            onInvite={doInvite}
+            workers={workersOnly}
+            sites={sites}
+            assignmentsByWorker={assignmentsByWorker}
+            onAssign={(siteId, workerId) => doAssign(siteId, workerId)}
+            onUnassign={(siteId, workerId) => doUnassign(siteId, workerId)}
+            pick={workerAssignPick}
+            setPick={setWorkerAssignPick}
+          />
+        ) : tab === 'reports' ? (
+          <Stub title="Отчёты" text="Следующий шаг: часы по работникам/объектам + экспорт CSV." />
+        ) : tab === 'jobs' ? (
+          <Stub title="Задания" text="Следующий шаг: planned → in_progress → done + назначение на работника." />
+        ) : tab === 'schedule' ? (
+          <Stub title="Расписание" text="Следующий шаг: календарный вид (неделя/день) по объектам и работникам." />
+        ) : (
+          <Stub title="Настройки" text="Следующий шаг: политики безопасности, авто-выход, аудит-лог." />
+        )}
+      </div>
+    </div>
+  )
+}
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_ev, session) => {
-      const t = session?.access_token || null
-      setToken(t)
-      setSessionEmail(session?.user?.email || null)
-      setAuthState(t ? 'signed_in' : 'signed_out')
-    })
+function Card(props: { title: string; subtitle?: string; children: any }) {
+  return (
+    <div className="rounded-2xl border border-zinc-800 bg-zinc-900 shadow">
+      <div className="border-b border-zinc-800 p-4">
+        <div className="text-base font-semibold">{props.title}</div>
+        {props.subtitle ? <div className="mt-1 text-sm text-zinc-400">{props.subtitle}</div> : null}
+      </div>
+      <div className="p-4">{props.children}</div>
+    </div>
+  )
+}
 
-    return () => {
-      sub?.subscription?.unsubscribe()
-    }
-  }, [supabase])
+function Pill(props: { children: any }) {
+  return (
+    <span className="inline-flex items-center rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-xs text-amber-200">
+      {props.children}
+    </span>
+  )
+}
 
-  useEffect(() => {
-    if (authState !== 'signed_in') return
-    // грузим данные, когда токен уже есть
-    loadWorkers()
-    loadSites()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authState])
+function Stub({ title, text }: { title: string; text: string }) {
+  return (
+    <div className="mt-6">
+      <Card title={title} subtitle="В работе">
+        <div className="text-sm text-zinc-300">{text}</div>
+      </Card>
+    </div>
+  )
+}
 
-  async function logout() {
-    setBusy(true)
-    setErr(null)
+function LoginBlock({ onLoggedIn }: { onLoggedIn: () => Promise<void> | void }) {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+
+  async function login() {
     try {
-      await supabase.auth.signOut()
-      popToast('Вы вышли')
-      setAuthState('signed_out')
-      setToken(null)
-      setSessionEmail(null)
+      setBusy(true)
+      setErr('')
+      const e = email.trim()
+      if (!e || !password) throw new Error('Введите email и пароль')
+      const { error } = await supabase.auth.signInWithPassword({ email: e, password })
+      if (error) throw new Error(error.message)
+      await onLoggedIn()
     } catch (e: any) {
-      setErr(e?.message || 'logout_error')
+      setErr(e?.message || 'Ошибка входа')
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <div className="min-h-screen bg-[#07070b] text-zinc-100">
-      <div className="mx-auto max-w-6xl px-5 py-10">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-3">
-            <img src="/tanija-logo.png" alt="Tanija" className="h-11 w-11 rounded-2xl" />
-            <div>
-              <div className="text-2xl font-semibold tracking-tight text-amber-200">Tanija</div>
-              <div className="text-sm text-zinc-500">Admin Panel</div>
+    <div className="mt-6">
+      <Card title="Вход администратора" subtitle="Только для роли admin">
+        <div className="grid gap-3 sm:max-w-md">
+          {err ? (
+            <div className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200">
+              {err}
             </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <Link
-              href="/"
-              className="rounded-2xl border border-zinc-700/60 bg-black/30 px-4 py-2 font-semibold text-zinc-200 transition hover:bg-black/40"
-            >
-              ← На главную
-            </Link>
-
-            {authState === 'signed_in' ? (
-              <>
-                <div className="rounded-2xl border border-zinc-800/80 bg-black/20 px-3 py-2 text-sm text-zinc-300">
-                  {sessionEmail || '—'}
-                </div>
-
-                <button
-                  onClick={() => {
-                    loadWorkers()
-                    loadSites()
-                  }}
-                  disabled={busy}
-                  className="rounded-2xl border border-amber-300/30 bg-amber-300/10 px-4 py-2 font-semibold text-amber-200 transition hover:bg-amber-300/15 disabled:opacity-50"
-                >
-                  {busy ? '…' : 'Обновить'}
-                </button>
-
-                <button
-                  onClick={logout}
-                  disabled={busy}
-                  className="rounded-2xl border border-zinc-700/60 bg-black/30 px-4 py-2 font-semibold text-zinc-200 transition hover:bg-black/40 disabled:opacity-50"
-                >
-                  Выйти
-                </button>
-              </>
-            ) : null}
-          </div>
+          ) : null}
+          <input
+            className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3 text-sm outline-none focus:border-amber-500/40"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
+          />
+          <input
+            className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3 text-sm outline-none focus:border-amber-500/40"
+            placeholder="Пароль"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            type="password"
+            autoComplete="current-password"
+          />
+          <button
+            onClick={login}
+            disabled={busy}
+            className={cn(
+              'rounded-xl border px-4 py-3 text-sm shadow',
+              'border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/15',
+              busy && 'opacity-60'
+            )}
+          >
+            Войти
+          </button>
         </div>
+      </Card>
+    </div>
+  )
+}
 
-        {toast ? (
-          <div className="mt-4 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
-            {toast}
-          </div>
-        ) : null}
+function SitesTab(props: {
+  busy: boolean
+  sites: Site[]
+  workers: Worker[]
+  assignmentsBySite: Map<string, Set<string>>
+  onAssign: (siteId: string, workerId: string) => void
+  onUnassign: (siteId: string, workerId: string) => void
+  pick: Record<string, string>
+  setPick: (v: Record<string, string>) => void
+}) {
+  return (
+    <div className="mt-6 grid gap-4">
+      <Card
+        title="Объекты"
+        subtitle="Назначай работников на объект прямо из списка. Один объект может иметь нескольких работников."
+      >
+        {props.sites.length === 0 ? (
+          <div className="text-sm text-zinc-400">Объектов пока нет.</div>
+        ) : (
+          <div className="grid gap-3">
+            {props.sites.map((s) => {
+              const assigned = props.assignmentsBySite.get(s.id) || new Set<string>()
+              const pickVal = props.pick[s.id] || ''
 
-        {err ? (
-          <div className="mt-4 rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-            {err}
-          </div>
-        ) : null}
+              const available = props.workers.filter((w) => !assigned.has(w.id))
 
-        {authState === 'loading' ? (
-          <div className="mt-10 rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-8 text-zinc-300">
-            Проверяю сессию…
-          </div>
-        ) : null}
-
-        {authState === 'signed_out' ? (
-          <div className="mt-10 rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-8">
-            <div className="text-xl font-semibold text-amber-200">Нужен вход</div>
-            <div className="mt-2 text-sm text-zinc-400">
-              Открой главную страницу, войди, и потом снова зайди в админку.
-            </div>
-
-            <div className="mt-6 flex flex-wrap gap-2">
-              <Link
-                href="/"
-                className="rounded-2xl border border-amber-300/30 bg-amber-300/10 px-4 py-3 font-semibold text-amber-200 transition hover:bg-amber-300/15"
-              >
-                Перейти на вход →
-              </Link>
-
-              <Link
-                href="/forgot-password"
-                className="rounded-2xl border border-zinc-700/60 bg-black/30 px-4 py-3 font-semibold text-zinc-200 transition hover:bg-black/40"
-              >
-                Забыли пароль?
-              </Link>
-            </div>
-
-            <div className="mt-4 text-xs text-zinc-600">
-              Правильная ссылка на админку: <span className="text-zinc-300">/admin</span> (не через <span className="text-zinc-300">?utm=.../admin</span>).
-            </div>
-          </div>
-        ) : null}
-
-        {authState !== 'signed_in' ? null : (
-          <>
-            <div className="mt-6 flex flex-wrap gap-2">
-              {TABS.map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => setTabAndUrl(t.id)}
-                  className={cls(
-                    'rounded-2xl border px-4 py-2 text-sm font-semibold transition',
-                    tab === t.id
-                      ? 'border-amber-300/30 bg-amber-300/10 text-amber-200'
-                      : 'border-zinc-800/80 bg-black/20 text-zinc-300 hover:bg-black/30'
-                  )}
+              return (
+                <div
+                  key={s.id}
+                  className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4"
                 >
-                  {t.label}
-                </button>
-              ))}
-            </div>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="text-base font-semibold text-zinc-100">
+                        {prettySiteName(s)}
+                      </div>
+                      <div className="mt-1 text-xs text-zinc-400">
+                        ID: {s.id}
+                        {typeof (s.radius ?? s.radius_m) !== 'undefined' && (s.radius ?? s.radius_m) !== null
+                          ? ` • Радиус: ${(s.radius ?? s.radius_m) as any} м`
+                          : ''}
+                        {typeof s.lat === 'number' && typeof s.lng === 'number'
+                          ? ` • GPS: ${s.lat.toFixed(5)}, ${s.lng.toFixed(5)}`
+                          : ''}
+                      </div>
 
-            {tab === 'workers' ? (
-              <div className="mt-6 grid gap-6 lg:grid-cols-2">
-                <div className="rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-8">
-                  <div className="text-xl font-semibold text-amber-200">Создать работника</div>
-                  <div className="mt-2 text-sm text-zinc-500">
-                    “Как в корпоративке”: ты вводишь email → ему уходит письмо → он сам задаёт пароль. Доступ в Supabase не нужен.
-                  </div>
-
-                  <div className="mt-6 space-y-3">
-                    <input
-                      value={wEmail}
-                      onChange={(e) => setWEmail(e.target.value)}
-                      placeholder="Email работника"
-                      className="w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 outline-none transition focus:border-amber-300/60"
-                      autoComplete="email"
-                    />
-                    <input
-                      value={wName}
-                      onChange={(e) => setWName(e.target.value)}
-                      placeholder="ФИО"
-                      className="w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 outline-none transition focus:border-amber-300/60"
-                    />
-                    <input
-                      value={wPhone}
-                      onChange={(e) => setWPhone(e.target.value)}
-                      placeholder="Телефон (опционально)"
-                      className="w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 outline-none transition focus:border-amber-300/60"
-                    />
-
-                    <button
-                      onClick={inviteWorker}
-                      disabled={busy || !wEmail.trim() || !wName.trim()}
-                      className="w-full rounded-2xl border border-amber-300/30 bg-amber-300/10 px-4 py-3 font-semibold text-amber-200 transition hover:bg-amber-300/15 disabled:opacity-50"
-                    >
-                      {busy ? 'Создаю…' : 'Создать и отправить письмо'}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-8">
-                  <div className="text-xl font-semibold text-amber-200">Workers</div>
-
-                  <div className="mt-4 space-y-3">
-                    {workersSorted.length === 0 ? (
-                      <div className="text-zinc-400">Пока пусто</div>
-                    ) : (
-                      workersSorted.map((w) => (
-                        <div key={w.id} className="rounded-3xl border border-zinc-800/80 bg-black/20 p-4">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <div className="font-semibold text-zinc-100">{w.full_name || '—'}</div>
-                              <div className="mt-1 text-sm text-zinc-400">{w.phone || '—'}</div>
-                              <div className="mt-2 inline-flex rounded-full border border-amber-300/20 bg-amber-300/5 px-3 py-1 text-xs font-semibold text-amber-200">
-                                {w.role}
-                              </div>
-                            </div>
-
-                            <div className="flex flex-col gap-2">
-                              {w.role !== 'admin' ? (
-                                <button
-                                  onClick={() => promoteToAdmin(w.id)}
-                                  disabled={busy}
-                                  className="rounded-2xl border border-zinc-700/60 bg-black/30 px-3 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-black/40 disabled:opacity-50"
-                                >
-                                  Сделать админом
-                                </button>
-                              ) : (
-                                <div className="text-xs text-zinc-600 text-right">admin</div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-
-                  <div className="mt-4 text-xs text-zinc-600">
-                    Админка работает только для профиля с role=admin. Если после логина пусто — значит профиль не админский.
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
-            {tab === 'sites' ? (
-              <div className="mt-6 grid gap-6 lg:grid-cols-2">
-                <div className="rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-8">
-                  <div className="text-xl font-semibold text-amber-200">Создать объект</div>
-                  <div className="mt-2 text-sm text-zinc-500">
-                    Вводишь адрес → “Проверить адрес” → видишь куда попал геокодер → “Создать”.
-                  </div>
-
-                  <div className="mt-6 space-y-3">
-                    <input
-                      value={sName}
-                      onChange={(e) => setSName(e.target.value)}
-                      placeholder="Название"
-                      className="w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 outline-none transition focus:border-amber-300/60"
-                    />
-                    <input
-                      value={sAddr}
-                      onChange={(e) => setSAddr(e.target.value)}
-                      placeholder="Адрес"
-                      className="w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 outline-none transition focus:border-amber-300/60"
-                    />
-
-                    <div className="flex gap-2">
-                      <input
-                        value={sRadius}
-                        onChange={(e) => setSRadius(e.target.value)}
-                        placeholder="Радиус (м)"
-                        className="w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 outline-none transition focus:border-amber-300/60"
-                      />
-                      <button
-                        onClick={checkAddress}
-                        disabled={busy || !sAddr.trim()}
-                        className="shrink-0 rounded-2xl border border-zinc-700/60 bg-black/30 px-4 py-3 text-sm font-semibold text-zinc-200 transition hover:bg-black/40 disabled:opacity-50"
-                      >
-                        {busy ? '…' : 'Проверить адрес'}
-                      </button>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {Array.from(assigned).length === 0 ? (
+                          <span className="text-sm text-zinc-400">Пока никто не назначен</span>
+                        ) : (
+                          Array.from(assigned).map((wid) => (
+                            <span key={wid} className="flex items-center gap-2">
+                              <Pill>{wid}</Pill>
+                              <button
+                                onClick={() => props.onUnassign(s.id, wid)}
+                                disabled={props.busy}
+                                className={cn(
+                                  'rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs hover:bg-zinc-800',
+                                  props.busy && 'opacity-60'
+                                )}
+                              >
+                                Снять
+                              </button>
+                            </span>
+                          ))
+                        )}
+                      </div>
                     </div>
 
-                    {geoPreview ? (
-                      <div className="rounded-3xl border border-amber-300/15 bg-amber-300/5 p-4">
-                        <div className="text-sm font-semibold text-amber-200">Найдено</div>
-                        <div className="mt-1 text-sm text-zinc-200">{geoPreview.display_name}</div>
-                        <div className="mt-2 text-xs text-zinc-400">
-                          lat: {formatNum(geoPreview.lat)} • lng: {formatNum(geoPreview.lng)}
-                        </div>
-
-                        <div className="mt-4 overflow-hidden rounded-2xl border border-zinc-800/80 bg-black/20">
-                          <div className="h-80 w-full">
-                            <iframe
-                              title="map"
-                              src={osmEmbed(geoPreview.lat, geoPreview.lng)}
-                              className="h-full w-full"
-                              loading="lazy"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="mt-3 flex flex-wrap justify-between gap-2">
-                          <a
-                            href={osmOpen(geoPreview.lat, geoPreview.lng)}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="rounded-2xl border border-zinc-700/60 bg-black/30 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-black/40"
-                          >
-                            Открыть OSM
-                          </a>
-
-                          <a
-                            href={googleNav(sAddr)}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="rounded-2xl border border-zinc-700/60 bg-black/30 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-black/40"
-                          >
-                            Навигация
-                          </a>
-
-                          <button
-                            onClick={() => setGeoPreview(null)}
-                            className="rounded-2xl border border-zinc-700/60 bg-black/30 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-black/40"
-                          >
-                            Сбросить
-                          </button>
-                        </div>
+                    <div className="w-full sm:w-96">
+                      <div className="grid gap-2">
+                        <select
+                          className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm outline-none focus:border-amber-500/40"
+                          value={pickVal}
+                          onChange={(e) =>
+                            props.setPick({ ...props.pick, [s.id]: e.target.value })
+                          }
+                        >
+                          <option value="">Выбери работника…</option>
+                          {available.map((w) => (
+                            <option key={w.id} value={w.id}>
+                              {prettyWorkerName(w)}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => pickVal && props.onAssign(s.id, pickVal)}
+                          disabled={props.busy || !pickVal}
+                          className={cn(
+                            'rounded-xl border px-4 py-3 text-sm shadow',
+                            'border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/15',
+                            (props.busy || !pickVal) && 'opacity-60'
+                          )}
+                        >
+                          Назначить
+                        </button>
                       </div>
-                    ) : (
-                      <div className="text-xs text-zinc-600">Карта появится после “Проверить адрес”.</div>
-                    )}
-
-                    <button
-                      onClick={createSite}
-                      disabled={busy || !sName.trim() || !sAddr.trim()}
-                      className="w-full rounded-2xl border border-amber-300/30 bg-amber-300/10 px-4 py-3 font-semibold text-amber-200 transition hover:bg-amber-300/15 disabled:opacity-50"
-                    >
-                      {busy ? 'Создаю…' : 'Создать объект'}
-                    </button>
+                      <div className="mt-2 text-xs text-zinc-500">
+                        Подсказка: список скрывает уже назначенных работников.
+                      </div>
+                    </div>
                   </div>
                 </div>
-
-                <div className="rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-8">
-                  <div className="text-xl font-semibold text-amber-200">Objects</div>
-
-                  <div className="mt-4 space-y-3">
-                    {sitesSorted.length === 0 ? (
-                      <div className="text-zinc-400">Пока пусто</div>
-                    ) : (
-                      sitesSorted.map((s) => (
-                        <div key={s.id} className="rounded-3xl border border-zinc-800/80 bg-black/20 p-4">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <div className="font-semibold text-zinc-100">{s.name}</div>
-                              <div className="mt-1 text-sm text-zinc-400">{s.address}</div>
-
-                              <div className="mt-2 flex flex-wrap gap-2">
-                                {s.lat == null || s.lng == null ? (
-                                  <span className="inline-flex rounded-full border border-red-400/20 bg-red-500/10 px-3 py-1 text-xs font-semibold text-red-200">
-                                    нет lat/lng
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200">
-                                    lat/lng OK
-                                  </span>
-                                )}
-
-                                <span className="inline-flex rounded-full border border-amber-300/20 bg-amber-300/5 px-3 py-1 text-xs font-semibold text-amber-200">
-                                  радиус {s.radius ?? 0}м
-                                </span>
-                              </div>
-                            </div>
-
-                            <a
-                              href={googleNav(s.address)}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="shrink-0 rounded-2xl border border-zinc-700/60 bg-black/30 px-3 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-black/40"
-                            >
-                              Навигация
-                            </a>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-
-                  <div className="mt-4 text-xs text-zinc-600">
-                    START у работника разрешён только если у объекта есть lat/lng + GPS ≤ 80м + дистанция ≤ радиус.
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
-            {tab === 'jobs' ? (
-              <div className="mt-6 rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-8">
-                <div className="text-xl font-semibold text-amber-200">Jobs</div>
-                <div className="mt-2 text-sm text-zinc-500">В разработке. Следующий шаг — фильтры Planned / In progress / Done.</div>
-              </div>
-            ) : null}
-
-            {tab === 'schedule' ? (
-              <div className="mt-6 rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-8">
-                <div className="text-xl font-semibold text-amber-200">Schedule</div>
-                <div className="mt-2 text-sm text-zinc-500">В разработке.</div>
-              </div>
-            ) : null}
-
-            {tab === 'reports' ? (
-              <div className="mt-6 rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-8">
-                <div className="text-xl font-semibold text-amber-200">Reports</div>
-                <div className="mt-2 text-sm text-zinc-500">В разработке.</div>
-              </div>
-            ) : null}
-
-            {tab === 'settings' ? (
-              <div className="mt-6 rounded-3xl border border-amber-400/15 bg-[#0b0b12] p-8">
-                <div className="text-xl font-semibold text-amber-200">Settings</div>
-                <div className="mt-2 text-sm text-zinc-500">В разработке.</div>
-              </div>
-            ) : null}
-          </>
+              )
+            })}
+          </div>
         )}
-      </div>
+      </Card>
+    </div>
+  )
+}
+
+function WorkersTab(props: {
+  busy: boolean
+  inviteEmail: string
+  setInviteEmail: (v: string) => void
+  onInvite: () => void
+  workers: Worker[]
+  sites: Site[]
+  assignmentsByWorker: Map<string, Set<string>>
+  onAssign: (siteId: string, workerId: string) => void
+  onUnassign: (siteId: string, workerId: string) => void
+  pick: Record<string, string>
+  setPick: (v: Record<string, string>) => void
+}) {
+  return (
+    <div className="mt-6 grid gap-4">
+      <Card title="Работники" subtitle="Приглашение + назначение объектов работнику.">
+        <div className="grid gap-3 sm:flex sm:items-end sm:gap-3">
+          <div className="flex-1">
+            <div className="text-sm text-zinc-400">Пригласить работника (email)</div>
+            <input
+              className="mt-2 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3 text-sm outline-none focus:border-amber-500/40"
+              placeholder="worker@example.com"
+              value={props.inviteEmail}
+              onChange={(e) => props.setInviteEmail(e.target.value)}
+            />
+          </div>
+          <button
+            onClick={props.onInvite}
+            disabled={props.busy}
+            className={cn(
+              'rounded-xl border px-4 py-3 text-sm shadow',
+              'border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/15',
+              props.busy && 'opacity-60'
+            )}
+          >
+            Отправить приглашение
+          </button>
+        </div>
+
+        <div className="mt-6 grid gap-3">
+          {props.workers.length === 0 ? (
+            <div className="text-sm text-zinc-400">Работников пока нет.</div>
+          ) : (
+            props.workers.map((w) => {
+              const assigned = props.assignmentsByWorker.get(w.id) || new Set<string>()
+              const pickVal = props.pick[w.id] || ''
+              const availableSites = props.sites.filter((s) => !assigned.has(s.id))
+
+              return (
+                <div key={w.id} className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="text-base font-semibold">{prettyWorkerName(w)}</div>
+                      <div className="mt-1 text-xs text-zinc-400">ID: {w.id}</div>
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {Array.from(assigned).length === 0 ? (
+                          <span className="text-sm text-zinc-400">Пока нет назначенных объектов</span>
+                        ) : (
+                          Array.from(assigned).map((sid) => (
+                            <span key={sid} className="flex items-center gap-2">
+                              <Pill>{sid}</Pill>
+                              <button
+                                onClick={() => props.onUnassign(sid, w.id)}
+                                disabled={props.busy}
+                                className={cn(
+                                  'rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs hover:bg-zinc-800',
+                                  props.busy && 'opacity-60'
+                                )}
+                              >
+                                Снять
+                              </button>
+                            </span>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="w-full sm:w-96">
+                      <div className="grid gap-2">
+                        <select
+                          className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm outline-none focus:border-amber-500/40"
+                          value={pickVal}
+                          onChange={(e) =>
+                            props.setPick({ ...props.pick, [w.id]: e.target.value })
+                          }
+                        >
+                          <option value="">Выбери объект…</option>
+                          {availableSites.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {prettySiteName(s)}
+                            </option>
+                          ))}
+                        </select>
+
+                        <button
+                          onClick={() => pickVal && props.onAssign(pickVal, w.id)}
+                          disabled={props.busy || !pickVal}
+                          className={cn(
+                            'rounded-xl border px-4 py-3 text-sm shadow',
+                            'border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/15',
+                            (props.busy || !pickVal) && 'opacity-60'
+                          )}
+                        >
+                          Назначить объект
+                        </button>
+                      </div>
+                      <div className="mt-2 text-xs text-zinc-500">
+                        Подсказка: список скрывает уже назначенные объекты.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })
+          )}
+        </div>
+      </Card>
     </div>
   )
 }
