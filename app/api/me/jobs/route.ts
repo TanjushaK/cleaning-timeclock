@@ -1,85 +1,72 @@
+// app/api/me/jobs/route.ts
 import { NextResponse } from 'next/server';
-import { ApiError, requireUser } from '@/lib/supabase-server';
+import { supabaseRouteClient } from '@/lib/supabase-route';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+type SiteRow = {
+  id: string;
+  name: string | null;
+  lat: number | null;
+  lng: number | null;
+  radius: number | null;
+};
 
 type JobRow = {
   id: string;
-  site_id: string;
-  worker_id: string;
+  title: string | null;
   job_date: string | null;
   scheduled_time: string | null;
   status: string | null;
-  created_at: string | null;
+  site: SiteRow | null;
 };
 
-export async function GET(req: Request) {
-  try {
-    const { supabase, userId } = await requireUser(req);
+type JobWorkerRow = {
+  job_id: string | null;
+};
 
-    const { data: jobsRaw, error: jErr } = await supabase
-      .from('jobs')
-      .select('id, site_id, worker_id, job_date, scheduled_time, status, created_at')
-      .eq('worker_id', userId)
-      .order('job_date', { ascending: true })
-      .order('scheduled_time', { ascending: true });
+export async function GET() {
+  const supabase = await supabaseRouteClient();
 
-    if (jErr) throw new ApiError(500, 'Не смог прочитать jobs');
-
-    const jobs = (jobsRaw ?? []) as unknown as JobRow[];
-    const siteIds = Array.from(new Set(jobs.map((j) => String(j.site_id)).filter(Boolean)));
-
-    let sites: any[] = [];
-    if (siteIds.length) {
-      const { data: sRaw, error: sErr } = await supabase
-        .from('sites')
-        .select('id, name, address, lat, lng, radius')
-        .in('id', siteIds);
-
-      if (sErr) throw new ApiError(500, 'Не смог прочитать sites');
-      sites = (sRaw ?? []) as any[];
-    }
-
-    let assigns: any[] = [];
-    if (siteIds.length) {
-      const { data: aRaw, error: aErr } = await supabase
-        .from('assignments')
-        .select('site_id, worker_id, extra_note')
-        .eq('worker_id', userId)
-        .in('site_id', siteIds);
-
-      if (aErr) throw new ApiError(500, 'Не смог прочитать assignments');
-      assigns = (aRaw ?? []) as any[];
-    }
-
-    const siteById = new Map<string, any>(sites.map((s) => [String(s.id), s]));
-    const noteBySite = new Map<string, string | null>(assigns.map((a) => [String(a.site_id), a.extra_note ?? null]));
-
-    const result = jobs.map((j) => {
-      const site = siteById.get(String(j.site_id)) ?? null;
-      return {
-        id: String(j.id),
-        site_id: String(j.site_id),
-        worker_id: String(j.worker_id),
-        job_date: j.job_date ?? null,
-        scheduled_time: j.scheduled_time ?? null,
-        status: j.status ?? 'planned',
-        created_at: j.created_at ?? null,
-        site: site
-          ? {
-              id: String(site.id),
-              name: site.name ?? null,
-              address: site.address ?? null,
-              lat: site.lat ?? null,
-              lng: site.lng ?? null,
-              radius: site.radius ?? null,
-            }
-          : null,
-        assignment_note: noteBySite.get(String(j.site_id)) ?? null,
-      };
-    });
-
-    return NextResponse.json({ jobs: result }, { status: 200 });
-  } catch (e: any) {
-    const status = e?.status ?? 500;
-    return NextResponse.json({ error: e?.message ?? 'Ошибка' }, { status });
+  const { data: auth, error: authErr } = await supabase.auth.getUser();
+  if (authErr || !auth?.user) {
+    return NextResponse.json({ error: 'Не авторизован.' }, { status: 401 });
   }
+
+  const uid: string = auth.user.id;
+
+  const { data: jw, error: jwErr } = await supabase
+    .from('job_workers')
+    .select('job_id')
+    .eq('worker_id', uid);
+
+  if (jwErr) {
+    return NextResponse.json({ error: jwErr.message }, { status: 400 });
+  }
+
+  const jwRows: JobWorkerRow[] = (jw ?? []) as JobWorkerRow[];
+  const ids: string[] = jwRows
+    .map((x) => x.job_id)
+    .filter((v): v is string => typeof v === 'string' && v.length > 0);
+
+  let q = supabase
+    .from('jobs')
+    .select('id,title,job_date,scheduled_time,status,site:sites(id,name,lat,lng,radius)')
+    .order('job_date', { ascending: true })
+    .order('scheduled_time', { ascending: true });
+
+  if (ids.length > 0) {
+    q = q.or(`worker_id.eq.${uid},id.in.(${ids.join(',')})`);
+  } else {
+    q = q.eq('worker_id', uid);
+  }
+
+  const { data, error } = await q;
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+
+  return NextResponse.json({ jobs: ((data ?? []) as unknown as JobRow[]) }, { status: 200 });
 }
