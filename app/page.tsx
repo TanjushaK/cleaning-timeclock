@@ -106,6 +106,12 @@ export default function Page() {
 
   const filteredJobs = useMemo(() => jobs.filter((j) => (j.status || 'planned') === filter), [jobs, filter]);
 
+  async function getAccessToken(): Promise<string | null> {
+    const { data, error: e } = await supabase.auth.getSession();
+    if (e) return null;
+    return data?.session?.access_token ?? null;
+  }
+
   async function loadUser() {
     const { data, error: e } = await supabase.auth.getUser();
     if (e || !data?.user) {
@@ -120,7 +126,21 @@ export default function Page() {
     setError(null);
     setInfo(null);
 
-    const res = await fetch('/api/me/jobs', { method: 'GET' });
+    const token = await getAccessToken();
+    if (!token) {
+      setJobs([]);
+      setError('Не авторизован. Перезайди.');
+      setLoading(false);
+      return;
+    }
+
+    const res = await fetch('/api/me/jobs', {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
     const json = await res.json().catch(() => ({} as any));
 
     if (!res.ok) {
@@ -152,6 +172,7 @@ export default function Page() {
   useEffect(() => {
     if (!user?.id) return;
     loadJobs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
   async function signIn() {
@@ -195,6 +216,12 @@ export default function Page() {
       return;
     }
 
+    const token = await getAccessToken();
+    if (!token) {
+      setError('Не авторизован. Перезайди.');
+      return;
+    }
+
     setBusyJobId(job.id);
 
     try {
@@ -202,7 +229,10 @@ export default function Page() {
 
       const res = await fetch('/api/me/jobs/start', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({
           jobId: job.id,
           lat: pos.coords.latitude,
@@ -242,6 +272,12 @@ export default function Page() {
       return;
     }
 
+    const token = await getAccessToken();
+    if (!token) {
+      setError('Не авторизован. Перезайди.');
+      return;
+    }
+
     setBusyJobId(job.id);
 
     try {
@@ -249,7 +285,10 @@ export default function Page() {
 
       const res = await fetch('/api/me/jobs/stop', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({
           jobId: job.id,
           lat: pos.coords.latitude,
@@ -479,9 +518,7 @@ export default function Page() {
           )}
         </main>
 
-        <footer className="relative mt-10 text-center text-xs text-white/45">
-          © 2026 Tanija • dark & gold, без лишней драмы
-        </footer>
+        <footer className="relative mt-10 text-center text-xs text-white/45">© 2026 Tanija • dark & gold, без лишней драмы</footer>
       </div>
     </div>
   );
