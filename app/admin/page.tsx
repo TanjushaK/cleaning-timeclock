@@ -1,980 +1,557 @@
-'use client';
+// app/admin/page.tsx
+'use client'
 
-import Image from 'next/image';
-import { Suspense, useEffect, useMemo, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
-import { authFetchJson } from '@/lib/auth-fetch';
+import Image from 'next/image'
+import { useEffect, useMemo, useState } from 'react'
+import { supabase } from '@/lib/supabase'
 
-export const dynamic = 'force-dynamic';
+type TabKey = 'sites' | 'workers' | 'jobs'
 
 type Site = {
-  id: string;
-  name: string | null;
-  address: string | null;
-  lat: number | null;
-  lng: number | null;
-  radius_m: number | null;
-  archived?: boolean | null;
-};
+  id: string
+  name?: string | null
+  lat?: number | null
+  lng?: number | null
+  radius?: number | null
+}
 
-type Profile = {
-  id: string;
-  role: string | null;
-  active: boolean | null;
-  full_name?: string | null;
-  avatar_url?: string | null;
-};
+type Worker = {
+  id: string
+  full_name?: string | null
+  role?: 'admin' | 'worker' | string | null
+  active?: boolean | null
+}
 
 type Assignment = {
-  site_id: string;
-  worker_id: string;
-  extra_note?: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
-};
-
-function cx(...a: Array<string | false | null | undefined>) {
-  return a.filter(Boolean).join(' ');
+  site_id: string
+  worker_id: string
 }
 
-function formatRuDate(iso?: string | null) {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const yyyy = String(d.getFullYear());
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mi = String(d.getMinutes()).padStart(2, '0');
-  return `${dd}-${mm}-${yyyy} ${hh}:${mi}`;
+type JobStatus = 'planned' | 'in_progress' | 'done'
+
+type Job = {
+  id: string
+  status: JobStatus
+  site_id?: string | null
+  site_name?: string | null
+  job_date?: string | null
+  scheduled_time?: string | null
+  scheduled_at?: string | null
+  worker_id?: string | null
+  worker_name?: string | null
 }
 
-function TabButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={cx(
-        'px-5 py-3 rounded-2xl border text-base transition',
-        'bg-black/40 backdrop-blur',
-        active
-          ? 'border-yellow-500/60 text-yellow-200 shadow-[0_0_0_1px_rgba(234,179,8,0.35)]'
-          : 'border-yellow-500/20 text-yellow-100/80 hover:border-yellow-500/40'
-      )}
-    >
-      {children}
-    </button>
-  );
+function pad2(n: number) {
+  return String(n).padStart(2, '0')
 }
 
-function Banner({ kind, text }: { kind: 'error' | 'info' | 'ok'; text: string }) {
-  const base =
-    'w-full rounded-2xl border px-5 py-4 text-sm md:text-base backdrop-blur';
-  const cls =
-    kind === 'error'
-      ? 'border-red-500/30 bg-red-950/30 text-red-100'
-      : kind === 'ok'
-        ? 'border-emerald-500/30 bg-emerald-950/25 text-emerald-100'
-        : 'border-yellow-500/20 bg-yellow-950/15 text-yellow-100';
-  return <div className={cx(base, cls)}>{text}</div>;
+function fmtDT(v?: string | null) {
+  if (!v) return '—'
+  const d = new Date(v)
+  if (Number.isNaN(d.getTime())) return '—'
+  return `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}-${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
 }
 
-function Card({
-  title,
-  subtitle,
-  right,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  right?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="w-full rounded-3xl border border-yellow-500/15 bg-black/35 backdrop-blur p-6 shadow-[0_20px_60px_rgba(0,0,0,0.55)]">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="text-xl font-semibold text-yellow-100">{title}</div>
-          {subtitle ? (
-            <div className="mt-1 text-sm text-yellow-100/60">{subtitle}</div>
-          ) : null}
-        </div>
-        {right}
-      </div>
-      <div className="mt-5">{children}</div>
-    </div>
-  );
+function fmtD(v?: string | null) {
+  if (!v) return '—'
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v)
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`
+  const d = new Date(v)
+  if (Number.isNaN(d.getTime())) return '—'
+  return `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}-${d.getFullYear()}`
 }
 
-function AdminInner() {
-  const router = useRouter();
-  const sp = useSearchParams();
+async function authFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const { data } = await supabase.auth.getSession()
+  const token = data?.session?.access_token
+  if (!token) throw new Error('Нет токена (Authorization: Bearer …)')
 
-  const tab = (sp.get('tab') || 'sites') as 'sites' | 'workers' | 'jobs';
-  const [busy, setBusy] = useState(false);
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      ...(init?.headers || {}),
+      Authorization: `Bearer ${token}`,
+    },
+    cache: 'no-store',
+  })
 
-  const [authLoading, setAuthLoading] = useState(true);
-  const [sessionEmail, setSessionEmail] = useState<string | null>(null);
+  const payload = await res.json().catch(() => ({} as any))
+  if (!res.ok) {
+    const msg = payload?.error || `HTTP ${res.status}`
+    throw new Error(msg)
+  }
+  return payload as T
+}
 
-  const [globalMsg, setGlobalMsg] = useState<{ kind: 'error' | 'info' | 'ok'; text: string } | null>(null);
+export default function AdminPage() {
+  const [tab, setTab] = useState<TabKey>('sites')
 
-  const [sites, setSites] = useState<Site[]>([]);
-  const [workers, setWorkers] = useState<Profile[]>([]);
-  const [assignments, setAssignments] = useState<Assignment[]>([]);
-  const [jobs, setJobs] = useState<any[]>([]);
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteFullName, setInviteFullName] = useState('');
-  const [invitePassword, setInvitePassword] = useState('');
+  const [sites, setSites] = useState<Site[]>([])
+  const [workers, setWorkers] = useState<Worker[]>([])
+  const [assignments, setAssignments] = useState<Assignment[]>([])
+  const [jobs, setJobs] = useState<Job[]>([])
 
-  const [newSiteName, setNewSiteName] = useState('');
-  const [newSiteAddress, setNewSiteAddress] = useState('');
-  const [newSiteRadius, setNewSiteRadius] = useState('100');
-
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPass, setLoginPass] = useState('');
-
-  // Вариант B: показывать архив/неактивных только по флажку
-  const [showArchivedSites, setShowArchivedSites] = useState(false);
-  const [showInactiveWorkers, setShowInactiveWorkers] = useState(false);
-
-  const sitesById = useMemo(() => {
-    const m = new Map<string, Site>();
-    for (const s of sites) m.set(s.id, s);
-    return m;
-  }, [sites]);
+  const [qaSite, setQaSite] = useState<string>('')
+  const [qaWorker, setQaWorker] = useState<string>('')
 
   const workersById = useMemo(() => {
-    const m = new Map<string, Profile>();
-    for (const w of workers) m.set(w.id, w);
-    return m;
-  }, [workers]);
+    const m = new Map<string, Worker>()
+    for (const w of workers) m.set(w.id, w)
+    return m
+  }, [workers])
 
-  const visibleSites = useMemo(() => {
-    if (showArchivedSites) return sites;
-    return sites.filter((s) => !s.archived);
-  }, [sites, showArchivedSites]);
+  const sitesById = useMemo(() => {
+    const m = new Map<string, Site>()
+    for (const s of sites) m.set(s.id, s)
+    return m
+  }, [sites])
 
-  const visibleWorkers = useMemo(() => {
-    if (showInactiveWorkers) return workers;
-    return workers.filter((w) => Boolean(w.active));
-  }, [workers, showInactiveWorkers]);
+  const siteWorkers = useMemo(() => {
+    const m = new Map<string, Worker[]>()
+    for (const a of assignments) {
+      const w = workersById.get(a.worker_id)
+      if (!w) continue
+      const arr = m.get(a.site_id) || []
+      arr.push(w)
+      m.set(a.site_id, arr)
+    }
+    return m
+  }, [assignments, workersById])
 
-  const visibleAssignments = useMemo(() => {
-    const siteAllowed = new Set(visibleSites.map((s) => s.id));
-    const workerAllowed = new Set(visibleWorkers.map((w) => w.id));
-    return assignments.filter((a) => siteAllowed.has(a.site_id) && workerAllowed.has(a.worker_id));
-  }, [assignments, visibleSites, visibleWorkers]);
+  const workerSites = useMemo(() => {
+    const m = new Map<string, Site[]>()
+    for (const a of assignments) {
+      const s = sitesById.get(a.site_id)
+      if (!s) continue
+      const arr = m.get(a.worker_id) || []
+      arr.push(s)
+      m.set(a.worker_id, arr)
+    }
+    return m
+  }, [assignments, sitesById])
+
+  const jobsPlanned = useMemo(() => jobs.filter((j) => j.status === 'planned'), [jobs])
+  const jobsInProgress = useMemo(() => jobs.filter((j) => j.status === 'in_progress'), [jobs])
+  const jobsDone = useMemo(() => jobs.filter((j) => j.status === 'done'), [jobs])
 
   async function refreshAll() {
-    setBusy(true);
-    setGlobalMsg(null);
+    setBusy(true)
+    setError(null)
     try {
-      const sitesUrl = showArchivedSites
-        ? '/api/admin/sites/list?include_archived=1'
-        : '/api/admin/sites/list';
-
       const [s, w, a, j] = await Promise.all([
-        authFetchJson<{ sites: Site[] }>(sitesUrl),
-        authFetchJson<{ workers: Profile[] }>('/api/admin/workers/list'),
+        authFetchJson<{ sites: Site[] }>('/api/admin/sites/list'),
+        authFetchJson<{ workers: Worker[] }>('/api/admin/workers/list'),
         authFetchJson<{ assignments: Assignment[] }>('/api/admin/assignments'),
-        authFetchJson<{ jobs: any[] }>('/api/admin/jobs'),
-      ]);
+        authFetchJson<{ jobs: Job[] }>('/api/admin/jobs'),
+      ])
 
-      setSites(s.sites || []);
-      setWorkers(w.workers || []);
-      setAssignments(a.assignments || []);
-      setJobs(j.jobs || []);
-      setGlobalMsg({ kind: 'ok', text: 'Данные обновлены' });
+      setSites(Array.isArray(s?.sites) ? s.sites : [])
+      setWorkers(Array.isArray(w?.workers) ? w.workers : [])
+      setAssignments(Array.isArray(a?.assignments) ? a.assignments : [])
+      setJobs(Array.isArray(j?.jobs) ? j.jobs : [])
     } catch (e: any) {
-      setGlobalMsg({ kind: 'error', text: String(e?.message || e) });
+      setError(e?.message || 'Ошибка загрузки')
     } finally {
-      setBusy(false);
+      setBusy(false)
     }
   }
 
-  async function handleLogout() {
-    await supabase.auth.signOut();
-    setSessionEmail(null);
-    setAuthLoading(false);
-    setGlobalMsg({ kind: 'info', text: 'Вышли. Зайди снова.' });
-  }
+  useEffect(() => {
+    void refreshAll()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
-  async function handleLogin() {
-    setBusy(true);
-    setGlobalMsg(null);
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: loginEmail.trim(),
-        password: loginPass,
-      });
-      if (error) throw error;
-      setSessionEmail(data.user?.email ?? null);
-      setGlobalMsg({ kind: 'ok', text: 'Вход выполнен' });
-      await refreshAll();
-    } catch (e: any) {
-      setGlobalMsg({ kind: 'error', text: String(e?.message || e) });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function createSite() {
-    setBusy(true);
-    setGlobalMsg(null);
-    try {
-      const payload = {
-        name: newSiteName.trim(),
-        address: newSiteAddress.trim(),
-        radius_m: Number(String(newSiteRadius || '0').replace(',', '.')) || 100,
-      };
-      await authFetchJson('/api/admin/sites', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-      setNewSiteName('');
-      setNewSiteAddress('');
-      setNewSiteRadius('100');
-      await refreshAll();
-    } catch (e: any) {
-      setGlobalMsg({ kind: 'error', text: String(e?.message || e) });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function inviteWorker() {
-    setBusy(true);
-    setGlobalMsg(null);
-    try {
-      const payload: any = {
-        email: inviteEmail.trim(),
-      };
-      if (inviteFullName.trim()) payload.full_name = inviteFullName.trim();
-      if (invitePassword.trim()) payload.password = invitePassword;
-      await authFetchJson('/api/admin/workers/invite', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-      setInviteEmail('');
-      setInviteFullName('');
-      setInvitePassword('');
-      await refreshAll();
-    } catch (e: any) {
-      setGlobalMsg({ kind: 'error', text: String(e?.message || e) });
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function assign(siteId: string, workerId: string) {
-    setBusy(true);
-    setGlobalMsg(null);
+  async function quickAssign() {
+    if (!qaSite || !qaWorker) return
+    setBusy(true)
+    setError(null)
     try {
       await authFetchJson('/api/admin/assignments', {
         method: 'POST',
-        body: JSON.stringify({ site_id: siteId, worker_id: workerId }),
-      });
-      await refreshAll();
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'assign', site_id: qaSite, worker_id: qaWorker }),
+      })
+      await refreshAll()
     } catch (e: any) {
-      setGlobalMsg({ kind: 'error', text: String(e?.message || e) });
+      setError(e?.message || 'Ошибка назначения')
     } finally {
-      setBusy(false);
+      setBusy(false)
     }
   }
 
   async function unassign(siteId: string, workerId: string) {
-    setBusy(true);
-    setGlobalMsg(null);
+    setBusy(true)
+    setError(null)
     try {
       await authFetchJson('/api/admin/assignments', {
-        method: 'DELETE',
-        body: JSON.stringify({ site_id: siteId, worker_id: workerId }),
-      });
-      await refreshAll();
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'unassign', site_id: siteId, worker_id: workerId }),
+      })
+      await refreshAll()
     } catch (e: any) {
-      setGlobalMsg({ kind: 'error', text: String(e?.message || e) });
+      setError(e?.message || 'Ошибка снятия назначения')
     } finally {
-      setBusy(false);
+      setBusy(false)
     }
   }
 
-  async function setSiteArchived(siteId: string, archived: boolean) {
-    const ok = window.confirm(
-      archived
-        ? 'Архивировать объект? Он исчезнет из списка по умолчанию.'
-        : 'Вернуть объект из архива? Он снова появится в списке.'
-    );
-    if (!ok) return;
-
-    setBusy(true);
-    setGlobalMsg(null);
+  async function deleteSite(siteId: string) {
+    const ok = window.confirm('Удалить объект? Если по нему есть смены — сервер запретит.')
+    if (!ok) return
+    setBusy(true)
+    setError(null)
     try {
-      await authFetchJson('/api/admin/sites/archive', {
+      await authFetchJson('/api/admin/sites/delete', {
         method: 'POST',
-        body: JSON.stringify({ site_id: siteId, archived }),
-      });
-      await refreshAll();
-      setGlobalMsg({
-        kind: 'ok',
-        text: archived ? 'Объект отправлен в архив' : 'Объект возвращён из архива',
-      });
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ site_id: siteId }),
+      })
+      await refreshAll()
     } catch (e: any) {
-      setGlobalMsg({ kind: 'error', text: String(e?.message || e) });
+      setError(e?.message || 'Удаление не выполнено')
     } finally {
-      setBusy(false);
+      setBusy(false)
     }
   }
 
   async function setWorkerActive(workerId: string, active: boolean) {
-    const ok = window.confirm(
-      active
-        ? 'Активировать работника? Он сможет входить и работать.'
-        : 'Деактивировать работника? Он не сможет входить (история сохранится).'
-    );
-    if (!ok) return;
-
-    setBusy(true);
-    setGlobalMsg(null);
+    const ok = window.confirm(active ? 'Включить работника обратно?' : 'Отключить работника? (рекомендовано вместо удаления)')
+    if (!ok) return
+    setBusy(true)
+    setError(null)
     try {
-      await authFetchJson('/api/admin/workers/toggle-active', {
+      await authFetchJson('/api/admin/workers/set-active', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ worker_id: workerId, active }),
-      });
-      await refreshAll();
-      setGlobalMsg({
-        kind: 'ok',
-        text: active ? 'Работник активирован' : 'Работник деактивирован',
-      });
+      })
+      await refreshAll()
     } catch (e: any) {
-      setGlobalMsg({ kind: 'error', text: String(e?.message || e) });
+      setError(e?.message || 'Операция не выполнена')
     } finally {
-      setBusy(false);
+      setBusy(false)
     }
   }
 
-  useEffect(() => {
-    let alive = true;
+  async function hardDeleteWorker(workerId: string) {
+    const ok1 = window.confirm('Удалить работника НАВСЕГДА? Это риск для отчётов. Продолжить?')
+    if (!ok1) return
+    const ok2 = window.confirm('Последний шанс: точно удалить? Сервер удалит только если нет логов/смен.')
+    if (!ok2) return
 
-    (async () => {
-      try {
-        const { data } = await supabase.auth.getSession();
-        if (!alive) return;
-        const email = data?.session?.user?.email ?? null;
-        setSessionEmail(email);
-      } finally {
-        if (alive) setAuthLoading(false);
-      }
-    })();
-
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSessionEmail(session?.user?.email ?? null);
-    });
-
-    return () => {
-      alive = false;
-      sub.subscription.unsubscribe();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!authLoading && sessionEmail) {
-      refreshAll();
+    setBusy(true)
+    setError(null)
+    try {
+      await authFetchJson('/api/admin/workers/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ worker_id: workerId }),
+      })
+      await refreshAll()
+    } catch (e: any) {
+      setError(e?.message || 'Удаление не выполнено')
+    } finally {
+      setBusy(false)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, sessionEmail]);
-
-  useEffect(() => {
-    if (!authLoading && sessionEmail) {
-      refreshAll();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showArchivedSites, showInactiveWorkers]);
-
-  const headerRight = (
-    <div className="flex items-center gap-3">
-      <button
-        onClick={refreshAll}
-        disabled={busy || !sessionEmail}
-        className={cx(
-          'px-5 py-3 rounded-2xl border transition',
-          'border-yellow-500/25 bg-yellow-950/20 text-yellow-100',
-          busy || !sessionEmail ? 'opacity-60' : 'hover:border-yellow-500/45'
-        )}
-      >
-        {busy ? 'Обновляю…' : 'Обновить данные'}
-      </button>
-      <button
-        onClick={handleLogout}
-        disabled={busy}
-        className={cx(
-          'px-5 py-3 rounded-2xl border transition',
-          'border-yellow-500/25 bg-yellow-950/10 text-yellow-100/90',
-          busy ? 'opacity-60' : 'hover:border-yellow-500/45'
-        )}
-      >
-        Выйти
-      </button>
-    </div>
-  );
-
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-black text-white flex items-center justify-center">
-        <div className="text-yellow-100/70">Загрузка…</div>
-      </div>
-    );
-  }
-
-  if (!sessionEmail) {
-    return (
-      <div className="min-h-screen bg-black text-white">
-        <div className="mx-auto max-w-5xl px-5 py-10">
-          <div className="flex items-center gap-4">
-            <div className="h-12 w-12 rounded-2xl border border-yellow-500/20 bg-black/40 flex items-center justify-center overflow-hidden">
-              <Image src="/tanija-logo.png" alt="Tanija" width={36} height={36} />
-            </div>
-            <div>
-              <div className="text-3xl font-bold text-yellow-100">Tanija — Админка</div>
-              <div className="text-yellow-100/60">Объекты · Работники · Смены</div>
-            </div>
-          </div>
-
-          <div className="mt-6">
-            {globalMsg ? <Banner kind={globalMsg.kind} text={globalMsg.text} /> : null}
-          </div>
-
-          <div className="mt-6">
-            <Card title="Вход" subtitle="Только для админа">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <input
-                  value={loginEmail}
-                  onChange={(e) => setLoginEmail(e.target.value)}
-                  placeholder="Email"
-                  className="w-full rounded-2xl border border-yellow-500/15 bg-black/50 px-4 py-3 text-yellow-50 outline-none focus:border-yellow-500/35"
-                />
-                <input
-                  value={loginPass}
-                  onChange={(e) => setLoginPass(e.target.value)}
-                  placeholder="Пароль"
-                  type="password"
-                  className="w-full rounded-2xl border border-yellow-500/15 bg-black/50 px-4 py-3 text-yellow-50 outline-none focus:border-yellow-500/35"
-                />
-                <button
-                  onClick={handleLogin}
-                  disabled={busy}
-                  className={cx(
-                    'w-full rounded-2xl px-5 py-3 font-semibold transition',
-                    'bg-yellow-500 text-black',
-                    busy ? 'opacity-70' : 'hover:brightness-110'
-                  )}
-                >
-                  Войти
-                </button>
-              </div>
-            </Card>
-          </div>
-        </div>
-      </div>
-    );
   }
 
   return (
-    <div className="min-h-screen bg-black text-white">
-      <div className="mx-auto max-w-6xl px-5 py-10">
-        <div className="flex items-start justify-between gap-6 flex-col md:flex-row">
-          <div className="flex items-center gap-4">
-            <div className="h-12 w-12 rounded-2xl border border-yellow-500/20 bg-black/40 flex items-center justify-center overflow-hidden">
-              <Image src="/tanija-logo.png" alt="Tanija" width={36} height={36} />
+    <main className="min-h-screen bg-gradient-to-b from-zinc-950 via-black to-zinc-950 text-zinc-100">
+      <div className="mx-auto max-w-6xl px-4 py-8">
+        <div className="mb-8 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="relative h-12 w-12 overflow-hidden rounded-2xl border border-yellow-400/30 bg-black/40 shadow-[0_0_0_1px_rgba(255,215,0,0.12)]">
+              <Image src="/tanija-logo.png" alt="Tanija" fill className="object-contain p-2" priority />
             </div>
             <div>
-              <div className="text-3xl font-bold text-yellow-100">Tanija — Админка</div>
-              <div className="text-yellow-100/60">Объекты · Работники · Смены</div>
-              <div className="mt-1 text-xs text-yellow-100/40">Вы: {sessionEmail}</div>
+              <div className="text-lg font-semibold tracking-wide">Admin Panel</div>
+              <div className="text-xs text-yellow-200/70">Tanija • sites • workers • jobs</div>
             </div>
           </div>
 
-          {headerRight}
-        </div>
-
-        <div className="mt-6 flex flex-wrap gap-3">
-          <TabButton
-            active={tab === 'sites'}
-            onClick={() => router.push('/admin?tab=sites')}
-          >
-            Объекты
-          </TabButton>
-          <TabButton
-            active={tab === 'workers'}
-            onClick={() => router.push('/admin?tab=workers')}
-          >
-            Работники
-          </TabButton>
-          <TabButton
-            active={tab === 'jobs'}
-            onClick={() => router.push('/admin?tab=jobs')}
-          >
-            Смены (Kanban)
-          </TabButton>
-
-          <div className="flex items-center gap-3 ml-0 md:ml-4">
-            <label className="flex items-center gap-2 text-sm text-yellow-100/70 select-none">
-              <input
-                type="checkbox"
-                checked={showArchivedSites}
-                onChange={(e) => setShowArchivedSites(e.target.checked)}
-                className="accent-yellow-500"
-              />
-              Показать архив объектов
-            </label>
-
-            <label className="flex items-center gap-2 text-sm text-yellow-100/70 select-none">
-              <input
-                type="checkbox"
-                checked={showInactiveWorkers}
-                onChange={(e) => setShowInactiveWorkers(e.target.checked)}
-                className="accent-yellow-500"
-              />
-              Показать неактивных работников
-            </label>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={refreshAll}
+              disabled={busy}
+              className="rounded-xl border border-yellow-400/40 bg-black/40 px-4 py-2 text-sm text-yellow-100 transition hover:border-yellow-300/70 hover:bg-black/60 disabled:opacity-60"
+            >
+              {busy ? 'Обновляю…' : 'Обновить данные'}
+            </button>
           </div>
         </div>
 
-        <div className="mt-6">
-          {globalMsg ? <Banner kind={globalMsg.kind} text={globalMsg.text} /> : null}
-        </div>
-
-        {tab === 'sites' ? (
-          <div className="mt-6 space-y-6">
-            <Card
-              title="Объекты"
-              subtitle="Список объектов + создание + безопасный архив"
-              right={
+        <div className="rounded-3xl border border-yellow-400/20 bg-zinc-950/50 p-6 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              {(['sites', 'workers', 'jobs'] as TabKey[]).map((k) => (
                 <button
-                  onClick={createSite}
-                  disabled={busy || !newSiteName.trim()}
-                  className={cx(
-                    'rounded-2xl px-5 py-3 font-semibold transition',
-                    'bg-yellow-500 text-black',
-                    busy || !newSiteName.trim() ? 'opacity-70' : 'hover:brightness-110'
-                  )}
+                  key={k}
+                  onClick={() => setTab(k)}
+                  className={[
+                    'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
+                    tab === k
+                      ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100'
+                      : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40',
+                  ].join(' ')}
                 >
-                  Добавить объект
+                  {k === 'sites' ? 'Объекты' : k === 'workers' ? 'Работники' : 'Смены (Kanban)'}
                 </button>
-              }
-            >
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <input
-                  value={newSiteName}
-                  onChange={(e) => setNewSiteName(e.target.value)}
-                  placeholder="Название"
-                  className="w-full rounded-2xl border border-yellow-500/15 bg-black/50 px-4 py-3 text-yellow-50 outline-none focus:border-yellow-500/35"
-                />
-                <input
-                  value={newSiteAddress}
-                  onChange={(e) => setNewSiteAddress(e.target.value)}
-                  placeholder="Адрес"
-                  className="w-full rounded-2xl border border-yellow-500/15 bg-black/50 px-4 py-3 text-yellow-50 outline-none focus:border-yellow-500/35"
-                />
-                <input
-                  value={newSiteRadius}
-                  onChange={(e) => setNewSiteRadius(e.target.value)}
-                  placeholder="Радиус (м)"
-                  className="w-full rounded-2xl border border-yellow-500/15 bg-black/50 px-4 py-3 text-yellow-50 outline-none focus:border-yellow-500/35"
-                />
-              </div>
+              ))}
+            </div>
 
-              <div className="mt-5 text-sm text-yellow-100/60">
-                Объектов: <span className="text-yellow-100">{visibleSites.length}</span>
-                {showArchivedSites ? (
-                  <span className="text-yellow-100/40"> (включая архив)</span>
-                ) : null}
-              </div>
+            <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-[11px] text-zinc-200">
+              Sites: {sites.length} • Workers: {workers.length} • Jobs: {jobs.length}
+            </div>
+          </div>
 
-              <div className="mt-4 space-y-3">
-                {visibleSites.length === 0 ? (
-                  <div className="text-yellow-100/50">Объектов нет</div>
-                ) : (
-                  visibleSites.map((s) => (
-                    <div
-                      key={s.id}
-                      className="rounded-2xl border border-yellow-500/10 bg-black/30 p-4"
+          {error ? (
+            <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-950/30 px-4 py-3 text-sm text-red-100">
+              {error}
+            </div>
+          ) : null}
+
+          {tab === 'sites' ? (
+            <div className="mt-6 grid gap-4">
+              <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
+                <div className="flex flex-wrap items-end justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-yellow-100">QuickAssign</div>
+                    <div className="mt-1 text-xs text-zinc-300">Выбери объект и работника → назначить.</div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      value={qaSite}
+                      onChange={(e) => setQaSite(e.target.value)}
+                      className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                     >
-                      <div className="flex items-start justify-between gap-4 flex-col md:flex-row">
-                        <div>
-                          <div className="text-lg text-yellow-100 font-semibold flex items-center gap-2">
-                            <span>{s.name || 'Без названия'}</span>
-                            {s.archived ? (
-                              <span className="text-xs px-2 py-1 rounded-xl border border-yellow-500/20 bg-yellow-950/15 text-yellow-100/70">
-                                Архив
-                              </span>
-                            ) : null}
-                          </div>
-                          <div className="text-yellow-100/60">
-                            {s.address || 'Без адреса'}
-                          </div>
-                        </div>
+                      <option value="">Объект…</option>
+                      {sites.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name || s.id}
+                        </option>
+                      ))}
+                    </select>
 
-                        <div className="flex items-center gap-3">
-                          <div className="text-right text-sm text-yellow-100/55 hidden md:block">
-                            <div>Радиус: {s.radius_m ?? 100} м</div>
-                            <div>lat/lng: {s.lat ?? '—'} / {s.lng ?? '—'}</div>
-                          </div>
+                    <select
+                      value={qaWorker}
+                      onChange={(e) => setQaWorker(e.target.value)}
+                      className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+                    >
+                      <option value="">Работник…</option>
+                      {workers
+                        .filter((w) => (w.role || 'worker') !== 'admin')
+                        .map((w) => (
+                          <option key={w.id} value={w.id}>
+                            {(w.full_name || 'Worker') + (w.active === false ? ' (off)' : '')}
+                          </option>
+                        ))}
+                    </select>
 
-                          <button
-                            onClick={() => setSiteArchived(s.id, !Boolean(s.archived))}
-                            disabled={busy}
-                            className={cx(
-                              'rounded-2xl border px-4 py-2 transition text-sm',
-                              'border-yellow-500/20 text-yellow-100/85 bg-yellow-950/10',
-                              busy ? 'opacity-60' : 'hover:border-yellow-500/45'
-                            )}
-                          >
-                            {s.archived ? 'Вернуть' : 'Архив'}
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="mt-3 text-sm text-yellow-100/55 md:hidden">
-                        <div>Радиус: {s.radius_m ?? 100} м</div>
-                        <div>lat/lng: {s.lat ?? '—'} / {s.lng ?? '—'}</div>
-                      </div>
-                    </div>
-                  ))
-                )}
+                    <button
+                      onClick={quickAssign}
+                      disabled={busy || !qaSite || !qaWorker}
+                      className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
+                    >
+                      Назначить
+                    </button>
+                  </div>
+                </div>
               </div>
-            </Card>
 
-            <Card title="Назначения (Объект ↔ Работник)" subtitle="Кто где работает (показываем по фильтрам сверху)">
-              <div className="space-y-3">
-                {visibleAssignments.length === 0 ? (
-                  <div className="text-yellow-100/50">Назначений нет</div>
-                ) : (
-                  visibleAssignments.map((a) => {
-                    const site = sitesById.get(a.site_id);
-                    const worker = workersById.get(a.worker_id);
-                    return (
-                      <div
-                        key={`${a.site_id}:${a.worker_id}`}
-                        className="rounded-2xl border border-yellow-500/10 bg-black/30 p-4"
-                      >
-                        <div className="flex items-center justify-between gap-4">
-                          <div>
-                            <div className="text-yellow-100">
-                              <span className="font-semibold">{site?.name || 'Объект'}</span>
-                              <span className="text-yellow-100/50"> — </span>
-                              <span className="font-semibold">{worker?.full_name || worker?.id || 'Работник'}</span>
-                            </div>
-                            {a.extra_note ? (
-                              <div className="mt-1 text-sm text-yellow-100/70">
-                                Заметка: {a.extra_note}
+              {sites.map((s) => {
+                const assigned = siteWorkers.get(s.id) || []
+                const gpsOk = s.lat != null && s.lng != null
+                return (
+                  <div
+                    key={s.id}
+                    className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5 shadow-[0_0_0_1px_rgba(255,215,0,0.08)]"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="text-base font-semibold text-yellow-100">{s.name || 'Объект'}</div>
+                        <div className="mt-1 text-xs text-zinc-300">
+                          GPS:{' '}
+                          <span className={gpsOk ? 'text-zinc-100' : 'text-red-200'}>
+                            {gpsOk ? `${s.lat}, ${s.lng}` : 'нет lat/lng'}
+                          </span>{' '}
+                          • radius: <span className="text-zinc-100">{s.radius ?? '—'}</span>
+                        </div>
+
+                        <div className="mt-3 text-xs text-zinc-300">Назначены:</div>
+                        {assigned.length === 0 ? (
+                          <div className="mt-1 text-xs text-zinc-500">—</div>
+                        ) : (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {assigned.map((w) => (
+                              <div
+                                key={w.id}
+                                className="flex items-center gap-2 rounded-2xl border border-yellow-400/10 bg-black/35 px-3 py-2 text-xs"
+                              >
+                                <span className="text-zinc-100">{w.full_name || 'Worker'}</span>
+                                <button
+                                  onClick={() => unassign(s.id, w.id)}
+                                  disabled={busy}
+                                  className="rounded-xl border border-yellow-400/20 bg-black/30 px-2 py-1 text-[11px] text-yellow-100/80 transition hover:border-yellow-300/50 disabled:opacity-60"
+                                >
+                                  снять
+                                </button>
                               </div>
-                            ) : null}
-                            <div className="mt-1 text-xs text-yellow-100/40">
-                              {a.updated_at ? `Обновлено: ${formatRuDate(a.updated_at)}` : ''}
-                            </div>
+                            ))}
                           </div>
-                          <button
-                            onClick={() => unassign(a.site_id, a.worker_id)}
-                            disabled={busy}
-                            className={cx(
-                              'rounded-2xl border px-4 py-2 transition',
-                              'border-yellow-500/20 text-yellow-100/80 bg-yellow-950/10',
-                              busy ? 'opacity-60' : 'hover:border-yellow-500/45'
-                            )}
-                          >
-                            Снять
-                          </button>
-                        </div>
+                        )}
                       </div>
-                    );
-                  })
-                )}
-              </div>
 
-              <div className="mt-5 text-sm text-yellow-100/60">
-                Быстрое назначение: выбери объект, потом работника — и в бой.
-              </div>
-
-              <QuickAssign
-                disabled={busy}
-                sites={visibleSites}
-                workers={visibleWorkers}
-                onAssign={assign}
-              />
-            </Card>
-          </div>
-        ) : null}
-
-        {tab === 'workers' ? (
-          <div className="mt-6 space-y-6">
-            <Card
-              title="Работники"
-              subtitle="Список + приглашение + безопасная деактивация"
-              right={
-                <button
-                  onClick={inviteWorker}
-                  disabled={busy || !inviteEmail.trim()}
-                  className={cx(
-                    'rounded-2xl px-5 py-3 font-semibold transition',
-                    'bg-yellow-500 text-black',
-                    busy || !inviteEmail.trim() ? 'opacity-70' : 'hover:brightness-110'
-                  )}
-                >
-                  Пригласить работника
-                </button>
-              }
-            >
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <input
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                  placeholder="Email работника"
-                  className="w-full rounded-2xl border border-yellow-500/15 bg-black/50 px-4 py-3 text-yellow-50 outline-none focus:border-yellow-500/35"
-                />
-                <input
-                  value={inviteFullName}
-                  onChange={(e) => setInviteFullName(e.target.value)}
-                  placeholder="Имя (необязательно)"
-                  className="w-full rounded-2xl border border-yellow-500/15 bg-black/50 px-4 py-3 text-yellow-50 outline-none focus:border-yellow-500/35"
-                />
-                <input
-                  value={invitePassword}
-                  onChange={(e) => setInvitePassword(e.target.value)}
-                  placeholder="Пароль (если нужно)"
-                  className="w-full rounded-2xl border border-yellow-500/15 bg-black/50 px-4 py-3 text-yellow-50 outline-none focus:border-yellow-500/35"
-                />
-              </div>
-
-              <div className="mt-5 text-sm text-yellow-100/60">
-                Пользователей: <span className="text-yellow-100">{visibleWorkers.length}</span>
-                {showInactiveWorkers ? (
-                  <span className="text-yellow-100/40"> (включая неактивных)</span>
-                ) : null}
-              </div>
-
-              <div className="mt-4 space-y-3">
-                {visibleWorkers.length === 0 ? (
-                  <div className="text-yellow-100/50">Пользователей нет</div>
-                ) : (
-                  visibleWorkers.map((w) => (
-                    <div
-                      key={w.id}
-                      className="rounded-2xl border border-yellow-500/10 bg-black/30 p-4"
-                    >
-                      <div className="flex items-center justify-between gap-4 flex-col md:flex-row">
-                        <div>
-                          <div className="text-yellow-100 font-semibold flex items-center gap-2">
-                            <span>{w.full_name || w.id}</span>
-                            {w.active ? null : (
-                              <span className="text-xs px-2 py-1 rounded-xl border border-yellow-500/20 bg-yellow-950/15 text-yellow-100/70">
-                                Неактивен
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-sm text-yellow-100/60">
-                            role: {w.role || '—'} · active: {String(Boolean(w.active))}
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-3">
-                          <button
-                            onClick={() => setWorkerActive(w.id, !Boolean(w.active))}
-                            disabled={busy}
-                            className={cx(
-                              'rounded-2xl border px-4 py-2 transition text-sm',
-                              'border-yellow-500/20 text-yellow-100/85 bg-yellow-950/10',
-                              busy ? 'opacity-60' : 'hover:border-yellow-500/45'
-                            )}
-                          >
-                            {w.active ? 'Деактивировать' : 'Активировать'}
-                          </button>
-                        </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => deleteSite(s.id)}
+                          disabled={busy}
+                          className="rounded-2xl border border-red-400/25 bg-red-500/10 px-4 py-2 text-xs font-semibold text-red-100 transition hover:border-red-300/50 disabled:opacity-60"
+                        >
+                          Удалить объект
+                        </button>
                       </div>
                     </div>
-                  ))
-                )}
-              </div>
-            </Card>
-
-            <Card title="Назначения (Работник ↔ Объект)" subtitle="Показываем согласно фильтрам сверху">
-              <div className="space-y-3">
-                {visibleAssignments.length === 0 ? (
-                  <div className="text-yellow-100/50">Назначений нет</div>
-                ) : (
-                  visibleAssignments.map((a) => {
-                    const site = sitesById.get(a.site_id);
-                    const worker = workersById.get(a.worker_id);
-                    return (
-                      <div
-                        key={`${a.worker_id}:${a.site_id}`}
-                        className="rounded-2xl border border-yellow-500/10 bg-black/30 p-4"
-                      >
-                        <div className="flex items-center justify-between gap-4">
-                          <div className="text-yellow-100">
-                            <span className="font-semibold">{worker?.full_name || worker?.id || 'Работник'}</span>
-                            <span className="text-yellow-100/50"> → </span>
-                            <span className="font-semibold">{site?.name || 'Объект'}</span>
-                          </div>
-                          <button
-                            onClick={() => unassign(a.site_id, a.worker_id)}
-                            disabled={busy}
-                            className={cx(
-                              'rounded-2xl border px-4 py-2 transition',
-                              'border-yellow-500/20 text-yellow-100/80 bg-yellow-950/10',
-                              busy ? 'opacity-60' : 'hover:border-yellow-500/45'
-                            )}
-                          >
-                            Снять
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              <div className="mt-5">
-                <QuickAssign
-                  disabled={busy}
-                  sites={visibleSites}
-                  workers={visibleWorkers}
-                  onAssign={assign}
-                />
-              </div>
-            </Card>
-          </div>
-        ) : null}
-
-        {tab === 'jobs' ? (
-          <div className="mt-6 space-y-6">
-            <Card title="Смены (Kanban)" subtitle="Пока базовый просмотр. Дальше докрутим кнопки статусов.">
-              <div className="text-yellow-100/60 text-sm">
-                Смен: <span className="text-yellow-100">{jobs.length}</span>
-              </div>
-
-              <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-4">
-                <KanbanCol title="Planned" items={jobs.filter((j) => String(j.status || '') === 'planned')} />
-                <KanbanCol title="In progress" items={jobs.filter((j) => String(j.status || '') === 'in_progress')} />
-                <KanbanCol title="Done" items={jobs.filter((j) => String(j.status || '') === 'done')} />
-              </div>
-            </Card>
-          </div>
-        ) : null}
-
-        <div className="mt-10 text-center text-xs text-yellow-100/35">
-          © Tanija · Luxury dark & gold
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function KanbanCol({ title, items }: { title: string; items: any[] }) {
-  return (
-    <div className="rounded-3xl border border-yellow-500/12 bg-black/25 p-4">
-      <div className="flex items-center justify-between">
-        <div className="text-yellow-100 font-semibold">{title}</div>
-        <div className="text-yellow-100/50 text-sm">{items.length}</div>
-      </div>
-      <div className="mt-4 space-y-3">
-        {items.length === 0 ? (
-          <div className="text-yellow-100/40 text-sm">Пусто</div>
-        ) : (
-          items.map((j) => (
-            <div key={j.id || JSON.stringify(j)} className="rounded-2xl border border-yellow-500/10 bg-black/35 p-3">
-              <div className="text-yellow-100 text-sm font-semibold">
-                {j.title || j.name || 'Смена'}
-              </div>
-              <div className="mt-1 text-xs text-yellow-100/50">
-                {j.job_date ? String(j.job_date) : ''} {j.scheduled_time ? String(j.scheduled_time) : ''}
-              </div>
+                  </div>
+                )
+              })}
             </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
-}
+          ) : null}
 
-function QuickAssign({
-  disabled,
-  sites,
-  workers,
-  onAssign,
-}: {
-  disabled: boolean;
-  sites: Site[];
-  workers: Profile[];
-  onAssign: (siteId: string, workerId: string) => Promise<void>;
-}) {
-  const [siteId, setSiteId] = useState('');
-  const [workerId, setWorkerId] = useState('');
+          {tab === 'workers' ? (
+            <div className="mt-6 grid gap-3">
+              {workers.map((w) => {
+                const sitesList = workerSites.get(w.id) || []
+                const isAdmin = (w.role || '') === 'admin'
+                return (
+                  <div
+                    key={w.id}
+                    className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5 shadow-[0_0_0_1px_rgba(255,215,0,0.08)]"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="text-base font-semibold text-yellow-100">
+                          {w.full_name || 'Без имени'}{' '}
+                          {isAdmin ? (
+                            <span className="ml-2 rounded-xl border border-yellow-400/30 bg-yellow-400/10 px-2 py-1 text-[11px] text-yellow-100">
+                              admin
+                            </span>
+                          ) : (
+                            <span className="ml-2 rounded-xl border border-yellow-400/15 bg-black/30 px-2 py-1 text-[11px] text-zinc-200">
+                              worker
+                            </span>
+                          )}
+                          {w.active === false ? (
+                            <span className="ml-2 rounded-xl border border-red-400/20 bg-red-500/10 px-2 py-1 text-[11px] text-red-100">
+                              disabled
+                            </span>
+                          ) : null}
+                        </div>
 
-  return (
-    <div className="rounded-3xl border border-yellow-500/12 bg-black/25 p-4">
-      <div className="text-yellow-100 font-semibold">Быстрое назначение</div>
-      <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-        <select
-          value={siteId}
-          onChange={(e) => setSiteId(e.target.value)}
-          className="w-full rounded-2xl border border-yellow-500/15 bg-black/50 px-4 py-3 text-yellow-50 outline-none focus:border-yellow-500/35"
-        >
-          <option value="">Выбери объект…</option>
-          {sites.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name || 'Без названия'}{s.archived ? ' (архив)' : ''}
-            </option>
-          ))}
-        </select>
+                        <div className="mt-2 text-xs text-zinc-300">Объекты:</div>
+                        {sitesList.length === 0 ? (
+                          <div className="mt-1 text-xs text-zinc-500">—</div>
+                        ) : (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {sitesList.map((s) => (
+                              <div
+                                key={s.id}
+                                className="rounded-2xl border border-yellow-400/10 bg-black/35 px-3 py-2 text-xs text-zinc-100"
+                              >
+                                {s.name || s.id}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
 
-        <select
-          value={workerId}
-          onChange={(e) => setWorkerId(e.target.value)}
-          className="w-full rounded-2xl border border-yellow-500/15 bg-black/50 px-4 py-3 text-yellow-50 outline-none focus:border-yellow-500/35"
-        >
-          <option value="">Выбери работника…</option>
-          {workers.map((w) => (
-            <option key={w.id} value={w.id}>
-              {(w.full_name || w.id) + (w.active ? '' : ' (неактивен)')}
-            </option>
-          ))}
-        </select>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {!isAdmin ? (
+                          <>
+                            <button
+                              onClick={() => setWorkerActive(w.id, w.active === false)}
+                              disabled={busy}
+                              className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
+                            >
+                              {w.active === false ? 'Включить' : 'Отключить'}
+                            </button>
 
-        <button
-          disabled={disabled || !siteId || !workerId}
-          onClick={() => onAssign(siteId, workerId)}
-          className={cx(
-            'w-full rounded-2xl px-5 py-3 font-semibold transition',
-            'bg-yellow-500 text-black',
-            disabled || !siteId || !workerId ? 'opacity-70' : 'hover:brightness-110'
-          )}
-        >
-          Назначить
-        </button>
-      </div>
-    </div>
-  );
-}
+                            <button
+                              onClick={() => hardDeleteWorker(w.id)}
+                              disabled={busy}
+                              className="rounded-2xl border border-red-400/25 bg-red-500/10 px-4 py-2 text-xs font-semibold text-red-100 transition hover:border-red-300/50 disabled:opacity-60"
+                            >
+                              Удалить навсегда
+                            </button>
+                          </>
+                        ) : (
+                          <div className="rounded-2xl border border-yellow-400/10 bg-black/35 px-3 py-2 text-xs text-zinc-300">
+                            Админа не трогаем 🙂
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : null}
 
-export default function AdminPage() {
-  return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen bg-black text-white flex items-center justify-center">
-          <div className="text-yellow-100/70">Загрузка…</div>
+          {tab === 'jobs' ? (
+            <div className="mt-6 grid gap-4 lg:grid-cols-3">
+              {[
+                { key: 'planned', title: 'Planned', list: jobsPlanned },
+                { key: 'in_progress', title: 'In progress', list: jobsInProgress },
+                { key: 'done', title: 'Done', list: jobsDone },
+              ].map((col) => (
+                <div key={col.key} className="rounded-3xl border border-yellow-400/15 bg-black/20 p-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <div className="text-sm font-semibold text-yellow-100">{col.title}</div>
+                    <div className="rounded-xl border border-yellow-400/10 bg-black/30 px-2 py-1 text-[11px] text-zinc-200">
+                      {col.list.length}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3">
+                    {col.list.map((j) => {
+                      const siteName = j.site_name || sitesById.get(j.site_id || '')?.name || 'Объект'
+                      const when =
+                        j.scheduled_at
+                          ? fmtDT(j.scheduled_at)
+                          : j.job_date
+                            ? `${fmtD(j.job_date)}${j.scheduled_time ? ` ${j.scheduled_time.slice(0, 5)}` : ''}`
+                            : '—'
+
+                      return (
+                        <div
+                          key={j.id}
+                          className="rounded-2xl border border-yellow-400/10 bg-black/35 p-3 text-sm"
+                        >
+                          <div className="text-sm font-semibold text-zinc-100">{siteName}</div>
+                          <div className="mt-1 text-[11px] text-zinc-300">{when}</div>
+                        </div>
+                      )
+                    })}
+                    {col.list.length === 0 ? (
+                      <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-3 text-xs text-zinc-500">
+                        —
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
-      }
-    >
-      <AdminInner />
-    </Suspense>
-  );
+
+        <div className="mt-6 text-center text-xs text-zinc-500">
+          Админка: удаление безопасное — объект удалится только если нет смен, работник лучше отключать.
+        </div>
+      </div>
+    </main>
+  )
 }
