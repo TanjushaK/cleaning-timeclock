@@ -1,7 +1,7 @@
 'use client'
 export const dynamic = 'force-dynamic'
 
-import { useEffect, useMemo, useState } from 'react'
+import React, { Suspense, useEffect, useMemo, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
@@ -68,13 +68,29 @@ async function authedFetch(path: string, token: string, init?: RequestInit) {
   })
 
   const json = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    throw new Error(json?.error || `Ошибка ${res.status}`)
-  }
+  if (!res.ok) throw new Error(json?.error || `Ошибка ${res.status}`)
   return json
 }
 
 export default function AdminPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-zinc-950 text-zinc-100">
+          <div className="mx-auto max-w-6xl px-4 py-10">
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-900 p-6 text-zinc-300">
+              Загрузка админки…
+            </div>
+          </div>
+        </div>
+      }
+    >
+      <AdminInner />
+    </Suspense>
+  )
+}
+
+function AdminInner() {
   const sp = useSearchParams()
   const router = useRouter()
 
@@ -99,8 +115,7 @@ export default function AdminPage() {
   }, [sp])
 
   function goTab(next: string) {
-    const url = `/admin?tab=${encodeURIComponent(next)}`
-    router.replace(url)
+    router.replace(`/admin?tab=${encodeURIComponent(next)}`)
   }
 
   async function ensureSession() {
@@ -145,15 +160,8 @@ export default function AdminPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const workersOnly = useMemo(
-    () => workers.filter((w) => w.role === 'worker'),
-    [workers]
-  )
-
-  const activeWorkersOnly = useMemo(
-    () => workersOnly.filter((w) => w.active !== false),
-    [workersOnly]
-  )
+  const workersOnly = useMemo(() => workers.filter((w) => w.role === 'worker'), [workers])
+  const activeWorkersOnly = useMemo(() => workersOnly.filter((w) => w.active !== false), [workersOnly])
 
   const assignmentsBySite = useMemo(() => {
     const m = new Map<string, Set<string>>()
@@ -257,9 +265,7 @@ export default function AdminPage() {
             <h1 className="text-2xl font-semibold">
               Админ-панель <span className="text-amber-400">Cleaning Timeclock</span>
             </h1>
-            <div className="mt-1 text-sm text-zinc-400">
-              Управленческий блок: объекты ↔ работники (назначение)
-            </div>
+            <div className="mt-1 text-sm text-zinc-400">Управленческий блок: объекты ↔ работники</div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -311,10 +317,12 @@ export default function AdminPage() {
             Загрузка…
           </div>
         ) : !token ? (
-          <LoginBlock onLoggedIn={async () => {
-            const t = await ensureSession()
-            if (t) await refreshAll(t)
-          }} />
+          <LoginBlock
+            onLoggedIn={async () => {
+              const t = await ensureSession()
+              if (t) await refreshAll(t)
+            }}
+          />
         ) : tab === 'sites' ? (
           <SitesTab
             busy={busy}
@@ -470,19 +478,13 @@ function SitesTab(props: {
             {props.sites.map((s) => {
               const assigned = props.assignmentsBySite.get(s.id) || new Set<string>()
               const pickVal = props.pick[s.id] || ''
-
               const available = props.workers.filter((w) => !assigned.has(w.id))
 
               return (
-                <div
-                  key={s.id}
-                  className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4"
-                >
+                <div key={s.id} className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
-                      <div className="text-base font-semibold text-zinc-100">
-                        {prettySiteName(s)}
-                      </div>
+                      <div className="text-base font-semibold text-zinc-100">{prettySiteName(s)}</div>
                       <div className="mt-1 text-xs text-zinc-400">
                         ID: {s.id}
                         {typeof (s.radius ?? s.radius_m) !== 'undefined' && (s.radius ?? s.radius_m) !== null
@@ -521,9 +523,7 @@ function SitesTab(props: {
                         <select
                           className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm outline-none focus:border-amber-500/40"
                           value={pickVal}
-                          onChange={(e) =>
-                            props.setPick({ ...props.pick, [s.id]: e.target.value })
-                          }
+                          onChange={(e) => props.setPick({ ...props.pick, [s.id]: e.target.value })}
                         >
                           <option value="">Выбери работника…</option>
                           {available.map((w) => (
@@ -544,9 +544,7 @@ function SitesTab(props: {
                           Назначить
                         </button>
                       </div>
-                      <div className="mt-2 text-xs text-zinc-500">
-                        Подсказка: список скрывает уже назначенных работников.
-                      </div>
+                      <div className="mt-2 text-xs text-zinc-500">Список скрывает уже назначенных работников.</div>
                     </div>
                   </div>
                 </div>
@@ -642,9 +640,7 @@ function WorkersTab(props: {
                         <select
                           className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-3 py-3 text-sm outline-none focus:border-amber-500/40"
                           value={pickVal}
-                          onChange={(e) =>
-                            props.setPick({ ...props.pick, [w.id]: e.target.value })
-                          }
+                          onChange={(e) => props.setPick({ ...props.pick, [w.id]: e.target.value })}
                         >
                           <option value="">Выбери объект…</option>
                           {availableSites.map((s) => (
@@ -666,9 +662,7 @@ function WorkersTab(props: {
                           Назначить объект
                         </button>
                       </div>
-                      <div className="mt-2 text-xs text-zinc-500">
-                        Подсказка: список скрывает уже назначенные объекты.
-                      </div>
+                      <div className="mt-2 text-xs text-zinc-500">Список скрывает уже назначенные объекты.</div>
                     </div>
                   </div>
                 </div>

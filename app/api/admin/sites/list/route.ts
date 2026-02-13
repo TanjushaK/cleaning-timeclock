@@ -1,16 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireAdmin, supabaseService } from '@/lib/supabase-server'
+import { ApiError, requireAdmin } from '@/lib/supabase-server'
 
 export const dynamic = 'force-dynamic'
 
+function jsonErr(status: number, message: string) {
+  return NextResponse.json({ error: message }, { status })
+}
+
 export async function GET(req: NextRequest) {
-  const guard = await requireAdmin(req)
-  if (!guard.ok) return NextResponse.json({ error: guard.message }, { status: guard.status })
+  try {
+    const { supabase } = await requireAdmin(req)
 
-  const supabase = supabaseService()
+    const { data, error } = await supabase
+      .from('sites')
+      .select('*')
+      .order('id', { ascending: false })
 
-  const { data, error } = await supabase.from('sites').select('*').order('id', { ascending: false })
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ sites: data || [] })
+    if (error) return jsonErr(500, error.message)
+    return NextResponse.json({ sites: data || [] }, { status: 200 })
+  } catch (e: any) {
+    if (e instanceof ApiError) return jsonErr(e.status, e.message)
+    return jsonErr(500, e?.message || 'Внутренняя ошибка')
+  }
 }
