@@ -1,142 +1,134 @@
-// app/api/me/jobs/start/route.ts
-import { NextResponse } from 'next/server';
-import { requireUser, toErrorResponse } from '@/lib/supabase-server';
+import { NextResponse } from 'next/server'
+import { ApiError, requireUser } from '@/lib/supabase-server'
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
-type StartBody = {
-  jobId?: string;
-  job_id?: string;
-  id?: string;
-  lat?: number;
-  lng?: number;
-  accuracy?: number;
-};
-
-type JobSite = { lat: number | null; lng: number | null; radius: number | null } | null;
-
-type JobRow = {
-  id: string;
-  status: string | null;
-  worker_id: string | null;
-  site: JobSite;
-};
-
-type JobWorkerRow = { job_id: string | null };
-
-function toNum(v: unknown): number | null {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
+type Body = {
+  jobId?: string
+  job_id?: string
+  id?: string
+  lat?: number | string
+  lng?: number | string
+  accuracy?: number | string
 }
 
-function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const R = 6371000;
-  const toRad = (x: number) => (x * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
+function toNum(v: unknown): number | null {
+  if (typeof v === 'number' && Number.isFinite(v)) return v
+  if (typeof v === 'string') {
+    const s = v.trim()
+    if (!s) return null
+    const n = Number(s)
+    if (Number.isFinite(n)) return n
+  }
+  return null
+}
+
+function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000
+  const toRad = (x: number) => (x * Math.PI) / 180
+
+  const dLat = toRad(lat2 - lat1)
+  const dLng = toRad(lng2 - lng1)
+
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2)
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  return R * c
+}
+
+type JobRow = {
+  id: string
+  status: string | null
+  worker_id: string | null
+  site: {
+    lat: number | null
+    lng: number | null
+    radius: number | null
+  } | null
 }
 
 export async function POST(req: Request) {
   try {
-    const guard = await requireUser(req);
-    const supabase = guard.supabase;
-    const uid = guard.userId;
+    const { supabase, userId } = await requireUser(req)
 
-    const body: StartBody = await req.json().catch(() => ({} as StartBody));
-    const jobId: string | null = body.jobId || body.job_id || body.id || null;
+    const body: Body = await req.json().catch(() => ({} as Body))
 
-    if (!jobId) return NextResponse.json({ error: 'Нужен id смены.' }, { status: 400 });
+    const jobId = String(body.jobId ?? body.job_id ?? body.id ?? '').trim()
+    if (!jobId) throw new ApiError(400, 'Нужен id смены.')
 
-    const lat = toNum(body.lat);
-    const lng = toNum(body.lng);
-    const acc = toNum(body.accuracy);
+    const lat = toNum(body.lat)
+    const lng = toNum(body.lng)
+    const accuracy = toNum(body.accuracy)
 
-    if (lat === null || lng === null || acc === null) {
-      return NextResponse.json({ error: 'Нужны координаты и точность GPS.' }, { status: 400 });
+    if (lat == null || lng == null || accuracy == null) {
+      throw new ApiError(400, 'Нужны координаты и точность GPS.')
     }
 
-    const { data: jobRaw, error: jobErr } = await supabase
+    const { data: job, error: jobErr } = await supabase
       .from('jobs')
       .select('id,status,worker_id,site:sites(lat,lng,radius)')
       .eq('id', jobId)
-      .maybeSingle();
+      .maybeSingle()
 
-    if (jobErr) return NextResponse.json({ error: jobErr.message }, { status: 400 });
-    if (!jobRaw) return NextResponse.json({ error: 'Смена не найдена.' }, { status: 404 });
+    if (jobErr) throw new ApiError(400, jobErr.message)
+    if (!job) throw new ApiError(404, 'Смена не найдена.')
 
-    const job: JobRow = jobRaw as unknown as JobRow;
+    const j = job as unknown as JobRow
+    if ((j.worker_id || '') !== userId) throw new ApiError(403, 'Нет доступа к этой смене.')
 
-    if (job.status !== 'planned') {
-      return NextResponse.json({ error: 'Старт доступен только для запланированных смен.' }, { status: 400 });
+    const status = String(j.status ?? 'planned')
+    if (status !== 'planned') throw new ApiError(400, 'Старт доступен только для запланированных смен.')
+
+    const site = j.site
+    if (!site || site.lat == null || site.lng == null) throw new ApiError(400, 'У объекта нет координат. Старт запрещён.')
+
+    const radius = typeof site.radius === 'number' && Number.isFinite(site.radius) ? site.radius : 150
+
+    if (accuracy > 80) {
+      throw new ApiError(400, `Точность GPS слишком низкая: ${Math.round(accuracy)} м (нужно ≤ 80 м).`)
     }
 
-    let allowed = job.worker_id === uid;
-
-    if (!allowed) {
-      const { data: linkRaw, error: linkErr } = await supabase
-        .from('job_workers')
-        .select('job_id')
-        .eq('job_id', jobId)
-        .eq('worker_id', uid)
-        .maybeSingle();
-
-      if (linkErr) return NextResponse.json({ error: linkErr.message }, { status: 400 });
-
-      const link: JobWorkerRow | null = (linkRaw as unknown as JobWorkerRow | null) ?? null;
-      allowed = !!(link && link.job_id);
-    }
-
-    if (!allowed) return NextResponse.json({ error: 'Нет доступа к этой смене.' }, { status: 403 });
-
-    const site = job.site;
-    if (!site || site.lat === null || site.lng === null) {
-      return NextResponse.json({ error: 'У объекта нет координат. Старт запрещён.' }, { status: 400 });
-    }
-
-    const radius = site.radius ?? 0;
-    if (!radius || radius <= 0) {
-      return NextResponse.json({ error: 'У объекта не задан радиус. Старт запрещён.' }, { status: 400 });
-    }
-
-    if (acc > 80) {
-      return NextResponse.json(
-        { error: `Точность GPS слишком низкая: ${Math.round(acc)} м (нужно ≤ 80 м).` },
-        { status: 400 }
-      );
-    }
-
-    const dist = haversineMeters(lat, lng, site.lat, site.lng);
+    const dist = haversineMeters(lat, lng, site.lat, site.lng)
     if (dist > radius) {
-      return NextResponse.json(
-        { error: `Вы далеко от объекта: ${Math.round(dist)} м (нужно ≤ ${Math.round(radius)} м).` },
-        { status: 400 }
-      );
+      throw new ApiError(400, `Ты далеко от объекта: ${Math.round(dist)} м (нужно ≤ ${Math.round(radius)} м).`)
     }
 
-    const startedAt = new Date().toISOString();
+    // если вдруг уже есть активный лог — не создаём второй
+    const { data: activeLog, error: activeErr } = await supabase
+      .from('time_logs')
+      .select('id,started_at')
+      .eq('job_id', jobId)
+      .eq('worker_id', userId)
+      .is('stopped_at', null)
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (activeErr) throw new ApiError(400, activeErr.message)
+    if (activeLog?.id) throw new ApiError(400, 'Смена уже начата. Нажми «Закончить смену».')
+
+    const startedAt = new Date().toISOString()
 
     const { error: insErr } = await supabase.from('time_logs').insert({
       job_id: jobId,
-      worker_id: uid,
+      worker_id: userId,
       started_at: startedAt,
       start_lat: lat,
       start_lng: lng,
-      start_accuracy: acc,
-    });
+      start_accuracy: accuracy,
+    })
 
-    if (insErr) return NextResponse.json({ error: insErr.message }, { status: 400 });
+    if (insErr) throw new ApiError(400, insErr.message)
 
-    const { error: updErr } = await supabase.from('jobs').update({ status: 'in_progress' }).eq('id', jobId);
-    if (updErr) return NextResponse.json({ error: updErr.message }, { status: 400 });
+    const { error: updErr } = await supabase.from('jobs').update({ status: 'in_progress' }).eq('id', jobId)
+    if (updErr) throw new ApiError(400, updErr.message)
 
-    return NextResponse.json({ ok: true }, { status: 200 });
-  } catch (err) {
-    return toErrorResponse(err);
+    return NextResponse.json({ ok: true }, { status: 200 })
+  } catch (e: any) {
+    const status = typeof e?.status === 'number' ? e.status : 500
+    return NextResponse.json({ error: e?.message || 'Ошибка' }, { status })
   }
 }

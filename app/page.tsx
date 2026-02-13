@@ -1,525 +1,503 @@
-// app/page.tsx
-'use client';
+'use client'
 
-import Image from 'next/image';
-import { useEffect, useMemo, useState } from 'react';
-import { supabase } from '@/lib/supabase';
-
-type JobStatus = 'planned' | 'in_progress' | 'done' | 'cancelled' | string;
-
-type SiteLite = {
-  id: string;
-  name: string | null;
-  lat: number | null;
-  lng: number | null;
-  radius: number | null;
-};
-
-type JobRow = {
-  id: string;
-  title: string | null;
-  job_date: string | null;
-  scheduled_time: string | null;
-  status: JobStatus;
-  site: SiteLite | null;
-};
+import Image from 'next/image'
+import Link from 'next/link'
+import { useEffect, useMemo, useState } from 'react'
+import { supabase } from '@/lib/supabase'
+import { authFetchJson } from '@/lib/auth-fetch'
 
 type UserLite = {
-  id: string;
-  email?: string | null;
-};
-
-function formatDateDDMMYYYY(isoDate: string | null) {
-  if (!isoDate) return '—';
-  const s = String(isoDate);
-  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!m) return s;
-  const [, y, mo, d] = m;
-  return `${d}-${mo}-${y}`;
+  id: string
+  email: string | null
 }
 
-function formatDateTimeDDMMYYYYHHMM(dateISO: string | null, timeISO: string | null) {
-  const d = formatDateDDMMYYYY(dateISO);
-  const t = timeISO ? String(timeISO).slice(0, 5) : null;
-  if (d === '—' && !t) return '—';
-  if (d === '—' && t) return `— ${t}`;
-  if (d !== '—' && !t) return `${d} —`;
-  return `${d} ${t}`;
+type SiteRow = {
+  id: string
+  name: string | null
+  lat: number | null
+  lng: number | null
+  radius: number | null
 }
 
-function statusLabel(status: JobStatus) {
-  switch (status) {
+type JobRow = {
+  id: string
+  title: string | null
+  job_date: string | null
+  scheduled_time: string | null
+  status: string | null
+  site: SiteRow | null
+}
+
+function pad2(n: number) {
+  return String(n).padStart(2, '0')
+}
+
+function formatDateRu(iso?: string | null) {
+  if (!iso) return '—'
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  return `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}-${d.getFullYear()}`
+}
+
+function timeHHMM(v?: string | null) {
+  if (!v) return '—'
+  const m = /^(\d{2}):(\d{2})/.exec(v)
+  if (m) return `${m[1]}:${m[2]}`
+  return v
+}
+
+function statusRu(s?: string | null) {
+  switch (s) {
     case 'planned':
-      return 'Запланировано';
+      return 'Запланировано'
     case 'in_progress':
-      return 'В работе';
+      return 'В процессе'
     case 'done':
-      return 'Завершено';
+      return 'Завершено'
     case 'cancelled':
-      return 'Отменено';
+      return 'Отменено'
     default:
-      return '—';
+      return s || '—'
   }
 }
 
-function statusPillClass(status: JobStatus) {
-  switch (status) {
-    case 'planned':
-      return 'border-amber-500/30 text-amber-200/90 bg-amber-500/5';
-    case 'in_progress':
-      return 'border-amber-500/45 text-amber-100 bg-amber-500/10';
-    case 'done':
-      return 'border-emerald-500/25 text-emerald-200/90 bg-emerald-500/5';
-    case 'cancelled':
-      return 'border-red-500/25 text-red-200/90 bg-red-500/5';
-    default:
-      return 'border-white/10 text-white/70 bg-white/5';
-  }
+function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371000
+  const toRad = (x: number) => (x * Math.PI) / 180
+  const dLat = toRad(lat2 - lat1)
+  const dLon = toRad(lon2 - lon1)
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  return R * c
 }
 
-function getGeoPosition(): Promise<GeolocationPosition> {
-  return new Promise((resolve, reject) => {
-    if (!('geolocation' in navigator)) {
-      reject(new Error('Геолокация недоступна.'));
-      return;
+async function getGeoPosition(): Promise<{ lat: number; lng: number; accuracy: number }> {
+  return await new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error('Геолокация не поддерживается.'))
+      return
     }
-    navigator.geolocation.getCurrentPosition(resolve, reject, {
-      enableHighAccuracy: true,
-      timeout: 15000,
-      maximumAge: 0,
-    });
-  });
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        resolve({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+        })
+      },
+      (err) => {
+        reject(new Error(err?.message || 'Не удалось получить геолокацию.'))
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    )
+  })
 }
 
-export default function Page() {
-  const [user, setUser] = useState<UserLite | null>(null);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+export default function HomePage() {
+  const [user, setUser] = useState<UserLite | null>(null)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
 
-  const [jobs, setJobs] = useState<JobRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [busyJobId, setBusyJobId] = useState<string | null>(null);
+  const [jobs, setJobs] = useState<JobRow[]>([])
+  const [filter, setFilter] = useState<'planned' | 'in_progress' | 'done' | 'cancelled'>('planned')
 
-  const [filter, setFilter] = useState<'planned' | 'in_progress' | 'done'>('planned');
-  const [error, setError] = useState<string | null>(null);
-  const [info, setInfo] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [info, setInfo] = useState<string | null>(null)
 
-  const filteredJobs = useMemo(() => jobs.filter((j) => (j.status || 'planned') === filter), [jobs, filter]);
+  const counts = useMemo(() => {
+    const c = { planned: 0, in_progress: 0, done: 0, cancelled: 0 }
+    for (const j of jobs) {
+      const st = (j.status || 'planned') as keyof typeof c
+      if (st in c) c[st]++
+    }
+    return c
+  }, [jobs])
 
-  async function getAccessToken(): Promise<string | null> {
-    const { data, error: e } = await supabase.auth.getSession();
-    if (e) return null;
-    return data?.session?.access_token ?? null;
-  }
+  const jobsFiltered = useMemo(() => {
+    return jobs
+      .filter((j) => (j.status || 'planned') === filter)
+      .sort((a, b) => {
+        const da = (a.job_date || '') + ' ' + timeHHMM(a.scheduled_time)
+        const db = (b.job_date || '') + ' ' + timeHHMM(b.scheduled_time)
+        return da.localeCompare(db)
+      })
+  }, [jobs, filter])
 
   async function loadUser() {
-    const { data, error: e } = await supabase.auth.getUser();
-    if (e || !data?.user) {
-      setUser(null);
-      return;
+    const { data, error } = await supabase.auth.getUser()
+    if (error) {
+      setUser(null)
+      return
     }
-    setUser({ id: data.user.id, email: data.user.email });
+    const u = data?.user
+    if (!u) {
+      setUser(null)
+      return
+    }
+    setUser({ id: u.id, email: u.email ?? null })
   }
 
-  async function loadJobs() {
-    setLoading(true);
-    setError(null);
-    setInfo(null);
-
-    const token = await getAccessToken();
-    if (!token) {
-      setJobs([]);
-      setError('Не авторизован. Перезайди.');
-      setLoading(false);
-      return;
+  async function loadJobs(force = false) {
+    if (!force && !user) return
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await authFetchJson<{ jobs: JobRow[] }>('/api/me/jobs')
+      setJobs(Array.isArray(res?.jobs) ? res.jobs : [])
+    } catch (e: any) {
+      const msg = e?.message || 'Не удалось загрузить смены.'
+      // Если сессии нет — возвращаем на логин
+      if (String(msg).toLowerCase().includes('нужно войти') || String(msg).includes('401')) {
+        setUser(null)
+        setJobs([])
+      }
+      setError(msg)
+    } finally {
+      setLoading(false)
     }
-
-    const res = await fetch('/api/me/jobs', {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-
-    const json = await res.json().catch(() => ({} as any));
-
-    if (!res.ok) {
-      setJobs([]);
-      setError(json?.error || 'Ошибка загрузки смен.');
-      setLoading(false);
-      return;
-    }
-
-    setJobs((json?.jobs as JobRow[]) || []);
-    setLoading(false);
   }
 
   useEffect(() => {
-    (async () => {
-      await loadUser();
-      setLoading(false);
-    })();
-
-    const { data: sub } = supabase.auth.onAuthStateChange(async () => {
-      await loadUser();
-    });
-
+    void loadUser()
+    const { data } = supabase.auth.onAuthStateChange(() => {
+      void loadUser()
+    })
     return () => {
-      sub.subscription.unsubscribe();
-    };
-  }, []);
+      data.subscription.unsubscribe()
+    }
+  }, [])
 
   useEffect(() => {
-    if (!user?.id) return;
-    loadJobs();
+    if (user?.id) void loadJobs(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
+  }, [user?.id])
 
-  async function signIn() {
-    setError(null);
-    setInfo(null);
-    const { error: e } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    });
-    if (e) {
-      setError(e.message || 'Ошибка входа.');
-      return;
-    }
-    setPassword('');
-  }
-
-  async function signOut() {
-    setError(null);
-    setInfo(null);
-    await supabase.auth.signOut();
-    setJobs([]);
-    setFilter('planned');
-  }
-
-  async function startJob(job: JobRow) {
-    setError(null);
-    setInfo(null);
-
-    if (!job?.id) {
-      setError('Нужен id смены.');
-      return;
-    }
-
-    if (job.status !== 'planned') {
-      setError('Старт доступен только для запланированных смен.');
-      return;
-    }
-
-    if (!job.site || job.site.lat == null || job.site.lng == null) {
-      setError('У объекта нет координат. Старт запрещён.');
-      return;
-    }
-
-    const token = await getAccessToken();
-    if (!token) {
-      setError('Не авторизован. Перезайди.');
-      return;
-    }
-
-    setBusyJobId(job.id);
-
+  async function onLogin(e: React.FormEvent) {
+    e.preventDefault()
+    setLoading(true)
+    setError(null)
+    setInfo(null)
     try {
-      const pos = await getGeoPosition();
+      const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
+      if (error) throw error
 
-      const res = await fetch('/api/me/jobs/start', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          jobId: job.id,
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-          accuracy: pos.coords.accuracy,
-        }),
-      });
-
-      const json = await res.json().catch(() => ({} as any));
-      if (!res.ok) throw new Error(json?.error || 'Ошибка старта.');
-
-      await loadJobs();
-      setInfo('Старт зафиксирован.');
+      setInfo('Вход выполнен. Загружаю смены…')
+      await loadUser()
+      await loadJobs(true)
     } catch (e: any) {
-      setError(e?.message || 'Ошибка старта.');
+      setError(e?.message || 'Не удалось войти.')
     } finally {
-      setBusyJobId(null);
+      setLoading(false)
     }
   }
 
-  async function stopJob(job: JobRow) {
-    setError(null);
-    setInfo(null);
-
-    if (!job?.id) {
-      setError('Нужен id смены.');
-      return;
-    }
-
-    if (job.status !== 'in_progress') {
-      setError('Стоп доступен только для смен в работе.');
-      return;
-    }
-
-    if (!job.site || job.site.lat == null || job.site.lng == null) {
-      setError('У объекта нет координат. Стоп запрещён.');
-      return;
-    }
-
-    const token = await getAccessToken();
-    if (!token) {
-      setError('Не авторизован. Перезайди.');
-      return;
-    }
-
-    setBusyJobId(job.id);
-
+  async function onLogout() {
+    setLoading(true)
+    setError(null)
+    setInfo(null)
     try {
-      const pos = await getGeoPosition();
-
-      const res = await fetch('/api/me/jobs/stop', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          jobId: job.id,
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-          accuracy: pos.coords.accuracy,
-        }),
-      });
-
-      const json = await res.json().catch(() => ({} as any));
-      if (!res.ok) throw new Error(json?.error || 'Ошибка стопа.');
-
-      await loadJobs();
-      setInfo('Стоп зафиксирован.');
+      await supabase.auth.signOut()
+      setUser(null)
+      setJobs([])
     } catch (e: any) {
-      setError(e?.message || 'Ошибка стопа.');
+      setError(e?.message || 'Не удалось выйти.')
     } finally {
-      setBusyJobId(null);
+      setLoading(false)
     }
   }
 
-  return (
-    <div className="min-h-screen bg-[#050507] text-white">
-      <div className="pointer-events-none fixed inset-0 opacity-60">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(255,215,0,0.10),transparent_55%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom,rgba(255,215,0,0.05),transparent_60%)]" />
-      </div>
+  async function startJob(j: JobRow) {
+    setLoading(true)
+    setError(null)
+    setInfo(null)
+    try {
+      const pos = await getGeoPosition()
 
-      <div className="relative mx-auto w-full max-w-5xl px-6 py-10">
-        <header className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="relative h-12 w-12 overflow-hidden rounded-2xl border border-amber-500/20 bg-black/40 shadow-[0_0_0_1px_rgba(255,215,0,0.06)]">
-              <Image src="/tanija-logo.png" alt="Tanija" fill className="object-contain p-2" priority />
-            </div>
-            <div className="leading-tight">
-              <div className="text-xl font-semibold tracking-wide">Cleaning Timeclock</div>
-              <div className="text-sm text-amber-200/70">Tanija • кабинет работника</div>
+      if (pos.accuracy > 80) {
+        throw new Error(`Слишком низкая точность GPS: ${Math.round(pos.accuracy)} м (нужно ≤ 80 м).`)
+      }
+
+      if (j.site?.lat == null || j.site?.lng == null) {
+        throw new Error('У объекта нет координат. Старт запрещён.')
+      }
+
+      const radius = j.site.radius
+      if (radius != null && radius > 0) {
+        const dist = haversineMeters(pos.lat, pos.lng, j.site.lat, j.site.lng)
+        if (dist > radius) {
+          throw new Error(`Вы далеко от объекта: ${Math.round(dist)} м (нужно ≤ ${Math.round(radius)} м).`)
+        }
+      }
+
+      await authFetchJson('/api/me/jobs/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId: j.id, lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy }),
+      })
+
+      setInfo('Начало работы сохранено.')
+      setFilter('in_progress')
+      await loadJobs(true)
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось начать смену.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function stopJob(j: JobRow) {
+    setLoading(true)
+    setError(null)
+    setInfo(null)
+    try {
+      const pos = await getGeoPosition()
+
+      if (pos.accuracy > 80) {
+        throw new Error(`Слишком низкая точность GPS: ${Math.round(pos.accuracy)} м (нужно ≤ 80 м).`)
+      }
+
+      if (j.site?.lat == null || j.site?.lng == null) {
+        throw new Error('У объекта нет координат. Стоп запрещён.')
+      }
+
+      const radius = j.site.radius
+      if (radius != null && radius > 0) {
+        const dist = haversineMeters(pos.lat, pos.lng, j.site.lat, j.site.lng)
+        if (dist > radius) {
+          throw new Error(`Вы далеко от объекта: ${Math.round(dist)} м (нужно ≤ ${Math.round(radius)} м).`)
+        }
+      }
+
+      await authFetchJson('/api/me/jobs/stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId: j.id, lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy }),
+      })
+
+      setInfo('Конец смены сохранён.')
+      setFilter('done')
+      await loadJobs(true)
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось завершить смену.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (!user) {
+    return (
+      <main className="min-h-screen bg-gradient-to-b from-zinc-950 via-black to-zinc-950 text-zinc-100">
+        <div className="mx-auto max-w-2xl px-4 py-10">
+          <div className="mb-8 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="relative h-12 w-12 overflow-hidden rounded-2xl border border-yellow-400/30 bg-black/40 shadow-[0_0_0_1px_rgba(255,215,0,0.12)]">
+                <Image src="/tanija-logo.png" alt="Tanija" fill className="object-contain p-2" priority />
+              </div>
+              <div>
+                <div className="text-lg font-semibold tracking-wide">Cleaning Timeclock</div>
+                <div className="text-xs text-yellow-200/70">Tanija • кабинет работника</div>
+              </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => loadJobs()}
-              className="rounded-full border border-amber-500/25 bg-black/30 px-5 py-2 text-sm text-amber-100 hover:border-amber-500/45 hover:bg-black/40 active:scale-[0.99]"
-            >
-              Обновить
-            </button>
-            {user ? (
-              <button
-                onClick={() => signOut()}
-                className="rounded-full border border-amber-500/25 bg-black/30 px-5 py-2 text-sm text-amber-100 hover:border-amber-500/45 hover:bg-black/40 active:scale-[0.99]"
-              >
-                Выйти
-              </button>
+          <div className="rounded-3xl border border-yellow-400/20 bg-zinc-950/50 p-6 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur">
+            <h1 className="text-xl font-semibold text-yellow-100">Вход</h1>
+            <div className="mt-1 text-sm text-zinc-300">Только для сотрудников.</div>
+
+            {error ? (
+              <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-950/30 px-4 py-3 text-sm text-red-100">{error}</div>
             ) : null}
-          </div>
-        </header>
 
-        <main className="mt-8 rounded-[28px] border border-amber-500/15 bg-black/35 p-8 shadow-[0_0_0_1px_rgba(255,215,0,0.05),0_20px_60px_rgba(0,0,0,0.55)]">
-          {!user ? (
-            <div className="mx-auto max-w-md">
-              <div className="text-2xl font-semibold">Вход</div>
-              <div className="mt-2 text-sm text-white/70">Только для сотрудников.</div>
+            {info ? (
+              <div className="mt-4 rounded-2xl border border-yellow-400/20 bg-black/30 px-4 py-3 text-sm text-yellow-100">{info}</div>
+            ) : null}
 
-              {error ? (
-                <div className="mt-6 rounded-2xl border border-red-500/25 bg-red-500/10 px-5 py-4 text-sm text-red-100">
-                  {error}
-                </div>
-              ) : null}
-
-              <div className="mt-6 space-y-3">
+            <form onSubmit={onLogin} className="mt-5 grid gap-3">
+              <label className="grid gap-1">
+                <span className="text-xs text-zinc-300">Email</span>
                 <input
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="Почта"
-                  className="w-full rounded-2xl border border-amber-500/15 bg-black/40 px-4 py-3 text-sm outline-none placeholder:text-white/30 focus:border-amber-500/35"
+                  type="email"
+                  autoComplete="email"
+                  className="rounded-2xl border border-yellow-400/20 bg-black/40 px-4 py-3 text-sm outline-none transition focus:border-yellow-300/60"
+                  placeholder="you@domain.com"
+                  required
                 />
+              </label>
+
+              <label className="grid gap-1">
+                <span className="text-xs text-zinc-300">Пароль</span>
                 <input
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Пароль"
                   type="password"
-                  className="w-full rounded-2xl border border-amber-500/15 bg-black/40 px-4 py-3 text-sm outline-none placeholder:text-white/30 focus:border-amber-500/35"
+                  autoComplete="current-password"
+                  className="rounded-2xl border border-yellow-400/20 bg-black/40 px-4 py-3 text-sm outline-none transition focus:border-yellow-300/60"
+                  placeholder="••••••••"
+                  required
                 />
-                <button
-                  onClick={() => signIn()}
-                  className="w-full rounded-2xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm font-semibold text-amber-100 hover:border-amber-500/45 hover:bg-amber-500/15 active:scale-[0.99]"
-                >
-                  Войти
-                </button>
+              </label>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="mt-2 rounded-2xl border border-yellow-300/40 bg-gradient-to-r from-yellow-500/10 via-yellow-400/10 to-yellow-300/10 px-4 py-3 text-sm font-semibold text-yellow-100 shadow-[0_0_0_1px_rgba(255,215,0,0.18)] transition hover:border-yellow-200/70 hover:bg-yellow-400/10 disabled:opacity-60"
+              >
+                {loading ? 'Вхожу…' : 'Войти'}
+              </button>
+
+              <div className="mt-2 text-center text-xs text-zinc-400">
+                <Link href="/forgot-password" className="text-yellow-200/80 hover:text-yellow-200">
+                  Забыли пароль?
+                </Link>
               </div>
+            </form>
+          </div>
+
+          <div className="mt-6 text-center text-xs text-zinc-500">© 2026 Tanija • dark &amp; gold, без лишней драмы</div>
+        </div>
+      </main>
+    )
+  }
+
+  return (
+    <main className="min-h-screen bg-gradient-to-b from-zinc-950 via-black to-zinc-950 text-zinc-100">
+      <div className="mx-auto max-w-5xl px-4 py-8">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="relative h-12 w-12 overflow-hidden rounded-2xl border border-yellow-400/30 bg-black/40 shadow-[0_0_0_1px_rgba(255,215,0,0.12)]">
+              <Image src="/tanija-logo.png" alt="Tanija" fill className="object-contain p-2" priority />
             </div>
-          ) : (
-            <>
-              <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <div className="text-3xl font-semibold">Мои смены</div>
-                  <div className="mt-1 text-sm text-white/65">Формат времени: ДД-ММ-ГГГГ ЧЧ:ММ</div>
-                </div>
+            <div>
+              <div className="text-lg font-semibold tracking-wide">Cleaning Timeclock</div>
+              <div className="text-xs text-yellow-200/70">{user.email || 'сотрудник'}</div>
+            </div>
+          </div>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setFilter('planned')}
-                    className={[
-                      'rounded-full border px-5 py-2 text-sm',
-                      filter === 'planned'
-                        ? 'border-amber-500/45 bg-amber-500/12 text-amber-100'
-                        : 'border-white/10 bg-white/5 text-white/75 hover:border-amber-500/25 hover:text-amber-100',
-                    ].join(' ')}
-                  >
-                    Запланировано
-                  </button>
-                  <button
-                    onClick={() => setFilter('in_progress')}
-                    className={[
-                      'rounded-full border px-5 py-2 text-sm',
-                      filter === 'in_progress'
-                        ? 'border-amber-500/45 bg-amber-500/12 text-amber-100'
-                        : 'border-white/10 bg-white/5 text-white/75 hover:border-amber-500/25 hover:text-amber-100',
-                    ].join(' ')}
-                  >
-                    В работе
-                  </button>
-                  <button
-                    onClick={() => setFilter('done')}
-                    className={[
-                      'rounded-full border px-5 py-2 text-sm',
-                      filter === 'done'
-                        ? 'border-amber-500/45 bg-amber-500/12 text-amber-100'
-                        : 'border-white/10 bg-white/5 text-white/75 hover:border-amber-500/25 hover:text-amber-100',
-                    ].join(' ')}
-                  >
-                    Завершено
-                  </button>
-                </div>
-              </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => void loadJobs(true)}
+              disabled={loading}
+              className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/40 disabled:opacity-60"
+            >
+              Обновить
+            </button>
+            <button
+              onClick={onLogout}
+              disabled={loading}
+              className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/40 disabled:opacity-60"
+            >
+              Выйти
+            </button>
+          </div>
+        </div>
 
-              {error ? (
-                <div className="mt-6 rounded-2xl border border-red-500/25 bg-red-500/10 px-5 py-4 text-sm text-red-100">
-                  {error}
-                </div>
-              ) : null}
+        {error ? (
+          <div className="mb-4 rounded-2xl border border-red-500/30 bg-red-950/30 px-4 py-3 text-sm text-red-100">{error}</div>
+        ) : null}
 
-              {info ? (
-                <div className="mt-6 rounded-2xl border border-amber-500/20 bg-amber-500/8 px-5 py-4 text-sm text-amber-100">
-                  {info}
-                </div>
-              ) : null}
+        {info ? (
+          <div className="mb-4 rounded-2xl border border-yellow-400/20 bg-black/30 px-4 py-3 text-sm text-yellow-100">{info}</div>
+        ) : null}
 
-              <div className="mt-6 space-y-4">
-                {loading ? (
-                  <div className="rounded-2xl border border-white/10 bg-white/5 px-6 py-6 text-sm text-white/70">
-                    Загружаю смены…
+        <div className="rounded-3xl border border-yellow-400/20 bg-zinc-950/50 p-4 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur">
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setFilter('planned')}
+              className={`rounded-2xl border px-4 py-2 text-xs font-semibold transition ${
+                filter === 'planned'
+                  ? 'border-yellow-300/60 bg-yellow-400/10 text-yellow-100'
+                  : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
+              }`}
+            >
+              Запланировано ({counts.planned})
+            </button>
+            <button
+              onClick={() => setFilter('in_progress')}
+              className={`rounded-2xl border px-4 py-2 text-xs font-semibold transition ${
+                filter === 'in_progress'
+                  ? 'border-yellow-300/60 bg-yellow-400/10 text-yellow-100'
+                  : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
+              }`}
+            >
+              В работе ({counts.in_progress})
+            </button>
+            <button
+              onClick={() => setFilter('done')}
+              className={`rounded-2xl border px-4 py-2 text-xs font-semibold transition ${
+                filter === 'done'
+                  ? 'border-yellow-300/60 bg-yellow-400/10 text-yellow-100'
+                  : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
+              }`}
+            >
+              Завершено ({counts.done})
+            </button>
+            <button
+              onClick={() => setFilter('cancelled')}
+              className={`rounded-2xl border px-4 py-2 text-xs font-semibold transition ${
+                filter === 'cancelled'
+                  ? 'border-yellow-300/60 bg-yellow-400/10 text-yellow-100'
+                  : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
+              }`}
+            >
+              Отменено ({counts.cancelled})
+            </button>
+          </div>
+
+          <div className="mt-4 grid gap-3">
+            {jobsFiltered.length === 0 ? (
+              <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-4 py-4 text-sm text-zinc-400">Смен нет</div>
+            ) : null}
+
+            {jobsFiltered.map((j) => (
+              <div key={j.id} className="rounded-3xl border border-yellow-400/15 bg-black/25 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold text-yellow-100">{j.site?.name || j.title || 'Смена'}</div>
+                    <div className="mt-1 text-xs text-zinc-300">
+                      {formatDateRu(j.job_date)} • {timeHHMM(j.scheduled_time)} • <span className="text-zinc-500">{statusRu(j.status)}</span>
+                    </div>
+                    <div className="mt-1 text-[11px] text-zinc-500">id: {j.id}</div>
                   </div>
-                ) : filteredJobs.length === 0 ? (
-                  <div className="rounded-2xl border border-white/10 bg-white/5 px-6 py-6 text-sm text-white/70">
-                    Нет смен в этом разделе.
-                  </div>
-                ) : (
-                  filteredJobs.map((j) => {
-                    const title = (j.title && String(j.title).trim()) || 'Смена';
-                    const when = formatDateTimeDDMMYYYYHHMM(j.job_date, j.scheduled_time);
-                    const pill = statusLabel(j.status);
-                    const pillCls = statusPillClass(j.status);
 
-                    const canStart = j.status === 'planned';
-                    const canStop = j.status === 'in_progress';
-                    const busy = busyJobId === j.id;
-
-                    return (
-                      <div
-                        key={j.id}
-                        className="rounded-[22px] border border-amber-500/15 bg-black/25 px-6 py-5 shadow-[0_0_0_1px_rgba(255,215,0,0.04)]"
+                  <div className="flex flex-wrap items-center gap-2">
+                    {j.status === 'planned' ? (
+                      <button
+                        onClick={() => void startJob(j)}
+                        disabled={loading}
+                        className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 hover:border-yellow-200/70 disabled:opacity-60"
                       >
-                        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                          <div>
-                            <div className="text-lg font-semibold">{title}</div>
-                            <div className="mt-1 text-sm text-white/70">
-                              План: <span className="text-white/85">{when}</span>
-                            </div>
-                            {j.site?.name ? (
-                              <div className="mt-1 text-xs text-white/55">
-                                Объект: <span className="text-white/70">{j.site.name}</span>
-                              </div>
-                            ) : null}
-                          </div>
+                        СТАРТ
+                      </button>
+                    ) : null}
 
-                          <div className="flex items-center gap-3">
-                            {canStart ? (
-                              <button
-                                onClick={() => startJob(j)}
-                                disabled={busy}
-                                className={[
-                                  'rounded-full border px-6 py-2 text-sm font-semibold',
-                                  busy
-                                    ? 'cursor-not-allowed border-amber-500/15 bg-amber-500/6 text-amber-100/40'
-                                    : 'border-amber-500/35 bg-amber-500/12 text-amber-100 hover:border-amber-500/55 hover:bg-amber-500/16 active:scale-[0.99]',
-                                ].join(' ')}
-                              >
-                                {busy ? 'СТАРТ…' : 'СТАРТ'}
-                              </button>
-                            ) : null}
+                    {j.status === 'in_progress' ? (
+                      <button
+                        onClick={() => void stopJob(j)}
+                        disabled={loading}
+                        className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 hover:border-yellow-200/70 disabled:opacity-60"
+                      >
+                        СТОП
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
 
-                            {canStop ? (
-                              <button
-                                onClick={() => stopJob(j)}
-                                disabled={busy}
-                                className={[
-                                  'rounded-full border px-6 py-2 text-sm font-semibold',
-                                  busy
-                                    ? 'cursor-not-allowed border-amber-500/15 bg-amber-500/6 text-amber-100/40'
-                                    : 'border-amber-500/35 bg-amber-500/12 text-amber-100 hover:border-amber-500/55 hover:bg-amber-500/16 active:scale-[0.99]',
-                                ].join(' ')}
-                              >
-                                {busy ? 'СТОП…' : 'СТОП'}
-                              </button>
-                            ) : null}
-
-                            <span className={`rounded-full border px-4 py-2 text-xs ${pillCls}`}>{pill}</span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
+                <div className="mt-3 rounded-2xl border border-yellow-400/10 bg-black/20 px-3 py-3 text-xs text-zinc-300">
+                  Правила: старт/стоп запрещены если нет координат объекта, если точность GPS &gt; 80 м, или если ты дальше радиуса объекта.
+                </div>
               </div>
-            </>
-          )}
-        </main>
-
-        <footer className="relative mt-10 text-center text-xs text-white/45">© 2026 Tanija • dark & gold, без лишней драмы</footer>
+            ))}
+          </div>
+        </div>
       </div>
-    </div>
-  );
+    </main>
+  )
 }

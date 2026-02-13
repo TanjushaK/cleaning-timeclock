@@ -1,83 +1,37 @@
-// app/api/me/jobs/route.ts
-import { NextResponse } from 'next/server';
-import { requireUser, toErrorResponse } from '@/lib/supabase-server';
+import { NextResponse } from 'next/server'
+import { ApiError, requireUser, toErrorResponse } from '@/lib/supabase-server'
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
-type SiteRow = {
-  id: string;
-  name: string | null;
-  lat: number | null;
-  lng: number | null;
-  radius: number | null;
-};
-
-type JobRow = {
-  id: string;
-  title: string | null;
-  job_date: string | null;
-  scheduled_time: string | null;
-  status: string | null;
-  site: SiteRow | null;
-};
-
-type JobWorkerRow = {
-  job_id: string | null;
-};
+export const dynamic = 'force-dynamic'
 
 export async function GET(req: Request) {
   try {
-    const guard = await requireUser(req);
-    const supabase = guard.supabase;
-    const uid = guard.userId;
+    const { supabase, userId } = await requireUser(req)
 
-    const { data: jw, error: jwErr } = await supabase.from('job_workers').select('job_id').eq('worker_id', uid);
-    if (jwErr) return NextResponse.json({ error: jwErr.message }, { status: 400 });
+    // Доп. привязка через job_workers (если используете many-to-many)
+    const { data: jw, error: jwErr } = await supabase.from('job_workers').select('job_id').eq('worker_id', userId)
+    if (jwErr) throw new ApiError(400, jwErr.message)
 
-    const ids: string[] = ((jw ?? []) as JobWorkerRow[])
-      .map((x) => x.job_id)
-      .filter((v): v is string => typeof v === 'string' && v.length > 0);
+    const extraJobIds = (jw || [])
+      .map((r: any) => r?.job_id)
+      .filter((v: any) => typeof v === 'string' && v.length > 0) as string[]
 
-    const select = 'id,title,job_date,scheduled_time,status,site:sites(id,name,lat,lng,radius)';
-
-    const { data: directJobs, error: dErr } = await supabase
+    let q = supabase
       .from('jobs')
-      .select(select)
-      .eq('worker_id', uid)
+      .select('id, title, status, job_date, scheduled_time, site_id, worker_id, site:sites(id, name, lat, lng, radius)')
       .order('job_date', { ascending: true })
-      .order('scheduled_time', { ascending: true });
+      .order('scheduled_time', { ascending: true })
 
-    if (dErr) return NextResponse.json({ error: dErr.message }, { status: 400 });
-
-    let extraJobs: JobRow[] = [];
-    if (ids.length > 0) {
-      const { data: extra, error: eErr } = await supabase
-        .from('jobs')
-        .select(select)
-        .in('id', ids)
-        .order('job_date', { ascending: true })
-        .order('scheduled_time', { ascending: true });
-
-      if (eErr) return NextResponse.json({ error: eErr.message }, { status: 400 });
-      extraJobs = (extra ?? []) as unknown as JobRow[];
+    if (extraJobIds.length > 0) {
+      q = q.or(`worker_id.eq.${userId},id.in.(${extraJobIds.join(',')})`)
+    } else {
+      q = q.eq('worker_id', userId)
     }
 
-    const map = new Map<string, JobRow>();
-    for (const j of (directJobs ?? []) as unknown as JobRow[]) map.set(j.id, j);
-    for (const j of extraJobs) map.set(j.id, j);
+    const { data: jobs, error } = await q
+    if (error) throw new ApiError(400, error.message)
 
-    const jobs = Array.from(map.values()).sort((a, b) => {
-      const da = a.job_date ?? '';
-      const db = b.job_date ?? '';
-      if (da !== db) return da.localeCompare(db);
-      const ta = a.scheduled_time ?? '';
-      const tb = b.scheduled_time ?? '';
-      return ta.localeCompare(tb);
-    });
-
-    return NextResponse.json({ jobs }, { status: 200 });
+    return NextResponse.json({ jobs: jobs || [] })
   } catch (err) {
-    return toErrorResponse(err);
+    return toErrorResponse(err)
   }
 }

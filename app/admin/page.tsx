@@ -25,6 +25,20 @@ type Worker = {
   active?: boolean | null
 }
 
+type WorkerCardProfile = {
+  id: string
+  email: string | null
+  role: string | null
+  active: boolean | null
+  full_name: string | null
+  first_name: string | null
+  last_name: string | null
+  phone: string | null
+  address: string | null
+  notes: string | null
+  avatar_url: string | null
+}
+
 type Assignment = {
   site_id: string
   worker_id: string
@@ -355,6 +369,14 @@ export default function AdminPage() {
   const [workerCardOpen, setWorkerCardOpen] = useState(false)
   const [workerCardId, setWorkerCardId] = useState<string>('')
   const [workerCardItems, setWorkerCardItems] = useState<ScheduleItem[]>([])
+
+  const [workerCardProfile, setWorkerCardProfile] = useState<WorkerCardProfile | null>(null)
+  const [wcFirstName, setWcFirstName] = useState<string>('')
+  const [wcLastName, setWcLastName] = useState<string>('')
+  const [wcPhone, setWcPhone] = useState<string>('')
+  const [wcAddress, setWcAddress] = useState<string>('')
+  const [wcNotes, setWcNotes] = useState<string>('')
+  const [wcAvatarUrl, setWcAvatarUrl] = useState<string>('')
 
   const [planView, setPlanView] = useState<PlanView>('week')
   const [planMode, setPlanMode] = useState<PlanMode>('workers')
@@ -699,11 +721,80 @@ export default function AdminPage() {
     setWorkerCardItems(Array.isArray(sch?.items) ? sch.items : [])
   }
 
+  async function loadWorkerProfile(workerId: string) {
+    const res = await authFetchJson<{ worker: WorkerCardProfile }>(`/api/admin/workers/${encodeURIComponent(workerId)}`)
+    const w = res?.worker
+
+    if (!w) {
+      setWorkerCardProfile(null)
+      setWcFirstName('')
+      setWcLastName('')
+      setWcPhone('')
+      setWcAddress('')
+      setWcNotes('')
+      setWcAvatarUrl('')
+      return
+    }
+
+    setWorkerCardProfile(w)
+    setWcFirstName(w.first_name || '')
+    setWcLastName(w.last_name || '')
+    setWcPhone(w.phone || '')
+    setWcAddress(w.address || '')
+    setWcNotes(w.notes || '')
+    setWcAvatarUrl(w.avatar_url || '')
+  }
+
+  async function saveWorkerProfile() {
+    if (!workerCardId) return
+    setBusy(true)
+    setError(null)
+    try {
+      const payload = await authFetchJson<{ worker: WorkerCardProfile }>(`/api/admin/workers/${encodeURIComponent(workerCardId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          first_name: wcFirstName,
+          last_name: wcLastName,
+          phone: wcPhone,
+          address: wcAddress,
+          notes: wcNotes,
+          avatar_url: wcAvatarUrl,
+        }),
+      })
+
+      if (payload?.worker) {
+        const w = payload.worker
+        setWorkerCardProfile(w)
+        setWcFirstName(w.first_name || '')
+        setWcLastName(w.last_name || '')
+        setWcPhone(w.phone || '')
+        setWcAddress(w.address || '')
+        setWcNotes(w.notes || '')
+        setWcAvatarUrl(w.avatar_url || '')
+      }
+
+      await refreshCore()
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось сохранить карточку')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function openWorkerCard(workerId: string) {
     setWorkerCardId(workerId)
     setWorkerCardOpen(true)
+    setWorkerCardItems([])
+    setWorkerCardProfile(null)
+    setWcFirstName('')
+    setWcLastName('')
+    setWcPhone('')
+    setWcAddress('')
+    setWcNotes('')
+    setWcAvatarUrl('')
     try {
-      await loadWorkerCard(workerId)
+      await Promise.all([loadWorkerCard(workerId), loadWorkerProfile(workerId)])
     } catch (e: any) {
       setError(e?.message || 'Не удалось загрузить карточку работника')
     }
@@ -1157,7 +1248,16 @@ export default function AdminPage() {
             ))}
 
             {days.map((d) => {
-              const inMonth = d.iso >= dateFrom && d.iso <= dateTo
+              const inRange = d.iso >= dateFrom && d.iso <= dateTo
+
+              const dayJobs = schedule
+                .filter((j) => (j.job_date || '') === d.iso)
+                .sort((a, b) => timeHHMM(a.scheduled_time).localeCompare(timeHHMM(b.scheduled_time)))
+
+              const limit = 6
+              const shown = dayJobs.slice(0, limit)
+              const rest = Math.max(0, dayJobs.length - shown.length)
+
               return (
                 <div
                   key={d.iso}
@@ -1169,8 +1269,8 @@ export default function AdminPage() {
                     void moveJob(p.job_id, { job_date: d.iso })
                   }}
                   className={cn(
-                    'min-h-[140px] rounded-3xl border p-3',
-                    inMonth ? 'border-yellow-400/12 bg-black/20' : 'border-yellow-400/8 bg-black/10 opacity-60'
+                    'min-h-[220px] rounded-3xl border p-3',
+                    inRange ? 'border-yellow-400/12 bg-black/20' : 'border-yellow-400/8 bg-black/10 opacity-60'
                   )}
                 >
                   <div className="flex items-center justify-between">
@@ -1181,21 +1281,45 @@ export default function AdminPage() {
                   </div>
 
                   <div className="mt-2 grid gap-2">
-                    {schedule
-                      .filter((j) => (j.job_date || '') === d.iso)
-                      .sort((a, b) => timeHHMM(a.scheduled_time).localeCompare(timeHHMM(b.scheduled_time)))
-                      .slice(0, 3)
-                      .map((j) => jobCard(j, true))}
+                    <div className="grid gap-2 max-h-[150px] overflow-auto pr-1">
+                      {shown.map((j) => jobCard(j, true))}
+                    </div>
 
-                    {schedule.filter((j) => (j.job_date || '') === d.iso).length > 3 ? (
+                    {rest > 0 ? (
                       <div className="rounded-2xl border border-yellow-400/10 bg-black/15 px-3 py-2 text-[11px] text-zinc-400">
-                        ещё {schedule.filter((j) => (j.job_date || '') === d.iso).length - 3}
+                        ещё {rest}
                       </div>
                     ) : null}
 
-                    <div className="rounded-2xl border border-dashed border-yellow-400/10 bg-black/10 px-3 py-2 text-[11px] text-zinc-500">
-                      перетащи сюда
-                    </div>
+                    {planMode === 'workers' ? (
+                      <div className="rounded-2xl border border-yellow-400/10 bg-black/10 px-3 py-2">
+                        <div className="text-[10px] text-zinc-500">перетащи смену на работника</div>
+                        <div className="mt-2 grid grid-cols-2 gap-1">
+                          {workersForSelect.map((w) => (
+                            <div
+                              key={w.id}
+                              onDragOver={(e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                              }}
+                              onDrop={(e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                const p = dragGet(e)
+                                if (!p) return
+                                void moveJob(p.job_id, { job_date: d.iso, worker_id: w.id })
+                              }}
+                              className="cursor-pointer rounded-xl border border-yellow-400/10 bg-black/15 px-2 py-1 text-[11px] text-zinc-200 hover:border-yellow-300/40"
+                              title="Брось сюда — смена перейдёт работнику"
+                            >
+                              {w.full_name || 'Работник'}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div className="rounded-2xl border border-dashed border-yellow-400/10 bg-black/10 px-3 py-2 text-[11px] text-zinc-500">перетащи сюда (день)</div>
                   </div>
                 </div>
               )
@@ -1986,35 +2110,140 @@ export default function AdminPage() {
 
       {/* МОДАЛКА: КАРТОЧКА РАБОТНИКА */}
       <Modal open={workerCardOpen} title="Карточка работника" onClose={() => setWorkerCardOpen(false)}>
-        <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-4">
-          <div className="text-sm font-semibold text-yellow-100">{workersById.get(workerCardId)?.full_name || 'Работник'}</div>
-          <div className="mt-1 text-xs text-zinc-300">
-            Диапазон: {fmtD(dateFrom)} — {fmtD(dateTo)}
+        <div className="grid gap-4">
+          <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-4">
+            <div className="flex flex-wrap gap-4">
+              <div className="h-20 w-20 overflow-hidden rounded-2xl border border-yellow-400/15 bg-black/30">
+                {wcAvatarUrl ? (
+                  <img src={wcAvatarUrl} alt="Фото" className="h-full w-full object-cover" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center text-[10px] text-zinc-500">нет фото</div>
+                )}
+              </div>
+
+              <div className="min-w-[220px] flex-1">
+                <div className="text-sm font-semibold text-yellow-100">
+                  {`${wcFirstName} ${wcLastName}`.trim() || workerCardProfile?.full_name || workersById.get(workerCardId)?.full_name || 'Работник'}
+                </div>
+
+                <div className="mt-1 text-xs text-zinc-300">
+                  Email: <span className="text-zinc-100">{workerCardProfile?.email || '—'}</span>
+                </div>
+
+                <div className="mt-1 text-xs text-zinc-300">
+                  Телефон: <span className="text-zinc-100">{workerCardProfile?.phone || '—'}</span>
+                </div>
+
+                <div className="mt-1 text-xs text-zinc-300">
+                  Статус: <span className="text-zinc-100">{workerCardProfile?.active === false ? 'выключен' : 'активен'}</span> • Роль:{' '}
+                  <span className="text-zinc-100">{workerCardProfile?.role || 'worker'}</span>
+                </div>
+
+                <div className="mt-1 text-xs text-zinc-300">
+                  Диапазон: <span className="text-zinc-100">{fmtD(dateFrom)} — {fmtD(dateTo)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <label className="grid gap-1">
+                <span className="text-[11px] text-zinc-300">Имя</span>
+                <input
+                  value={wcFirstName}
+                  onChange={(e) => setWcFirstName(e.target.value)}
+                  placeholder="Имя"
+                  className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
+                />
+              </label>
+
+              <label className="grid gap-1">
+                <span className="text-[11px] text-zinc-300">Фамилия</span>
+                <input
+                  value={wcLastName}
+                  onChange={(e) => setWcLastName(e.target.value)}
+                  placeholder="Фамилия"
+                  className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
+                />
+              </label>
+
+              <label className="grid gap-1 md:col-span-2">
+                <span className="text-[11px] text-zinc-300">Фото (URL)</span>
+                <input
+                  value={wcAvatarUrl}
+                  onChange={(e) => setWcAvatarUrl(e.target.value)}
+                  placeholder="https://..."
+                  className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
+                />
+              </label>
+
+              <label className="grid gap-1">
+                <span className="text-[11px] text-zinc-300">Телефон</span>
+                <input
+                  value={wcPhone}
+                  onChange={(e) => setWcPhone(e.target.value)}
+                  placeholder="+31..."
+                  className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
+                />
+              </label>
+
+              <label className="grid gap-1">
+                <span className="text-[11px] text-zinc-300">Адрес</span>
+                <input
+                  value={wcAddress}
+                  onChange={(e) => setWcAddress(e.target.value)}
+                  placeholder="Адрес"
+                  className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
+                />
+              </label>
+
+              <label className="grid gap-1 md:col-span-2">
+                <span className="text-[11px] text-zinc-300">Заметки</span>
+                <textarea
+                  value={wcNotes}
+                  onChange={(e) => setWcNotes(e.target.value)}
+                  placeholder="Заметки по работнику"
+                  rows={4}
+                  className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
+                />
+              </label>
+            </div>
+
+            <div className="mt-3 flex items-center justify-end">
+              <button
+                onClick={saveWorkerProfile}
+                disabled={busy || !workerCardId}
+                className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-2 text-xs font-semibold text-yellow-100 hover:border-yellow-200/70 disabled:opacity-60"
+              >
+                Сохранить карточку
+              </button>
+            </div>
           </div>
 
-          <div className="mt-3 grid gap-2">
-            {workerCardItems.length === 0 ? (
-              <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-3 text-xs text-zinc-500">Смен нет</div>
-            ) : null}
+          <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-4">
+            <div className="text-sm font-semibold text-yellow-100">Смены</div>
 
-            {workerCardItems.map((j) => (
-              <div key={j.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-yellow-400/10 bg-black/30 px-3 py-2">
-                <div className="text-xs text-zinc-200">
-                  <span className="text-zinc-100">{fmtD(j.job_date)}</span> • <span className="text-zinc-100">{timeHHMM(j.scheduled_time)}</span> •{' '}
-                  <span className="text-zinc-100">{j.site_name || '—'}</span> • <span className="text-zinc-500">{statusRu(String(j.status || ''))}</span>
-                  <div className="mt-1 text-[11px] text-zinc-400">
-                    Начал: {fmtDT(j.started_at)} • Закончил: {fmtDT(j.stopped_at)}
+            <div className="mt-3 grid gap-2">
+              {workerCardItems.length === 0 ? (
+                <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-3 text-xs text-zinc-500">Смен нет</div>
+              ) : null}
+
+              {workerCardItems.map((j) => (
+                <div key={j.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-yellow-400/10 bg-black/30 px-3 py-2">
+                  <div className="text-xs text-zinc-200">
+                    <span className="text-zinc-100">{fmtD(j.job_date)}</span> • <span className="text-zinc-100">{timeHHMM(j.scheduled_time)}</span> •{' '}
+                    <span className="text-zinc-100">{j.site_name || '—'}</span> • <span className="text-zinc-500">{statusRu(String(j.status || ''))}</span>
+                    <div className="mt-1 text-[11px] text-zinc-400">Начал: {fmtDT(j.started_at)} • Закончил: {fmtDT(j.stopped_at)}</div>
                   </div>
+                  <button
+                    onClick={() => openEditForJob(j)}
+                    disabled={busy}
+                    className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40 disabled:opacity-60"
+                  >
+                    Править
+                  </button>
                 </div>
-                <button
-                  onClick={() => openEditForJob(j)}
-                  disabled={busy}
-                  className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40 disabled:opacity-60"
-                >
-                  Править
-                </button>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </div>
       </Modal>
