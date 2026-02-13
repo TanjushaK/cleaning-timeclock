@@ -1,68 +1,96 @@
-import { createClient } from '@supabase/supabase-js';
+import { NextResponse } from 'next/server'
+import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js'
 
 export class ApiError extends Error {
-  status: number;
+  status: number
+
   constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
+    super(message)
+    this.status = status
   }
 }
 
-function mustEnv(name: string) {
-  const v = process.env[name];
-  if (!v) throw new ApiError(500, `Нет env: ${name}`);
-  return v;
+type ProfileRow = {
+  id: string
+  role: string | null
+  active: boolean | null
 }
 
-export function supabaseService() {
-  const url = mustEnv('NEXT_PUBLIC_SUPABASE_URL');
-  const key = mustEnv('SUPABASE_SERVICE_ROLE_KEY');
-  return createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-  });
+type UserGuard = {
+  supabase: SupabaseClient
+  token: string
+  user: User
+  userId: string
 }
 
-export function supabaseAnon() {
-  const url = mustEnv('NEXT_PUBLIC_SUPABASE_URL');
-  const key = mustEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
-  return createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-  });
+type AdminGuard = UserGuard & {
+  profile: ProfileRow
 }
 
-function getBearer(h: Headers) {
-  const a = h.get('authorization') || h.get('Authorization') || '';
-  const m = a.match(/^Bearer\s+(.+)$/i);
-  return m?.[1] || '';
+function mustEnv(name: string): string {
+  const v = process.env[name]
+  if (!v) throw new ApiError(500, `Missing env: ${name}`)
+  return v
 }
 
-export async function requireUser(reqOrHeaders: Request | Headers) {
-  const headers = reqOrHeaders instanceof Headers ? reqOrHeaders : reqOrHeaders.headers;
-  const token = getBearer(headers);
-  if (!token) throw new ApiError(401, 'Нет токена (Authorization: Bearer ...)');
+let _service: SupabaseClient | null = null
 
-  const anon = supabaseAnon();
-  const { data, error } = await anon.auth.getUser(token);
-
-  if (error || !data?.user?.id) throw new ApiError(401, 'Сессия невалидна');
-
-  const supabase = supabaseService();
-  const admin: any = (supabase as any).auth?.admin;
-
-  return { userId: data.user.id, supabase, admin };
+export function supabaseService(): SupabaseClient {
+  if (_service) return _service
+  const url = mustEnv('NEXT_PUBLIC_SUPABASE_URL')
+  const key = mustEnv('SUPABASE_SERVICE_ROLE_KEY')
+  _service = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false }
+  })
+  return _service
 }
 
-export async function requireAdmin(reqOrHeaders: Request | Headers) {
-  const { userId, supabase, admin } = await requireUser(reqOrHeaders);
+function getBearer(headers: Headers): string | null {
+  const auth = headers.get('authorization') || headers.get('Authorization') || ''
+  const m = auth.match(/^Bearer\s+(.+)$/i)
+  const token = m?.[1]?.trim()
+  return token || null
+}
 
-  const { data, error } = await supabase
+export async function requireUser(reqOrHeaders: Request | Headers): Promise<UserGuard> {
+  const headers = reqOrHeaders instanceof Headers ? reqOrHeaders : reqOrHeaders.headers
+  const token = getBearer(headers)
+
+  if (!token) {
+    throw new ApiError(401, 'Нет токена (Authorization: Bearer ...)')
+  }
+
+  const supabase = supabaseService()
+  const { data, error } = await supabase.auth.getUser(token)
+
+  if (error || !data?.user) {
+    throw new ApiError(401, 'Токен неверный/просрочен (перелогинься)')
+  }
+
+  return { supabase, token, user: data.user, userId: data.user.id }
+}
+
+export async function requireAdmin(reqOrHeaders: Request | Headers): Promise<AdminGuard> {
+  const guard = await requireUser(reqOrHeaders)
+
+  const { data: prof, error: profErr } = await guard.supabase
     .from('profiles')
-    .select('role, active')
-    .eq('id', userId)
-    .maybeSingle();
+    .select('id, role, active')
+    .eq('id', guard.userId)
+    .maybeSingle()
 
-  if (error) throw new ApiError(500, 'Не смог прочитать profiles');
-  if (!data || data.role !== 'admin' || data.active === false) throw new ApiError(403, 'Нет прав админа');
+  if (profErr || !prof) throw new ApiError(403, 'Нет профиля (profiles) или нет доступа')
+  if (prof.role !== 'admin' || prof.active !== true) throw new ApiError(403, 'Нужна роль admin и active=true')
 
-  return { userId, supabase, admin };
+  return { ...guard, profile: prof as ProfileRow }
+}
+
+export function toErrorResponse(err: unknown): NextResponse {
+  if (err instanceof ApiError) {
+    return NextResponse.json({ error: err.message }, { status: err.status })
+  }
+  if (err instanceof Error) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+  return NextResponse.json({ error: 'Unknown error' }, { status: 500 })
 }

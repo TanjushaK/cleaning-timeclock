@@ -1,48 +1,71 @@
-import { NextResponse } from 'next/server';
-import { ApiError, requireAdmin } from '@/lib/supabase-server';
+import { NextResponse } from 'next/server'
+import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
 
-function getOrigin(req: Request) {
-  const proto = req.headers.get('x-forwarded-proto') || 'https';
-  const host = req.headers.get('x-forwarded-host') || req.headers.get('host');
-  if (host) return `${proto}://${host}`;
-  try {
-    return new URL(req.url).origin;
-  } catch {
-    return '';
-  }
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+function isEmail(s: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)
 }
 
 export async function POST(req: Request) {
   try {
-    const { supabase, admin } = await requireAdmin(req);
-    const body = await req.json();
+    const { supabase, userId } = await requireAdmin(req)
 
-    const email = (body?.email ?? '').toString().trim().toLowerCase();
-    const full_name = body?.full_name == null ? null : String(body.full_name).trim() || null;
+    const body = await req.json().catch(() => ({} as any))
+    const email = String(body?.email ?? '')
+      .trim()
+      .toLowerCase()
 
-    if (!email) throw new ApiError(400, 'Нужен email');
+    const role = String(body?.role ?? 'worker').trim().toLowerCase()
+    const active = body?.active === false ? false : true
 
-    const origin = getOrigin(req);
-    const redirectTo = origin ? `${origin}/reset-password` : undefined;
+    if (!email) throw new ApiError(400, 'Нужен email')
+    if (!isEmail(email)) throw new ApiError(400, 'Неверный email')
+    if (role !== 'worker' && role !== 'admin') throw new ApiError(400, 'role должен быть worker или admin')
 
-    const { data, error } = await admin.inviteUserByEmail(email, redirectTo ? { redirectTo } : undefined);
-    if (error) throw new ApiError(500, error.message || 'Не смог отправить приглашение');
+    // 1) Пытаемся пригласить (если пользователь уже существует — Supabase может вернуть ошибку,
+    // поэтому ниже делаем fallback поиск по email).
+    const { data: inv, error: invErr } = await supabase.auth.admin.inviteUserByEmail(email)
+    let invitedUserId: string | null = inv?.user?.id ?? null
 
-    const userId = data?.user?.id;
-    if (!userId) throw new ApiError(500, 'Invite: нет user id');
+    // 2) Если invite не сработал — ищем юзера по email (через auth.users, service role)
+    if (!invitedUserId) {
+      const { data: uRow, error: uErr } = await supabase
+        .schema('auth')
+        .from('users')
+        .select('id')
+        .eq('email', email)
+        .maybeSingle()
 
+      if (uErr) throw new ApiError(500, `Не смог найти пользователя по email: ${uErr.message}`)
+      invitedUserId = uRow?.id ?? null
+    }
+
+    if (!invitedUserId) {
+      const msg = invErr?.message ? `: ${invErr.message}` : ''
+      throw new ApiError(400, `Не смог пригласить/найти пользователя${msg}`)
+    }
+
+    // 3) Профиль в public.profiles (upsert)
     const { error: pErr } = await supabase
       .from('profiles')
       .upsert(
-        { id: userId, email, full_name, role: 'worker', active: true },
+        {
+          id: invitedUserId,
+          role,
+          active
+        },
         { onConflict: 'id' }
-      );
+      )
 
-    if (pErr) throw new ApiError(500, 'Invite: не смог обновить profiles');
+    if (pErr) throw new ApiError(500, `Не смог создать/обновить profile: ${pErr.message}`)
 
-    return NextResponse.json({ ok: true, userId }, { status: 200 });
-  } catch (e: any) {
-    const status = e?.status ?? 500;
-    return NextResponse.json({ error: e?.message ?? 'Ошибка' }, { status });
+    return NextResponse.json(
+      { ok: true, invited_user_id: invitedUserId, invited_by: userId },
+      { status: 200 }
+    )
+  } catch (e) {
+    return toErrorResponse(e)
   }
 }

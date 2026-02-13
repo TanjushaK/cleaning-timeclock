@@ -1,27 +1,36 @@
 import { NextResponse } from 'next/server'
-import { ApiError, requireAdmin } from '@/lib/admin-auth'
-import { getSupabaseAdmin } from '@/lib/supabase-admin'
+import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: Request) {
   try {
-    await requireAdmin(req)
+    const { supabase } = await requireAdmin(req)
 
-    const supabase = getSupabaseAdmin()
-
-    const { data, error } = await supabase
+    const { data: profiles, error: pErr } = await supabase
       .from('profiles')
-      .select('id, full_name, role, active, avatar_url, created_at')
-      .order('created_at', { ascending: false })
+      .select('*')
 
-    if (error) throw new ApiError(500, error.message)
+    if (pErr) throw new ApiError(500, `Не смог прочитать profiles: ${pErr.message}`)
 
-    return NextResponse.json({ workers: data ?? [] }, { status: 200 })
-  } catch (e: any) {
-    const status = typeof e?.status === 'number' ? e.status : 500
-    const message = typeof e?.message === 'string' ? e.message : 'Internal error'
-    return NextResponse.json({ error: message }, { status })
+    const { data: users, error: uErr } = await supabase
+      .schema('auth')
+      .from('users')
+      .select('id, email')
+
+    if (uErr) throw new ApiError(500, `Не смог прочитать auth.users: ${uErr.message}`)
+
+    const emailById = new Map<string, string | null>()
+    for (const u of users ?? []) emailById.set(u.id, u.email ?? null)
+
+    const workers = (profiles ?? []).map((p: any) => ({
+      ...p,
+      email: emailById.get(p.id) ?? null
+    }))
+
+    return NextResponse.json({ workers }, { status: 200 })
+  } catch (e) {
+    return toErrorResponse(e)
   }
 }
