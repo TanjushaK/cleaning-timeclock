@@ -12,30 +12,30 @@ function toErr(e: any) {
   return { status: 500, error: msg || 'Ошибка сервера' };
 }
 
-export async function GET(req: Request) {
+export async function POST(req: Request) {
   try {
     await requireAdmin(req);
 
-    const url = new URL(req.url);
-    const includeArchived = url.searchParams.get('include_archived') === '1';
+    const body = await req.json().catch(() => ({} as any));
+    const workerId = String(body?.worker_id || '').trim();
+    const active = Boolean(body?.active);
+
+    if (!workerId) {
+      return NextResponse.json({ error: 'Нужен worker_id' }, { status: 400 });
+    }
 
     const supabase = getSupabaseAdmin();
 
-    let q = supabase
-      .from('sites')
-      .select('id, name, address, lat, lng, radius_m, archived')
-      .order('name', { ascending: true });
-
-    if (!includeArchived) q = q.eq('archived', false);
-
-    const { data, error } = await q;
+    const { error } = await supabase
+      .from('profiles')
+      .update({ active })
+      .eq('id', workerId);
 
     if (error) {
-      // Если archived ещё не добавлен — будет понятная ошибка
-      throw new Error(`Не смог прочитать sites: ${error.message}`);
+      throw new Error(`Не смог обновить worker: ${error.message}`);
     }
 
-    return NextResponse.json({ sites: data ?? [] }, { status: 200 });
+    return NextResponse.json({ ok: true }, { status: 200 });
   } catch (e: any) {
     const r = toErr(e);
     return NextResponse.json({ error: r.error }, { status: r.status });

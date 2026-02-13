@@ -15,6 +15,7 @@ type Site = {
   lat: number | null;
   lng: number | null;
   radius_m: number | null;
+  archived?: boolean | null;
 };
 
 type Profile = {
@@ -141,6 +142,10 @@ function AdminInner() {
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPass, setLoginPass] = useState('');
 
+  // Вариант B: показывать архив/неактивных только по флажку
+  const [showArchivedSites, setShowArchivedSites] = useState(false);
+  const [showInactiveWorkers, setShowInactiveWorkers] = useState(false);
+
   const sitesById = useMemo(() => {
     const m = new Map<string, Site>();
     for (const s of sites) m.set(s.id, s);
@@ -153,16 +158,37 @@ function AdminInner() {
     return m;
   }, [workers]);
 
+  const visibleSites = useMemo(() => {
+    if (showArchivedSites) return sites;
+    return sites.filter((s) => !s.archived);
+  }, [sites, showArchivedSites]);
+
+  const visibleWorkers = useMemo(() => {
+    if (showInactiveWorkers) return workers;
+    return workers.filter((w) => Boolean(w.active));
+  }, [workers, showInactiveWorkers]);
+
+  const visibleAssignments = useMemo(() => {
+    const siteAllowed = new Set(visibleSites.map((s) => s.id));
+    const workerAllowed = new Set(visibleWorkers.map((w) => w.id));
+    return assignments.filter((a) => siteAllowed.has(a.site_id) && workerAllowed.has(a.worker_id));
+  }, [assignments, visibleSites, visibleWorkers]);
+
   async function refreshAll() {
     setBusy(true);
     setGlobalMsg(null);
     try {
+      const sitesUrl = showArchivedSites
+        ? '/api/admin/sites/list?include_archived=1'
+        : '/api/admin/sites/list';
+
       const [s, w, a, j] = await Promise.all([
-        authFetchJson<{ sites: Site[] }>('/api/admin/sites/list'),
+        authFetchJson<{ sites: Site[] }>(sitesUrl),
         authFetchJson<{ workers: Profile[] }>('/api/admin/workers/list'),
         authFetchJson<{ assignments: Assignment[] }>('/api/admin/assignments'),
         authFetchJson<{ jobs: any[] }>('/api/admin/jobs'),
       ]);
+
       setSites(s.sites || []);
       setWorkers(w.workers || []);
       setAssignments(a.assignments || []);
@@ -233,7 +259,7 @@ function AdminInner() {
         email: inviteEmail.trim(),
       };
       if (inviteFullName.trim()) payload.full_name = inviteFullName.trim();
-      if (invitePassword.trim()) payload.password = invitePassword; // если твой API это поддерживает
+      if (invitePassword.trim()) payload.password = invitePassword;
       await authFetchJson('/api/admin/workers/invite', {
         method: 'POST',
         body: JSON.stringify(payload),
@@ -281,6 +307,60 @@ function AdminInner() {
     }
   }
 
+  async function setSiteArchived(siteId: string, archived: boolean) {
+    const ok = window.confirm(
+      archived
+        ? 'Архивировать объект? Он исчезнет из списка по умолчанию.'
+        : 'Вернуть объект из архива? Он снова появится в списке.'
+    );
+    if (!ok) return;
+
+    setBusy(true);
+    setGlobalMsg(null);
+    try {
+      await authFetchJson('/api/admin/sites/archive', {
+        method: 'POST',
+        body: JSON.stringify({ site_id: siteId, archived }),
+      });
+      await refreshAll();
+      setGlobalMsg({
+        kind: 'ok',
+        text: archived ? 'Объект отправлен в архив' : 'Объект возвращён из архива',
+      });
+    } catch (e: any) {
+      setGlobalMsg({ kind: 'error', text: String(e?.message || e) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function setWorkerActive(workerId: string, active: boolean) {
+    const ok = window.confirm(
+      active
+        ? 'Активировать работника? Он сможет входить и работать.'
+        : 'Деактивировать работника? Он не сможет входить (история сохранится).'
+    );
+    if (!ok) return;
+
+    setBusy(true);
+    setGlobalMsg(null);
+    try {
+      await authFetchJson('/api/admin/workers/toggle-active', {
+        method: 'POST',
+        body: JSON.stringify({ worker_id: workerId, active }),
+      });
+      await refreshAll();
+      setGlobalMsg({
+        kind: 'ok',
+        text: active ? 'Работник активирован' : 'Работник деактивирован',
+      });
+    } catch (e: any) {
+      setGlobalMsg({ kind: 'error', text: String(e?.message || e) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   useEffect(() => {
     let alive = true;
 
@@ -311,6 +391,13 @@ function AdminInner() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, sessionEmail]);
+
+  useEffect(() => {
+    if (!authLoading && sessionEmail) {
+      refreshAll();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showArchivedSites, showInactiveWorkers]);
 
   const headerRight = (
     <div className="flex items-center gap-3">
@@ -437,6 +524,28 @@ function AdminInner() {
           >
             Смены (Kanban)
           </TabButton>
+
+          <div className="flex items-center gap-3 ml-0 md:ml-4">
+            <label className="flex items-center gap-2 text-sm text-yellow-100/70 select-none">
+              <input
+                type="checkbox"
+                checked={showArchivedSites}
+                onChange={(e) => setShowArchivedSites(e.target.checked)}
+                className="accent-yellow-500"
+              />
+              Показать архив объектов
+            </label>
+
+            <label className="flex items-center gap-2 text-sm text-yellow-100/70 select-none">
+              <input
+                type="checkbox"
+                checked={showInactiveWorkers}
+                onChange={(e) => setShowInactiveWorkers(e.target.checked)}
+                className="accent-yellow-500"
+              />
+              Показать неактивных работников
+            </label>
+          </div>
         </div>
 
         <div className="mt-6">
@@ -447,7 +556,7 @@ function AdminInner() {
           <div className="mt-6 space-y-6">
             <Card
               title="Объекты"
-              subtitle="Список объектов + создание"
+              subtitle="Список объектов + создание + безопасный архив"
               right={
                 <button
                   onClick={createSite}
@@ -484,31 +593,59 @@ function AdminInner() {
               </div>
 
               <div className="mt-5 text-sm text-yellow-100/60">
-                Объектов: <span className="text-yellow-100">{sites.length}</span>
+                Объектов: <span className="text-yellow-100">{visibleSites.length}</span>
+                {showArchivedSites ? (
+                  <span className="text-yellow-100/40"> (включая архив)</span>
+                ) : null}
               </div>
 
               <div className="mt-4 space-y-3">
-                {sites.length === 0 ? (
+                {visibleSites.length === 0 ? (
                   <div className="text-yellow-100/50">Объектов нет</div>
                 ) : (
-                  sites.map((s) => (
+                  visibleSites.map((s) => (
                     <div
                       key={s.id}
                       className="rounded-2xl border border-yellow-500/10 bg-black/30 p-4"
                     >
-                      <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-start justify-between gap-4 flex-col md:flex-row">
                         <div>
-                          <div className="text-lg text-yellow-100 font-semibold">
-                            {s.name || 'Без названия'}
+                          <div className="text-lg text-yellow-100 font-semibold flex items-center gap-2">
+                            <span>{s.name || 'Без названия'}</span>
+                            {s.archived ? (
+                              <span className="text-xs px-2 py-1 rounded-xl border border-yellow-500/20 bg-yellow-950/15 text-yellow-100/70">
+                                Архив
+                              </span>
+                            ) : null}
                           </div>
                           <div className="text-yellow-100/60">
                             {s.address || 'Без адреса'}
                           </div>
                         </div>
-                        <div className="text-right text-sm text-yellow-100/55">
-                          <div>Радиус: {s.radius_m ?? 100} м</div>
-                          <div>lat/lng: {s.lat ?? '—'} / {s.lng ?? '—'}</div>
+
+                        <div className="flex items-center gap-3">
+                          <div className="text-right text-sm text-yellow-100/55 hidden md:block">
+                            <div>Радиус: {s.radius_m ?? 100} м</div>
+                            <div>lat/lng: {s.lat ?? '—'} / {s.lng ?? '—'}</div>
+                          </div>
+
+                          <button
+                            onClick={() => setSiteArchived(s.id, !Boolean(s.archived))}
+                            disabled={busy}
+                            className={cx(
+                              'rounded-2xl border px-4 py-2 transition text-sm',
+                              'border-yellow-500/20 text-yellow-100/85 bg-yellow-950/10',
+                              busy ? 'opacity-60' : 'hover:border-yellow-500/45'
+                            )}
+                          >
+                            {s.archived ? 'Вернуть' : 'Архив'}
+                          </button>
                         </div>
+                      </div>
+
+                      <div className="mt-3 text-sm text-yellow-100/55 md:hidden">
+                        <div>Радиус: {s.radius_m ?? 100} м</div>
+                        <div>lat/lng: {s.lat ?? '—'} / {s.lng ?? '—'}</div>
                       </div>
                     </div>
                   ))
@@ -516,12 +653,12 @@ function AdminInner() {
               </div>
             </Card>
 
-            <Card title="Назначения (Объект ↔ Работник)" subtitle="Кто где работает (без UUID-ада)">
+            <Card title="Назначения (Объект ↔ Работник)" subtitle="Кто где работает (показываем по фильтрам сверху)">
               <div className="space-y-3">
-                {assignments.length === 0 ? (
+                {visibleAssignments.length === 0 ? (
                   <div className="text-yellow-100/50">Назначений нет</div>
                 ) : (
-                  assignments.map((a) => {
+                  visibleAssignments.map((a) => {
                     const site = sitesById.get(a.site_id);
                     const worker = workersById.get(a.worker_id);
                     return (
@@ -569,8 +706,8 @@ function AdminInner() {
 
               <QuickAssign
                 disabled={busy}
-                sites={sites}
-                workers={workers}
+                sites={visibleSites}
+                workers={visibleWorkers}
                 onAssign={assign}
               />
             </Card>
@@ -581,7 +718,7 @@ function AdminInner() {
           <div className="mt-6 space-y-6">
             <Card
               title="Работники"
-              subtitle="Список + приглашение"
+              subtitle="Список + приглашение + безопасная деактивация"
               right={
                 <button
                   onClick={inviteWorker}
@@ -618,26 +755,48 @@ function AdminInner() {
               </div>
 
               <div className="mt-5 text-sm text-yellow-100/60">
-                Пользователей: <span className="text-yellow-100">{workers.length}</span>
+                Пользователей: <span className="text-yellow-100">{visibleWorkers.length}</span>
+                {showInactiveWorkers ? (
+                  <span className="text-yellow-100/40"> (включая неактивных)</span>
+                ) : null}
               </div>
 
               <div className="mt-4 space-y-3">
-                {workers.length === 0 ? (
+                {visibleWorkers.length === 0 ? (
                   <div className="text-yellow-100/50">Пользователей нет</div>
                 ) : (
-                  workers.map((w) => (
+                  visibleWorkers.map((w) => (
                     <div
                       key={w.id}
                       className="rounded-2xl border border-yellow-500/10 bg-black/30 p-4"
                     >
-                      <div className="flex items-center justify-between gap-4">
+                      <div className="flex items-center justify-between gap-4 flex-col md:flex-row">
                         <div>
-                          <div className="text-yellow-100 font-semibold">
-                            {w.full_name || w.id}
+                          <div className="text-yellow-100 font-semibold flex items-center gap-2">
+                            <span>{w.full_name || w.id}</span>
+                            {w.active ? null : (
+                              <span className="text-xs px-2 py-1 rounded-xl border border-yellow-500/20 bg-yellow-950/15 text-yellow-100/70">
+                                Неактивен
+                              </span>
+                            )}
                           </div>
                           <div className="text-sm text-yellow-100/60">
-                            role: {w.role || '—'} · active: {String(w.active ?? false)}
+                            role: {w.role || '—'} · active: {String(Boolean(w.active))}
                           </div>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => setWorkerActive(w.id, !Boolean(w.active))}
+                            disabled={busy}
+                            className={cx(
+                              'rounded-2xl border px-4 py-2 transition text-sm',
+                              'border-yellow-500/20 text-yellow-100/85 bg-yellow-950/10',
+                              busy ? 'opacity-60' : 'hover:border-yellow-500/45'
+                            )}
+                          >
+                            {w.active ? 'Деактивировать' : 'Активировать'}
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -646,12 +805,12 @@ function AdminInner() {
               </div>
             </Card>
 
-            <Card title="Назначения (Работник ↔ Объект)" subtitle="С теми же данными, но со стороны работников">
+            <Card title="Назначения (Работник ↔ Объект)" subtitle="Показываем согласно фильтрам сверху">
               <div className="space-y-3">
-                {assignments.length === 0 ? (
+                {visibleAssignments.length === 0 ? (
                   <div className="text-yellow-100/50">Назначений нет</div>
                 ) : (
-                  assignments.map((a) => {
+                  visibleAssignments.map((a) => {
                     const site = sitesById.get(a.site_id);
                     const worker = workersById.get(a.worker_id);
                     return (
@@ -686,8 +845,8 @@ function AdminInner() {
               <div className="mt-5">
                 <QuickAssign
                   disabled={busy}
-                  sites={sites}
-                  workers={workers}
+                  sites={visibleSites}
+                  workers={visibleWorkers}
                   onAssign={assign}
                 />
               </div>
@@ -772,7 +931,7 @@ function QuickAssign({
           <option value="">Выбери объект…</option>
           {sites.map((s) => (
             <option key={s.id} value={s.id}>
-              {s.name || 'Без названия'}
+              {s.name || 'Без названия'}{s.archived ? ' (архив)' : ''}
             </option>
           ))}
         </select>
@@ -785,7 +944,7 @@ function QuickAssign({
           <option value="">Выбери работника…</option>
           {workers.map((w) => (
             <option key={w.id} value={w.id}>
-              {w.full_name || w.id}
+              {(w.full_name || w.id) + (w.active ? '' : ' (неактивен)')}
             </option>
           ))}
         </select>

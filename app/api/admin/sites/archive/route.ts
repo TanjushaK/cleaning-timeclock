@@ -12,30 +12,30 @@ function toErr(e: any) {
   return { status: 500, error: msg || 'Ошибка сервера' };
 }
 
-export async function GET(req: Request) {
+export async function POST(req: Request) {
   try {
     await requireAdmin(req);
 
-    const url = new URL(req.url);
-    const includeArchived = url.searchParams.get('include_archived') === '1';
+    const body = await req.json().catch(() => ({} as any));
+    const siteId = String(body?.site_id || '').trim();
+    const archived = Boolean(body?.archived);
+
+    if (!siteId) {
+      return NextResponse.json({ error: 'Нужен site_id' }, { status: 400 });
+    }
 
     const supabase = getSupabaseAdmin();
 
-    let q = supabase
+    const { error } = await supabase
       .from('sites')
-      .select('id, name, address, lat, lng, radius_m, archived')
-      .order('name', { ascending: true });
-
-    if (!includeArchived) q = q.eq('archived', false);
-
-    const { data, error } = await q;
+      .update({ archived })
+      .eq('id', siteId);
 
     if (error) {
-      // Если archived ещё не добавлен — будет понятная ошибка
-      throw new Error(`Не смог прочитать sites: ${error.message}`);
+      throw new Error(`Не смог обновить site: ${error.message}`);
     }
 
-    return NextResponse.json({ sites: data ?? [] }, { status: 200 });
+    return NextResponse.json({ ok: true }, { status: 200 });
   } catch (e: any) {
     const r = toErr(e);
     return NextResponse.json({ error: r.error }, { status: r.status });

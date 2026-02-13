@@ -1,301 +1,355 @@
-'use client';
+'use client'
 
-import React, { useEffect, useMemo, useState } from 'react';
-import Image from 'next/image';
-import { getSupabaseBrowser } from '@/lib/supabase';
-import { ruDateTimeFromIso } from '@/lib/ru-format';
+import React, { useEffect, useMemo, useState } from 'react'
+import Image from 'next/image'
+import type { Session } from '@supabase/supabase-js'
+import { supabase } from '@/lib/supabase'
+
+type JobStatus = 'planned' | 'in_progress' | 'done'
 
 type Job = {
-  id: string;
-  site_id: string;
-  worker_id: string;
-  job_date: string | null;
-  scheduled_time: string | null;
-  status: string;
-  site: { id: string; name: string | null; address: string | null; lat: number | null; lng: number | null; radius: number | null } | null;
-  assignment_note: string | null;
-};
-
-function card() {
-  return 'rounded-2xl border border-white/10 bg-white/5 p-4 shadow-sm';
-}
-function inputBase() {
-  return 'w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-amber-400/40';
-}
-function btnBase() {
-  return 'inline-flex items-center justify-center rounded-xl border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-sm text-amber-100 hover:bg-amber-400/15 active:scale-[0.99] transition';
-}
-function btnPrimary() {
-  return 'inline-flex items-center justify-center rounded-xl bg-amber-400 px-3 py-2 text-sm font-semibold text-black hover:brightness-110 active:scale-[0.99] transition';
+  id: string
+  job_date: string | null // обычно YYYY-MM-DD
+  scheduled_time: string | null // обычно HH:MM:SS
+  status: JobStatus
+  site_id: string | null
+  notes?: string | null
+  created_at?: string | null
 }
 
-export default function HomePage() {
-  const supabase = useMemo(() => getSupabaseBrowser(), []);
-  const [token, setToken] = useState('');
-  const [sessionReady, setSessionReady] = useState(false);
+function pad2(n: number) {
+  return String(n).padStart(2, '0')
+}
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+function fmtRuDateTimeFromISO(iso?: string | null) {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return String(iso)
+  return `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}-${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+}
 
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [ok, setOk] = useState('');
+function fmtRuDateFromYMD(ymd?: string | null) {
+  if (!ymd) return '—'
+  const m = String(ymd).match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!m) return String(ymd)
+  const yyyy = m[1]
+  const mm = m[2]
+  const dd = m[3]
+  return `${dd}-${mm}-${yyyy}`
+}
 
-  const [noteDraftBySite, setNoteDraftBySite] = useState<Record<string, string>>({});
+function fmtTimeHHMM(t?: string | null) {
+  if (!t) return '—'
+  const s = String(t)
+  const m = s.match(/^(\d{2}):(\d{2})(?::\d{2})?$/)
+  if (!m) return s
+  return `${m[1]}:${m[2]}`
+}
 
-  async function ensureToken() {
-    const { data } = await supabase.auth.getSession();
-    const t = data.session?.access_token || '';
-    setToken(t);
-    setSessionReady(true);
-    return t;
-  }
+function shortId(id?: string | null) {
+  if (!id) return '—'
+  const s = String(id)
+  if (s.length <= 12) return s
+  return `${s.slice(0, 6)}…${s.slice(-4)}`
+}
 
-  async function apiFetch(path: string, init?: RequestInit) {
-    const t = token || (await ensureToken());
-    const headers = new Headers(init?.headers || {});
-    headers.set('Authorization', `Bearer ${t}`);
-    headers.set('Content-Type', 'application/json');
-    return fetch(path, { ...init, headers, cache: 'no-store' });
-  }
+function statusRu(s: JobStatus) {
+  if (s === 'planned') return 'Запланировано'
+  if (s === 'in_progress') return 'В работе'
+  return 'Готово'
+}
 
-  async function loadJobs() {
-    setBusy(true);
-    setError('');
+function normalizeApiErrorMessage(msg: string) {
+  const m = (msg || '').toLowerCase()
+  if (!m) return 'Ошибка'
+  if (m.includes('нет токена')) return 'Нужно войти'
+  if (m.includes('unauthorized')) return 'Нужно войти'
+  if (m.includes('jwt')) return 'Сессия истекла — войди снова'
+  return msg
+}
+
+export default function WorkerHomePage() {
+  const [session, setSession] = useState<Session | null>(null)
+
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+
+  const [loading, setLoading] = useState(false)
+  const [jobs, setJobs] = useState<Job[]>([])
+  const [error, setError] = useState<string>('')
+
+  const [lastUpdatedIso, setLastUpdatedIso] = useState<string>('')
+
+  const token = useMemo(() => session?.access_token ?? '', [session])
+
+  async function loadJobs(accessToken: string) {
+    setError('')
+    setLoading(true)
+
     try {
-      await ensureToken();
-      const res = await apiFetch('/api/me/jobs');
-      const js = await res.json();
-      if (!res.ok) throw new Error(js.error || 'Не смог загрузить смены');
+      if (!accessToken) throw new Error('Нужно войти')
 
-      const list = (js.jobs || []) as Job[];
-      setJobs(list);
+      const r = await fetch('/api/me/jobs', {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store',
+        },
+        cache: 'no-store',
+      })
 
-      const nextDraft: Record<string, string> = {};
-      for (const j of list) {
-        const sid = String(j.site_id);
-        if (!sid) continue;
-        if (nextDraft[sid] == null) nextDraft[sid] = j.assignment_note ?? '';
+      const payload = await r.json().catch(() => ({} as any))
+
+      if (!r.ok) {
+        const raw = String(payload?.error || payload?.message || `Ошибка API: ${r.status}`)
+        const msg = normalizeApiErrorMessage(raw)
+
+        if (r.status === 401) {
+          // Сессия/токен умерли — мягко возвращаем на логин
+          await supabase.auth.signOut()
+          setSession(null)
+          setJobs([])
+        }
+
+        throw new Error(msg)
       }
-      setNoteDraftBySite((prev) => ({ ...nextDraft, ...prev }));
+
+      setJobs(Array.isArray(payload?.jobs) ? payload.jobs : [])
+      setLastUpdatedIso(new Date().toISOString())
     } catch (e: any) {
-      setError(e?.message || 'Ошибка');
+      setJobs([])
+      const msg = e?.message ? String(e.message) : 'Не смог загрузить смены'
+      setError(normalizeApiErrorMessage(msg))
     } finally {
-      setBusy(false);
+      setLoading(false)
+    }
+  }
+
+  async function doLogin(e: React.FormEvent) {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
+
+    try {
+      const em = email.trim().toLowerCase()
+      const pw = password
+
+      if (!em || !pw) throw new Error('Введите email и пароль')
+
+      const { data, error: sErr } = await supabase.auth.signInWithPassword({
+        email: em,
+        password: pw,
+      })
+      if (sErr) throw new Error(sErr.message)
+
+      const sess = data?.session ?? null
+      setSession(sess)
+
+      if (sess?.access_token) {
+        await loadJobs(sess.access_token)
+      }
+    } catch (e: any) {
+      const msg = e?.message ? String(e.message) : 'Не смог войти'
+      setError(normalizeApiErrorMessage(msg))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function doLogout() {
+    setLoading(true)
+    try {
+      await supabase.auth.signOut()
+      setSession(null)
+      setJobs([])
+      setEmail('')
+      setPassword('')
+      setError('')
+      setLastUpdatedIso('')
+    } finally {
+      setLoading(false)
     }
   }
 
   useEffect(() => {
-    ensureToken().then(() => loadJobs());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    let alive = true
 
-  async function login() {
-    setBusy(true);
-    setError('');
-    try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) throw new Error(error.message || 'Не смог войти');
-      await ensureToken();
-      await loadJobs();
-    } catch (e: any) {
-      setError(e?.message || 'Ошибка входа');
-    } finally {
-      setBusy(false);
+    ;(async () => {
+      const { data } = await supabase.auth.getSession()
+      if (!alive) return
+
+      setSession(data.session ?? null)
+
+      if (data.session?.access_token) {
+        await loadJobs(data.session.access_token)
+      }
+    })()
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession)
+      if (newSession?.access_token) {
+        void loadJobs(newSession.access_token)
+      } else {
+        setJobs([])
+        setLastUpdatedIso('')
+      }
+    })
+
+    return () => {
+      alive = false
+      sub.subscription.unsubscribe()
     }
-  }
-
-  async function logout() {
-    await supabase.auth.signOut();
-    setToken('');
-    setJobs([]);
-    setSessionReady(true);
-  }
-
-  function getGeo(): Promise<{ lat: number; lng: number; accuracy: number }> {
-    return new Promise((resolve, reject) => {
-      if (!navigator.geolocation) return reject(new Error('Геолокация не поддерживается'));
-      navigator.geolocation.getCurrentPosition(
-        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
-        () => reject(new Error('Не смог получить GPS')),
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-      );
-    });
-  }
-
-  async function start(jobId: string) {
-    setBusy(true);
-    setError('');
-    try {
-      const geo = await getGeo();
-      const res = await apiFetch('/api/me/jobs/start', {
-        method: 'POST',
-        body: JSON.stringify({ id: jobId, ...geo }),
-      });
-      const js = await res.json();
-      if (!res.ok) throw new Error(js.error || 'START не прошёл');
-      setOk('START принят');
-      setTimeout(() => setOk(''), 1200);
-      await loadJobs();
-    } catch (e: any) {
-      setError(e?.message || 'Ошибка');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function stop(jobId: string) {
-    setBusy(true);
-    setError('');
-    try {
-      const geo = await getGeo();
-      const res = await apiFetch('/api/me/jobs/stop', {
-        method: 'POST',
-        body: JSON.stringify({ id: jobId, ...geo }),
-      });
-      const js = await res.json();
-      if (!res.ok) throw new Error(js.error || 'STOP не прошёл');
-      setOk('STOP принят');
-      setTimeout(() => setOk(''), 1200);
-      await loadJobs();
-    } catch (e: any) {
-      setError(e?.message || 'Ошибка');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function saveNote(siteId: string) {
-    setBusy(true);
-    setError('');
-    try {
-      const text = noteDraftBySite[siteId] ?? '';
-      const res = await apiFetch('/api/me/assignments/note', {
-        method: 'POST',
-        body: JSON.stringify({ site_id: siteId, extra_note: text }),
-      });
-      const js = await res.json();
-      if (!res.ok) throw new Error(js.error || 'Не смог сохранить заметку');
-      setOk('Заметка сохранена');
-      setTimeout(() => setOk(''), 1200);
-      await loadJobs();
-    } catch (e: any) {
-      setError(e?.message || 'Ошибка');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const authed = !!token;
+  }, [])
 
   return (
-    <div className="min-h-screen bg-black text-white">
-      <div className="mx-auto max-w-4xl px-4 py-6">
-        <div className="flex items-center justify-between gap-3">
+    <main className="min-h-screen bg-black text-neutral-100">
+      <div className="mx-auto max-w-4xl px-4 py-8">
+        <div className="mb-6 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="relative h-10 w-10 overflow-hidden rounded-xl border border-amber-400/25 bg-white/5">
-              <Image src="/tanija-logo.png" alt="Tanija" fill className="object-contain p-1" />
+            <div className="h-10 w-10 rounded-xl border border-yellow-700/40 bg-black/40 shadow-sm overflow-hidden flex items-center justify-center">
+              <Image src="/tanija-logo.png" alt="Tanija" width={28} height={28} />
             </div>
             <div>
-              <div className="text-lg font-semibold tracking-wide">Tanija — Worker</div>
-              <div className="text-xs text-white/50">Смены + заметки по объектам</div>
+              <div className="text-xl font-semibold tracking-wide">Tanija — Работник</div>
+              <div className="text-sm text-neutral-400">Вход • Смены • GPS-таймлог</div>
             </div>
           </div>
 
-          {authed && (
-            <button className={btnBase()} onClick={logout}>
-              Выйти
-            </button>
-          )}
-        </div>
-
-        {(error || ok) && (
-          <div className="mt-4">
-            {error && <div className="rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-200">{error}</div>}
-            {ok && <div className="mt-2 rounded-xl border border-emerald-400/25 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">{ok}</div>}
-          </div>
-        )}
-
-        {!authed && sessionReady && (
-          <div className={`mt-6 ${card()}`}>
-            <div className="text-base font-semibold">Вход</div>
-            <div className="mt-3 grid gap-2">
-              <input className={inputBase()} placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-              <input className={inputBase()} placeholder="Пароль" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-              <button className={btnPrimary()} onClick={login} disabled={busy || !email || !password}>
-                Войти
-              </button>
-            </div>
-          </div>
-        )}
-
-        {authed && (
-          <div className="mt-6 grid gap-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="text-sm text-white/60">Мои смены</div>
-              <button className={btnBase()} onClick={loadJobs} disabled={busy}>
+          {session ? (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => token && loadJobs(token)}
+                className="rounded-xl border border-yellow-700/50 bg-yellow-900/20 px-4 py-2 text-sm hover:bg-yellow-900/30 disabled:opacity-60"
+                disabled={loading || !token}
+              >
                 Обновить
               </button>
+              <button
+                onClick={doLogout}
+                className="rounded-xl border border-yellow-700/50 bg-black px-4 py-2 text-sm hover:bg-neutral-900 disabled:opacity-60"
+                disabled={loading}
+              >
+                Выйти
+              </button>
+            </div>
+          ) : null}
+        </div>
+
+        {error ? (
+          <div className="mb-4 rounded-2xl border border-red-900/60 bg-red-950/30 px-4 py-3 text-sm text-red-200">
+            {error}
+          </div>
+        ) : null}
+
+        {!session ? (
+          <div className="rounded-2xl border border-yellow-700/40 bg-neutral-950/40 p-5 shadow-sm">
+            <div className="mb-3 text-lg font-semibold">Вход</div>
+
+            <form onSubmit={doLogin} className="grid gap-3">
+              <label className="grid gap-1">
+                <span className="text-sm text-neutral-300">Email</span>
+                <input
+                  className="rounded-xl border border-yellow-700/30 bg-black px-3 py-2 text-sm outline-none focus:border-yellow-600/60"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@email.com"
+                  autoComplete="email"
+                />
+              </label>
+
+              <label className="grid gap-1">
+                <span className="text-sm text-neutral-300">Пароль</span>
+                <input
+                  className="rounded-xl border border-yellow-700/30 bg-black px-3 py-2 text-sm outline-none focus:border-yellow-600/60"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  type="password"
+                  autoComplete="current-password"
+                />
+              </label>
+
+              <button
+                type="submit"
+                className="mt-2 rounded-xl border border-yellow-700/50 bg-yellow-900/20 px-4 py-2 text-sm hover:bg-yellow-900/30 disabled:opacity-60"
+                disabled={loading}
+              >
+                {loading ? 'Вхожу…' : 'Войти'}
+              </button>
+
+              <div className="text-xs text-neutral-500">
+                Вход только по выданным логину и паролю. Если сессия истекла — просто войди заново.
+              </div>
+            </form>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-yellow-700/40 bg-neutral-950/40 p-5 shadow-sm">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="text-lg font-semibold">Мои смены</div>
+              <div className="text-xs text-neutral-500">
+                {lastUpdatedIso ? `Обновлено: ${fmtRuDateTimeFromISO(lastUpdatedIso)}` : ''}
+              </div>
             </div>
 
-            {jobs.map((j) => {
-              const dt = ruDateTimeFromIso(j.job_date, j.scheduled_time) || 'Без даты/времени';
-              const siteName = j.site?.name || 'Объект';
-              const siteAddr = j.site?.address || '';
-              const status = j.status;
+            {loading ? (
+              <div className="rounded-xl border border-yellow-700/20 bg-black/40 px-4 py-3 text-sm text-neutral-300">
+                Загружаю…
+              </div>
+            ) : null}
 
-              const canStart = status === 'planned';
-              const canStop = status === 'in_progress';
+            {!loading && jobs.length === 0 ? (
+              <div className="rounded-xl border border-yellow-700/20 bg-black/40 px-4 py-3 text-sm text-neutral-300">
+                Смен пока нет.
+              </div>
+            ) : null}
 
-              const sid = String(j.site_id);
+            <div className="grid gap-3">
+              {jobs.map((j) => {
+                const dateRu = fmtRuDateFromYMD(j.job_date)
+                const timeRu = fmtTimeHHMM(j.scheduled_time)
+                const dt = j.job_date ? `${dateRu}${j.scheduled_time ? ` ${timeRu}` : ''}` : '—'
 
-              return (
-                <div key={j.id} className={card()}>
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0">
-                      <div className="text-base font-semibold">{dt}</div>
-                      <div className="text-sm text-white/60">
-                        {siteName}{siteAddr ? ` — ${siteAddr}` : ''}
+                return (
+                  <div
+                    key={j.id}
+                    className="rounded-2xl border border-yellow-700/20 bg-black/40 p-4"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="text-sm text-neutral-300">
+                        <span className="text-neutral-500">Статус:</span>{' '}
+                        <span className="text-yellow-200">{statusRu(j.status)}</span>
                       </div>
-                      <div className="mt-1 text-xs text-white/50">Статус: {status}</div>
+                      <div className="text-xs text-neutral-500">
+                        {j.created_at ? `Создано: ${fmtRuDateTimeFromISO(j.created_at)}` : ''}
+                      </div>
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
-                      <button className={btnPrimary()} onClick={() => start(j.id)} disabled={busy || !canStart}>
-                        START
-                      </button>
-                      <button className={btnPrimary()} onClick={() => stop(j.id)} disabled={busy || !canStop}>
-                        STOP
-                      </button>
+                    <div className="mt-2 grid gap-1 text-sm">
+                      <div>
+                        <span className="text-neutral-500">Дата/время:</span>{' '}
+                        <span className="text-neutral-100">{dt}</span>
+                      </div>
+
+                      <div>
+                        <span className="text-neutral-500">Объект:</span>{' '}
+                        <span className="text-neutral-100">{shortId(j.site_id)}</span>
+                      </div>
+
+                      {j.notes ? (
+                        <div className="text-neutral-200">
+                          <span className="text-neutral-500">Заметка:</span>{' '}
+                          {j.notes}
+                        </div>
+                      ) : null}
                     </div>
                   </div>
-
-                  <div className="mt-4 rounded-xl border border-white/10 bg-black/30 p-3">
-                    <div className="text-sm font-semibold">Экстра / заметки по объекту</div>
-                    <div className="mt-2 text-xs text-white/50">
-                      Это общий блокнот для тебя на этом объекте (видно и админу).
-                    </div>
-                    <textarea
-                      className={`${inputBase()} mt-2 min-h-[96px]`}
-                      value={noteDraftBySite[sid] ?? ''}
-                      onChange={(e) => setNoteDraftBySite((p) => ({ ...p, [sid]: e.target.value }))}
-                      placeholder="Например: код домофона, где ключ, что проверить, что купить…"
-                    />
-                    <div className="mt-2 flex justify-end">
-                      <button className={btnBase()} onClick={() => saveNote(sid)} disabled={busy}>
-                        Сохранить заметку
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-
-            {jobs.length === 0 && <div className="text-sm text-white/50">Смен нет</div>}
+                )
+              })}
+            </div>
           </div>
         )}
       </div>
-    </div>
-  );
+    </main>
+  )
 }

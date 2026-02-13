@@ -1,45 +1,48 @@
 import { supabase } from '@/lib/supabase';
 
-export type ApiJson = Record<string, any>;
+type AnyJson = Record<string, any>;
 
-export async function authFetch(input: string, init: RequestInit = {}) {
+export async function authFetchJson<T = AnyJson>(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Promise<T> {
   const { data } = await supabase.auth.getSession();
-  const token = data?.session?.access_token;
+  const token = data.session?.access_token;
 
-  const headers = new Headers(init.headers || {});
-  if (token) headers.set('Authorization', `Bearer ${token}`);
-  headers.set('Accept', 'application/json');
-
-  // Авто content-type для JSON body
-  const hasBody = typeof init.body === 'string' || init.body instanceof Blob || init.body instanceof FormData;
-  if (hasBody && !headers.has('Content-Type') && typeof init.body === 'string') {
-    headers.set('Content-Type', 'application/json');
+  if (!token) {
+    // Важно: убрали токсичную техничку про Bearer
+    throw new Error('Нужно войти (нет активной сессии)');
   }
 
-  return fetch(input, {
+  const headers = new Headers(init?.headers || {});
+  headers.set('authorization', `Bearer ${token}`);
+
+  // если отправляем строковый body и не задан content-type — поставим JSON
+  if (!headers.has('content-type') && typeof init?.body === 'string') {
+    headers.set('content-type', 'application/json');
+  }
+
+  const res = await fetch(input, {
     ...init,
     headers,
     cache: 'no-store',
   });
-}
 
-export async function authFetchJson<T = ApiJson>(input: string, init: RequestInit = {}): Promise<T> {
-  const res = await authFetch(input, init);
-  const text = await res.text();
-
+  const raw = await res.text();
   let json: any = null;
   try {
-    json = text ? JSON.parse(text) : null;
+    json = raw ? JSON.parse(raw) : null;
   } catch {
-    json = null;
+    json = raw ? { error: raw } : null;
   }
 
   if (!res.ok) {
     const msg =
-      (json && (json.error || json.message)) ||
-      `HTTP ${res.status} ${res.statusText}` ||
-      'Ошибка запроса';
-    throw new Error(String(msg));
+      json?.error ||
+      json?.message ||
+      (raw ? String(raw) : '') ||
+      `HTTP ${res.status}`;
+    throw new Error(msg);
   }
 
   return (json ?? ({} as any)) as T;
