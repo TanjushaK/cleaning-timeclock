@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase';
 
 type JobStatus = 'planned' | 'in_progress' | 'done' | 'cancelled' | string;
 
-type SiteRow = {
+type SiteLite = {
   id: string;
   name: string | null;
   lat: number | null;
@@ -18,21 +18,16 @@ type SiteRow = {
 type JobRow = {
   id: string;
   title: string | null;
-  job_date: string | null; // YYYY-MM-DD
-  scheduled_time: string | null; // HH:MM[:SS]
+  job_date: string | null;
+  scheduled_time: string | null;
   status: JobStatus;
-  site?: SiteRow | null;
-  site_id?: string | null;
+  site: SiteLite | null;
 };
 
 type UserLite = {
   id: string;
   email?: string | null;
 };
-
-function pad2(n: number) {
-  return String(n).padStart(2, '0');
-}
 
 function formatDateDDMMYYYY(isoDate: string | null) {
   if (!isoDate) return '—';
@@ -45,9 +40,11 @@ function formatDateDDMMYYYY(isoDate: string | null) {
 
 function formatDateTimeDDMMYYYYHHMM(dateISO: string | null, timeISO: string | null) {
   const d = formatDateDDMMYYYY(dateISO);
-  if (!timeISO) return d === '—' ? '—' : `${d} —`;
-  const t = String(timeISO).slice(0, 5);
-  return d === '—' ? `— ${t}` : `${d} ${t}`;
+  const t = timeISO ? String(timeISO).slice(0, 5) : null;
+  if (d === '—' && !t) return '—';
+  if (d === '—' && t) return `— ${t}`;
+  if (d !== '—' && !t) return `${d} —`;
+  return `${d} ${t}`;
 }
 
 function statusLabel(status: JobStatus) {
@@ -80,22 +77,10 @@ function statusPillClass(status: JobStatus) {
   }
 }
 
-function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const R = 6371000;
-  const toRad = (v: number) => (v * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
-
 function getGeoPosition(): Promise<GeolocationPosition> {
   return new Promise((resolve, reject) => {
     if (!('geolocation' in navigator)) {
-      reject(new Error('Геолокация недоступна на этом устройстве.'));
+      reject(new Error('Геолокация недоступна.'));
       return;
     }
     navigator.geolocation.getCurrentPosition(resolve, reject, {
@@ -119,10 +104,7 @@ export default function Page() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
 
-  const filteredJobs = useMemo(() => {
-    const f = filter;
-    return jobs.filter((j) => (j.status || 'planned') === f);
-  }, [jobs, filter]);
+  const filteredJobs = useMemo(() => jobs.filter((j) => (j.status || 'planned') === filter), [jobs, filter]);
 
   async function loadUser() {
     const { data, error: e } = await supabase.auth.getUser();
@@ -138,20 +120,17 @@ export default function Page() {
     setError(null);
     setInfo(null);
 
-    const { data, error: e } = await supabase
-      .from('jobs')
-      .select('id,title,job_date,scheduled_time,status,site:sites(id,name,lat,lng,radius)')
-      .order('job_date', { ascending: true })
-      .order('scheduled_time', { ascending: true });
+    const res = await fetch('/api/me/jobs', { method: 'GET' });
+    const json = await res.json().catch(() => ({} as any));
 
-    if (e) {
+    if (!res.ok) {
       setJobs([]);
-      setError(e.message || 'Ошибка загрузки смен.');
+      setError(json?.error || 'Ошибка загрузки смен.');
       setLoading(false);
       return;
     }
 
-    setJobs((data as unknown as JobRow[]) || []);
+    setJobs((json?.jobs as JobRow[]) || []);
     setLoading(false);
   }
 
@@ -168,13 +147,11 @@ export default function Page() {
     return () => {
       sub.subscription.unsubscribe();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (!user?.id) return;
     loadJobs();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
   async function signIn() {
@@ -199,83 +176,12 @@ export default function Page() {
     setFilter('planned');
   }
 
-  async function tryInsertStart(jobId: string, workerId: string, pos?: GeolocationPosition) {
-    const started_at = new Date().toISOString();
-
-    const payloads: Record<string, any>[] = pos
-      ? [
-          {
-            job_id: jobId,
-            worker_id: workerId,
-            started_at,
-            start_lat: pos.coords.latitude,
-            start_lng: pos.coords.longitude,
-            start_accuracy: pos.coords.accuracy,
-          },
-          { job_id: jobId, worker_id: workerId, started_at },
-          { job_id: jobId, started_at },
-        ]
-      : [{ job_id: jobId, worker_id: workerId, started_at }, { job_id: jobId, started_at }];
-
-    let lastErr: any = null;
-    for (const p of payloads) {
-      const { error: e } = await supabase.from('time_logs').insert(p);
-      if (!e) return;
-      lastErr = e;
-    }
-    throw lastErr || new Error('Не удалось записать старт.');
-  }
-
-  async function tryUpdateStop(jobId: string, workerId: string, pos?: GeolocationPosition) {
-    const stopped_at = new Date().toISOString();
-
-    const stopPayloads: Record<string, any>[] = pos
-      ? [
-          {
-            stopped_at,
-            stop_lat: pos.coords.latitude,
-            stop_lng: pos.coords.longitude,
-            stop_accuracy: pos.coords.accuracy,
-          },
-          { stopped_at },
-        ]
-      : [{ stopped_at }];
-
-    // Берём последнюю запись по job_id (а если есть worker_id — отлично)
-    const { data: rowsA, error: eA } = await supabase
-      .from('time_logs')
-      .select('id,job_id,worker_id,started_at')
-      .eq('job_id', jobId)
-      .order('started_at', { ascending: false })
-      .limit(5);
-
-    if (eA || !rowsA || rowsA.length === 0) {
-      throw new Error('Нет записи старта по этой смене (или схема БД ещё не приведена к контракту).');
-    }
-
-    const pick =
-      (rowsA as any[]).find((r) => r.worker_id === workerId) || (rowsA as any[])[0];
-
-    let lastErr: any = null;
-    for (const upd of stopPayloads) {
-      const { error: e } = await supabase.from('time_logs').update(upd).eq('id', pick.id);
-      if (!e) return;
-      lastErr = e;
-    }
-    throw lastErr || new Error('Не удалось записать стоп.');
-  }
-
   async function startJob(job: JobRow) {
     setError(null);
     setInfo(null);
 
-    if (!user?.id) {
-      setError('Нужно войти.');
-      return;
-    }
-
     if (!job?.id) {
-      setError('Не найден id смены.');
+      setError('Нужен id смены.');
       return;
     }
 
@@ -284,15 +190,8 @@ export default function Page() {
       return;
     }
 
-    const s = job.site || null;
-    if (!s || s.lat == null || s.lng == null) {
+    if (!job.site || job.site.lat == null || job.site.lng == null) {
       setError('У объекта нет координат. Старт запрещён.');
-      return;
-    }
-
-    const radius = s.radius ?? 0;
-    if (!radius || radius <= 0) {
-      setError('У объекта не задан радиус. Старт запрещён.');
       return;
     }
 
@@ -301,21 +200,19 @@ export default function Page() {
     try {
       const pos = await getGeoPosition();
 
-      if (pos.coords.accuracy > 80) {
-        setError(`Точность GPS слишком низкая: ${Math.round(pos.coords.accuracy)} м (нужно ≤ 80 м).`);
-        return;
-      }
+      const res = await fetch('/api/me/jobs/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jobId: job.id,
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+        }),
+      });
 
-      const dist = haversineMeters(pos.coords.latitude, pos.coords.longitude, s.lat, s.lng);
-      if (dist > radius) {
-        setError(`Вы далеко от объекта: ${Math.round(dist)} м (нужно ≤ ${Math.round(radius)} м).`);
-        return;
-      }
-
-      await tryInsertStart(job.id, user.id, pos);
-
-      const { error: eJ } = await supabase.from('jobs').update({ status: 'in_progress' }).eq('id', job.id);
-      if (eJ) throw eJ;
+      const json = await res.json().catch(() => ({} as any));
+      if (!res.ok) throw new Error(json?.error || 'Ошибка старта.');
 
       await loadJobs();
       setInfo('Старт зафиксирован.');
@@ -330,13 +227,8 @@ export default function Page() {
     setError(null);
     setInfo(null);
 
-    if (!user?.id) {
-      setError('Нужно войти.');
-      return;
-    }
-
     if (!job?.id) {
-      setError('Не найден id смены.');
+      setError('Нужен id смены.');
       return;
     }
 
@@ -345,15 +237,8 @@ export default function Page() {
       return;
     }
 
-    const s = job.site || null;
-    if (!s || s.lat == null || s.lng == null) {
+    if (!job.site || job.site.lat == null || job.site.lng == null) {
       setError('У объекта нет координат. Стоп запрещён.');
-      return;
-    }
-
-    const radius = s.radius ?? 0;
-    if (!radius || radius <= 0) {
-      setError('У объекта не задан радиус. Стоп запрещён.');
       return;
     }
 
@@ -362,21 +247,19 @@ export default function Page() {
     try {
       const pos = await getGeoPosition();
 
-      if (pos.coords.accuracy > 80) {
-        setError(`Точность GPS слишком низкая: ${Math.round(pos.coords.accuracy)} м (нужно ≤ 80 м).`);
-        return;
-      }
+      const res = await fetch('/api/me/jobs/stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jobId: job.id,
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+        }),
+      });
 
-      const dist = haversineMeters(pos.coords.latitude, pos.coords.longitude, s.lat, s.lng);
-      if (dist > radius) {
-        setError(`Вы далеко от объекта: ${Math.round(dist)} м (нужно ≤ ${Math.round(radius)} м).`);
-        return;
-      }
-
-      await tryUpdateStop(job.id, user.id, pos);
-
-      const { error: eJ } = await supabase.from('jobs').update({ status: 'done' }).eq('id', job.id);
-      if (eJ) throw eJ;
+      const json = await res.json().catch(() => ({} as any));
+      if (!res.ok) throw new Error(json?.error || 'Ошибка стопа.');
 
       await loadJobs();
       setInfo('Стоп зафиксирован.');

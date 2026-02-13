@@ -1,83 +1,146 @@
+// app/api/me/jobs/start/route.ts
 import { NextResponse } from 'next/server';
-import { ApiError, requireUser } from '@/lib/supabase-server';
-import { metersDistance } from '@/lib/ru-format';
+import { supabaseRouteClient } from '@/lib/supabase-route';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+type StartBody = {
+  jobId?: string;
+  job_id?: string;
+  id?: string;
+  lat?: number;
+  lng?: number;
+  accuracy?: number;
+};
+
+type JobSite = { lat: number | null; lng: number | null; radius: number | null } | null;
+
+type JobRow = {
+  id: string;
+  status: string | null;
+  worker_id: string | null;
+  site: JobSite;
+};
+
+type JobWorkerRow = { job_id: string | null };
+
+function toNum(v: unknown): number | null {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371000;
+  const toRad = (x: number) => (x * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
 
 export async function POST(req: Request) {
-  try {
-    const { supabase, userId } = await requireUser(req);
-    const body = await req.json();
+  const supabase = await supabaseRouteClient();
 
-    const id = String(body?.id || '');
-    const lat = typeof body?.lat === 'number' ? body.lat : null;
-    const lng = typeof body?.lng === 'number' ? body.lng : null;
-    const accuracy = typeof body?.accuracy === 'number' ? body.accuracy : null;
-
-    if (!id) throw new ApiError(400, 'Нужен id job');
-
-    const { data: job, error: jErr } = await supabase
-      .from('jobs')
-      .select('id, site_id, worker_id, status')
-      .eq('id', id)
-      .maybeSingle();
-
-    if (jErr) throw new ApiError(500, 'Не смог прочитать job');
-    if (!job) throw new ApiError(404, 'Job не найден');
-
-    const jobWorkerId = String((job as any).worker_id || '');
-    const jobStatus = String((job as any).status || '');
-
-    if (jobWorkerId !== userId) throw new ApiError(403, 'Это не твоя смена');
-    if (jobStatus !== 'planned') throw new ApiError(400, 'START доступен только из planned');
-
-    const siteId = String((job as any).site_id || '');
-    if (!siteId) throw new ApiError(400, 'У job нет site_id');
-
-    const { data: site, error: sErr } = await supabase
-      .from('sites')
-      .select('id, lat, lng, radius')
-      .eq('id', siteId)
-      .maybeSingle();
-
-    if (sErr) throw new ApiError(500, 'Не смог прочитать site');
-    if (!site) throw new ApiError(404, 'Site не найден');
-
-    const siteLat = (site as any).lat as number | null;
-    const siteLng = (site as any).lng as number | null;
-    const radius = (site as any).radius as number | null;
-
-    if (siteLat == null || siteLng == null) throw new ApiError(400, 'На объекте нет координат (lat/lng)');
-    if (radius == null) throw new ApiError(400, 'На объекте нет radius');
-
-    if (accuracy == null || accuracy > 80) throw new ApiError(400, 'Слишком плохая точность GPS (нужно ≤ 80м)');
-    if (lat == null || lng == null) throw new ApiError(400, 'Нет координат устройства');
-
-    const dist = metersDistance(siteLat, siteLng, lat, lng);
-    if (dist > radius) throw new ApiError(400, `Ты вне зоны объекта: ${Math.round(dist)}м (радиус ${radius}м)`);
-
-    const now = new Date().toISOString();
-
-    const { error: updErr } = await supabase.from('jobs').update({ status: 'in_progress' }).eq('id', id);
-    if (updErr) throw new ApiError(500, 'Не смог обновить статус job');
-
-    const { data: logRow, error: insErr } = await supabase
-      .from('time_logs')
-      .insert({
-        job_id: id,
-        site_id: siteId,
-        worker_id: userId,
-        started_at: now,
-        start_lat: lat,
-        start_lng: lng,
-        start_accuracy: accuracy,
-      })
-      .select('id')
-      .maybeSingle();
-
-    if (insErr) throw new ApiError(500, 'Не смог создать time_log');
-
-    return NextResponse.json({ ok: true, time_log_id: (logRow as any)?.id ?? null }, { status: 200 });
-  } catch (e: any) {
-    const status = e?.status ?? 500;
-    return NextResponse.json({ error: e?.message ?? 'Ошибка' }, { status });
+  const { data: auth, error: authErr } = await supabase.auth.getUser();
+  if (authErr || !auth?.user) {
+    return NextResponse.json({ error: 'Не авторизован.' }, { status: 401 });
   }
+  const uid: string = auth.user.id;
+
+  const body: StartBody = await req.json().catch(() => ({} as StartBody));
+  const jobId: string | null = body.jobId || body.job_id || body.id || null;
+
+  if (!jobId) {
+    return NextResponse.json({ error: 'Нужен id смены.' }, { status: 400 });
+  }
+
+  const lat = toNum(body.lat);
+  const lng = toNum(body.lng);
+  const acc = toNum(body.accuracy);
+
+  if (lat === null || lng === null || acc === null) {
+    return NextResponse.json({ error: 'Нужны координаты и точность GPS.' }, { status: 400 });
+  }
+
+  const { data: jobRaw, error: jobErr } = await supabase
+    .from('jobs')
+    .select('id,status,worker_id,site:sites(lat,lng,radius)')
+    .eq('id', jobId)
+    .maybeSingle();
+
+  if (jobErr) return NextResponse.json({ error: jobErr.message }, { status: 400 });
+  if (!jobRaw) return NextResponse.json({ error: 'Смена не найдена.' }, { status: 404 });
+
+  const job: JobRow = jobRaw as unknown as JobRow;
+
+  if (job.status !== 'planned') {
+    return NextResponse.json({ error: 'Старт доступен только для запланированных смен.' }, { status: 400 });
+  }
+
+  let allowed = job.worker_id === uid;
+
+  if (!allowed) {
+    const { data: linkRaw, error: linkErr } = await supabase
+      .from('job_workers')
+      .select('job_id')
+      .eq('job_id', jobId)
+      .eq('worker_id', uid)
+      .maybeSingle();
+
+    if (linkErr) return NextResponse.json({ error: linkErr.message }, { status: 400 });
+
+    const link: JobWorkerRow | null = (linkRaw as unknown as JobWorkerRow | null) ?? null;
+    allowed = !!(link && link.job_id);
+  }
+
+  if (!allowed) {
+    return NextResponse.json({ error: 'Нет доступа к этой смене.' }, { status: 403 });
+  }
+
+  const site = job.site;
+  if (!site || site.lat === null || site.lng === null) {
+    return NextResponse.json({ error: 'У объекта нет координат. Старт запрещён.' }, { status: 400 });
+  }
+
+  const radius = site.radius ?? 0;
+  if (!radius || radius <= 0) {
+    return NextResponse.json({ error: 'У объекта не задан радиус. Старт запрещён.' }, { status: 400 });
+  }
+
+  if (acc > 80) {
+    return NextResponse.json(
+      { error: `Точность GPS слишком низкая: ${Math.round(acc)} м (нужно ≤ 80 м).` },
+      { status: 400 }
+    );
+  }
+
+  const dist = haversineMeters(lat, lng, site.lat, site.lng);
+  if (dist > radius) {
+    return NextResponse.json(
+      { error: `Вы далеко от объекта: ${Math.round(dist)} м (нужно ≤ ${Math.round(radius)} м).` },
+      { status: 400 }
+    );
+  }
+
+  const startedAt = new Date().toISOString();
+
+  const { error: insErr } = await supabase.from('time_logs').insert({
+    job_id: jobId,
+    worker_id: uid,
+    started_at: startedAt,
+    start_lat: lat,
+    start_lng: lng,
+    start_accuracy: acc,
+  });
+
+  if (insErr) return NextResponse.json({ error: insErr.message }, { status: 400 });
+
+  const { error: updErr } = await supabase.from('jobs').update({ status: 'in_progress' }).eq('id', jobId);
+  if (updErr) return NextResponse.json({ error: updErr.message }, { status: 400 });
+
+  return NextResponse.json({ ok: true }, { status: 200 });
 }
