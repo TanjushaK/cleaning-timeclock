@@ -14,6 +14,7 @@ type SiteMini = {
   id: string;
   name: string | null;
   address: string | null;
+  extra_note: string | null;
 };
 
 export async function GET(req: Request) {
@@ -29,11 +30,11 @@ export async function GET(req: Request) {
 
     const workers = ((workersRaw ?? []) as any[]).map((w) => ({
       id: String(w.id),
-      full_name: (w.full_name ?? null) as string | null,
-      email: (w.email ?? null) as string | null,
-      role: (w.role ?? null) as string | null,
-      active: (w.active ?? null) as boolean | null,
-      avatar_url: (w.avatar_url ?? null) as string | null,
+      full_name: w.full_name ?? null,
+      email: w.email ?? null,
+      role: w.role ?? null,
+      active: w.active ?? null,
+      avatar_url: w.avatar_url ?? null,
     })) as WorkerRow[];
 
     const ids = workers.map((w) => String(w.id)).filter(Boolean);
@@ -42,7 +43,7 @@ export async function GET(req: Request) {
     if (ids.length) {
       const { data: aRaw, error: aErr } = await supabase
         .from('assignments')
-        .select('worker_id, site_id, sites:sites(id, name, address)')
+        .select('worker_id, site_id, extra_note, sites:sites(id, name, address)')
         .in('worker_id', ids);
 
       if (aErr) throw new ApiError(500, 'Не смог прочитать assignments');
@@ -57,13 +58,13 @@ export async function GET(req: Request) {
 
       const sitesValue = r.sites ?? null;
       const siteObj = Array.isArray(sitesValue) ? (sitesValue[0] ?? null) : sitesValue;
-
       if (!siteObj?.id) continue;
 
       const site: SiteMini = {
         id: String(siteObj.id),
         name: siteObj.name ?? null,
         address: siteObj.address ?? null,
+        extra_note: r.extra_note ?? null,
       };
 
       const list = sitesByWorker.get(workerId) ?? [];

@@ -1,37 +1,59 @@
 import { NextResponse } from 'next/server';
 import { ApiError, requireUser } from '@/lib/supabase-server';
 
+type JobRow = {
+  id: string;
+  site_id: string;
+  worker_id: string;
+  job_date: string | null;
+  scheduled_time: string | null;
+  status: string | null;
+  created_at: string | null;
+};
+
 export async function GET(req: Request) {
   try {
     const { supabase, userId } = await requireUser(req);
-    const url = new URL(req.url);
-    const status = url.searchParams.get('status');
 
-    let q = supabase
+    const { data: jobsRaw, error: jErr } = await supabase
       .from('jobs')
       .select('id, site_id, worker_id, job_date, scheduled_time, status, created_at')
       .eq('worker_id', userId)
       .order('job_date', { ascending: true })
       .order('scheduled_time', { ascending: true });
 
-    if (status && ['planned', 'in_progress', 'done'].includes(status)) {
-      q = q.eq('status', status);
-    }
-
-    const { data: jobs, error: jErr } = await q;
     if (jErr) throw new ApiError(500, 'Не смог прочитать jobs');
 
-    const siteIds = Array.from(new Set((jobs ?? []).map((x: any) => String(x.site_id)).filter(Boolean)));
+    const jobs = (jobsRaw ?? []) as unknown as JobRow[];
+    const siteIds = Array.from(new Set(jobs.map((j) => String(j.site_id)).filter(Boolean)));
 
-    const { data: sites, error: sErr } = siteIds.length
-      ? await supabase.from('sites').select('id, name, address, lat, lng, radius').in('id', siteIds)
-      : { data: [], error: null };
+    let sites: any[] = [];
+    if (siteIds.length) {
+      const { data: sRaw, error: sErr } = await supabase
+        .from('sites')
+        .select('id, name, address, lat, lng, radius')
+        .in('id', siteIds);
 
-    if (sErr) throw new ApiError(500, 'Не смог прочитать sites');
+      if (sErr) throw new ApiError(500, 'Не смог прочитать sites');
+      sites = (sRaw ?? []) as any[];
+    }
 
-    const siteById = new Map((sites ?? []).map((s: any) => [String(s.id), s]));
+    let assigns: any[] = [];
+    if (siteIds.length) {
+      const { data: aRaw, error: aErr } = await supabase
+        .from('assignments')
+        .select('site_id, worker_id, extra_note')
+        .eq('worker_id', userId)
+        .in('site_id', siteIds);
 
-    const result = (jobs ?? []).map((j: any) => {
+      if (aErr) throw new ApiError(500, 'Не смог прочитать assignments');
+      assigns = (aRaw ?? []) as any[];
+    }
+
+    const siteById = new Map<string, any>(sites.map((s) => [String(s.id), s]));
+    const noteBySite = new Map<string, string | null>(assigns.map((a) => [String(a.site_id), a.extra_note ?? null]));
+
+    const result = jobs.map((j) => {
       const site = siteById.get(String(j.site_id)) ?? null;
       return {
         id: String(j.id),
@@ -51,6 +73,7 @@ export async function GET(req: Request) {
               radius: site.radius ?? null,
             }
           : null,
+        assignment_note: noteBySite.get(String(j.site_id)) ?? null,
       };
     });
 

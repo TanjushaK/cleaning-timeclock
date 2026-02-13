@@ -7,8 +7,8 @@ export async function GET(req: Request) {
 
     const { data, error } = await supabase
       .from('assignments')
-      .select('site_id, worker_id')
-      .order('site_id', { ascending: true });
+      .select('site_id, worker_id, extra_note, updated_at')
+      .order('updated_at', { ascending: false });
 
     if (error) throw new ApiError(500, 'Не смог прочитать assignments');
 
@@ -26,12 +26,21 @@ export async function POST(req: Request) {
 
     const site_id = String(body?.site_id || '');
     const worker_id = String(body?.worker_id || '');
-
     if (!site_id || !worker_id) throw new ApiError(400, 'Нужны site_id и worker_id');
+
+    const payload: any = {
+      site_id,
+      worker_id,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (Object.prototype.hasOwnProperty.call(body, 'extra_note')) {
+      payload.extra_note = body.extra_note == null ? null : String(body.extra_note);
+    }
 
     const { error } = await supabase
       .from('assignments')
-      .upsert({ site_id, worker_id }, { onConflict: 'site_id,worker_id' });
+      .upsert(payload, { onConflict: 'site_id,worker_id' });
 
     if (error) throw new ApiError(500, 'Не смог сохранить assignment');
 
@@ -49,10 +58,14 @@ export async function DELETE(req: Request) {
 
     const site_id = String(body?.site_id || '');
     const worker_id = String(body?.worker_id || '');
-
     if (!site_id || !worker_id) throw new ApiError(400, 'Нужны site_id и worker_id');
 
-    const { error } = await supabase.from('assignments').delete().eq('site_id', site_id).eq('worker_id', worker_id);
+    const { error } = await supabase
+      .from('assignments')
+      .delete()
+      .eq('site_id', site_id)
+      .eq('worker_id', worker_id);
+
     if (error) throw new ApiError(500, 'Не смог удалить assignment');
 
     return NextResponse.json({ ok: true }, { status: 200 });
