@@ -31,6 +31,18 @@ type WorkerRow = {
 
 type SupaResult<T> = { data: T; error: any };
 
+async function assertAssigned(supabase: any, site_id: string, worker_id: string) {
+  const { data, error } = (await supabase
+    .from('assignments')
+    .select('site_id, worker_id')
+    .eq('site_id', site_id)
+    .eq('worker_id', worker_id)
+    .maybeSingle()) as SupaResult<any>;
+
+  if (error) throw new ApiError(500, 'Не смог проверить assignments');
+  if (!data) throw new ApiError(400, 'Нельзя назначить: работник не прикреплён к этому объекту');
+}
+
 export async function GET(req: Request) {
   try {
     const { supabase } = await requireAdmin(req);
@@ -51,7 +63,6 @@ export async function GET(req: Request) {
     if (jErr) throw new ApiError(500, 'Не смог прочитать jobs');
 
     const jobs = (jobsRaw ?? []) as JobRow[];
-
     const siteIds = Array.from(new Set(jobs.map((x) => String(x.site_id)).filter(Boolean)));
     const workerIds = Array.from(new Set(jobs.map((x) => String(x.worker_id)).filter(Boolean)));
 
@@ -138,6 +149,8 @@ export async function POST(req: Request) {
     if (!job_date) throw new ApiError(400, 'Нужна дата (job_date)');
     if (!scheduled_time) throw new ApiError(400, 'Нужно время (scheduled_time)');
 
+    await assertAssigned(supabase, site_id, worker_id);
+
     const { error } = await supabase.from('jobs').insert({
       site_id,
       worker_id,
@@ -169,6 +182,26 @@ export async function PATCH(req: Request) {
     if (body?.job_date) patch.job_date = String(body.job_date);
     if (body?.scheduled_time) patch.scheduled_time = String(body.scheduled_time);
     if (body?.status) patch.status = String(body.status);
+
+    // если меняем site/worker — проверяем назначение
+    const nextSite = patch.site_id;
+    const nextWorker = patch.worker_id;
+
+    if (nextSite || nextWorker) {
+      const { data: cur, error: curErr } = (await supabase
+        .from('jobs')
+        .select('site_id, worker_id')
+        .eq('id', id)
+        .maybeSingle()) as SupaResult<any>;
+
+      if (curErr) throw new ApiError(500, 'Не смог прочитать job');
+      if (!cur) throw new ApiError(404, 'Job не найден');
+
+      const site_id = String(nextSite ?? (cur as any).site_id);
+      const worker_id = String(nextWorker ?? (cur as any).worker_id);
+
+      await assertAssigned(supabase, site_id, worker_id);
+    }
 
     const { error } = await supabase.from('jobs').update(patch).eq('id', id);
     if (error) throw new ApiError(500, 'Не смог обновить job');
