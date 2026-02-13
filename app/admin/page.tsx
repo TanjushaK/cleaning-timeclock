@@ -46,7 +46,7 @@ function cn(...xs: Array<string | false | null | undefined>) {
 }
 
 function prettySiteName(s: Site) {
-  return (s.display_name || s.name || s.address || s.id).toString()
+  return (s.display_name || s.name || s.address || 'Объект без названия').toString()
 }
 
 function prettyWorkerName(w: Worker) {
@@ -54,6 +54,17 @@ function prettyWorkerName(w: Worker) {
   const role = w.role === 'admin' ? ' (админ)' : ''
   const active = w.active === false ? ' (неактивен)' : ''
   return `${base}${role}${active}`
+}
+
+function radiusMeters(s: Site): number | null {
+  const r = (s.radius ?? s.radius_m) as any
+  if (typeof r === 'number' && Number.isFinite(r)) return r
+  const n = Number(r)
+  return Number.isFinite(n) ? n : null
+}
+
+function hasCoords(s: Site) {
+  return typeof s.lat === 'number' && typeof s.lng === 'number'
 }
 
 async function authedFetch(path: string, token: string, init?: RequestInit) {
@@ -70,6 +81,21 @@ async function authedFetch(path: string, token: string, init?: RequestInit) {
   const json = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(json?.error || `Ошибка ${res.status}`)
   return json
+}
+
+async function copyToClipboard(text: string) {
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+  const ta = document.createElement('textarea')
+  ta.value = text
+  ta.style.position = 'fixed'
+  ta.style.left = '-9999px'
+  document.body.appendChild(ta)
+  ta.select()
+  document.execCommand('copy')
+  document.body.removeChild(ta)
 }
 
 export default function AdminPage() {
@@ -101,6 +127,8 @@ function AdminInner() {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string>('')
 
+  const [toast, setToast] = useState<string>('')
+
   const [workers, setWorkers] = useState<Worker[]>([])
   const [sites, setSites] = useState<Site[]>([])
   const [assignments, setAssignments] = useState<Assignment[]>([])
@@ -113,6 +141,12 @@ function AdminInner() {
     setTab(sp.get('tab') || 'workers')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sp])
+
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(''), 1800)
+    return () => clearTimeout(t)
+  }, [toast])
 
   function goTab(next: string) {
     router.replace(`/admin?tab=${encodeURIComponent(next)}`)
@@ -186,6 +220,7 @@ function AdminInner() {
       setBusy(true)
       setErr('')
       await refreshAll()
+      setToast('Обновлено')
     } catch (e: any) {
       setErr(e?.message || 'Ошибка обновления')
     } finally {
@@ -203,6 +238,7 @@ function AdminInner() {
         body: JSON.stringify({ site_id: siteId, worker_id: workerId }),
       })
       await refreshAll()
+      setToast('Назначено')
     } catch (e: any) {
       setErr(e?.message || 'Ошибка назначения')
     } finally {
@@ -220,8 +256,9 @@ function AdminInner() {
         body: JSON.stringify({ site_id: siteId, worker_id: workerId }),
       })
       await refreshAll()
+      setToast('Снято')
     } catch (e: any) {
-      setErr(e?.message || 'Ошибка снятия назначения')
+      setErr(e?.message || 'Ошибка снятия')
     } finally {
       setBusy(false)
     }
@@ -240,6 +277,7 @@ function AdminInner() {
       })
       setInviteEmail('')
       await refreshAll()
+      setToast('Приглашение отправлено')
     } catch (e: any) {
       setErr(e?.message || 'Ошибка приглашения')
     } finally {
@@ -306,6 +344,12 @@ function AdminInner() {
           ))}
         </div>
 
+        {toast ? (
+          <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
+            {toast}
+          </div>
+        ) : null}
+
         {err ? (
           <div className="mt-4 rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-200">
             {err}
@@ -313,9 +357,7 @@ function AdminInner() {
         ) : null}
 
         {loading ? (
-          <div className="mt-6 rounded-2xl border border-zinc-800 bg-zinc-900 p-6 text-zinc-300">
-            Загрузка…
-          </div>
+          <div className="mt-6 rounded-2xl border border-zinc-800 bg-zinc-900 p-6 text-zinc-300">Загрузка…</div>
         ) : !token ? (
           <LoginBlock
             onLoggedIn={async () => {
@@ -329,10 +371,15 @@ function AdminInner() {
             sites={sites}
             workers={activeWorkersOnly}
             assignmentsBySite={assignmentsBySite}
-            onAssign={(siteId, workerId) => doAssign(siteId, workerId)}
-            onUnassign={(siteId, workerId) => doUnassign(siteId, workerId)}
+            onAssign={doAssign}
+            onUnassign={doUnassign}
             pick={siteAssignPick}
             setPick={setSiteAssignPick}
+            onCopyCoords={async (s) => {
+              if (!hasCoords(s)) return
+              await copyToClipboard(`${s.lat}, ${s.lng}`)
+              setToast('Координаты скопированы')
+            }}
           />
         ) : tab === 'workers' ? (
           <WorkersTab
@@ -343,8 +390,8 @@ function AdminInner() {
             workers={workersOnly}
             sites={sites}
             assignmentsByWorker={assignmentsByWorker}
-            onAssign={(siteId, workerId) => doAssign(siteId, workerId)}
-            onUnassign={(siteId, workerId) => doUnassign(siteId, workerId)}
+            onAssign={doAssign}
+            onUnassign={doUnassign}
             pick={workerAssignPick}
             setPick={setWorkerAssignPick}
           />
@@ -419,9 +466,7 @@ function LoginBlock({ onLoggedIn }: { onLoggedIn: () => Promise<void> | void }) 
       <Card title="Вход администратора" subtitle="Только для роли admin">
         <div className="grid gap-3 sm:max-w-md">
           {err ? (
-            <div className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200">
-              {err}
-            </div>
+            <div className="rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200">{err}</div>
           ) : null}
           <input
             className="w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3 text-sm outline-none focus:border-amber-500/40"
@@ -464,13 +509,11 @@ function SitesTab(props: {
   onUnassign: (siteId: string, workerId: string) => void
   pick: Record<string, string>
   setPick: (v: Record<string, string>) => void
+  onCopyCoords: (s: Site) => void
 }) {
   return (
     <div className="mt-6 grid gap-4">
-      <Card
-        title="Объекты"
-        subtitle="Назначай работников на объект прямо из списка. Один объект может иметь нескольких работников."
-      >
+      <Card title="Объекты" subtitle="Назначение работников на объект. Техданные спрятаны в раскрывашку.">
         {props.sites.length === 0 ? (
           <div className="text-sm text-zinc-400">Объектов пока нет.</div>
         ) : (
@@ -480,20 +523,14 @@ function SitesTab(props: {
               const pickVal = props.pick[s.id] || ''
               const available = props.workers.filter((w) => !assigned.has(w.id))
 
+              const r = radiusMeters(s)
+              const coordsOk = hasCoords(s)
+
               return (
                 <div key={s.id} className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
                       <div className="text-base font-semibold text-zinc-100">{prettySiteName(s)}</div>
-                      <div className="mt-1 text-xs text-zinc-400">
-                        ID: {s.id}
-                        {typeof (s.radius ?? s.radius_m) !== 'undefined' && (s.radius ?? s.radius_m) !== null
-                          ? ` • Радиус: ${(s.radius ?? s.radius_m) as any} м`
-                          : ''}
-                        {typeof s.lat === 'number' && typeof s.lng === 'number'
-                          ? ` • GPS: ${s.lat.toFixed(5)}, ${s.lng.toFixed(5)}`
-                          : ''}
-                      </div>
 
                       <div className="mt-3 flex flex-wrap gap-2">
                         {Array.from(assigned).length === 0 ? (
@@ -516,6 +553,35 @@ function SitesTab(props: {
                           ))
                         )}
                       </div>
+
+                      <details className="mt-3 rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
+                        <summary className="cursor-pointer text-sm text-zinc-300 select-none">
+                          Техданные
+                        </summary>
+                        <div className="mt-2 grid gap-2 text-xs text-zinc-400">
+                          <div>Код объекта: <span className="text-zinc-200">{s.id}</span></div>
+                          <div>
+                            Радиус допуска: <span className="text-zinc-200">{r ?? '—'} м</span>
+                          </div>
+                          <div>
+                            Координаты: <span className="text-zinc-200">
+                              {coordsOk ? `${s.lat!.toFixed(5)}, ${s.lng!.toFixed(5)}` : '—'}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              onClick={() => props.onCopyCoords(s)}
+                              disabled={!coordsOk}
+                              className={cn(
+                                'rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1 text-xs hover:bg-zinc-800',
+                                !coordsOk && 'opacity-60'
+                              )}
+                            >
+                              Скопировать координаты
+                            </button>
+                          </div>
+                        </div>
+                      </details>
                     </div>
 
                     <div className="w-full sm:w-96">
@@ -610,7 +676,15 @@ function WorkersTab(props: {
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
                       <div className="text-base font-semibold">{prettyWorkerName(w)}</div>
-                      <div className="mt-1 text-xs text-zinc-400">ID: {w.id}</div>
+
+                      <details className="mt-3 rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
+                        <summary className="cursor-pointer text-sm text-zinc-300 select-none">
+                          Техданные
+                        </summary>
+                        <div className="mt-2 text-xs text-zinc-400">
+                          Код работника: <span className="text-zinc-200">{w.id}</span>
+                        </div>
+                      </details>
 
                       <div className="mt-3 flex flex-wrap gap-2">
                         {Array.from(assigned).length === 0 ? (
