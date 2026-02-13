@@ -6,9 +6,9 @@ import React, { Suspense, useEffect, useMemo, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { getSupabaseBrowser } from '@/lib/supabase';
-import { isoDateToRu, isoTimeToRu, ruDateTimeFromIso } from '@/lib/ru-format';
+import { ruDateTimeFromIso } from '@/lib/ru-format';
 
-type WorkerMini = { id: string; full_name: string | null; email: string | null; active?: boolean | null };
+type WorkerMini = { id: string; full_name: string | null; email: string | null; active?: boolean | null; role?: string | null };
 type SiteMini = { id: string; name: string | null; address: string | null };
 
 type Site = {
@@ -39,7 +39,7 @@ type Job = {
   scheduled_time: string | null;
   status: string;
   site: (SiteMini & { lat?: number | null; lng?: number | null; radius?: number | null }) | null;
-  worker: (WorkerMini & { active?: boolean | null }) | null;
+  worker: (WorkerMini & { active?: boolean | null; role?: string | null }) | null;
 };
 
 function pill(text: string) {
@@ -58,6 +58,10 @@ function btnPrimary() {
   return 'inline-flex items-center justify-center rounded-xl bg-amber-400 px-3 py-2 text-sm font-semibold text-black hover:brightness-110 active:scale-[0.99] transition';
 }
 
+function btnDanger() {
+  return 'inline-flex items-center justify-center rounded-xl border border-red-400/25 bg-red-400/10 px-3 py-2 text-sm text-red-200 hover:bg-red-400/15 active:scale-[0.99] transition';
+}
+
 function card() {
   return 'rounded-2xl border border-white/10 bg-white/5 p-4 shadow-sm';
 }
@@ -70,15 +74,36 @@ function selectBase() {
   return 'w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-400/40';
 }
 
+function statusBadge(status: string) {
+  const label =
+    status === 'planned' ? 'Planned' : status === 'in_progress' ? 'In progress' : status === 'done' ? 'Done' : status;
+  return (
+    <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80">
+      {label}
+    </span>
+  );
+}
+
+function workerLabel(w: WorkerMini) {
+  const name = w.full_name || 'Без имени';
+  const email = w.email ? ` — ${w.email}` : '';
+  const role = w.role === 'admin' ? ' (admin)' : '';
+  return `${name}${email}${role}`;
+}
+
+function siteLabel(s: SiteMini) {
+  return (s.name || 'Без названия') + (s.address ? ` — ${s.address}` : '');
+}
+
 function AdminInner() {
   const sp = useSearchParams();
   const router = useRouter();
 
   const tab = (sp.get('tab') || 'sites') as 'sites' | 'workers' | 'jobs';
-  const jobsStatus = sp.get('status') || 'all';
 
   const supabase = useMemo(() => getSupabaseBrowser(), []);
   const [token, setToken] = useState<string>('');
+  const [meId, setMeId] = useState<string>('');
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>('');
@@ -95,27 +120,23 @@ function AdminInner() {
     { site_id: '', worker_id: '', job_date: '', scheduled_time: '' }
   );
 
-  const [jobPatch, setJobPatch] = useState<Record<string, Partial<Job> & { status?: string }>>({});
+  const [jobPatch, setJobPatch] = useState<Record<string, any>>({});
 
   function setTab(next: 'sites' | 'workers' | 'jobs') {
-    const url = next === 'jobs' ? `/admin?tab=jobs` : `/admin?tab=${next}`;
-    router.push(url);
+    router.push(`/admin?tab=${next}`);
   }
 
-  function setJobsStatus(next: string) {
-    const base = `/admin?tab=jobs`;
-    router.push(next === 'all' ? base : `${base}&status=${encodeURIComponent(next)}`);
-  }
-
-  async function ensureToken(): Promise<string> {
+  async function ensureSession(): Promise<string> {
     const { data } = await supabase.auth.getSession();
     const t = data.session?.access_token || '';
+    const uid = data.session?.user?.id || '';
     setToken(t);
+    setMeId(uid);
     return t;
   }
 
   async function apiFetch(path: string, init?: RequestInit) {
-    const t = token || (await ensureToken());
+    const t = token || (await ensureSession());
     const headers = new Headers(init?.headers || {});
     headers.set('Authorization', `Bearer ${t}`);
     headers.set('Content-Type', 'application/json');
@@ -127,35 +148,28 @@ function AdminInner() {
     setError('');
     setOk('');
     try {
-      await ensureToken();
+      await ensureSession();
 
       const [sRes, wRes, jRes] = await Promise.all([
         apiFetch('/api/admin/sites/list'),
         apiFetch('/api/admin/workers/list'),
-        tab === 'jobs'
-          ? apiFetch(jobsStatus === 'all' ? '/api/admin/jobs' : `/api/admin/jobs?status=${encodeURIComponent(jobsStatus)}`)
-          : Promise.resolve(null as any),
+        apiFetch('/api/admin/jobs'),
       ]);
-
-      if (!sRes.ok) throw new Error((await sRes.json()).error || 'Sites: ошибка');
-      if (!wRes.ok) throw new Error((await wRes.json()).error || 'Workers: ошибка');
 
       const sJson = await sRes.json();
       const wJson = await wRes.json();
+      const jJson = await jRes.json();
+
+      if (!sRes.ok) throw new Error(sJson.error || 'Sites: ошибка');
+      if (!wRes.ok) throw new Error(wJson.error || 'Workers: ошибка');
+      if (!jRes.ok) throw new Error(jJson.error || 'Jobs: ошибка');
 
       setSites(sJson.sites || []);
       setWorkers(wJson.workers || []);
-
-      if (jRes) {
-        if (!jRes.ok) throw new Error((await jRes.json()).error || 'Jobs: ошибка');
-        const jJson = await jRes.json();
-        setJobs(jJson.jobs || []);
-      } else {
-        setJobs([]);
-      }
+      setJobs(jJson.jobs || []);
 
       setOk('Данные обновлены');
-      setTimeout(() => setOk(''), 1500);
+      setTimeout(() => setOk(''), 1200);
     } catch (e: any) {
       setError(e?.message || 'Ошибка загрузки');
     } finally {
@@ -166,23 +180,7 @@ function AdminInner() {
   useEffect(() => {
     loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, jobsStatus]);
-
-  const activeWorkers = useMemo(
-    () => workers.filter((w) => (w.active ?? true) && (w.role ?? 'worker') !== 'admin'),
-    [workers]
-  );
-
-  const activeWorkerOptions: WorkerMini[] = useMemo(
-    () =>
-      activeWorkers.map((w) => ({
-        id: w.id,
-        full_name: w.full_name ?? null,
-        email: w.email ?? null,
-        active: w.active ?? null,
-      })),
-    [activeWorkers]
-  );
+  }, [tab]);
 
   const sitesMini = useMemo(() => sites.map((s) => ({ id: s.id, name: s.name, address: s.address })), [sites]);
 
@@ -192,19 +190,25 @@ function AdminInner() {
     return m;
   }, [sites]);
 
-  function workerLabel(w: WorkerMini) {
-    return (w.full_name || 'Без имени') + (w.email ? ` — ${w.email}` : '');
-  }
+  const assignableWorkerOptions: WorkerMini[] = useMemo(() => {
+    // Можно назначать обычных работников + СЕБЯ (если admin)
+    const list = (workers || [])
+      .filter((w) => (w.active ?? true))
+      .filter((w) => (w.role !== 'admin' || w.id === meId))
+      .map((w) => ({ id: w.id, full_name: w.full_name ?? null, email: w.email ?? null, active: w.active ?? null, role: w.role ?? null }));
+
+    // если meId ещё не прогрузился — просто не дёргаемся
+    return list;
+  }, [workers, meId]);
 
   function getAllowedWorkersForSite(siteId: string): WorkerMini[] {
-    if (!siteId) return activeWorkerOptions;
+    if (!siteId) return [];
     return assignedWorkersBySiteId.get(siteId) ?? [];
   }
 
-  // Автокоррекция worker_id в форме создания: только назначенные на объект
+  // автокоррекция worker_id: только назначенные на выбранный объект
   useEffect(() => {
     if (!jobForm.site_id) return;
-
     const allowed = getAllowedWorkersForSite(jobForm.site_id);
     const allowedIds = new Set(allowed.map((w) => w.id));
 
@@ -264,7 +268,7 @@ function AdminInner() {
         body: JSON.stringify(jobForm),
       });
       const js = await res.json();
-      if (!res.ok) throw new Error(js.error || 'Не смог создать job');
+      if (!res.ok) throw new Error(js.error || 'Не смог создать смену');
       setJobForm({ site_id: '', worker_id: '', job_date: '', scheduled_time: '' });
       await loadAll();
     } catch (e: any) {
@@ -274,29 +278,49 @@ function AdminInner() {
     }
   }
 
-  async function patchJob(id: string) {
+  async function quickStatus(id: string, status: 'planned' | 'in_progress' | 'done') {
+    setBusy(true);
+    setError('');
+    try {
+      const res = await apiFetch('/api/admin/jobs', {
+        method: 'PATCH',
+        body: JSON.stringify({ id, status }),
+      });
+      const js = await res.json();
+      if (!res.ok) throw new Error(js.error || 'Не смог обновить статус');
+      await loadAll();
+    } catch (e: any) {
+      setError(e?.message || 'Ошибка');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveJobEdits(id: string) {
     setBusy(true);
     setError('');
     try {
       const patch = jobPatch[id] || {};
       const body: any = { id };
-      if (patch.site_id) body.site_id = patch.site_id;
-      if (patch.worker_id) body.worker_id = patch.worker_id;
-      if (patch.job_date) body.job_date = patch.job_date;
-      if (patch.scheduled_time) body.scheduled_time = patch.scheduled_time;
-      if ((patch as any).status) body.status = (patch as any).status;
+
+      if (patch.site_id != null) body.site_id = patch.site_id;
+      if (patch.worker_id != null) body.worker_id = patch.worker_id;
+      if (patch.job_date != null) body.job_date = patch.job_date;
+      if (patch.scheduled_time != null) body.scheduled_time = patch.scheduled_time;
 
       const res = await apiFetch('/api/admin/jobs', {
         method: 'PATCH',
         body: JSON.stringify(body),
       });
       const js = await res.json();
-      if (!res.ok) throw new Error(js.error || 'Не смог обновить job');
+      if (!res.ok) throw new Error(js.error || 'Не смог сохранить');
+
       setJobPatch((p) => {
-        const copy = { ...p };
-        delete copy[id];
-        return copy;
+        const c = { ...p };
+        delete c[id];
+        return c;
       });
+
       await loadAll();
     } catch (e: any) {
       setError(e?.message || 'Ошибка');
@@ -315,7 +339,7 @@ function AdminInner() {
         body: JSON.stringify({ id }),
       });
       const js = await res.json();
-      if (!res.ok) throw new Error(js.error || 'Не смог удалить job');
+      if (!res.ok) throw new Error(js.error || 'Не смог удалить');
       await loadAll();
     } catch (e: any) {
       setError(e?.message || 'Ошибка');
@@ -324,20 +348,160 @@ function AdminInner() {
     }
   }
 
-  async function copyCoords(lat: number | null, lng: number | null) {
-    if (lat == null || lng == null) return;
-    try {
-      await navigator.clipboard.writeText(`${lat},${lng}`);
-      setOk('Координаты скопированы');
-      setTimeout(() => setOk(''), 1200);
-    } catch {
-      setError('Не смог скопировать координаты');
-    }
-  }
-
   async function logout() {
     await supabase.auth.signOut();
     location.href = '/';
+  }
+
+  const planned = useMemo(() => jobs.filter((j) => j.status === 'planned'), [jobs]);
+  const inProgress = useMemo(() => jobs.filter((j) => j.status === 'in_progress'), [jobs]);
+  const done = useMemo(() => jobs.filter((j) => j.status === 'done'), [jobs]);
+
+  function jobTitle(j: Job) {
+    return ruDateTimeFromIso(j.job_date, j.scheduled_time) || 'Без даты/времени';
+  }
+
+  function jobSiteText(j: Job) {
+    if (j.site) return siteLabel(j.site);
+    return j.site_id;
+  }
+
+  function jobWorkerText(j: Job) {
+    if (j.worker) return workerLabel(j.worker);
+    return j.worker_id;
+  }
+
+  function renderJobCard(j: Job) {
+    const title = jobTitle(j);
+    const s = jobSiteText(j);
+    const w = jobWorkerText(j);
+
+    const patch = jobPatch[j.id] || {};
+    const curSiteId = String(patch.site_id ?? j.site_id);
+    const allowed = getAllowedWorkersForSite(curSiteId);
+
+    return (
+      <div key={j.id} className="rounded-2xl border border-white/10 bg-black/30 p-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="truncate text-sm font-semibold">{title}</div>
+            <div className="mt-1 truncate text-xs text-white/60">{s}</div>
+            <div className="mt-1 truncate text-xs text-white/60">{w}</div>
+          </div>
+          <div className="shrink-0">{statusBadge(j.status)}</div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap gap-2">
+          {j.status === 'planned' && (
+            <button className={btnPrimary()} onClick={() => quickStatus(j.id, 'in_progress')} disabled={busy}>
+              В работу
+            </button>
+          )}
+          {j.status === 'in_progress' && (
+            <>
+              <button className={btnPrimary()} onClick={() => quickStatus(j.id, 'done')} disabled={busy}>
+                Готово
+              </button>
+              <button className={btnBase()} onClick={() => quickStatus(j.id, 'planned')} disabled={busy}>
+                ↩ Planned
+              </button>
+            </>
+          )}
+          {j.status === 'done' && (
+            <button className={btnBase()} onClick={() => quickStatus(j.id, 'in_progress')} disabled={busy}>
+              ↩ In progress
+            </button>
+          )}
+        </div>
+
+        <details className="mt-3">
+          <summary className="cursor-pointer text-xs text-amber-200/90 hover:text-amber-200">Редактировать</summary>
+          <div className="mt-3 grid gap-2">
+            <div>
+              <div className="mb-1 text-[11px] text-white/60">Объект</div>
+              <select
+                className={selectBase()}
+                value={curSiteId}
+                onChange={(e) => {
+                  const nextSiteId = e.target.value;
+                  const nextAllowed = getAllowedWorkersForSite(nextSiteId);
+                  const ids = new Set(nextAllowed.map((x) => x.id));
+                  setJobPatch((pp) => {
+                    const prev = pp[j.id] || {};
+                    const next: any = { ...prev, site_id: nextSiteId };
+                    const prevWorker = String(prev.worker_id ?? j.worker_id);
+                    if (prevWorker && !ids.has(prevWorker)) next.worker_id = '';
+                    if (!prevWorker && nextAllowed.length === 1) next.worker_id = nextAllowed[0].id;
+                    return { ...pp, [j.id]: next };
+                  });
+                }}
+              >
+                {sitesMini.map((ss) => (
+                  <option key={ss.id} value={ss.id}>
+                    {siteLabel(ss)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <div className="mb-1 text-[11px] text-white/60">Работник (по назначениям)</div>
+              <select
+                className={selectBase()}
+                value={String(patch.worker_id ?? j.worker_id)}
+                onChange={(e) => setJobPatch((pp) => ({ ...pp, [j.id]: { ...(pp[j.id] || {}), worker_id: e.target.value } }))}
+                disabled={allowed.length === 0}
+              >
+                {allowed.length === 0 && <option value="">Нет назначенных работников</option>}
+                {allowed.length > 0 && (
+                  <>
+                    <option value="">Выбери работника…</option>
+                    {allowed.map((ww) => (
+                      <option key={ww.id} value={ww.id}>
+                        {workerLabel(ww)}
+                      </option>
+                    ))}
+                  </>
+                )}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <div className="mb-1 text-[11px] text-white/60">Дата</div>
+                <input
+                  className={inputBase()}
+                  type="date"
+                  value={String(patch.job_date ?? j.job_date ?? '')}
+                  onChange={(e) => setJobPatch((pp) => ({ ...pp, [j.id]: { ...(pp[j.id] || {}), job_date: e.target.value } }))}
+                />
+              </div>
+              <div>
+                <div className="mb-1 text-[11px] text-white/60">Время</div>
+                <input
+                  className={inputBase()}
+                  type="time"
+                  value={String(patch.scheduled_time ?? j.scheduled_time ?? '')}
+                  onChange={(e) => setJobPatch((pp) => ({ ...pp, [j.id]: { ...(pp[j.id] || {}), scheduled_time: e.target.value } }))}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex flex-wrap gap-2 text-[11px] text-white/60">{pill(`UUID: ${j.id}`)}</div>
+              <div className="flex gap-2">
+                <button className={btnDanger()} onClick={() => deleteJob(j.id)} disabled={busy}>
+                  Удалить
+                </button>
+                <button className={btnPrimary()} onClick={() => saveJobEdits(j.id)} disabled={busy || !jobPatch[j.id]}>
+                  Сохранить
+                </button>
+              </div>
+            </div>
+          </div>
+        </details>
+      </div>
+    );
   }
 
   return (
@@ -372,7 +536,7 @@ function AdminInner() {
             Работники
           </button>
           <button className={`${btnBase()} ${tab === 'jobs' ? 'ring-2 ring-amber-400/40' : ''}`} onClick={() => setTab('jobs')}>
-            Смены (Jobs)
+            Смены (Kanban)
           </button>
         </div>
 
@@ -411,6 +575,7 @@ function AdminInner() {
                           >
                             <span className="text-white/90">{w.full_name || 'Без имени'}</span>
                             <span className="text-white/40">{w.email || ''}</span>
+                            <span className="text-white/35">{w.role === 'admin' ? '(admin)' : ''}</span>
                             <button
                               className="ml-1 rounded-full border border-amber-400/25 bg-amber-400/10 px-2 py-0.5 text-[11px] text-amber-200 hover:bg-amber-400/15"
                               onClick={() => unassign(s.id, w.id)}
@@ -425,32 +590,25 @@ function AdminInner() {
 
                     <details className="mt-3">
                       <summary className="cursor-pointer text-sm text-amber-200/90 hover:text-amber-200">Техданные</summary>
-                      <div className="mt-2 grid gap-2 text-sm text-white/70">
-                        <div className="flex flex-wrap items-center gap-2">
-                          {pill(`UUID: ${s.id}`)}
-                          {pill(`Радиус: ${s.radius ?? '—'} м`)}
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          {pill(`lat: ${s.lat ?? '—'}`)}
-                          {pill(`lng: ${s.lng ?? '—'}`)}
-                          <button className={btnBase()} onClick={() => copyCoords(s.lat, s.lng)} disabled={s.lat == null || s.lng == null}>
-                            Скопировать координаты
-                          </button>
-                        </div>
+                      <div className="mt-2 flex flex-wrap gap-2 text-sm text-white/70">
+                        {pill(`UUID: ${s.id}`)}
+                        {pill(`Радиус: ${s.radius ?? '—'} м`)}
+                        {pill(`lat: ${s.lat ?? '—'}`)}
+                        {pill(`lng: ${s.lng ?? '—'}`)}
                       </div>
                     </details>
                   </div>
 
                   <div className="w-full sm:w-80">
-                    <div className="text-sm text-white/60">Назначить работника</div>
+                    <div className="text-sm text-white/60">Назначить работника (включая тебя)</div>
                     <div className="mt-2 flex gap-2">
                       <select
                         className={selectBase()}
                         value={assignWorkerBySite[s.id] || ''}
                         onChange={(e) => setAssignWorkerBySite((p) => ({ ...p, [s.id]: e.target.value }))}
                       >
-                        <option value="">Выбери работника…</option>
-                        {activeWorkerOptions.map((w) => (
+                        <option value="">Выбери…</option>
+                        {assignableWorkerOptions.map((w) => (
                           <option key={w.id} value={w.id}>
                             {workerLabel(w)}
                           </option>
@@ -480,7 +638,10 @@ function AdminInner() {
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
                     <div className="text-base font-semibold">
-                      {w.full_name || 'Без имени'} <span className="text-xs text-white/50">{w.active === false ? '(выключен)' : ''}</span>
+                      {w.full_name || 'Без имени'}{' '}
+                      <span className="text-xs text-white/50">
+                        {w.role === 'admin' ? '(admin)' : ''} {w.active === false ? '(выключен)' : ''}
+                      </span>
                     </div>
                     <div className="text-sm text-white/60">{w.email || 'Без email'}</div>
 
@@ -509,10 +670,7 @@ function AdminInner() {
 
                     <details className="mt-3">
                       <summary className="cursor-pointer text-sm text-amber-200/90 hover:text-amber-200">Техданные</summary>
-                      <div className="mt-2 flex flex-wrap gap-2 text-sm text-white/70">
-                        {pill(`UUID: ${w.id}`)}
-                        {pill(`роль: ${w.role ?? '—'}`)}
-                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2 text-sm text-white/70">{pill(`UUID: ${w.id}`)}</div>
                     </details>
                   </div>
 
@@ -527,7 +685,7 @@ function AdminInner() {
                         <option value="">Выбери объект…</option>
                         {sitesMini.map((s) => (
                           <option key={s.id} value={s.id}>
-                            {(s.name || 'Без названия') + (s.address ? ` — ${s.address}` : '')}
+                            {siteLabel(s)}
                           </option>
                         ))}
                       </select>
@@ -544,7 +702,7 @@ function AdminInner() {
               </div>
             ))}
 
-            {workers.length === 0 && <div className="text-sm text-white/50">Работников нет</div>}
+            {workers.length === 0 && <div className="text-sm text-white/50">Пользователей нет</div>}
           </div>
         )}
 
@@ -554,20 +712,11 @@ function AdminInner() {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <div className="text-base font-semibold">Создать смену</div>
-                  <div className="text-xs text-white/50">Работник выбирается только из назначенных на объект</div>
+                  <div className="text-xs text-white/50">Работник выбирается только из назначенных на объект (assignments)</div>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <button className={`${btnBase()} ${jobsStatus === 'all' ? 'ring-2 ring-amber-400/40' : ''}`} onClick={() => setJobsStatus('all')}>
-                    Все
-                  </button>
-                  <button className={`${btnBase()} ${jobsStatus === 'planned' ? 'ring-2 ring-amber-400/40' : ''}`} onClick={() => setJobsStatus('planned')}>
-                    Planned
-                  </button>
-                  <button className={`${btnBase()} ${jobsStatus === 'in_progress' ? 'ring-2 ring-amber-400/40' : ''}`} onClick={() => setJobsStatus('in_progress')}>
-                    In progress
-                  </button>
-                  <button className={`${btnBase()} ${jobsStatus === 'done' ? 'ring-2 ring-amber-400/40' : ''}`} onClick={() => setJobsStatus('done')}>
-                    Done
+                <div className="flex gap-2">
+                  <button className={btnBase()} onClick={loadAll} disabled={busy}>
+                    Обновить
                   </button>
                 </div>
               </div>
@@ -575,11 +724,15 @@ function AdminInner() {
               <div className="mt-4 grid gap-3 md:grid-cols-4">
                 <div>
                   <div className="mb-1 text-xs text-white/60">Объект</div>
-                  <select className={selectBase()} value={jobForm.site_id} onChange={(e) => setJobForm((p) => ({ ...p, site_id: e.target.value }))}>
+                  <select
+                    className={selectBase()}
+                    value={jobForm.site_id}
+                    onChange={(e) => setJobForm((p) => ({ ...p, site_id: e.target.value }))}
+                  >
                     <option value="">Выбери объект…</option>
                     {sitesMini.map((s) => (
                       <option key={s.id} value={s.id}>
-                        {(s.name || 'Без названия') + (s.address ? ` — ${s.address}` : '')}
+                        {siteLabel(s)}
                       </option>
                     ))}
                   </select>
@@ -594,31 +747,38 @@ function AdminInner() {
                     disabled={!jobForm.site_id || getAllowedWorkersForSite(jobForm.site_id).length === 0}
                   >
                     {!jobForm.site_id && <option value="">Сначала выбери объект…</option>}
-                    {jobForm.site_id && getAllowedWorkersForSite(jobForm.site_id).length === 0 && (
-                      <option value="">Нет назначенных работников</option>
+                    {jobForm.site_id && getAllowedWorkersForSite(jobForm.site_id).length === 0 && <option value="">Нет назначенных работников</option>}
+                    {jobForm.site_id && getAllowedWorkersForSite(jobForm.site_id).length > 0 && (
+                      <>
+                        <option value="">Выбери работника…</option>
+                        {getAllowedWorkersForSite(jobForm.site_id).map((w) => (
+                          <option key={w.id} value={w.id}>
+                            {workerLabel(w)}
+                          </option>
+                        ))}
+                      </>
                     )}
-                    {jobForm.site_id &&
-                      getAllowedWorkersForSite(jobForm.site_id).length > 0 && (
-                        <>
-                          <option value="">Выбери работника…</option>
-                          {getAllowedWorkersForSite(jobForm.site_id).map((w) => (
-                            <option key={w.id} value={w.id}>
-                              {workerLabel(w)}
-                            </option>
-                          ))}
-                        </>
-                      )}
                   </select>
                 </div>
 
                 <div>
                   <div className="mb-1 text-xs text-white/60">Дата</div>
-                  <input className={inputBase()} type="date" value={jobForm.job_date} onChange={(e) => setJobForm((p) => ({ ...p, job_date: e.target.value }))} />
+                  <input
+                    className={inputBase()}
+                    type="date"
+                    value={jobForm.job_date}
+                    onChange={(e) => setJobForm((p) => ({ ...p, job_date: e.target.value }))}
+                  />
                 </div>
 
                 <div>
                   <div className="mb-1 text-xs text-white/60">Время</div>
-                  <input className={inputBase()} type="time" value={jobForm.scheduled_time} onChange={(e) => setJobForm((p) => ({ ...p, scheduled_time: e.target.value }))} />
+                  <input
+                    className={inputBase()}
+                    type="time"
+                    value={jobForm.scheduled_time}
+                    onChange={(e) => setJobForm((p) => ({ ...p, scheduled_time: e.target.value }))}
+                  />
                 </div>
               </div>
 
@@ -626,148 +786,38 @@ function AdminInner() {
                 <button
                   className={btnPrimary()}
                   onClick={createJob}
-                  disabled={
-                    busy ||
-                    !jobForm.site_id ||
-                    !jobForm.worker_id ||
-                    !jobForm.job_date ||
-                    !jobForm.scheduled_time
-                  }
+                  disabled={busy || !jobForm.site_id || !jobForm.worker_id || !jobForm.job_date || !jobForm.scheduled_time}
                 >
                   Создать
                 </button>
               </div>
             </div>
 
-            {jobs.map((j) => {
-              const dt = ruDateTimeFromIso(j.job_date, j.scheduled_time);
-              const siteLabel = j.site ? `${j.site.name || 'Без названия'}${j.site.address ? ` — ${j.site.address}` : ''}` : j.site_id;
-              const workerLabelText = j.worker ? `${j.worker.full_name || 'Без имени'}${j.worker.email ? ` — ${j.worker.email}` : ''}` : j.worker_id;
-
-              const p = jobPatch[j.id] || {};
-              const curStatus = (p as any).status ?? j.status;
-              const curSiteId = (p.site_id ?? j.site_id) as string;
-              const curWorkerId = (p.worker_id ?? j.worker_id) as string;
-
-              const allowedWorkers = getAllowedWorkersForSite(curSiteId);
-              const allowedIds = new Set(allowedWorkers.map((w) => w.id));
-              const currentWorkerInAllowed = allowedIds.has(curWorkerId);
-
-              return (
-                <div key={j.id} className={card()}>
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <div className="text-base font-semibold">{dt || `${isoDateToRu(j.job_date)} ${isoTimeToRu(j.scheduled_time)}`}</div>
-                        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80">
-                          {curStatus === 'planned' ? 'Planned' : curStatus === 'in_progress' ? 'In progress' : curStatus === 'done' ? 'Done' : curStatus}
-                        </span>
-                      </div>
-
-                      <div className="mt-1 text-sm text-white/60">{siteLabel}</div>
-                      <div className="mt-1 text-sm text-white/60">{workerLabelText}</div>
-
-                      <details className="mt-3">
-                        <summary className="cursor-pointer text-sm text-amber-200/90 hover:text-amber-200">Техданные</summary>
-                        <div className="mt-2 flex flex-wrap gap-2 text-sm text-white/70">{pill(`UUID: ${j.id}`)}</div>
-                      </details>
-                    </div>
-
-                    <div className="w-full sm:w-[420px]">
-                      <div className="grid gap-2">
-                        <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-                          <div>
-                            <div className="mb-1 text-xs text-white/60">Статус</div>
-                            <select
-                              className={selectBase()}
-                              value={curStatus}
-                              onChange={(e) =>
-                                setJobPatch((pp) => ({
-                                  ...pp,
-                                  [j.id]: { ...(pp[j.id] || {}), status: e.target.value },
-                                }))
-                              }
-                            >
-                              <option value="planned">planned</option>
-                              <option value="in_progress">in_progress</option>
-                              <option value="done">done</option>
-                            </select>
-                          </div>
-
-                          <div>
-                            <div className="mb-1 text-xs text-white/60">Объект</div>
-                            <select
-                              className={selectBase()}
-                              value={curSiteId}
-                              onChange={(e) => {
-                                const nextSiteId = e.target.value;
-                                const allowed = getAllowedWorkersForSite(nextSiteId);
-                                const ids = new Set(allowed.map((w) => w.id));
-
-                                setJobPatch((pp) => {
-                                  const prev = pp[j.id] || {};
-                                  const next: any = { ...prev, site_id: nextSiteId };
-                                  const nextWorker = (prev.worker_id ?? curWorkerId) as string;
-                                  if (nextWorker && !ids.has(nextWorker)) next.worker_id = '';
-                                  if (!nextWorker && allowed.length === 1) next.worker_id = allowed[0].id;
-                                  return { ...pp, [j.id]: next };
-                                });
-                              }}
-                            >
-                              {sitesMini.map((s) => (
-                                <option key={s.id} value={s.id}>
-                                  {(s.name || 'Без названия') + (s.address ? ` — ${s.address}` : '')}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-
-                          <div>
-                            <div className="mb-1 text-xs text-white/60">Работник (по назначениям)</div>
-                            <select
-                              className={selectBase()}
-                              value={curWorkerId}
-                              onChange={(e) =>
-                                setJobPatch((pp) => ({
-                                  ...pp,
-                                  [j.id]: { ...(pp[j.id] || {}), worker_id: e.target.value },
-                                }))
-                              }
-                              disabled={allowedWorkers.length === 0}
-                            >
-                              {allowedWorkers.length === 0 && <option value="">Нет назначенных работников</option>}
-
-                              {allowedWorkers.length > 0 && (
-                                <>
-                                  {!currentWorkerInAllowed && curWorkerId && <option value={curWorkerId}>Текущий (вне назначений)</option>}
-                                  <option value="">Выбери работника…</option>
-                                  {allowedWorkers.map((w) => (
-                                    <option key={w.id} value={w.id}>
-                                      {workerLabel(w)}
-                                    </option>
-                                  ))}
-                                </>
-                              )}
-                            </select>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-wrap items-center justify-end gap-2">
-                          <button className={btnBase()} onClick={() => deleteJob(j.id)} disabled={busy}>
-                            Удалить
-                          </button>
-                          <button className={btnPrimary()} onClick={() => patchJob(j.id)} disabled={busy || !jobPatch[j.id]}>
-                            Сохранить
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+            <div className="grid gap-4 lg:grid-cols-3">
+              <div className={card()}>
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="text-base font-semibold">Planned</div>
+                  <div className="text-xs text-white/50">{planned.length}</div>
                 </div>
-              );
-            })}
+                <div className="grid gap-3">{planned.map(renderJobCard)}</div>
+              </div>
 
-            {jobs.length === 0 && <div className="text-sm text-white/50">Смен нет</div>}
+              <div className={card()}>
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="text-base font-semibold">In progress</div>
+                  <div className="text-xs text-white/50">{inProgress.length}</div>
+                </div>
+                <div className="grid gap-3">{inProgress.map(renderJobCard)}</div>
+              </div>
+
+              <div className={card()}>
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="text-base font-semibold">Done</div>
+                  <div className="text-xs text-white/50">{done.length}</div>
+                </div>
+                <div className="grid gap-3">{done.map(renderJobCard)}</div>
+              </div>
+            </div>
           </div>
         )}
 

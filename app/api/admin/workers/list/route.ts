@@ -20,58 +20,61 @@ export async function GET(req: Request) {
   try {
     const { supabase } = await requireAdmin(req);
 
-    const { data: workers, error: wErr } = await supabase
+    const { data: workersRaw, error: wErr } = await supabase
       .from('profiles')
       .select('id, full_name, email, role, active, avatar_url')
-      .neq('role', 'admin')
       .order('full_name', { ascending: true });
 
     if (wErr) throw new ApiError(500, 'Не смог прочитать profiles');
 
-    const { data: asg, error: aErr } = await supabase.from('assignments').select('site_id, worker_id');
-    if (aErr) throw new ApiError(500, 'Не смог прочитать assignments');
+    const workers = ((workersRaw ?? []) as any[]).map((w) => ({
+      id: String(w.id),
+      full_name: (w.full_name ?? null) as string | null,
+      email: (w.email ?? null) as string | null,
+      role: (w.role ?? null) as string | null,
+      active: (w.active ?? null) as boolean | null,
+      avatar_url: (w.avatar_url ?? null) as string | null,
+    })) as WorkerRow[];
 
-    const siteIds = Array.from(new Set((asg ?? []).map((x: any) => String(x.site_id)).filter(Boolean)));
+    const ids = workers.map((w) => String(w.id)).filter(Boolean);
 
-    let sites: SiteMini[] = [];
-    if (siteIds.length > 0) {
-      const { data: s, error: sErr } = await supabase.from('sites').select('id, name, address').in('id', siteIds);
-      if (sErr) throw new ApiError(500, 'Не смог прочитать sites');
-      sites = (s ?? []).map((x: any) => ({
-        id: String(x.id),
-        name: x.name ?? null,
-        address: x.address ?? null,
-      }));
+    let assignedRows: any[] = [];
+    if (ids.length) {
+      const { data: aRaw, error: aErr } = await supabase
+        .from('assignments')
+        .select('worker_id, site_id, sites:sites(id, name, address)')
+        .in('worker_id', ids);
+
+      if (aErr) throw new ApiError(500, 'Не смог прочитать assignments');
+      assignedRows = (aRaw ?? []) as any[];
     }
 
-    const siteById = new Map(sites.map((s) => [s.id, s]));
     const sitesByWorker = new Map<string, SiteMini[]>();
 
-    for (const a of asg ?? []) {
-      const workerId = String((a as any).worker_id);
-      const siteId = String((a as any).site_id);
-      const site = siteById.get(siteId);
-      if (!workerId || !site) continue;
-      const arr = sitesByWorker.get(workerId) ?? [];
-      arr.push(site);
-      sitesByWorker.set(workerId, arr);
+    for (const r of assignedRows) {
+      const workerId = String(r.worker_id ?? '');
+      if (!workerId) continue;
+
+      const sitesValue = r.sites ?? null;
+      const siteObj = Array.isArray(sitesValue) ? (sitesValue[0] ?? null) : sitesValue;
+
+      if (!siteObj?.id) continue;
+
+      const site: SiteMini = {
+        id: String(siteObj.id),
+        name: siteObj.name ?? null,
+        address: siteObj.address ?? null,
+      };
+
+      const list = sitesByWorker.get(workerId) ?? [];
+      list.push(site);
+      sitesByWorker.set(workerId, list);
     }
 
-    const result = (workers ?? []).map((w: any) => {
-      const row: WorkerRow = {
-        id: String(w.id),
-        full_name: w.full_name ?? null,
-        email: w.email ?? null,
-        role: w.role ?? null,
-        active: w.active ?? null,
-        avatar_url: w.avatar_url ?? null,
-      };
-
-      return {
-        ...row,
-        assigned_sites: sitesByWorker.get(row.id) ?? [],
-      };
-    });
+    const result = workers.map((w) => ({
+      ...w,
+      assigned_sites: sitesByWorker.get(String(w.id)) ?? [],
+    }));
 
     return NextResponse.json({ workers: result }, { status: 200 });
   } catch (e: any) {
