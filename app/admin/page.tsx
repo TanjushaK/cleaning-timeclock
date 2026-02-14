@@ -92,9 +92,7 @@ async function authFetchForm<T>(url: string, form: FormData): Promise<T> {
 
   const res = await fetch(url, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
+    headers: { Authorization: `Bearer ${token}` },
     body: form,
   });
 
@@ -131,10 +129,7 @@ function GoldButton(
     'border-[#6b5a1c] bg-gradient-to-b from-[#1a1606] to-[#0b0902] text-[#f2e6b8] hover:from-[#221c08] hover:to-[#0b0902]';
   const ghost = 'border-[#3b3212] bg-black/20 text-[#d9c37a] hover:bg-black/30';
   return (
-    <button
-      {...rest}
-      className={clsx(base, variant === 'primary' ? primary : ghost, className)}
-    />
+    <button {...rest} className={clsx(base, variant === 'primary' ? primary : ghost, className)} />
   );
 }
 
@@ -236,7 +231,6 @@ function AdminInner() {
   const [quickSiteId, setQuickSiteId] = useState('');
   const [quickWorkerId, setQuickWorkerId] = useState('');
 
-  // ===== Sites: add modal
   const [addSiteOpen, setAddSiteOpen] = useState(false);
   const [newSite, setNewSite] = useState({
     name: '',
@@ -248,7 +242,6 @@ function AdminInner() {
   });
   const [creatingSite, setCreatingSite] = useState(false);
 
-  // ===== Workers: add modal (invite)
   const [addWorkerOpen, setAddWorkerOpen] = useState(false);
   const [creatingWorker, setCreatingWorker] = useState(false);
   const [inviteResult, setInviteResult] = useState<{ invite_link: string | null } | null>(null);
@@ -262,7 +255,6 @@ function AdminInner() {
     active: true,
   });
 
-  // ===== Worker card modal
   const [workerOpen, setWorkerOpen] = useState(false);
   const [workerLoading, setWorkerLoading] = useState(false);
   const [workerSaving, setWorkerSaving] = useState(false);
@@ -280,6 +272,9 @@ function AdminInner() {
     if (showArchive) return sites;
     return sites.filter((s) => !s.archived_at);
   }, [sites, showArchive]);
+
+  const activeWorkers = useMemo(() => workers.filter((w) => w.active !== false), [workers]);
+  const visibleWorkers = useMemo(() => (showArchive ? workers : activeWorkers), [showArchive, workers, activeWorkers]);
 
   const assignmentsBySite = useMemo(() => {
     const map = new Map<string, Assignment[]>();
@@ -300,10 +295,10 @@ function AdminInner() {
   const counts = useMemo(() => {
     return {
       sites: filteredSites.length,
-      workers: workers.length,
+      workers: visibleWorkers.length,
       jobs: 0,
     };
-  }, [filteredSites.length, workers.length]);
+  }, [filteredSites.length, visibleWorkers.length]);
 
   function setTab(next: typeof tab) {
     const qp = new URLSearchParams(sp.toString());
@@ -363,10 +358,7 @@ function AdminInner() {
   async function unassign(site_id: string, worker_id: string) {
     setBanner(null);
     try {
-      await authFetchJson('/api/admin/assignments', {
-        method: 'DELETE',
-        body: { site_id, worker_id },
-      });
+      await authFetchJson('/api/admin/assignments', { method: 'DELETE', body: { site_id, worker_id } });
       await loadAll();
     } catch (e: any) {
       setBanner({ kind: 'err', text: e?.message || 'Ошибка снятия.' });
@@ -376,10 +368,7 @@ function AdminInner() {
   async function makeAdmin(worker_id: string) {
     setBanner(null);
     try {
-      await authFetchJson('/api/admin/workers/set-role', {
-        method: 'POST',
-        body: { worker_id, role: 'admin' },
-      });
+      await authFetchJson('/api/admin/workers/set-role', { method: 'POST', body: { worker_id, role: 'admin' } });
       setBanner({ kind: 'ok', text: 'Роль обновлена: админ.' });
       await loadAll();
     } catch (e: any) {
@@ -393,10 +382,7 @@ function AdminInner() {
 
     setBanner(null);
     try {
-      await authFetchJson('/api/admin/workers/delete', {
-        method: 'POST',
-        body: { worker_id },
-      });
+      await authFetchJson('/api/admin/workers/delete', { method: 'POST', body: { worker_id } });
       setBanner({ kind: 'ok', text: 'Работник удалён.' });
       await loadAll();
     } catch (e: any) {
@@ -431,14 +417,7 @@ function AdminInner() {
     try {
       await authFetchJson('/api/admin/sites', {
         method: 'POST',
-        body: {
-          name,
-          address,
-          radius_m,
-          notes: newSite.notes.trim() || null,
-          lat,
-          lng,
-        },
+        body: { name, address, radius_m, notes: newSite.notes.trim() || null, lat, lng },
       });
 
       setAddSiteOpen(false);
@@ -573,9 +552,7 @@ function AdminInner() {
 
   useEffect(() => {
     ensureSession();
-    const { data: sub } = supabase.auth.onAuthStateChange(() => {
-      ensureSession();
-    });
+    const { data: sub } = supabase.auth.onAuthStateChange(() => ensureSession());
     return () => sub.subscription.unsubscribe();
   }, []);
 
@@ -598,14 +575,9 @@ function AdminInner() {
         <div className="mx-auto max-w-6xl p-6">
           <div className="rounded-2xl border border-[#3b3212] bg-gradient-to-b from-[#0f0f0f] to-[#070707] p-6">
             <div className="text-xl font-semibold">Админ-панель</div>
-            <div className="mt-2 text-sm text-[#d9c37a]">
-              Сначала войди на главной странице, затем открой /admin.
-            </div>
+            <div className="mt-2 text-sm text-[#d9c37a]">Сначала войди на главной странице, затем открой /admin.</div>
             <div className="mt-4">
-              <a
-                className="text-sm text-[#e7d38c] underline decoration-[#7a6420] underline-offset-4"
-                href="/"
-              >
+              <a className="text-sm text-[#e7d38c] underline decoration-[#7a6420] underline-offset-4" href="/">
                 Перейти на вход
               </a>
             </div>
@@ -708,7 +680,7 @@ function AdminInner() {
                   <div className="mb-1 text-xs text-[#d9c37a]">Работник</div>
                   <Select value={quickWorkerId} onChange={(e) => setQuickWorkerId(e.target.value)}>
                     <option value="">Выбери работника…</option>
-                    {workers.map((w) => (
+                    {activeWorkers.map((w) => (
                       <option key={w.id} value={w.id}>
                         {titleWorker(w)}
                       </option>
@@ -762,7 +734,7 @@ function AdminInner() {
                             defaultValue=""
                           >
                             <option value="">Выбери работника…</option>
-                            {workers.map((w) => (
+                            {activeWorkers.map((w) => (
                               <option key={w.id} value={w.id}>
                                 {titleWorker(w)}
                               </option>
@@ -810,9 +782,7 @@ function AdminInner() {
             <Modal
               open={addSiteOpen}
               title="Добавить объект"
-              onClose={() => {
-                if (!creatingSite) setAddSiteOpen(false);
-              }}
+              onClose={() => !creatingSite && setAddSiteOpen(false)}
               footer={
                 <>
                   <GoldButton variant="ghost" onClick={() => setAddSiteOpen(false)} disabled={creatingSite}>
@@ -837,20 +807,12 @@ function AdminInner() {
 
                 <div>
                   <div className="mb-1 text-xs text-[#d9c37a]">Радиус (м)</div>
-                  <Input
-                    value={newSite.radius_m}
-                    onChange={(e) => setNewSite({ ...newSite, radius_m: e.target.value })}
-                    inputMode="numeric"
-                  />
+                  <Input value={newSite.radius_m} onChange={(e) => setNewSite({ ...newSite, radius_m: e.target.value })} />
                 </div>
 
                 <div>
                   <div className="mb-1 text-xs text-[#d9c37a]">Заметка</div>
-                  <Input
-                    value={newSite.notes}
-                    onChange={(e) => setNewSite({ ...newSite, notes: e.target.value })}
-                    placeholder="Код домофона, комментарий…"
-                  />
+                  <Input value={newSite.notes} onChange={(e) => setNewSite({ ...newSite, notes: e.target.value })} />
                 </div>
 
                 <div>
@@ -862,10 +824,6 @@ function AdminInner() {
                   <div className="mb-1 text-xs text-[#d9c37a]">lng (необязательно)</div>
                   <Input value={newSite.lng} onChange={(e) => setNewSite({ ...newSite, lng: e.target.value })} />
                 </div>
-              </div>
-
-              <div className="text-xs text-[#d9c37a]">
-                Если у объекта нет lat/lng — у работника START будет запрещён по правилам GPS.
               </div>
             </Modal>
           </div>
@@ -889,9 +847,11 @@ function AdminInner() {
               <div className="text-base font-semibold">Работники</div>
 
               <div className="mt-3 space-y-2">
-                {workers.length === 0 ? <div className="text-sm text-[#d9c37a]">Пока нет работников.</div> : null}
+                {visibleWorkers.length === 0 ? (
+                  <div className="text-sm text-[#d9c37a]">Пока нет работников.</div>
+                ) : null}
 
-                {workers.map((w) => {
+                {visibleWorkers.map((w) => {
                   const label = titleWorker(w);
                   const active = w.active !== false;
                   const isAdmin = (w.role || '').toLowerCase() === 'admin';
@@ -960,9 +920,7 @@ function AdminInner() {
             <Modal
               open={addWorkerOpen}
               title="Добавить работника"
-              onClose={() => {
-                if (!creatingWorker) setAddWorkerOpen(false);
-              }}
+              onClose={() => !creatingWorker && setAddWorkerOpen(false)}
               footer={
                 <>
                   <GoldButton variant="ghost" onClick={() => setAddWorkerOpen(false)} disabled={creatingWorker}>
@@ -977,28 +935,17 @@ function AdminInner() {
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="md:col-span-2">
                   <div className="mb-1 text-xs text-[#d9c37a]">Email (обязательно)</div>
-                  <Input
-                    value={newWorker.email}
-                    onChange={(e) => setNewWorker({ ...newWorker, email: e.target.value })}
-                    placeholder="worker@example.com"
-                    autoComplete="email"
-                  />
+                  <Input value={newWorker.email} onChange={(e) => setNewWorker({ ...newWorker, email: e.target.value })} />
                 </div>
 
                 <div>
                   <div className="mb-1 text-xs text-[#d9c37a]">Имя</div>
-                  <Input
-                    value={newWorker.first_name}
-                    onChange={(e) => setNewWorker({ ...newWorker, first_name: e.target.value })}
-                  />
+                  <Input value={newWorker.first_name} onChange={(e) => setNewWorker({ ...newWorker, first_name: e.target.value })} />
                 </div>
 
                 <div>
                   <div className="mb-1 text-xs text-[#d9c37a]">Фамилия</div>
-                  <Input
-                    value={newWorker.last_name}
-                    onChange={(e) => setNewWorker({ ...newWorker, last_name: e.target.value })}
-                  />
+                  <Input value={newWorker.last_name} onChange={(e) => setNewWorker({ ...newWorker, last_name: e.target.value })} />
                 </div>
 
                 <div>
@@ -1008,19 +955,12 @@ function AdminInner() {
 
                 <div>
                   <div className="mb-1 text-xs text-[#d9c37a]">Адрес</div>
-                  <Input
-                    value={newWorker.address}
-                    onChange={(e) => setNewWorker({ ...newWorker, address: e.target.value })}
-                  />
+                  <Input value={newWorker.address} onChange={(e) => setNewWorker({ ...newWorker, address: e.target.value })} />
                 </div>
 
                 <div className="md:col-span-2">
                   <div className="mb-1 text-xs text-[#d9c37a]">Заметки</div>
-                  <Textarea
-                    rows={4}
-                    value={newWorker.notes}
-                    onChange={(e) => setNewWorker({ ...newWorker, notes: e.target.value })}
-                  />
+                  <Textarea rows={4} value={newWorker.notes} onChange={(e) => setNewWorker({ ...newWorker, notes: e.target.value })} />
                 </div>
 
                 <div className="md:col-span-2">
@@ -1045,7 +985,6 @@ function AdminInner() {
                       Копировать
                     </GoldButton>
                   </div>
-                  <div className="mt-2 text-xs text-[#d9c37a]">Можно отправить работнику вручную.</div>
                 </div>
               ) : null}
             </Modal>
@@ -1053,9 +992,7 @@ function AdminInner() {
             <Modal
               open={workerOpen}
               title={workerDetail ? `Карточка работника: ${titleWorker(workerDetail)}` : 'Карточка работника'}
-              onClose={() => {
-                if (!workerSaving) setWorkerOpen(false);
-              }}
+              onClose={() => !workerSaving && setWorkerOpen(false)}
               footer={
                 <>
                   <GoldButton variant="ghost" onClick={() => setWorkerOpen(false)} disabled={workerSaving}>
@@ -1116,43 +1053,27 @@ function AdminInner() {
                   <div className="grid gap-3 md:grid-cols-2">
                     <div>
                       <div className="mb-1 text-xs text-[#d9c37a]">Имя</div>
-                      <Input
-                        value={workerDraft.first_name}
-                        onChange={(e) => setWorkerDraft({ ...workerDraft, first_name: e.target.value })}
-                      />
+                      <Input value={workerDraft.first_name} onChange={(e) => setWorkerDraft({ ...workerDraft, first_name: e.target.value })} />
                     </div>
 
                     <div>
                       <div className="mb-1 text-xs text-[#d9c37a]">Фамилия</div>
-                      <Input
-                        value={workerDraft.last_name}
-                        onChange={(e) => setWorkerDraft({ ...workerDraft, last_name: e.target.value })}
-                      />
+                      <Input value={workerDraft.last_name} onChange={(e) => setWorkerDraft({ ...workerDraft, last_name: e.target.value })} />
                     </div>
 
                     <div>
                       <div className="mb-1 text-xs text-[#d9c37a]">Телефон</div>
-                      <Input
-                        value={workerDraft.phone}
-                        onChange={(e) => setWorkerDraft({ ...workerDraft, phone: e.target.value })}
-                      />
+                      <Input value={workerDraft.phone} onChange={(e) => setWorkerDraft({ ...workerDraft, phone: e.target.value })} />
                     </div>
 
                     <div>
                       <div className="mb-1 text-xs text-[#d9c37a]">Адрес</div>
-                      <Input
-                        value={workerDraft.address}
-                        onChange={(e) => setWorkerDraft({ ...workerDraft, address: e.target.value })}
-                      />
+                      <Input value={workerDraft.address} onChange={(e) => setWorkerDraft({ ...workerDraft, address: e.target.value })} />
                     </div>
 
                     <div className="md:col-span-2">
                       <div className="mb-1 text-xs text-[#d9c37a]">Заметки</div>
-                      <Textarea
-                        rows={5}
-                        value={workerDraft.notes}
-                        onChange={(e) => setWorkerDraft({ ...workerDraft, notes: e.target.value })}
-                      />
+                      <Textarea rows={5} value={workerDraft.notes} onChange={(e) => setWorkerDraft({ ...workerDraft, notes: e.target.value })} />
                     </div>
                   </div>
                 </div>

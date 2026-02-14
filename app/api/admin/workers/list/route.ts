@@ -8,12 +8,11 @@ export const dynamic = 'force-dynamic'
 export async function GET(request: Request) {
   try {
     await requireAdmin(request)
-    const supabase = getSupabaseAdmin()
 
+    const supabase = getSupabaseAdmin()
     const { data, error } = await supabase
       .from('profiles')
       .select('id, full_name, role, active, first_name, last_name, address, notes, avatar_url, phone')
-      .neq('role', 'admin')
       .order('full_name', { ascending: true })
 
     if (error) throw error
