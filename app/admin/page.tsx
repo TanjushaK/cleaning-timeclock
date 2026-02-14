@@ -598,10 +598,7 @@ function AdminInner() {
             <GoldButton variant={tab === 'sites' ? 'primary' : 'ghost'} onClick={() => setTab('sites')}>
               Объекты
             </GoldButton>
-            <GoldButton
-              variant={tab === 'workers' ? 'primary' : 'ghost'}
-              onClick={() => setTab('workers')}
-            >
+            <GoldButton variant={tab === 'workers' ? 'primary' : 'ghost'} onClick={() => setTab('workers')}>
               Работники
             </GoldButton>
             <GoldButton variant={tab === 'jobs' ? 'primary' : 'ghost'} onClick={() => setTab('jobs')}>
@@ -849,7 +846,6 @@ function AdminInner() {
 
         {tab === 'workers' ? (
           <div className="space-y-4">
-            {/* Add worker button */}
             <div className="flex items-center justify-between">
               <div className="text-sm text-[#d9c37a]">Добавляй работников и открывай их карточки.</div>
               <GoldButton
@@ -862,28 +858,42 @@ function AdminInner() {
               </GoldButton>
             </div>
 
-            {/* Workers list */}
             <div className="rounded-2xl border border-[#3b3212] bg-gradient-to-b from-[#0f0f0f] to-[#070707] p-5">
               <div className="text-base font-semibold">Работники</div>
 
               <div className="mt-3 space-y-2">
-                {workers.length === 0 ? (
-                  <div className="text-sm text-[#d9c37a]">Пока нет работников.</div>
-                ) : null}
+                {workers.length === 0 ? <div className="text-sm text-[#d9c37a]">Пока нет работников.</div> : null}
 
                 {workers.map((w) => {
                   const label = titleWorker(w);
                   const active = w.active !== false;
+
                   return (
                     <button
                       key={w.id}
                       onClick={() => openWorkerCard(w.id)}
                       className="flex w-full items-center justify-between gap-3 rounded-2xl border border-[#3b3212] bg-black/20 px-4 py-3 text-left hover:bg-black/30"
                     >
-                      <div className="min-w-0">
-                        <div className="truncate text-sm">{label}</div>
-                        <div className="mt-0.5 truncate text-xs text-[#d9c37a]">{w.phone || w.address || ''}</div>
+                      <div className="flex min-w-0 items-center gap-3">
+                        {/* Avatar */}
+                        <div className="h-10 w-10 shrink-0 overflow-hidden rounded-xl border border-[#3b3212] bg-black/30">
+                          {w.avatar_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={w.avatar_url} alt="avatar" className="h-full w-full object-cover" />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-[10px] text-[#d9c37a]">
+                              фото
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Text */}
+                        <div className="min-w-0">
+                          <div className="truncate text-sm">{label}</div>
+                          <div className="mt-0.5 truncate text-xs text-[#d9c37a]">{w.phone || w.address || ''}</div>
+                        </div>
                       </div>
+
                       <Badge>{active ? 'активен' : 'неактивен'}</Badge>
                     </button>
                   );
@@ -900,11 +910,7 @@ function AdminInner() {
               }}
               footer={
                 <>
-                  <GoldButton
-                    variant="ghost"
-                    onClick={() => setAddWorkerOpen(false)}
-                    disabled={creatingWorker}
-                  >
+                  <GoldButton variant="ghost" onClick={() => setAddWorkerOpen(false)} disabled={creatingWorker}>
                     Закрыть
                   </GoldButton>
                   <GoldButton onClick={createWorkerInvite} disabled={creatingWorker}>
@@ -942,10 +948,7 @@ function AdminInner() {
 
                 <div>
                   <div className="mb-1 text-xs text-[#d9c37a]">Телефон</div>
-                  <Input
-                    value={newWorker.phone}
-                    onChange={(e) => setNewWorker({ ...newWorker, phone: e.target.value })}
-                  />
+                  <Input value={newWorker.phone} onChange={(e) => setNewWorker({ ...newWorker, phone: e.target.value })} />
                 </div>
 
                 <div>
@@ -1021,11 +1024,7 @@ function AdminInner() {
                       <div className="h-20 w-20 overflow-hidden rounded-2xl border border-[#3b3212] bg-black/30">
                         {workerDetail.avatar_url ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={workerDetail.avatar_url}
-                            alt="avatar"
-                            className="h-full w-full object-cover"
-                          />
+                          <img src={workerDetail.avatar_url} alt="avatar" className="h-full w-full object-cover" />
                         ) : (
                           <div className="flex h-full w-full items-center justify-center text-xs text-[#d9c37a]">
                             нет фото
@@ -1056,11 +1055,7 @@ function AdminInner() {
                           if (fileRef.current) fileRef.current.value = '';
                         }}
                       />
-                      <GoldButton
-                        variant="ghost"
-                        onClick={() => fileRef.current?.click()}
-                        disabled={!workerDetail}
-                      >
+                      <GoldButton variant="ghost" onClick={() => fileRef.current?.click()} disabled={!workerDetail}>
                         Загрузить фото
                       </GoldButton>
                     </div>
