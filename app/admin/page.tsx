@@ -365,6 +365,20 @@ function AdminInner() {
     }
   }
 
+  async function deleteSite(site_id: string) {
+    const ok = window.confirm('Удалить объект? Это действие нельзя отменить.');
+    if (!ok) return;
+
+    setBanner(null);
+    try {
+      await authFetchJson('/api/admin/sites/delete', { method: 'POST', body: { site_id } });
+      setBanner({ kind: 'ok', text: 'Объект удалён.' });
+      await loadAll();
+    } catch (e: any) {
+      setBanner({ kind: 'err', text: e?.message || 'Не удалось удалить объект.' });
+    }
+  }
+
   async function makeAdmin(worker_id: string) {
     setBanner(null);
     try {
@@ -714,12 +728,22 @@ function AdminInner() {
                       <div>
                         <div className="flex items-center gap-2">
                           <div className="text-lg font-semibold">{s.name}</div>
-                          {s.archived_at ? <Badge>архив</Badge> : <Badge>активен</Badge>}
+                          {s.archived_at ? <Badge>архив</Badge> : null}
                         </div>
                         <div className="mt-1 text-sm text-[#d9c37a]">{s.address || 'Адрес не указан'}</div>
                         <div className="mt-1 text-xs text-[#d9c37a]">
                           GPS: {s.lat ?? 'нет'} , {s.lng ?? 'нет'} • радиус: {s.radius_m ?? 150}
                         </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        <SmallActionButton
+                          tone="danger"
+                          onClick={() => deleteSite(s.id)}
+                          title="Удалить объект"
+                        >
+                          Удалить объект
+                        </SmallActionButton>
                       </div>
 
                       <div className="min-w-[260px]">
