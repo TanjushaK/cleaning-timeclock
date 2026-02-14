@@ -10,7 +10,7 @@ type Site = {
   address?: string | null;
   lat?: number | null;
   lng?: number | null;
-  radius_m?: number | null;
+  radius?: number | null;
   notes?: string | null;
   photo_url?: string | null;
   archived_at?: string | null;
@@ -233,7 +233,7 @@ function AdminInner() {
   const [newSite, setNewSite] = useState({
     name: '',
     address: '',
-    radius_m: '150',
+    radius: '150',
     lat: '',
     lng: '',
     notes: '',
@@ -272,7 +272,10 @@ function AdminInner() {
   }, [sites, showArchive]);
 
   const activeWorkers = useMemo(() => workers.filter((w) => w.active !== false), [workers]);
-  const visibleWorkers = useMemo(() => (showArchive ? workers : activeWorkers), [showArchive, workers, activeWorkers]);
+  const visibleWorkers = useMemo(
+    () => (showArchive ? workers : activeWorkers),
+    [showArchive, workers, activeWorkers]
+  );
 
   const assignmentsBySite = useMemo(() => {
     const map = new Map<string, Assignment[]>();
@@ -385,7 +388,10 @@ function AdminInner() {
   async function makeAdmin(worker_id: string) {
     setBanner(null);
     try {
-      await authFetchJson('/api/admin/workers/set-role', { method: 'POST', body: { worker_id, role: 'admin' } });
+      await authFetchJson('/api/admin/workers/set-role', {
+        method: 'POST',
+        body: { worker_id, role: 'admin' },
+      });
       setBanner({ kind: 'ok', text: 'Роль обновлена: админ.' });
       await loadAll();
     } catch (e: any) {
@@ -414,31 +420,66 @@ function AdminInner() {
     return Number.isFinite(n) ? n : null;
   }
 
+  async function geocodeAddress(q: string): Promise<{ lat: number; lng: number } | null> {
+    const url = `/api/geocode?q=${encodeURIComponent(q)}`;
+    const res = await fetch(url, { method: 'GET' });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) return null;
+    const lat = Number(data?.lat);
+    const lng = Number(data?.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    return { lat, lng };
+  }
+
   async function createSite() {
     const name = newSite.name.trim();
     const address = newSite.address.trim();
     if (!name) return setBanner({ kind: 'err', text: 'Укажи название объекта.' });
     if (!address) return setBanner({ kind: 'err', text: 'Укажи адрес объекта.' });
 
-    const radius_m = Number(newSite.radius_m);
-    if (!Number.isFinite(radius_m) || radius_m <= 0) {
+    const radius = Number(newSite.radius);
+    if (!Number.isFinite(radius) || radius <= 0) {
       return setBanner({ kind: 'err', text: 'Радиус должен быть числом больше 0.' });
     }
 
-    const lat = parseNumOrNull(newSite.lat);
-    const lng = parseNumOrNull(newSite.lng);
+    let lat = parseNumOrNull(newSite.lat);
+    let lng = parseNumOrNull(newSite.lng);
 
     setCreatingSite(true);
     setBanner(null);
 
     try {
+      if (lat == null || lng == null) {
+        const geo = await geocodeAddress(address);
+        if (!geo) {
+          return setBanner({
+            kind: 'err',
+            text: 'Не удалось найти координаты по адресу. Впиши lat/lng вручную.',
+          });
+        }
+        lat = geo.lat;
+        lng = geo.lng;
+        setNewSite((s) => ({
+          ...s,
+          lat: String(geo.lat),
+          lng: String(geo.lng),
+        }));
+      }
+
       await authFetchJson('/api/admin/sites', {
         method: 'POST',
-        body: { name, address, radius_m, notes: newSite.notes.trim() || null, lat, lng },
+        body: {
+          name,
+          address,
+          notes: newSite.notes.trim() || null,
+          lat,
+          lng,
+          radius,
+        },
       });
 
       setAddSiteOpen(false);
-      setNewSite({ name: '', address: '', radius_m: '150', lat: '', lng: '', notes: '' });
+      setNewSite({ name: '', address: '', radius: '150', lat: '', lng: '', notes: '' });
       await loadAll();
     } catch (e: any) {
       setBanner({ kind: 'err', text: e?.message || 'Не удалось создать объект.' });
@@ -487,10 +528,10 @@ function AdminInner() {
         notes: workerDraft.notes.trim() || null,
       };
 
-      const res = await authFetchJson<{ ok: boolean; worker: Worker }>(`/api/admin/workers/${workerDetail.id}`, {
-        method: 'PATCH',
-        body,
-      });
+      const res = await authFetchJson<{ ok: boolean; worker: Worker }>(
+        `/api/admin/workers/${workerDetail.id}`,
+        { method: 'PATCH', body }
+      );
 
       setWorkerDetail(res.worker);
       setBanner({ kind: 'ok', text: 'Карточка работника сохранена.' });
@@ -755,7 +796,7 @@ function AdminInner() {
                         </div>
                         <div className="mt-1 text-sm text-[#d9c37a]">{s.address || 'Адрес не указан'}</div>
                         <div className="mt-1 text-xs text-[#d9c37a]">
-                          GPS: {s.lat ?? 'нет'} , {s.lng ?? 'нет'} • радиус: {s.radius_m ?? 150}
+                          GPS: {s.lat ?? 'нет'} , {s.lng ?? 'нет'} • радиус: {s.radius ?? 80}
                         </div>
                       </div>
 
@@ -850,7 +891,7 @@ function AdminInner() {
 
                 <div>
                   <div className="mb-1 text-xs text-[#d9c37a]">Радиус (м)</div>
-                  <Input value={newSite.radius_m} onChange={(e) => setNewSite({ ...newSite, radius_m: e.target.value })} />
+                  <Input value={newSite.radius} onChange={(e) => setNewSite({ ...newSite, radius: e.target.value })} />
                 </div>
 
                 <div>
@@ -859,12 +900,12 @@ function AdminInner() {
                 </div>
 
                 <div>
-                  <div className="mb-1 text-xs text-[#d9c37a]">lat (необязательно)</div>
+                  <div className="mb-1 text-xs text-[#d9c37a]">lat (можно пусто — найдём по адресу)</div>
                   <Input value={newSite.lat} onChange={(e) => setNewSite({ ...newSite, lat: e.target.value })} />
                 </div>
 
                 <div>
-                  <div className="mb-1 text-xs text-[#d9c37a]">lng (необязательно)</div>
+                  <div className="mb-1 text-xs text-[#d9c37a]">lng (можно пусто — найдём по адресу)</div>
                   <Input value={newSite.lng} onChange={(e) => setNewSite({ ...newSite, lng: e.target.value })} />
                 </div>
               </div>
@@ -1062,8 +1103,12 @@ function AdminInner() {
 
                       <div className="min-w-0">
                         <div className="text-sm font-semibold">{titleWorker(workerDetail)}</div>
-                        <div className="mt-1 text-xs text-[#d9c37a]">ID: <span className="select-all">{workerDetail.id}</span></div>
-                        <div className="mt-1 text-xs text-[#d9c37a]">Статус: {workerDetail.active === false ? 'неактивен' : 'активен'}</div>
+                        <div className="mt-1 text-xs text-[#d9c37a]">
+                          ID: <span className="select-all">{workerDetail.id}</span>
+                        </div>
+                        <div className="mt-1 text-xs text-[#d9c37a]">
+                          Статус: {workerDetail.active === false ? 'неактивен' : 'активен'}
+                        </div>
                       </div>
                     </div>
 
