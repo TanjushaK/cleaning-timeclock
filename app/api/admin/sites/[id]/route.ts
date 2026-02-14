@@ -1,91 +1,107 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { ApiError, requireAdmin } from '@/lib/supabase-server'
+import { createClient } from '@supabase/supabase-js'
 
-export async function GET(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+function bearer(req: NextRequest) {
+  const h = req.headers.get('authorization') || ''
+  const m = /^Bearer\s+(.+)$/i.exec(h)
+  return m?.[1] || null
+}
+
+function envOrThrow(name: string) {
+  const v = process.env[name]
+  if (!v) throw new Error(`Missing env: ${name}`)
+  return v
+}
+
+async function assertAdmin(req: NextRequest) {
+  const token = bearer(req)
+  if (!token) return NextResponse.json({ error: 'No bearer token' }, { status: 401 })
+
+  const supabase = createClient(envOrThrow('NEXT_PUBLIC_SUPABASE_URL'), envOrThrow('SUPABASE_SERVICE_ROLE_KEY'), {
+    auth: { persistSession: false },
+  })
+
+  const { data: userRes, error: userErr } = await supabase.auth.getUser(token)
+  if (userErr || !userRes?.user) return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+
+  const { data: prof, error: profErr } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', userRes.user.id)
+    .maybeSingle()
+  if (profErr) return NextResponse.json({ error: profErr.message }, { status: 400 })
+  if (!prof || prof.role !== 'admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
+  return supabase
+}
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+export async function GET(req: NextRequest, ctx: { params: { id: string } }) {
   try {
-    const { id } = await params
-    if (!id) throw new ApiError(400, 'id_required')
+    const supabase = await assertAdmin(req)
+    if (supabase instanceof NextResponse) return supabase
 
-    const { supabase } = await requireAdmin(req.headers)
+    const id = ctx.params.id
+    const { data, error } = await supabase
+      .from('sites')
+      .select('id, name, address, lat, lng, radius, notes, photo_url, archived_at')
+      .eq('id', id)
+      .maybeSingle()
 
-    const { data, error } = await supabase.from('sites').select('*').eq('id', id).single()
-    if (error) throw new ApiError(400, error.message)
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+    if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     return NextResponse.json({ site: data })
   } catch (e: any) {
-    const status = typeof e?.status === 'number' ? e.status : 500
-    const msg = e?.message || 'error'
-    return NextResponse.json({ error: msg }, { status })
+    return NextResponse.json({ error: e?.message || 'Server error' }, { status: 500 })
   }
 }
 
-export async function PUT(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function PATCH(req: NextRequest, ctx: { params: { id: string } }) {
   try {
-    const { id } = await params
-    if (!id) throw new ApiError(400, 'id_required')
+    const supabase = await assertAdmin(req)
+    if (supabase instanceof NextResponse) return supabase
 
-    const { supabase } = await requireAdmin(req.headers)
+    const id = ctx.params.id
+    const body = await req.json().catch(() => null)
 
-    let body: any = null
-    try {
-      body = await req.json()
-    } catch {
-      body = null
+    const patch: any = {}
+
+    if (body?.name !== undefined) {
+      const name = String(body.name || '').trim()
+      if (!name) return NextResponse.json({ error: 'name required' }, { status: 400 })
+      patch.name = name
     }
-    if (!body || typeof body !== 'object') throw new ApiError(400, 'invalid_body')
 
-    const updates: any = {}
+    if (body?.address !== undefined) patch.address = body.address == null ? null : String(body.address).trim()
+    if (body?.notes !== undefined) patch.notes = body.notes == null ? null : String(body.notes).trim()
+    if (body?.photo_url !== undefined) patch.photo_url = body.photo_url == null ? null : String(body.photo_url).trim()
 
-    if (typeof body.name === 'string') updates.name = body.name.trim()
-    if (typeof body.address === 'string') updates.address = body.address.trim()
+    if (body?.lat !== undefined) {
+      const n = Number(body.lat)
+      if (!Number.isFinite(n)) return NextResponse.json({ error: 'lat must be a number' }, { status: 400 })
+      patch.lat = n
+    }
+    if (body?.lng !== undefined) {
+      const n = Number(body.lng)
+      if (!Number.isFinite(n)) return NextResponse.json({ error: 'lng must be a number' }, { status: 400 })
+      patch.lng = n
+    }
+    if (body?.radius !== undefined) {
+      const n = Number(body.radius)
+      if (!Number.isFinite(n) || n < 1 || n > 5000) return NextResponse.json({ error: 'radius must be 1..5000' }, { status: 400 })
+      patch.radius = Math.round(n)
+    }
 
-    if (body.lat === null || typeof body.lat === 'number') updates.lat = body.lat
-    if (body.lng === null || typeof body.lng === 'number') updates.lng = body.lng
+    if (Object.keys(patch).length === 0) return NextResponse.json({ ok: true })
 
-    if (body.radius === null || typeof body.radius === 'number') updates.radius = body.radius
-
-    if (Object.keys(updates).length === 0) throw new ApiError(400, 'no_updates')
-
-    const { data, error } = await supabase
-      .from('sites')
-      .update(updates)
-      .eq('id', id)
-      .select('*')
-      .single()
-
-    if (error) throw new ApiError(400, error.message)
-
-    return NextResponse.json({ ok: true, site: data })
-  } catch (e: any) {
-    const status = typeof e?.status === 'number' ? e.status : 500
-    const msg = e?.message || 'error'
-    return NextResponse.json({ error: msg }, { status })
-  }
-}
-
-export async function DELETE(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { id } = await params
-    if (!id) throw new ApiError(400, 'id_required')
-
-    const { supabase } = await requireAdmin(req.headers)
-
-    const { error } = await supabase.from('sites').delete().eq('id', id)
-    if (error) throw new ApiError(400, error.message)
+    const { error } = await supabase.from('sites').update(patch).eq('id', id)
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
     return NextResponse.json({ ok: true })
   } catch (e: any) {
-    const status = typeof e?.status === 'number' ? e.status : 500
-    const msg = e?.message || 'error'
-    return NextResponse.json({ error: msg }, { status })
+    return NextResponse.json({ error: e?.message || 'Server error' }, { status: 500 })
   }
 }

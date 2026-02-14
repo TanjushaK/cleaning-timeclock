@@ -1,2369 +1,784 @@
-'use client'
+'use client';
 
-import Image from 'next/image'
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { supabase } from '@/lib/supabase'
+export const dynamic = 'force-dynamic';
 
-type TabKey = 'sites' | 'workers' | 'jobs' | 'plan'
-type JobsView = 'board' | 'table'
-type PlanView = 'day' | 'week' | 'month'
-type PlanMode = 'workers' | 'sites'
+import React, { Suspense, useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
 
 type Site = {
-  id: string
-  name?: string | null
-  lat?: number | null
-  lng?: number | null
-  radius?: number | null
-  archived_at?: string | null
-}
+  id: string;
+  name: string;
+  address?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  radius_m?: number | null;
+  notes?: string | null;
+  archived_at?: string | null;
+};
 
 type Worker = {
-  id: string
-  full_name?: string | null
-  role?: string | null
-  active?: boolean | null
-}
-
-type WorkerCardProfile = {
-  id: string
-  email: string | null
-  role: string | null
-  active: boolean | null
-  full_name: string | null
-  first_name: string | null
-  last_name: string | null
-  phone: string | null
-  address: string | null
-  notes: string | null
-  avatar_url: string | null
-}
+  id: string;
+  full_name?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  email?: string | null;
+  active?: boolean | null;
+};
 
 type Assignment = {
-  site_id: string
-  worker_id: string
+  site_id: string;
+  worker_id: string;
+  extra_note?: string | null;
+};
+
+function clsx(...v: Array<string | false | null | undefined>) {
+  return v.filter(Boolean).join(' ');
 }
 
-type JobStatus = 'planned' | 'in_progress' | 'done' | 'cancelled' | string
-
-type ScheduleItem = {
-  id: string
-  status: JobStatus
-  job_date: string | null
-  scheduled_time: string | null
-  site_id: string | null
-  site_name: string | null
-  worker_id: string | null
-  worker_name: string | null
-  started_at: string | null
-  stopped_at: string | null
+function titleWorker(w: Worker) {
+  const a = [w.first_name, w.last_name].filter(Boolean).join(' ').trim();
+  const b = (w.full_name ?? '').trim();
+  const name = a || b || 'Без имени';
+  return w.email ? `${name} (${w.email})` : name;
 }
 
-function pad2(n: number) {
-  return String(n).padStart(2, '0')
+async function getAccessToken(): Promise<string | null> {
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
 }
 
-function fmtDT(v?: string | null) {
-  if (!v) return '—'
-  const d = new Date(v)
-  if (Number.isNaN(d.getTime())) return '—'
-  return `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}-${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
-}
-
-function fmtD(v?: string | null) {
-  if (!v) return '—'
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v)
-  if (m) return `${m[3]}-${m[2]}-${m[1]}`
-  const d = new Date(v)
-  if (Number.isNaN(d.getTime())) return '—'
-  return `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}-${d.getFullYear()}`
-}
-
-function toISODate(d: Date) {
-  const y = d.getFullYear()
-  const m = pad2(d.getMonth() + 1)
-  const day = pad2(d.getDate())
-  return `${y}-${m}-${day}`
-}
-
-function startOfWeek(d: Date) {
-  const x = new Date(d)
-  const day = x.getDay()
-  const diff = (day === 0 ? -6 : 1) - day
-  x.setDate(x.getDate() + diff)
-  return new Date(x.getFullYear(), x.getMonth(), x.getDate())
-}
-
-function endOfWeek(d: Date) {
-  const s = startOfWeek(d)
-  const e = new Date(s)
-  e.setDate(e.getDate() + 6)
-  return e
-}
-
-function startOfMonth(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth(), 1)
-}
-
-function endOfMonth(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth() + 1, 0)
-}
-
-function addDays(d: Date, n: number) {
-  const x = new Date(d)
-  x.setDate(x.getDate() + n)
-  return x
-}
-
-function enumerateDates(fromISO: string, toISO: string) {
-  const from = new Date(fromISO + 'T00:00:00')
-  const to = new Date(toISO + 'T00:00:00')
-  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return []
-  const out: { iso: string; label: string; dow: string }[] = []
-  let cur = new Date(from)
-  const dows = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб']
-  while (cur.getTime() <= to.getTime()) {
-    out.push({
-      iso: toISODate(cur),
-      label: `${pad2(cur.getDate())}-${pad2(cur.getMonth() + 1)}`,
-      dow: dows[cur.getDay()],
-    })
-    cur = addDays(cur, 1)
+async function authFetchJson<T>(
+  url: string,
+  opts?: { method?: string; body?: any; signal?: AbortSignal }
+): Promise<T> {
+  const token = await getAccessToken();
+  if (!token) {
+    throw new Error('Нет входа (нет токена).');
   }
-  return out
-}
-
-function timeHHMM(t?: string | null) {
-  if (!t) return '—'
-  const x = String(t)
-  return x.length >= 5 ? x.slice(0, 5) : x
-}
-
-function statusRu(s: string) {
-  if (s === 'planned') return 'Запланировано'
-  if (s === 'in_progress') return 'В процессе'
-  if (s === 'done') return 'Завершено'
-  if (s === 'cancelled') return 'Отменено'
-  return s || '—'
-}
-
-function cn(...xs: Array<string | false | null | undefined>) {
-  return xs.filter(Boolean).join(' ')
-}
-
-async function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
-  let t: any
-  const timeout = new Promise<T>((resolve) => {
-    t = setTimeout(() => resolve(fallback), ms)
-  })
-  const res = await Promise.race([p, timeout])
-  clearTimeout(t)
-  return res
-}
-
-async function authFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const { data } = await supabase.auth.getSession()
-  const token = data?.session?.access_token
-  if (!token) throw new Error('Нет входа. Авторизуйся в админке.')
 
   const res = await fetch(url, {
-    ...init,
+    method: opts?.method ?? 'GET',
     headers: {
-      ...(init?.headers || {}),
       Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
     },
-    cache: 'no-store',
-  })
+    body: opts?.body !== undefined ? JSON.stringify(opts.body) : undefined,
+    signal: opts?.signal,
+  });
 
-  const payload = await res.json().catch(() => ({} as any))
-  if (!res.ok) throw new Error(payload?.error || `HTTP ${res.status}`)
-  return payload as T
+  let payload: any = null;
+  try {
+    payload = await res.json();
+  } catch {
+    // ignore
+  }
+
+  if (!res.ok) {
+    const msg =
+      payload?.error ||
+      payload?.message ||
+      `Ошибка запроса (${res.status})`;
+    throw new Error(msg);
+  }
+
+  return payload as T;
 }
 
-function Modal(props: { open: boolean; title: string; onClose: () => void; children: React.ReactNode }) {
-  if (!props.open) return null
+function Badge({ children }: { children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={props.onClose} />
-      <div className="relative w-full max-w-2xl rounded-3xl border border-yellow-400/20 bg-zinc-950/90 p-5 shadow-[0_25px_90px_rgba(0,0,0,0.75)]">
-        <div className="flex items-center justify-between gap-3">
-          <div className="text-sm font-semibold text-yellow-100">{props.title}</div>
-          <button
-            onClick={props.onClose}
-            className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40"
-          >
+    <span className="inline-flex items-center rounded-full border border-[#6b5a1a] bg-black/40 px-2 py-0.5 text-xs text-[#e7d38c]">
+      {children}
+    </span>
+  );
+}
+
+function GoldButton(props: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'ghost' }) {
+  const { className, variant = 'primary', ...rest } = props;
+  return (
+    <button
+      {...rest}
+      className={clsx(
+        'rounded-full px-4 py-2 text-sm transition disabled:opacity-50 disabled:cursor-not-allowed',
+        variant === 'primary'
+          ? 'border border-[#7a6420] bg-gradient-to-b from-[#1a1606] to-[#0e0c06] text-[#e7d38c] hover:border-[#9b7f2a]'
+          : 'border border-[#3b3212] bg-black/20 text-[#d9c37a] hover:border-[#7a6420]',
+        className
+      )}
+    />
+  );
+}
+
+function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
+  const { className, ...rest } = props;
+  return (
+    <input
+      {...rest}
+      className={clsx(
+        'w-full rounded-xl border border-[#3b3212] bg-black/30 px-3 py-2 text-sm text-[#f2e6b8] placeholder:text-[#7d6b2a] outline-none focus:border-[#7a6420]',
+        className
+      )}
+    />
+  );
+}
+
+function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  const { className, ...rest } = props;
+  return (
+    <textarea
+      {...rest}
+      className={clsx(
+        'w-full rounded-xl border border-[#3b3212] bg-black/30 px-3 py-2 text-sm text-[#f2e6b8] placeholder:text-[#7d6b2a] outline-none focus:border-[#7a6420]',
+        className
+      )}
+    />
+  );
+}
+
+function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
+  const { className, ...rest } = props;
+  return (
+    <select
+      {...rest}
+      className={clsx(
+        'w-full appearance-none rounded-xl border border-[#3b3212] bg-black/30 px-3 py-2 text-sm text-[#f2e6b8] outline-none focus:border-[#7a6420]',
+        className
+      )}
+    />
+  );
+}
+
+function Modal(props: {
+  open: boolean;
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+  footer?: React.ReactNode;
+}) {
+  if (!props.open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div
+        className="absolute inset-0 bg-black/70"
+        onClick={props.onClose}
+      />
+      <div className="relative w-full max-w-2xl rounded-2xl border border-[#3b3212] bg-gradient-to-b from-[#0f0f0f] to-[#070707] p-5 shadow-2xl">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div className="text-lg font-semibold text-[#f2e6b8]">
+            {props.title}
+          </div>
+          <GoldButton variant="ghost" onClick={props.onClose}>
             Закрыть
-          </button>
+          </GoldButton>
         </div>
-        <div className="mt-4">{props.children}</div>
+        <div className="space-y-4">{props.children}</div>
+        {props.footer ? (
+          <div className="mt-5 flex items-center justify-end gap-2">
+            {props.footer}
+          </div>
+        ) : null}
       </div>
     </div>
-  )
+  );
 }
 
-function MultiWorkerPicker(props: {
-  workers: Array<{ id: string; name: string }>
-  value: string[]
-  onChange: (v: string[]) => void
-  disabled?: boolean
-}) {
-  const [open, setOpen] = useState(false)
-  const [q, setQ] = useState('')
-  const ref = useRef<HTMLDivElement | null>(null)
+function AdminInner() {
+  const router = useRouter();
+  const sp = useSearchParams();
+
+  const tab = (sp.get('tab') || 'sites') as 'sites' | 'workers' | 'jobs' | 'schedule';
+
+  const [checking, setChecking] = useState(true);
+  const [sessionOk, setSessionOk] = useState(false);
+
+  const [loading, setLoading] = useState(false);
+  const [banner, setBanner] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+
+  const [showArchive, setShowArchive] = useState(false);
+
+  const [sites, setSites] = useState<Site[]>([]);
+  const [workers, setWorkers] = useState<Worker[]>([]);
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+
+  const [quickSiteId, setQuickSiteId] = useState('');
+  const [quickWorkerId, setQuickWorkerId] = useState('');
+
+  // Добавить объект (modal)
+  const [addSiteOpen, setAddSiteOpen] = useState(false);
+  const [newSite, setNewSite] = useState({
+    name: '',
+    address: '',
+    radius_m: '150',
+    lat: '',
+    lng: '',
+    notes: '',
+  });
+  const [creatingSite, setCreatingSite] = useState(false);
+
+  const filteredSites = useMemo(() => {
+    if (showArchive) return sites;
+    return sites.filter((s) => !s.archived_at);
+  }, [sites, showArchive]);
+
+  const assignmentsBySite = useMemo(() => {
+    const map = new Map<string, Assignment[]>();
+    for (const a of assignments) {
+      const arr = map.get(a.site_id) || [];
+      arr.push(a);
+      map.set(a.site_id, arr);
+    }
+    return map;
+  }, [assignments]);
+
+  const workerById = useMemo(() => {
+    const map = new Map<string, Worker>();
+    for (const w of workers) map.set(w.id, w);
+    return map;
+  }, [workers]);
+
+  function setTab(next: typeof tab) {
+    const qp = new URLSearchParams(sp.toString());
+    qp.set('tab', next);
+    router.replace(`/admin?${qp.toString()}`);
+  }
+
+  async function ensureSession() {
+    const token = await getAccessToken();
+    setSessionOk(Boolean(token));
+    setChecking(false);
+  }
+
+  async function loadAll() {
+    setLoading(true);
+    setBanner(null);
+
+    const ac = new AbortController();
+    try {
+      const [s, w, a] = await Promise.all([
+        authFetchJson<{ sites: Site[] }>('/api/admin/sites/list', { signal: ac.signal }),
+        authFetchJson<{ workers: Worker[] }>('/api/admin/workers/list', { signal: ac.signal }),
+        authFetchJson<{ assignments: Assignment[] }>('/api/admin/assignments', { signal: ac.signal }),
+      ]);
+
+      setSites(s.sites || []);
+      setWorkers(w.workers || []);
+      setAssignments(a.assignments || []);
+
+      setBanner({ kind: 'ok', text: 'Данные обновлены.' });
+    } catch (e: any) {
+      const msg = e?.message || 'Ошибка загрузки.';
+      setBanner({ kind: 'err', text: msg });
+
+      if (msg.toLowerCase().includes('нет входа') || msg.toLowerCase().includes('токен')) {
+        await supabase.auth.signOut();
+        setSessionOk(false);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function doLogout() {
+    await supabase.auth.signOut();
+    setSessionOk(false);
+  }
+
+  async function assign(site_id: string, worker_id: string) {
+    if (!site_id || !worker_id) return;
+    setBanner(null);
+    try {
+      await authFetchJson('/api/admin/assignments', {
+        method: 'POST',
+        body: { site_id, worker_id },
+      });
+      await loadAll();
+    } catch (e: any) {
+      setBanner({ kind: 'err', text: e?.message || 'Ошибка назначения.' });
+    }
+  }
+
+  async function unassign(site_id: string, worker_id: string) {
+    setBanner(null);
+    try {
+      await authFetchJson('/api/admin/assignments', {
+        method: 'DELETE',
+        body: { site_id, worker_id },
+      });
+      await loadAll();
+    } catch (e: any) {
+      setBanner({ kind: 'err', text: e?.message || 'Ошибка снятия.' });
+    }
+  }
+
+  function parseNumOrNull(v: string): number | null {
+    const t = v.trim();
+    if (!t) return null;
+    const n = Number(t.replace(',', '.'));
+    return Number.isFinite(n) ? n : null;
+  }
+
+  async function createSite() {
+    const name = newSite.name.trim();
+    const address = newSite.address.trim();
+
+    if (!name) {
+      setBanner({ kind: 'err', text: 'Укажи название объекта.' });
+      return;
+    }
+    if (!address) {
+      setBanner({ kind: 'err', text: 'Укажи адрес объекта.' });
+      return;
+    }
+
+    const radius_m = Number(newSite.radius_m);
+    if (!Number.isFinite(radius_m) || radius_m <= 0) {
+      setBanner({ kind: 'err', text: 'Радиус должен быть числом больше 0.' });
+      return;
+    }
+
+    const lat = parseNumOrNull(newSite.lat);
+    const lng = parseNumOrNull(newSite.lng);
+
+    setCreatingSite(true);
+    setBanner(null);
+
+    try {
+      await authFetchJson('/api/admin/sites', {
+        method: 'POST',
+        body: {
+          name,
+          address,
+          radius_m,
+          notes: newSite.notes.trim() || null,
+          lat,
+          lng,
+        },
+      });
+
+      setAddSiteOpen(false);
+      setNewSite({ name: '', address: '', radius_m: '150', lat: '', lng: '', notes: '' });
+      await loadAll();
+    } catch (e: any) {
+      setBanner({ kind: 'err', text: e?.message || 'Не удалось создать объект.' });
+    } finally {
+      setCreatingSite(false);
+    }
+  }
 
   useEffect(() => {
-    function onDoc(e: MouseEvent) {
-      if (!ref.current) return
-      if (!ref.current.contains(e.target as any)) setOpen(false)
+    ensureSession();
+
+    const { data: sub } = supabase.auth.onAuthStateChange(() => {
+      ensureSession();
+    });
+
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!checking && sessionOk) {
+      loadAll();
     }
-    document.addEventListener('mousedown', onDoc)
-    return () => document.removeEventListener('mousedown', onDoc)
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [checking, sessionOk]);
 
-  const filtered = useMemo(() => {
-    const qq = q.trim().toLowerCase()
-    const list = props.workers
-    if (!qq) return list
-    return list.filter((w) => w.name.toLowerCase().includes(qq))
-  }, [q, props.workers])
+  const counts = useMemo(() => {
+    return {
+      sites: filteredSites.length,
+      workers: workers.length,
+      jobs: 0,
+    };
+  }, [filteredSites.length, workers.length]);
 
-  const selectedNames = useMemo(() => {
-    const m = new Map(props.workers.map((w) => [w.id, w.name]))
-    return props.value.map((id) => m.get(id)).filter(Boolean) as string[]
-  }, [props.value, props.workers])
+  if (checking) {
+    return (
+      <div className="min-h-screen bg-black text-[#f2e6b8]">
+        <div className="mx-auto max-w-6xl p-6">Проверяю вход…</div>
+      </div>
+    );
+  }
 
-  function toggle(id: string) {
-    const set = new Set(props.value)
-    if (set.has(id)) set.delete(id)
-    else set.add(id)
-    props.onChange(Array.from(set))
+  if (!sessionOk) {
+    return (
+      <div className="min-h-screen bg-black text-[#f2e6b8]">
+        <div className="mx-auto max-w-6xl p-6">
+          <div className="rounded-2xl border border-[#3b3212] bg-gradient-to-b from-[#0f0f0f] to-[#070707] p-6">
+            <div className="text-xl font-semibold">Админ-панель</div>
+            <div className="mt-2 text-sm text-[#d9c37a]">
+              Сначала войди на главной странице, затем открой /admin.
+            </div>
+            <div className="mt-4">
+              <a
+                className="text-sm text-[#e7d38c] underline decoration-[#7a6420] underline-offset-4"
+                href="/"
+              >
+                Перейти на вход
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        disabled={props.disabled}
-        onClick={() => setOpen((x) => !x)}
-        className={cn(
-          'w-full rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-left text-sm outline-none transition focus:border-yellow-300/60',
-          props.disabled && 'opacity-60'
-        )}
-      >
-        {selectedNames.length === 0 ? (
-          <span className="text-zinc-400">Выбери работников…</span>
-        ) : (
-          <span className="text-zinc-100">
-            {selectedNames.slice(0, 3).join(', ')}
-            {selectedNames.length > 3 ? ` и ещё ${selectedNames.length - 3}` : ''}
-          </span>
-        )}
-      </button>
-
-      {open ? (
-        <div className="absolute z-20 mt-2 w-full rounded-2xl border border-yellow-400/15 bg-zinc-950/95 p-3 shadow-[0_18px_60px_rgba(0,0,0,0.7)]">
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Поиск работника…"
-            className="mb-2 w-full rounded-2xl border border-yellow-400/15 bg-black/40 px-3 py-2 text-xs text-zinc-200 outline-none focus:border-yellow-300/50"
-          />
-
-          <div className="max-h-[240px] overflow-auto rounded-2xl border border-yellow-400/10 bg-black/20">
-            {filtered.length === 0 ? <div className="px-3 py-3 text-xs text-zinc-500">Ничего не найдено</div> : null}
-
-            {filtered.map((w) => {
-              const on = props.value.includes(w.id)
-              return (
-                <button
-                  key={w.id}
-                  type="button"
-                  onClick={() => toggle(w.id)}
-                  className={cn(
-                    'flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm',
-                    'border-b border-yellow-400/5 last:border-b-0 hover:bg-yellow-400/5'
-                  )}
-                >
-                  <span className="text-zinc-100">{w.name}</span>
-                  <span
-                    className={cn(
-                      'rounded-xl border px-2 py-1 text-[11px]',
-                      on ? 'border-yellow-300/60 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-300'
-                    )}
-                  >
-                    {on ? 'выбран' : ' '}
-                  </span>
-                </button>
-              )
-            })}
+    <div className="min-h-screen bg-black text-[#f2e6b8]">
+      <div className="mx-auto max-w-6xl p-6">
+        {/* Header */}
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-2xl font-semibold">Админ-панель</div>
+            <div className="text-sm text-[#d9c37a]">Tanija • объекты • работники • смены</div>
           </div>
-
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-            <div className="text-[11px] text-zinc-300">Показано: {filtered.length} • Выбрано: {props.value.length}</div>
-            <button
-              type="button"
-              onClick={() => props.onChange([])}
-              className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40"
-            >
-              Очистить
-            </button>
+          <div className="flex items-center gap-2">
+            <GoldButton onClick={loadAll} disabled={loading}>
+              {loading ? 'Обновляю…' : 'Обновить'}
+            </GoldButton>
+            <GoldButton onClick={doLogout} variant="ghost">
+              Выйти
+            </GoldButton>
           </div>
         </div>
-      ) : null}
-    </div>
-  )
-}
 
-type DragPayload = {
-  job_id: string
+        {/* Tabs row + counters */}
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <GoldButton
+              variant={tab === 'sites' ? 'primary' : 'ghost'}
+              onClick={() => setTab('sites')}
+            >
+              Объекты
+            </GoldButton>
+            <GoldButton
+              variant={tab === 'workers' ? 'primary' : 'ghost'}
+              onClick={() => setTab('workers')}
+            >
+              Работники
+            </GoldButton>
+            <GoldButton
+              variant={tab === 'jobs' ? 'primary' : 'ghost'}
+              onClick={() => setTab('jobs')}
+            >
+              Смены
+            </GoldButton>
+            <GoldButton
+              variant={tab === 'schedule' ? 'primary' : 'ghost'}
+              onClick={() => setTab('schedule')}
+            >
+              График
+            </GoldButton>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-sm text-[#d9c37a]">
+              <input
+                type="checkbox"
+                checked={showArchive}
+                onChange={(e) => setShowArchive(e.target.checked)}
+                className="h-4 w-4 accent-[#7a6420]"
+              />
+              Показать архив
+            </label>
+            <div className="rounded-full border border-[#3b3212] bg-black/20 px-3 py-2 text-sm text-[#d9c37a]">
+              Объекты: {counts.sites} • Работники: {counts.workers} • Смены: {counts.jobs}
+            </div>
+          </div>
+        </div>
+
+        {banner ? (
+          <div
+            className={clsx(
+              'mb-4 rounded-2xl border p-3 text-sm',
+              banner.kind === 'ok'
+                ? 'border-[#2f3b12] bg-[#0c1206] text-[#cfe3a0]'
+                : 'border-[#3b1212] bg-[#120606] text-[#f0b6b6]'
+            )}
+          >
+            {banner.text}
+          </div>
+        ) : null}
+
+        {/* Content */}
+        {tab === 'sites' ? (
+          <div className="space-y-4">
+            {/* NEW: Add site button */}
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-[#d9c37a]">
+                Создай объект, затем назначь работников.
+              </div>
+              <GoldButton onClick={() => setAddSiteOpen(true)}>
+                Добавить объект
+              </GoldButton>
+            </div>
+
+            {/* Quick assign */}
+            <div className="rounded-2xl border border-[#3b3212] bg-gradient-to-b from-[#0f0f0f] to-[#070707] p-5">
+              <div className="text-base font-semibold">Быстрое назначение</div>
+              <div className="mt-1 text-sm text-[#d9c37a]">
+                Назначение = доступ к объекту. Расписание делается в “Смены” и “График”.
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+                <div>
+                  <div className="mb-1 text-xs text-[#d9c37a]">Объект</div>
+                  <Select value={quickSiteId} onChange={(e) => setQuickSiteId(e.target.value)}>
+                    <option value="">Выбери объект…</option>
+                    {filteredSites.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+
+                <div>
+                  <div className="mb-1 text-xs text-[#d9c37a]">Работник</div>
+                  <Select value={quickWorkerId} onChange={(e) => setQuickWorkerId(e.target.value)}>
+                    <option value="">Выбери работника…</option>
+                    {workers.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {titleWorker(w)}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+
+                <div className="flex items-end">
+                  <GoldButton
+                    onClick={() => assign(quickSiteId, quickWorkerId)}
+                    disabled={!quickSiteId || !quickWorkerId}
+                  >
+                    Назначить
+                  </GoldButton>
+                </div>
+              </div>
+            </div>
+
+            {/* Sites list */}
+            {filteredSites.map((s) => {
+              const as = assignmentsBySite.get(s.id) || [];
+              return (
+                <div
+                  key={s.id}
+                  className="rounded-2xl border border-[#3b3212] bg-gradient-to-b from-[#0f0f0f] to-[#070707] p-5"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <div className="text-lg font-semibold">{s.name}</div>
+                        <Badge>{s.archived_at ? 'архив' : 'активен'}</Badge>
+                      </div>
+                      <div className="mt-1 text-sm text-[#d9c37a]">
+                        {s.address ? s.address : 'Адрес не задан'}
+                      </div>
+                      <div className="mt-1 text-xs text-[#d9c37a]">
+                        GPS:{' '}
+                        {s.lat != null && s.lng != null
+                          ? `${s.lat}, ${s.lng}`
+                          : 'нет lat/lng'}{' '}
+                        • радиус: {s.radius_m ?? 150}
+                      </div>
+
+                      <div className="mt-3 text-sm text-[#d9c37a]">Назначены:</div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {as.length === 0 ? (
+                          <span className="text-sm text-[#7d6b2a]">Пока никого нет.</span>
+                        ) : (
+                          as.map((a) => {
+                            const w = workerById.get(a.worker_id);
+                            const label = w ? titleWorker(w) : a.worker_id;
+                            return (
+                              <span
+                                key={`${a.site_id}:${a.worker_id}`}
+                                className="inline-flex items-center gap-2 rounded-full border border-[#3b3212] bg-black/25 px-3 py-1 text-sm text-[#f2e6b8]"
+                              >
+                                {label}
+                                <button
+                                  className="rounded-full border border-[#3b3212] bg-black/20 px-2 py-0.5 text-xs text-[#d9c37a] hover:border-[#7a6420]"
+                                  onClick={() => unassign(a.site_id, a.worker_id)}
+                                >
+                                  снять
+                                </button>
+                              </span>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="min-w-[280px]">
+                      <div className="flex justify-end">
+                        <GoldButton variant="ghost" disabled title="Архивирование будет отдельно">
+                          В архив
+                        </GoldButton>
+                      </div>
+
+                      <div className="mt-6">
+                        <div className="mb-1 text-xs text-[#d9c37a]">Добавить работника</div>
+                        <div className="flex gap-2">
+                          <Select
+                            value={quickWorkerId}
+                            onChange={(e) => setQuickWorkerId(e.target.value)}
+                          >
+                            <option value="">Выбери работника…</option>
+                            {workers.map((w) => (
+                              <option key={w.id} value={w.id}>
+                                {titleWorker(w)}
+                              </option>
+                            ))}
+                          </Select>
+                          <GoldButton
+                            onClick={() => assign(s.id, quickWorkerId)}
+                            disabled={!quickWorkerId}
+                          >
+                            Назначить
+                          </GoldButton>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : tab === 'workers' ? (
+          <div className="rounded-2xl border border-[#3b3212] bg-gradient-to-b from-[#0f0f0f] to-[#070707] p-5">
+            <div className="text-base font-semibold">Работники</div>
+            <div className="mt-2 text-sm text-[#d9c37a]">
+              Сейчас задача: кнопка “Добавить объект”. Раздел работники оставила как есть (список).
+            </div>
+
+            <div className="mt-4 space-y-2">
+              {workers.map((w) => (
+                <div
+                  key={w.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#3b3212] bg-black/20 p-3"
+                >
+                  <div className="text-sm">{titleWorker(w)}</div>
+                  <Badge>{w.active === false ? 'неактивен' : 'активен'}</Badge>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : tab === 'jobs' ? (
+          <div className="rounded-2xl border border-[#3b3212] bg-gradient-to-b from-[#0f0f0f] to-[#070707] p-5">
+            <div className="text-base font-semibold">Смены</div>
+            <div className="mt-2 text-sm text-[#d9c37a]">Раздел без изменений (дальше доделаем отдельно).</div>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-[#3b3212] bg-gradient-to-b from-[#0f0f0f] to-[#070707] p-5">
+            <div className="text-base font-semibold">График</div>
+            <div className="mt-2 text-sm text-[#d9c37a]">Раздел без изменений (дальше доделаем отдельно).</div>
+          </div>
+        )}
+
+        {/* Add site modal */}
+        <Modal
+          open={addSiteOpen}
+          title="Добавить объект"
+          onClose={() => {
+            if (!creatingSite) setAddSiteOpen(false);
+          }}
+          footer={
+            <>
+              <GoldButton
+                variant="ghost"
+                onClick={() => setAddSiteOpen(false)}
+                disabled={creatingSite}
+              >
+                Отмена
+              </GoldButton>
+              <GoldButton onClick={createSite} disabled={creatingSite}>
+                {creatingSite ? 'Сохраняю…' : 'Сохранить'}
+              </GoldButton>
+            </>
+          }
+        >
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div className="md:col-span-2">
+              <div className="mb-1 text-xs text-[#d9c37a]">Название</div>
+              <Input
+                value={newSite.name}
+                onChange={(e) => setNewSite((p) => ({ ...p, name: e.target.value }))}
+                placeholder="Например: Дом, Офис, Склад…"
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <div className="mb-1 text-xs text-[#d9c37a]">Адрес</div>
+              <Input
+                value={newSite.address}
+                onChange={(e) => setNewSite((p) => ({ ...p, address: e.target.value }))}
+                placeholder="Улица, дом, город…"
+              />
+              <div className="mt-1 text-xs text-[#7d6b2a]">
+                Если не указать lat/lng — у работника START будет запрещён.
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-1 text-xs text-[#d9c37a]">Радиус (метры)</div>
+              <Input
+                value={newSite.radius_m}
+                onChange={(e) => setNewSite((p) => ({ ...p, radius_m: e.target.value }))}
+                inputMode="numeric"
+                placeholder="150"
+              />
+            </div>
+
+            <div>
+              <div className="mb-1 text-xs text-[#d9c37a]">Заметки</div>
+              <Input
+                value={newSite.notes}
+                onChange={(e) => setNewSite((p) => ({ ...p, notes: e.target.value }))}
+                placeholder="Код домофона, нюансы…"
+              />
+            </div>
+
+            <div>
+              <div className="mb-1 text-xs text-[#d9c37a]">Широта (lat)</div>
+              <Input
+                value={newSite.lat}
+                onChange={(e) => setNewSite((p) => ({ ...p, lat: e.target.value }))}
+                placeholder="52.07532"
+              />
+            </div>
+
+            <div>
+              <div className="mb-1 text-xs text-[#d9c37a]">Долгота (lng)</div>
+              <Input
+                value={newSite.lng}
+                onChange={(e) => setNewSite((p) => ({ ...p, lng: e.target.value }))}
+                placeholder="4.66988"
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <div className="mb-1 text-xs text-[#d9c37a]">Комментарий (длинный)</div>
+              <Textarea
+                value={newSite.notes}
+                onChange={(e) => setNewSite((p) => ({ ...p, notes: e.target.value }))}
+                rows={3}
+                placeholder="Можно оставить пустым…"
+              />
+            </div>
+          </div>
+        </Modal>
+      </div>
+    </div>
+  );
 }
 
 export default function AdminPage() {
-  const [tab, setTab] = useState<TabKey>('jobs')
-
-  const [sessionLoading, setSessionLoading] = useState(true)
-  const [sessionToken, setSessionToken] = useState<string | null>(null)
-  const [meId, setMeId] = useState<string | null>(null)
-
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const [showArchivedSites, setShowArchivedSites] = useState(false)
-
-  const [sites, setSites] = useState<Site[]>([])
-  const [workers, setWorkers] = useState<Worker[]>([])
-  const [assignments, setAssignments] = useState<Assignment[]>([])
-
-  const [schedule, setSchedule] = useState<ScheduleItem[]>([])
-
-  const [jobsView, setJobsView] = useState<JobsView>('table')
-
-  const [anchorDate, setAnchorDate] = useState<string>(toISODate(new Date()))
-  const [dateFrom, setDateFrom] = useState<string>(toISODate(startOfWeek(new Date())))
-  const [dateTo, setDateTo] = useState<string>(toISODate(endOfWeek(new Date())))
-
-  const [filterSite, setFilterSite] = useState<string>('')
-  const [filterWorker, setFilterWorker] = useState<string>('')
-
-  const [qaSite, setQaSite] = useState<string>('')
-  const [qaWorker, setQaWorker] = useState<string>('')
-
-  const [workerPickSite, setWorkerPickSite] = useState<Record<string, string>>({})
-
-  const [newSiteId, setNewSiteId] = useState<string>('')
-  const [newWorkers, setNewWorkers] = useState<string[]>([])
-  const [newDate, setNewDate] = useState<string>(toISODate(new Date()))
-  const [newTime, setNewTime] = useState<string>('09:00')
-
-  const [editOpen, setEditOpen] = useState(false)
-  const [editJobId, setEditJobId] = useState<string | null>(null)
-  const [editSiteId, setEditSiteId] = useState<string>('')
-  const [editWorkerId, setEditWorkerId] = useState<string>('')
-  const [editDate, setEditDate] = useState<string>(toISODate(new Date()))
-  const [editTime, setEditTime] = useState<string>('09:00')
-  const [editStatus, setEditStatus] = useState<JobStatus>('planned')
-
-  const [workerCardOpen, setWorkerCardOpen] = useState(false)
-  const [workerCardId, setWorkerCardId] = useState<string>('')
-  const [workerCardItems, setWorkerCardItems] = useState<ScheduleItem[]>([])
-
-  const [workerCardProfile, setWorkerCardProfile] = useState<WorkerCardProfile | null>(null)
-  const [wcFirstName, setWcFirstName] = useState<string>('')
-  const [wcLastName, setWcLastName] = useState<string>('')
-  const [wcPhone, setWcPhone] = useState<string>('')
-  const [wcAddress, setWcAddress] = useState<string>('')
-  const [wcNotes, setWcNotes] = useState<string>('')
-  const [wcAvatarUrl, setWcAvatarUrl] = useState<string>('')
-
-  const [planView, setPlanView] = useState<PlanView>('week')
-  const [planMode, setPlanMode] = useState<PlanMode>('workers')
-
-  const [moveJobOpen, setMoveJobOpen] = useState(false)
-  const [moveJobId, setMoveJobId] = useState<string>('')
-  const [moveJobTargetWorker, setMoveJobTargetWorker] = useState<string>('')
-
-  const [moveDayOpen, setMoveDayOpen] = useState(false)
-  const [moveDayFromWorker, setMoveDayFromWorker] = useState<string>('')
-  const [moveDayToWorker, setMoveDayToWorker] = useState<string>('')
-  const [moveDayDate, setMoveDayDate] = useState<string>(toISODate(new Date()))
-  const [moveDayOnlyPlanned, setMoveDayOnlyPlanned] = useState(true)
-
-  const [cancelOpen, setCancelOpen] = useState(false)
-  const [cancelJobId, setCancelJobId] = useState<string>('')
-
-  const sitesById = useMemo(() => new Map(sites.map((s) => [s.id, s])), [sites])
-  const workersById = useMemo(() => new Map(workers.map((w) => [w.id, w])), [workers])
-
-  const activeSites = useMemo(() => sites.filter((s) => !s.archived_at), [sites])
-
-  const workersForSelect = useMemo(() => {
-    return workers
-      .filter((w) => (w.role || 'worker') !== 'admin')
-      .filter((w) => w.active !== false)
-      .sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''))
-  }, [workers])
-
-  const workersForPicker = useMemo(() => workersForSelect.map((w) => ({ id: w.id, name: w.full_name || 'Работник' })), [workersForSelect])
-
-  const siteWorkers = useMemo(() => {
-    const m = new Map<string, Worker[]>()
-    for (const a of assignments) {
-      const w = workersById.get(a.worker_id)
-      if (!w) continue
-      const arr = m.get(a.site_id) || []
-      arr.push(w)
-      m.set(a.site_id, arr)
-    }
-    return m
-  }, [assignments, workersById])
-
-  const workerSites = useMemo(() => {
-    const m = new Map<string, Site[]>()
-    for (const a of assignments) {
-      const s = sitesById.get(a.site_id)
-      if (!s) continue
-      const arr = m.get(a.worker_id) || []
-      arr.push(s)
-      m.set(a.worker_id, arr)
-    }
-    return m
-  }, [assignments, sitesById])
-
-  const scheduleFiltered = useMemo(() => {
-    return schedule.filter((x) => {
-      if (filterSite && x.site_id !== filterSite) return false
-      if (filterWorker && x.worker_id !== filterWorker) return false
-      return true
-    })
-  }, [schedule, filterSite, filterWorker])
-
-  const planned = useMemo(() => scheduleFiltered.filter((x) => x.status === 'planned'), [scheduleFiltered])
-  const inProgress = useMemo(() => scheduleFiltered.filter((x) => x.status === 'in_progress'), [scheduleFiltered])
-  const done = useMemo(() => scheduleFiltered.filter((x) => x.status === 'done'), [scheduleFiltered])
-  const cancelled = useMemo(() => scheduleFiltered.filter((x) => x.status === 'cancelled'), [scheduleFiltered])
-
-  const planDates = useMemo(() => enumerateDates(dateFrom, dateTo), [dateFrom, dateTo])
-
-  const planEntities = useMemo(() => {
-    if (planMode === 'workers') {
-      return workersForSelect.map((w) => ({ id: w.id, name: w.full_name || 'Работник' }))
-    }
-    return activeSites.map((s) => ({ id: s.id, name: s.name || 'Объект' }))
-  }, [planMode, workersForSelect, activeSites])
-
-  const hours = useMemo(() => Array.from({ length: 24 }, (_, i) => pad2(i) + ':00'), [])
-
-  function recalcRange(nextPlanView: PlanView, baseISO: string) {
-    const d = new Date(baseISO + 'T00:00:00')
-    if (Number.isNaN(d.getTime())) return
-    if (nextPlanView === 'day') {
-      const iso = toISODate(d)
-      setDateFrom(iso)
-      setDateTo(iso)
-      setAnchorDate(iso)
-      return
-    }
-    if (nextPlanView === 'week') {
-      setDateFrom(toISODate(startOfWeek(d)))
-      setDateTo(toISODate(endOfWeek(d)))
-      setAnchorDate(toISODate(d))
-      return
-    }
-    setDateFrom(toISODate(startOfMonth(d)))
-    setDateTo(toISODate(endOfMonth(d)))
-    setAnchorDate(toISODate(d))
-  }
-
-  async function refreshCore() {
-    const sitesUrl = showArchivedSites ? '/api/admin/sites/list?include_archived=1' : '/api/admin/sites/list'
-    const [s, w, a] = await Promise.all([
-      authFetchJson<{ sites: Site[] }>(sitesUrl),
-      authFetchJson<{ workers: Worker[] }>('/api/admin/workers/list'),
-      authFetchJson<{ assignments: Assignment[] }>('/api/admin/assignments'),
-    ])
-    setSites(Array.isArray(s?.sites) ? s.sites : [])
-    setWorkers(Array.isArray(w?.workers) ? w.workers : [])
-    setAssignments(Array.isArray(a?.assignments) ? a.assignments : [])
-  }
-
-  async function refreshSchedule() {
-    const url =
-      `/api/admin/schedule?date_from=${encodeURIComponent(dateFrom)}` +
-      `&date_to=${encodeURIComponent(dateTo)}` +
-      (filterSite ? `&site_id=${encodeURIComponent(filterSite)}` : '') +
-      (filterWorker ? `&worker_id=${encodeURIComponent(filterWorker)}` : '')
-    const sch = await authFetchJson<{ items: ScheduleItem[] }>(url)
-    setSchedule(Array.isArray(sch?.items) ? sch.items : [])
-  }
-
-  async function refreshAll() {
-    setBusy(true)
-    setError(null)
-    try {
-      await refreshCore()
-      await refreshSchedule()
-    } catch (e: any) {
-      setError(e?.message || 'Ошибка загрузки')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function boot() {
-    setSessionLoading(true)
-    try {
-      const sessionRes = await withTimeout(supabase.auth.getSession(), 2000, { data: { session: null } } as any)
-      const token = sessionRes?.data?.session?.access_token ?? null
-      setSessionToken(token)
-
-      const meRes = await withTimeout(supabase.auth.getUser(), 2000, { data: { user: null } } as any)
-      setMeId(meRes?.data?.user?.id ?? null)
-
-      if (token) await refreshAll()
-    } finally {
-      setSessionLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    void boot()
-
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
-      const token = newSession?.access_token ?? null
-      setSessionToken(token)
-      setError(null)
-
-      const meRes = await withTimeout(supabase.auth.getUser(), 2000, { data: { user: null } } as any)
-      setMeId(meRes?.data?.user?.id ?? null)
-
-      if (token) {
-        await refreshAll()
-      } else {
-        setSites([])
-        setWorkers([])
-        setAssignments([])
-        setSchedule([])
-      }
-    })
-
-    return () => sub?.subscription?.unsubscribe()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  useEffect(() => {
-    if (sessionToken) void refreshAll()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showArchivedSites])
-
-  useEffect(() => {
-    if (sessionToken) void refreshSchedule()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateFrom, dateTo])
-
-  useEffect(() => {
-    if (sessionToken) void refreshSchedule()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterSite, filterWorker])
-
-  async function onLogin(e: React.FormEvent) {
-    e.preventDefault()
-    setBusy(true)
-    setError(null)
-    try {
-      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
-      if (signInError) setError(signInError.message || 'Ошибка входа')
-    } catch (e: any) {
-      setError(e?.message || 'Ошибка входа')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function onLogout() {
-    setBusy(true)
-    setError(null)
-    try {
-      await supabase.auth.signOut()
-      setSessionToken(null)
-      setMeId(null)
-      setSites([])
-      setWorkers([])
-      setAssignments([])
-      setSchedule([])
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function assign(siteId: string, workerId: string) {
-    setBusy(true)
-    setError(null)
-    try {
-      await authFetchJson('/api/admin/assignments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'assign', site_id: siteId, worker_id: workerId }),
-      })
-      await refreshCore()
-    } catch (e: any) {
-      setError(e?.message || 'Ошибка назначения')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function unassign(siteId: string, workerId: string) {
-    setBusy(true)
-    setError(null)
-    try {
-      await authFetchJson('/api/admin/assignments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'unassign', site_id: siteId, worker_id: workerId }),
-      })
-      await refreshCore()
-    } catch (e: any) {
-      setError(e?.message || 'Ошибка снятия назначения')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function setArchived(siteId: string, archived: boolean) {
-    setBusy(true)
-    setError(null)
-    try {
-      await authFetchJson('/api/admin/sites/set-archived', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ site_id: siteId, archived }),
-      })
-      await refreshCore()
-    } catch (e: any) {
-      setError(e?.message || 'Не удалось обновить архив')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function setRole(workerId: string, role: 'admin' | 'worker') {
-    if (role === 'worker' && meId && workerId === meId) {
-      setError('Нельзя разжаловать самого себя.')
-      return
-    }
-    const ok = window.confirm(role === 'admin' ? 'Сделать этого работника админом?' : 'Сделать этого админа обычным работником?')
-    if (!ok) return
-
-    setBusy(true)
-    setError(null)
-    try {
-      await authFetchJson('/api/admin/workers/set-role', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ worker_id: workerId, role }),
-      })
-      await refreshCore()
-    } catch (e: any) {
-      setError(e?.message || 'Не удалось изменить роль')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function quickAssign() {
-    if (!qaSite || !qaWorker) return
-    await assign(qaSite, qaWorker)
-  }
-
-  function openEditForJob(j: ScheduleItem) {
-    setEditJobId(j.id)
-    setEditSiteId(j.site_id || '')
-    setEditWorkerId(j.worker_id || '')
-    setEditDate(j.job_date || toISODate(new Date()))
-    setEditTime(timeHHMM(j.scheduled_time))
-    setEditStatus((j.status || 'planned') as JobStatus)
-    setEditOpen(true)
-  }
-
-  async function saveEdit() {
-    if (!editJobId) return
-    if (!editDate || !editTime) return
-    setBusy(true)
-    setError(null)
-    try {
-      await authFetchJson('/api/admin/jobs/move', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          job_id: editJobId,
-          job_date: editDate,
-          scheduled_time: editTime,
-          worker_id: editWorkerId || null,
-          site_id: editSiteId || null,
-          status: editStatus || null,
-        }),
-      })
-      setEditOpen(false)
-      await refreshSchedule()
-    } catch (e: any) {
-      setError(e?.message || 'Не удалось сохранить')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function loadWorkerCard(workerId: string) {
-    const url = `/api/admin/schedule?date_from=${encodeURIComponent(dateFrom)}&date_to=${encodeURIComponent(dateTo)}&worker_id=${encodeURIComponent(workerId)}`
-    const sch = await authFetchJson<{ items: ScheduleItem[] }>(url)
-    setWorkerCardItems(Array.isArray(sch?.items) ? sch.items : [])
-  }
-
-  async function loadWorkerProfile(workerId: string) {
-    const res = await authFetchJson<{ worker: WorkerCardProfile }>(`/api/admin/workers/${encodeURIComponent(workerId)}`)
-    const w = res?.worker
-
-    if (!w) {
-      setWorkerCardProfile(null)
-      setWcFirstName('')
-      setWcLastName('')
-      setWcPhone('')
-      setWcAddress('')
-      setWcNotes('')
-      setWcAvatarUrl('')
-      return
-    }
-
-    setWorkerCardProfile(w)
-    setWcFirstName(w.first_name || '')
-    setWcLastName(w.last_name || '')
-    setWcPhone(w.phone || '')
-    setWcAddress(w.address || '')
-    setWcNotes(w.notes || '')
-    setWcAvatarUrl(w.avatar_url || '')
-  }
-
-  async function saveWorkerProfile() {
-    if (!workerCardId) return
-    setBusy(true)
-    setError(null)
-    try {
-      const payload = await authFetchJson<{ worker: WorkerCardProfile }>(`/api/admin/workers/${encodeURIComponent(workerCardId)}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          first_name: wcFirstName,
-          last_name: wcLastName,
-          phone: wcPhone,
-          address: wcAddress,
-          notes: wcNotes,
-          avatar_url: wcAvatarUrl,
-        }),
-      })
-
-      if (payload?.worker) {
-        const w = payload.worker
-        setWorkerCardProfile(w)
-        setWcFirstName(w.first_name || '')
-        setWcLastName(w.last_name || '')
-        setWcPhone(w.phone || '')
-        setWcAddress(w.address || '')
-        setWcNotes(w.notes || '')
-        setWcAvatarUrl(w.avatar_url || '')
-      }
-
-      await refreshCore()
-    } catch (e: any) {
-      setError(e?.message || 'Не удалось сохранить карточку')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function openWorkerCard(workerId: string) {
-    setWorkerCardId(workerId)
-    setWorkerCardOpen(true)
-    setWorkerCardItems([])
-    setWorkerCardProfile(null)
-    setWcFirstName('')
-    setWcLastName('')
-    setWcPhone('')
-    setWcAddress('')
-    setWcNotes('')
-    setWcAvatarUrl('')
-    try {
-      await Promise.all([loadWorkerCard(workerId), loadWorkerProfile(workerId)])
-    } catch (e: any) {
-      setError(e?.message || 'Не удалось загрузить карточку работника')
-    }
-  }
-
-  async function createJobs() {
-    if (!newSiteId || newWorkers.length === 0 || !newDate || !newTime) return
-    setBusy(true)
-    setError(null)
-    try {
-      await authFetchJson('/api/admin/jobs/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ site_id: newSiteId, worker_ids: newWorkers, job_date: newDate, scheduled_time: newTime }),
-      })
-      setNewWorkers([])
-      setJobsView('table')
-      await refreshSchedule()
-    } catch (e: any) {
-      setError(e?.message || 'Не удалось создать смену')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  function dragSet(e: React.DragEvent, payload: DragPayload) {
-    try {
-      e.dataTransfer.setData('application/json', JSON.stringify(payload))
-    } catch {}
-    e.dataTransfer.setData('text/plain', payload.job_id)
-    e.dataTransfer.effectAllowed = 'move'
-  }
-
-  function dragGet(e: React.DragEvent): DragPayload | null {
-    const raw = e.dataTransfer.getData('application/json')
-    if (raw) {
-      try {
-        const x = JSON.parse(raw)
-        if (x?.job_id) return { job_id: String(x.job_id) }
-      } catch {}
-    }
-    const id = e.dataTransfer.getData('text/plain')
-    if (id) return { job_id: id }
-    return null
-  }
-
-  async function moveJob(jobId: string, patch: { job_date?: string; scheduled_time?: string; worker_id?: string | null; site_id?: string | null }) {
-    setBusy(true)
-    setError(null)
-    try {
-      await authFetchJson('/api/admin/jobs/move', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ job_id: jobId, ...patch }),
-      })
-      await refreshSchedule()
-      await refreshCore()
-    } catch (e: any) {
-      setError(e?.message || 'Не удалось перенести')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function cancelJob(jobId: string) {
-    setBusy(true)
-    setError(null)
-    try {
-      await authFetchJson('/api/admin/jobs/cancel', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ job_id: jobId }),
-      })
-      setCancelOpen(false)
-      await refreshSchedule()
-    } catch (e: any) {
-      setError(e?.message || 'Не удалось отменить')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function moveDay() {
-    if (!moveDayFromWorker || !moveDayToWorker || !moveDayDate) return
-    setBusy(true)
-    setError(null)
-    try {
-      await authFetchJson('/api/admin/jobs/move-day', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          from_worker_id: moveDayFromWorker,
-          to_worker_id: moveDayToWorker,
-          job_date: moveDayDate,
-          only_planned: moveDayOnlyPlanned,
-        }),
-      })
-      setMoveDayOpen(false)
-      await refreshSchedule()
-      await refreshCore()
-    } catch (e: any) {
-      setError(e?.message || 'Не удалось перенести день')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  function jobsInCell(args: { entityId: string; dateISO: string; hour?: string }) {
-    const { entityId, dateISO, hour } = args
-    return schedule
-      .filter((j) => {
-        if ((j.job_date || '') !== dateISO) return false
-        if (planMode === 'workers') {
-          if ((j.worker_id || '') !== entityId) return false
-        } else {
-          if ((j.site_id || '') !== entityId) return false
-        }
-        if (hour) {
-          const hh = timeHHMM(j.scheduled_time)
-          if (hh === '—') return false
-          if (hh.slice(0, 2) !== hour.slice(0, 2)) return false
-        }
-        return true
-      })
-      .sort((a, b) => timeHHMM(a.scheduled_time).localeCompare(timeHHMM(b.scheduled_time)))
-  }
-
-  function jobCard(j: ScheduleItem, compact: boolean) {
-    const left = planMode === 'workers' ? (j.site_name || 'Объект') : (j.worker_name || 'Работник')
-    const right = `${timeHHMM(j.scheduled_time)} • ${statusRu(String(j.status || ''))}`
-    return (
-      <div
-        key={j.id}
-        draggable
-        onDragStart={(e) => dragSet(e, { job_id: j.id })}
-        onClick={() => openEditForJob(j)}
-        className={cn(
-          'group cursor-pointer select-none rounded-2xl border bg-black/35 px-3 py-2 shadow-[0_10px_35px_rgba(0,0,0,0.55)]',
-          'border-yellow-400/15 hover:border-yellow-300/40',
-          compact ? 'text-[11px]' : 'text-xs'
-        )}
-      >
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <div className="truncate font-semibold text-yellow-100">{left}</div>
-            <div className="mt-0.5 text-zinc-300">{right}</div>
-          </div>
-
-          <div className="flex flex-col items-end gap-1">
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                setCancelJobId(j.id)
-                setCancelOpen(true)
-              }}
-              className="rounded-xl border border-yellow-400/10 bg-black/25 px-2 py-1 text-[10px] text-zinc-200 hover:border-yellow-300/30"
-            >
-              отменить
-            </button>
-
-            {planMode === 'workers' ? (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setMoveJobId(j.id)
-                  setMoveJobTargetWorker(j.worker_id || '')
-                  setMoveJobOpen(true)
-                }}
-                className="rounded-xl border border-yellow-400/10 bg-black/25 px-2 py-1 text-[10px] text-zinc-200 hover:border-yellow-300/30"
-              >
-                перенести
-              </button>
-            ) : null}
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  function PlanToolbar() {
-    return (
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-yellow-400/15 bg-black/20 p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => {
-              setPlanView('day')
-              recalcRange('day', anchorDate)
-            }}
-            className={cn(
-              'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
-              planView === 'day' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
-            )}
-          >
-            День
-          </button>
-          <button
-            onClick={() => {
-              setPlanView('week')
-              recalcRange('week', anchorDate)
-            }}
-            className={cn(
-              'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
-              planView === 'week' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
-            )}
-          >
-            Неделя
-          </button>
-          <button
-            onClick={() => {
-              setPlanView('month')
-              recalcRange('month', anchorDate)
-            }}
-            className={cn(
-              'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
-              planView === 'month' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
-            )}
-          >
-            Месяц
-          </button>
-
-          <div className="mx-2 h-7 w-px bg-yellow-400/10" />
-
-          <button
-            onClick={() => setPlanMode('workers')}
-            className={cn(
-              'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
-              planMode === 'workers' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
-            )}
-          >
-            По работникам
-          </button>
-          <button
-            onClick={() => setPlanMode('sites')}
-            className={cn(
-              'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
-              planMode === 'sites' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
-            )}
-          >
-            По объектам
-          </button>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="grid gap-1">
-            <span className="text-[11px] text-zinc-300">Дата</span>
-            <input
-              type="date"
-              value={anchorDate}
-              onChange={(e) => {
-                const v = e.target.value
-                setAnchorDate(v)
-                recalcRange(planView, v)
-              }}
-              className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs text-zinc-200 outline-none transition focus:border-yellow-300/60"
-            />
-          </label>
-
-          <button
-            onClick={() => {
-              const t = toISODate(new Date())
-              setAnchorDate(t)
-              recalcRange(planView, t)
-            }}
-            className="mt-5 rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/40"
-          >
-            Сегодня
-          </button>
-
-          <button
-            onClick={() => {
-              setMoveDayFromWorker('')
-              setMoveDayToWorker('')
-              setMoveDayDate(dateFrom)
-              setMoveDayOnlyPlanned(true)
-              setMoveDayOpen(true)
-            }}
-            className="mt-5 rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 hover:border-yellow-200/70"
-          >
-            Перенести день
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  function PlanWeekGrid() {
-    return (
-      <div className="mt-4 overflow-auto rounded-3xl border border-yellow-400/15 bg-black/15">
-        <div className="min-w-[980px]">
-          <div className="grid" style={{ gridTemplateColumns: `320px repeat(${planDates.length}, minmax(220px, 1fr))` }}>
-            <div className="sticky top-0 z-10 border-b border-yellow-400/10 bg-zinc-950/90 px-4 py-3 text-xs font-semibold text-zinc-200">
-              {planMode === 'workers' ? 'Работник' : 'Объект'}
-            </div>
-
-            {planDates.map((d) => (
-              <div key={d.iso} className="sticky top-0 z-10 border-b border-yellow-400/10 bg-zinc-950/90 px-4 py-3 text-xs font-semibold text-zinc-200">
-                <div className="flex items-center justify-between">
-                  <span>
-                    {d.dow} • {d.label}
-                  </span>
-                  <span className="text-[11px] text-zinc-400">{fmtD(d.iso)}</span>
-                </div>
-              </div>
-            ))}
-
-            {planEntities.map((ent) => (
-              <div key={ent.id} className="contents">
-                <div className="border-b border-yellow-400/10 bg-black/10 px-4 py-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-semibold text-yellow-100">{ent.name}</div>
-                      <div className="mt-1 text-[11px] text-zinc-400">
-                        {planMode === 'workers'
-                          ? `Объекты: ${(workerSites.get(ent.id) || []).length}`
-                          : `Назначены: ${(siteWorkers.get(ent.id) || []).filter((w) => (w.role || '') !== 'admin').length}`}
-                      </div>
-                    </div>
-
-                    {planMode === 'workers' ? (
-                      <button
-                        onClick={() => openWorkerCard(ent.id)}
-                        className="rounded-2xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-[11px] text-zinc-200 hover:border-yellow-300/40"
-                      >
-                        карточка
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-
-                {planDates.map((d) => (
-                  <div
-                    key={ent.id + '|' + d.iso}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => {
-                      e.preventDefault()
-                      const p = dragGet(e)
-                      if (!p) return
-                      const job = schedule.find((x) => x.id === p.job_id)
-                      if (!job) return
-                      const patch: any = { job_date: d.iso }
-                      if (planMode === 'workers') patch.worker_id = ent.id
-                      else patch.site_id = ent.id
-                      void moveJob(p.job_id, patch)
-                    }}
-                    className="border-b border-yellow-400/10 bg-black/5 px-3 py-3"
-                  >
-                    <div className="grid gap-2">
-                      {jobsInCell({ entityId: ent.id, dateISO: d.iso }).map((j) => jobCard(j, true))}
-                      <div className="rounded-2xl border border-dashed border-yellow-400/10 bg-black/10 px-3 py-2 text-[11px] text-zinc-500">
-                        перетащи сюда
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  function PlanDayGrid() {
-    const dayISO = dateFrom
-    return (
-      <div className="mt-4 overflow-auto rounded-3xl border border-yellow-400/15 bg-black/15">
-        <div className="min-w-[980px]">
-          <div className="grid" style={{ gridTemplateColumns: `100px repeat(${planEntities.length}, minmax(220px, 1fr))` }}>
-            <div className="sticky top-0 z-10 border-b border-yellow-400/10 bg-zinc-950/90 px-3 py-3 text-xs font-semibold text-zinc-200">
-              Время
-            </div>
-
-            {planEntities.map((ent) => (
-              <div key={ent.id} className="sticky top-0 z-10 border-b border-yellow-400/10 bg-zinc-950/90 px-3 py-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="truncate text-xs font-semibold text-yellow-100">{ent.name}</div>
-                    <div className="text-[10px] text-zinc-400">{fmtD(dayISO)}</div>
-                  </div>
-
-                  {planMode === 'workers' ? (
-                    <button
-                      onClick={() => openWorkerCard(ent.id)}
-                      className="rounded-xl border border-yellow-400/10 bg-black/25 px-2 py-1 text-[10px] text-zinc-200 hover:border-yellow-300/30"
-                    >
-                      карточка
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-            ))}
-
-            {hours.map((h) => (
-              <div key={h} className="contents">
-                <div className="border-b border-yellow-400/10 bg-black/10 px-3 py-3 text-[11px] font-semibold text-zinc-300">
-                  {h}
-                </div>
-
-                {planEntities.map((ent) => (
-                  <div
-                    key={ent.id + '|' + h}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => {
-                      e.preventDefault()
-                      const p = dragGet(e)
-                      if (!p) return
-                      const job = schedule.find((x) => x.id === p.job_id)
-                      if (!job) return
-                      const patch: any = { job_date: dayISO, scheduled_time: h }
-                      if (planMode === 'workers') patch.worker_id = ent.id
-                      else patch.site_id = ent.id
-                      void moveJob(p.job_id, patch)
-                    }}
-                    className="border-b border-yellow-400/10 bg-black/5 px-2 py-2"
-                  >
-                    <div className="grid gap-2">
-                      {jobsInCell({ entityId: ent.id, dateISO: dayISO, hour: h }).map((j) => jobCard(j, true))}
-                      <div className="rounded-2xl border border-dashed border-yellow-400/10 bg-black/10 px-3 py-2 text-[11px] text-zinc-500">
-                        перетащи сюда
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  function PlanMonthGrid() {
-    const from = new Date(dateFrom + 'T00:00:00')
-    const to = new Date(dateTo + 'T00:00:00')
-    const first = new Date(from.getFullYear(), from.getMonth(), 1)
-    const last = new Date(to.getFullYear(), to.getMonth(), to.getDate())
-
-    const start = startOfWeek(first)
-    const end = endOfWeek(last)
-
-    const days = enumerateDates(toISODate(start), toISODate(end))
-
-    return (
-      <div className="mt-4 overflow-auto rounded-3xl border border-yellow-400/15 bg-black/15">
-        <div className="min-w-[980px] p-4">
-          <div className="grid grid-cols-7 gap-3">
-            {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((d) => (
-              <div key={d} className="text-xs font-semibold text-zinc-300">
-                {d}
-              </div>
-            ))}
-
-            {days.map((d) => {
-              const inRange = d.iso >= dateFrom && d.iso <= dateTo
-
-              const dayJobs = schedule
-                .filter((j) => (j.job_date || '') === d.iso)
-                .sort((a, b) => timeHHMM(a.scheduled_time).localeCompare(timeHHMM(b.scheduled_time)))
-
-              const limit = 6
-              const shown = dayJobs.slice(0, limit)
-              const rest = Math.max(0, dayJobs.length - shown.length)
-
-              return (
-                <div
-                  key={d.iso}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => {
-                    e.preventDefault()
-                    const p = dragGet(e)
-                    if (!p) return
-                    void moveJob(p.job_id, { job_date: d.iso })
-                  }}
-                  className={cn(
-                    'min-h-[220px] rounded-3xl border p-3',
-                    inRange ? 'border-yellow-400/12 bg-black/20' : 'border-yellow-400/8 bg-black/10 opacity-60'
-                  )}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="text-xs font-semibold text-yellow-100">
-                      {d.label} <span className="text-zinc-500">({d.dow})</span>
-                    </div>
-                    <div className="text-[10px] text-zinc-400">{fmtD(d.iso)}</div>
-                  </div>
-
-                  <div className="mt-2 grid gap-2">
-                    <div className="grid gap-2 max-h-[150px] overflow-auto pr-1">
-                      {shown.map((j) => jobCard(j, true))}
-                    </div>
-
-                    {rest > 0 ? (
-                      <div className="rounded-2xl border border-yellow-400/10 bg-black/15 px-3 py-2 text-[11px] text-zinc-400">
-                        ещё {rest}
-                      </div>
-                    ) : null}
-
-                    {planMode === 'workers' ? (
-                      <div className="rounded-2xl border border-yellow-400/10 bg-black/10 px-3 py-2">
-                        <div className="text-[10px] text-zinc-500">перетащи смену на работника</div>
-                        <div className="mt-2 grid grid-cols-2 gap-1">
-                          {workersForSelect.map((w) => (
-                            <div
-                              key={w.id}
-                              onDragOver={(e) => {
-                                e.preventDefault()
-                                e.stopPropagation()
-                              }}
-                              onDrop={(e) => {
-                                e.preventDefault()
-                                e.stopPropagation()
-                                const p = dragGet(e)
-                                if (!p) return
-                                void moveJob(p.job_id, { job_date: d.iso, worker_id: w.id })
-                              }}
-                              className="cursor-pointer rounded-xl border border-yellow-400/10 bg-black/15 px-2 py-1 text-[11px] text-zinc-200 hover:border-yellow-300/40"
-                              title="Брось сюда — смена перейдёт работнику"
-                            >
-                              {w.full_name || 'Работник'}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-
-                    <div className="rounded-2xl border border-dashed border-yellow-400/10 bg-black/10 px-3 py-2 text-[11px] text-zinc-500">перетащи сюда (день)</div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  if (sessionLoading) {
-    return (
-      <main className="min-h-screen bg-gradient-to-b from-zinc-950 via-black to-zinc-950 text-zinc-100">
-        <div className="mx-auto max-w-6xl px-4 py-10">
-          <div className="rounded-3xl border border-yellow-400/20 bg-zinc-950/50 p-6 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur">
-            <div className="text-sm text-zinc-300">Проверяю вход…</div>
-          </div>
-        </div>
-      </main>
-    )
-  }
-
-  if (!sessionToken) {
-    return (
-      <main className="min-h-screen bg-gradient-to-b from-zinc-950 via-black to-zinc-950 text-zinc-100">
-        <div className="mx-auto max-w-5xl px-4 py-10">
-          <div className="mb-8 flex items-center gap-3">
-            <div className="relative h-12 w-12 overflow-hidden rounded-2xl border border-yellow-400/30 bg-black/40 shadow-[0_0_0_1px_rgba(255,215,0,0.12)]">
-              <Image src="/tanija-logo.png" alt="Tanija" fill className="object-contain p-2" priority />
-            </div>
-            <div>
-              <div className="text-lg font-semibold tracking-wide">Админ-панель</div>
-              <div className="text-xs text-yellow-200/70">Tanija • объекты • работники • смены</div>
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-yellow-400/20 bg-zinc-950/50 p-6 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur">
-            <h1 className="text-xl font-semibold text-yellow-100">Вход</h1>
-
-            {error ? (
-              <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-950/30 px-4 py-3 text-sm text-red-100">{error}</div>
-            ) : null}
-
-            <form onSubmit={onLogin} className="mt-5 grid gap-3">
-              <label className="grid gap-1">
-                <span className="text-xs text-zinc-300">Email</span>
-                <input
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  type="email"
-                  autoComplete="email"
-                  className="rounded-2xl border border-yellow-400/20 bg-black/40 px-4 py-3 text-sm outline-none transition focus:border-yellow-300/60"
-                  placeholder="you@domain.com"
-                  required
-                />
-              </label>
-
-              <label className="grid gap-1">
-                <span className="text-xs text-zinc-300">Пароль</span>
-                <input
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  type="password"
-                  autoComplete="current-password"
-                  className="rounded-2xl border border-yellow-400/20 bg-black/40 px-4 py-3 text-sm outline-none transition focus:border-yellow-300/60"
-                  placeholder="••••••••"
-                  required
-                />
-              </label>
-
-              <button
-                type="submit"
-                disabled={busy}
-                className="mt-2 rounded-2xl border border-yellow-300/40 bg-gradient-to-r from-yellow-500/10 via-yellow-400/10 to-yellow-300/10 px-4 py-3 text-sm font-semibold text-yellow-100 shadow-[0_0_0_1px_rgba(255,215,0,0.18)] transition hover:border-yellow-200/70 hover:bg-yellow-400/10 disabled:opacity-60"
-              >
-                {busy ? 'Вхожу…' : 'Войти'}
-              </button>
-            </form>
-          </div>
-        </div>
-      </main>
-    )
-  }
-
   return (
-    <main className="min-h-screen bg-gradient-to-b from-zinc-950 via-black to-zinc-950 text-zinc-100">
-      <div className="mx-auto max-w-6xl px-4 py-8">
-        <div className="mb-8 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="relative h-12 w-12 overflow-hidden rounded-2xl border border-yellow-400/30 bg-black/40 shadow-[0_0_0_1px_rgba(255,215,0,0.12)]">
-              <Image src="/tanija-logo.png" alt="Tanija" fill className="object-contain p-2" priority />
-            </div>
-            <div>
-              <div className="text-lg font-semibold tracking-wide">Админ-панель</div>
-              <div className="text-xs text-yellow-200/70">Tanija • объекты • работники • смены</div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={refreshAll}
-              disabled={busy}
-              className="rounded-xl border border-yellow-400/40 bg-black/40 px-4 py-2 text-sm text-yellow-100 transition hover:border-yellow-300/70 hover:bg-black/60 disabled:opacity-60"
-            >
-              {busy ? 'Обновляю…' : 'Обновить данные'}
-            </button>
-
-            <button
-              onClick={onLogout}
-              disabled={busy}
-              className="rounded-xl border border-yellow-400/25 bg-black/30 px-4 py-2 text-sm text-yellow-100/90 transition hover:border-yellow-300/60 hover:bg-black/50 disabled:opacity-60"
-            >
-              Выйти
-            </button>
-          </div>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-black text-[#f2e6b8]">
+          <div className="mx-auto max-w-6xl p-6">Загружаю…</div>
         </div>
-
-        <div className="rounded-3xl border border-yellow-400/20 bg-zinc-950/50 p-6 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              {(['sites', 'workers', 'jobs', 'plan'] as TabKey[]).map((k) => (
-                <button
-                  key={k}
-                  onClick={() => setTab(k)}
-                  className={cn(
-                    'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
-                    tab === k ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
-                  )}
-                >
-                  {k === 'sites' ? 'Объекты' : k === 'workers' ? 'Работники' : k === 'jobs' ? 'Смены' : 'График'}
-                </button>
-              ))}
-            </div>
-
-            <div className="flex items-center gap-3">
-              {tab === 'sites' ? (
-                <label className="flex items-center gap-2 rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-[11px] text-zinc-200">
-                  <input
-                    type="checkbox"
-                    checked={showArchivedSites}
-                    onChange={(e) => setShowArchivedSites(e.target.checked)}
-                    className="h-4 w-4 accent-yellow-400"
-                  />
-                  Показать архив
-                </label>
-              ) : null}
-
-              <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-[11px] text-zinc-200">
-                Объекты: {sites.length} • Работники: {workers.length} • Смены: {schedule.length}
-              </div>
-            </div>
-          </div>
-
-          {error ? (
-            <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-950/30 px-4 py-3 text-sm text-red-100">{error}</div>
-          ) : null}
-
-          {/* ОБЪЕКТЫ */}
-          {tab === 'sites' ? (
-            <div className="mt-6 grid gap-4">
-              <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
-                <div className="text-sm font-semibold text-yellow-100">Быстрое назначение</div>
-                <div className="mt-1 text-xs text-zinc-300">Назначение = доступ к объекту. Расписание делается в “Смены” и “График”.</div>
-
-                <div className="mt-4 flex flex-wrap items-end gap-2">
-                  <label className="grid gap-1">
-                    <span className="text-[11px] text-zinc-300">Объект</span>
-                    <select
-                      value={qaSite}
-                      onChange={(e) => setQaSite(e.target.value)}
-                      className="w-[260px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
-                    >
-                      <option value="">Выбери объект…</option>
-                      {activeSites.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name || s.id}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="grid gap-1">
-                    <span className="text-[11px] text-zinc-300">Работник</span>
-                    <select
-                      value={qaWorker}
-                      onChange={(e) => setQaWorker(e.target.value)}
-                      className="w-[260px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
-                    >
-                      <option value="">Выбери работника…</option>
-                      {workersForSelect.map((w) => (
-                        <option key={w.id} value={w.id}>
-                          {w.full_name || 'Работник'}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <button
-                    onClick={quickAssign}
-                    disabled={busy || !qaSite || !qaWorker}
-                    className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
-                  >
-                    Назначить
-                  </button>
-                </div>
-              </div>
-
-              {sites
-                .slice()
-                .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-                .map((s) => {
-                  const archived = !!s.archived_at
-                  const assigned = (siteWorkers.get(s.id) || []).filter((w) => (w.role || '') !== 'admin')
-                  return (
-                    <div key={s.id} className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <div className="text-base font-semibold text-yellow-100">
-                            {s.name || 'Объект'}{' '}
-                            {archived ? (
-                              <span className="ml-2 rounded-xl border border-yellow-400/20 bg-black/30 px-2 py-1 text-[11px] text-zinc-200">в архиве</span>
-                            ) : (
-                              <span className="ml-2 rounded-xl border border-yellow-300/40 bg-yellow-400/10 px-2 py-1 text-[11px] text-yellow-100">активен</span>
-                            )}
-                          </div>
-
-                          <div className="mt-2 text-xs text-zinc-300">
-                            GPS: {s.lat != null && s.lng != null ? `${s.lat}, ${s.lng}` : 'нет lat/lng'} • радиус: {s.radius ?? 150}
-                          </div>
-
-                          <div className="mt-3 text-xs text-zinc-300">Назначены:</div>
-                          {assigned.length === 0 ? (
-                            <div className="mt-1 text-xs text-zinc-500">—</div>
-                          ) : (
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {assigned.map((w) => (
-                                <div key={w.id} className="flex items-center gap-2 rounded-2xl border border-yellow-400/10 bg-black/35 px-3 py-2 text-xs">
-                                  <span className="text-zinc-100">{w.full_name || 'Работник'}</span>
-                                  <button
-                                    onClick={() => unassign(s.id, w.id)}
-                                    disabled={busy}
-                                    className="rounded-xl border border-yellow-400/20 bg-black/30 px-2 py-1 text-[11px] text-yellow-100/80 transition hover:border-yellow-300/50 disabled:opacity-60"
-                                  >
-                                    снять
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="flex flex-col items-end gap-2">
-                          <button
-                            onClick={() => setArchived(s.id, !archived)}
-                            disabled={busy}
-                            className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 transition hover:border-yellow-300/40 disabled:opacity-60"
-                          >
-                            {archived ? 'Вернуть из архива' : 'В архив'}
-                          </button>
-
-                          {!archived ? (
-                            <div className="flex flex-wrap items-end gap-2">
-                              <label className="grid gap-1">
-                                <span className="text-[11px] text-zinc-300">Добавить работника</span>
-                                <select
-                                  value={workerPickSite[s.id] || ''}
-                                  onChange={(e) => setWorkerPickSite((p) => ({ ...p, [s.id]: e.target.value }))}
-                                  className="w-[240px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
-                                >
-                                  <option value="">Выбери работника…</option>
-                                  {workersForSelect.map((w) => (
-                                    <option key={w.id} value={w.id}>
-                                      {w.full_name || 'Работник'}
-                                    </option>
-                                  ))}
-                                </select>
-                              </label>
-
-                              <button
-                                onClick={() => {
-                                  const wid = workerPickSite[s.id]
-                                  if (!wid) return
-                                  void assign(s.id, wid)
-                                }}
-                                disabled={busy || !workerPickSite[s.id]}
-                                className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
-                              >
-                                Назначить
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-xs text-zinc-300">Архивный объект</div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-            </div>
-          ) : null}
-
-          {/* РАБОТНИКИ */}
-          {tab === 'workers' ? (
-            <div className="mt-6 grid gap-3">
-              {workers
-                .slice()
-                .sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''))
-                .map((w) => {
-                  const isAdmin = (w.role || '') === 'admin'
-                  const sitesList = workerSites.get(w.id) || []
-                  const pick = workerPickSite[w.id] || ''
-                  const isMe = !!meId && w.id === meId
-
-                  return (
-                    <div key={w.id} className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <div className="text-base font-semibold text-yellow-100">
-                            <button onClick={() => openWorkerCard(w.id)} className="hover:text-yellow-100">
-                              {w.full_name || 'Без имени'}
-                            </button>{' '}
-                            {isAdmin ? (
-                              <span className="ml-2 rounded-xl border border-yellow-400/30 bg-yellow-400/10 px-2 py-1 text-[11px] text-yellow-100">
-                                админ
-                              </span>
-                            ) : (
-                              <span className="ml-2 rounded-xl border border-yellow-400/15 bg-black/30 px-2 py-1 text-[11px] text-zinc-200">
-                                работник
-                              </span>
-                            )}
-                            {w.active === false ? (
-                              <span className="ml-2 rounded-xl border border-red-400/20 bg-red-500/10 px-2 py-1 text-[11px] text-red-100">
-                                отключён
-                              </span>
-                            ) : null}
-                          </div>
-
-                          <div className="mt-3 text-xs text-zinc-300">Объекты:</div>
-                          {sitesList.length === 0 ? (
-                            <div className="mt-1 text-xs text-zinc-500">—</div>
-                          ) : (
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {sitesList.map((s) => (
-                                <div key={s.id} className="flex items-center gap-2 rounded-2xl border border-yellow-400/10 bg-black/35 px-3 py-2 text-xs">
-                                  <span className="text-zinc-100">{s.name || s.id}</span>
-                                  <button
-                                    onClick={() => unassign(s.id, w.id)}
-                                    disabled={busy}
-                                    className="rounded-xl border border-yellow-400/20 bg-black/30 px-2 py-1 text-[11px] text-yellow-100/80 transition hover:border-yellow-300/50 disabled:opacity-60"
-                                  >
-                                    снять
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="flex flex-col items-end gap-2">
-                          <div className="flex flex-wrap items-center justify-end gap-2">
-                            {!isAdmin ? (
-                              <button
-                                onClick={() => setRole(w.id, 'admin')}
-                                disabled={busy}
-                                className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
-                              >
-                                Сделать админом
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => setRole(w.id, 'worker')}
-                                disabled={busy || isMe}
-                                className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 transition hover:border-yellow-300/40 disabled:opacity-60"
-                              >
-                                Сделать работником
-                              </button>
-                            )}
-                          </div>
-
-                          {!isAdmin ? (
-                            <div className="flex flex-wrap items-end gap-2">
-                              <label className="grid gap-1">
-                                <span className="text-[11px] text-zinc-300">Добавить объект</span>
-                                <select
-                                  value={pick}
-                                  onChange={(e) => setWorkerPickSite((p) => ({ ...p, [w.id]: e.target.value }))}
-                                  className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
-                                >
-                                  <option value="">Выбери объект…</option>
-                                  {activeSites.map((s) => (
-                                    <option key={s.id} value={s.id}>
-                                      {s.name || s.id}
-                                    </option>
-                                  ))}
-                                </select>
-                              </label>
-
-                              <button
-                                onClick={() => pick && assign(pick, w.id)}
-                                disabled={busy || !pick}
-                                className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
-                              >
-                                Назначить
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-xs text-zinc-300">
-                              Админа не назначаем
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-            </div>
-          ) : null}
-
-          {/* СМЕНЫ */}
-          {tab === 'jobs' ? (
-            <div className="mt-6 grid gap-4">
-              <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
-                <div className="text-sm font-semibold text-yellow-100">Создать смену</div>
-                <div className="mt-1 text-xs text-zinc-300">Объект + дата + время + несколько работников.</div>
-
-                <div className="mt-4 grid gap-3 lg:grid-cols-[1.3fr_1.7fr_0.8fr_0.7fr_auto]">
-                  <label className="grid gap-1">
-                    <span className="text-[11px] text-zinc-300">Объект</span>
-                    <select
-                      value={newSiteId}
-                      onChange={(e) => {
-                        const v = e.target.value
-                        setNewSiteId(v)
-                        setNewWorkers([])
-                      }}
-                      className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
-                    >
-                      <option value="">Выбери объект…</option>
-                      {activeSites.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name || s.id}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="grid gap-1">
-                    <span className="text-[11px] text-zinc-300">Работники (можно несколько)</span>
-                    <MultiWorkerPicker workers={workersForPicker} value={newWorkers} onChange={setNewWorkers} disabled={!newSiteId} />
-                  </label>
-
-                  <label className="grid gap-1">
-                    <span className="text-[11px] text-zinc-300">Дата</span>
-                    <input
-                      type="date"
-                      value={newDate}
-                      onChange={(e) => setNewDate(e.target.value)}
-                      className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
-                    />
-                  </label>
-
-                  <label className="grid gap-1">
-                    <span className="text-[11px] text-zinc-300">Время</span>
-                    <input
-                      type="time"
-                      value={newTime}
-                      onChange={(e) => setNewTime(e.target.value)}
-                      className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
-                    />
-                  </label>
-
-                  <button
-                    onClick={createJobs}
-                    disabled={busy || !newSiteId || newWorkers.length === 0}
-                    className="mt-5 rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
-                  >
-                    Создать смену
-                  </button>
-                </div>
-
-                <div className="mt-4 flex flex-wrap items-center gap-2">
-                  <button
-                    onClick={() => setJobsView('table')}
-                    className={cn(
-                      'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
-                      jobsView === 'table' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
-                    )}
-                  >
-                    Расписание
-                  </button>
-                  <button
-                    onClick={() => setJobsView('board')}
-                    className={cn(
-                      'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
-                      jobsView === 'board' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
-                    )}
-                  >
-                    Доска
-                  </button>
-
-                  <div className="ml-auto flex flex-wrap items-center gap-2">
-                    <button
-                      onClick={() => {
-                        setAnchorDate(toISODate(new Date()))
-                        recalcRange('day', toISODate(new Date()))
-                      }}
-                      className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/40"
-                    >
-                      Сегодня
-                    </button>
-                    <button
-                      onClick={() => {
-                        const t = new Date()
-                        setAnchorDate(toISODate(t))
-                        setDateFrom(toISODate(startOfWeek(t)))
-                        setDateTo(toISODate(endOfWeek(t)))
-                      }}
-                      className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/40"
-                    >
-                      Неделя
-                    </button>
-                    <button
-                      onClick={() => {
-                        const t = new Date()
-                        setAnchorDate(toISODate(t))
-                        setDateFrom(toISODate(startOfMonth(t)))
-                        setDateTo(toISODate(endOfMonth(t)))
-                      }}
-                      className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/40"
-                    >
-                      Месяц
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
-                <div className="flex flex-wrap items-end justify-between gap-3">
-                  <div className="text-sm font-semibold text-yellow-100">Фильтры</div>
-
-                  <div className="flex flex-wrap items-end gap-2">
-                    <label className="grid gap-1">
-                      <span className="text-[11px] text-zinc-300">С</span>
-                      <input
-                        type="date"
-                        value={dateFrom}
-                        onChange={(e) => setDateFrom(e.target.value)}
-                        className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
-                      />
-                    </label>
-                    <label className="grid gap-1">
-                      <span className="text-[11px] text-zinc-300">По</span>
-                      <input
-                        type="date"
-                        value={dateTo}
-                        onChange={(e) => setDateTo(e.target.value)}
-                        className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
-                      />
-                    </label>
-
-                    <label className="grid gap-1">
-                      <span className="text-[11px] text-zinc-300">Объект</span>
-                      <select
-                        value={filterSite}
-                        onChange={(e) => setFilterSite(e.target.value)}
-                        className="w-[220px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
-                      >
-                        <option value="">Все</option>
-                        {sites
-                          .slice()
-                          .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-                          .map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.name || s.id}
-                            </option>
-                          ))}
-                      </select>
-                    </label>
-
-                    <label className="grid gap-1">
-                      <span className="text-[11px] text-zinc-300">Работник</span>
-                      <select
-                        value={filterWorker}
-                        onChange={(e) => setFilterWorker(e.target.value)}
-                        className="w-[220px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
-                      >
-                        <option value="">Все</option>
-                        {workers
-                          .slice()
-                          .sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''))
-                          .map((w) => (
-                            <option key={w.id} value={w.id}>
-                              {w.full_name || 'Без имени'}
-                            </option>
-                          ))}
-                      </select>
-                    </label>
-                  </div>
-                </div>
-
-                {jobsView === 'board' ? (
-                  <div className="mt-5 grid gap-3 lg:grid-cols-4">
-                    {[
-                      { key: 'planned', title: 'Запланировано', items: planned },
-                      { key: 'in_progress', title: 'В процессе', items: inProgress },
-                      { key: 'done', title: 'Завершено', items: done },
-                      { key: 'cancelled', title: 'Отменено', items: cancelled },
-                    ].map((col) => (
-                      <div key={col.key} className="rounded-3xl border border-yellow-400/12 bg-black/20 p-4">
-                        <div className="text-xs font-semibold text-zinc-200">{col.title}</div>
-                        <div className="mt-3 grid gap-2">
-                          {col.items.map((j) => jobCard(j, false))}
-                          {col.items.length === 0 ? <div className="text-xs text-zinc-500">—</div> : null}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="mt-5 overflow-auto rounded-3xl border border-yellow-400/10 bg-black/20">
-                    <table className="min-w-[920px] w-full text-left text-sm">
-                      <thead className="bg-black/30 text-xs text-zinc-300">
-                        <tr>
-                          <th className="px-4 py-3">Дата</th>
-                          <th className="px-4 py-3">Время</th>
-                          <th className="px-4 py-3">Объект</th>
-                          <th className="px-4 py-3">Работник</th>
-                          <th className="px-4 py-3">Статус</th>
-                          <th className="px-4 py-3">Начал</th>
-                          <th className="px-4 py-3">Закончил</th>
-                          <th className="px-4 py-3"></th>
-                        </tr>
-                      </thead>
-                      <tbody className="text-sm text-zinc-100">
-                        {scheduleFiltered
-                          .slice()
-                          .sort((a, b) => `${a.job_date || ''} ${timeHHMM(a.scheduled_time)}`.localeCompare(`${b.job_date || ''} ${timeHHMM(b.scheduled_time)}`))
-                          .map((j) => (
-                            <tr key={j.id} className="border-t border-yellow-400/5 hover:bg-yellow-400/5">
-                              <td className="px-4 py-3">{fmtD(j.job_date)}</td>
-                              <td className="px-4 py-3">{timeHHMM(j.scheduled_time)}</td>
-                              <td className="px-4 py-3">{j.site_name || '—'}</td>
-                              <td className="px-4 py-3">
-                                {j.worker_id ? (
-                                  <button onClick={() => openWorkerCard(j.worker_id!)} className="text-yellow-100 hover:text-yellow-50">
-                                    {j.worker_name || '—'}
-                                  </button>
-                                ) : (
-                                  '—'
-                                )}
-                              </td>
-                              <td className="px-4 py-3">{statusRu(String(j.status || ''))}</td>
-                              <td className="px-4 py-3">{fmtDT(j.started_at)}</td>
-                              <td className="px-4 py-3">{fmtDT(j.stopped_at)}</td>
-                              <td className="px-4 py-3">
-                                <button
-                                  onClick={() => openEditForJob(j)}
-                                  className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40"
-                                >
-                                  править
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        {scheduleFiltered.length === 0 ? (
-                          <tr>
-                            <td colSpan={8} className="px-4 py-6 text-center text-xs text-zinc-500">
-                              Нет смен
-                            </td>
-                          </tr>
-                        ) : null}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : null}
-
-          {/* ГРАФИК */}
-          {tab === 'plan' ? (
-            <div className="mt-6">
-              <PlanToolbar />
-
-              {planView === 'week' ? <PlanWeekGrid /> : null}
-              {planView === 'day' ? <PlanDayGrid /> : null}
-              {planView === 'month' ? <PlanMonthGrid /> : null}
-
-              <div className="mt-4 rounded-3xl border border-yellow-400/15 bg-black/20 p-4 text-xs text-zinc-300">
-                Подсказка: перетаскивай смены мышкой. Клик по смене — “править”. “Перенести” — быстрый перевод на другого работника. “Отменить” — убрать из графика.
-              </div>
-            </div>
-          ) : null}
-        </div>
-      </div>
-
-      {/* МОДАЛКА: ПРАВКА СМЕНЫ */}
-      <Modal open={editOpen} title="Правка смены" onClose={() => setEditOpen(false)}>
-        <div className="grid gap-3">
-          <div className="grid gap-1">
-            <span className="text-[11px] text-zinc-300">Объект</span>
-            <select
-              value={editSiteId}
-              onChange={(e) => setEditSiteId(e.target.value)}
-              className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
-            >
-              <option value="">—</option>
-              {activeSites.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name || s.id}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="grid gap-1">
-            <span className="text-[11px] text-zinc-300">Работник</span>
-            <select
-              value={editWorkerId}
-              onChange={(e) => setEditWorkerId(e.target.value)}
-              className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
-            >
-              <option value="">—</option>
-              {workersForSelect.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.full_name || 'Работник'}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="grid gap-1">
-              <span className="text-[11px] text-zinc-300">Дата</span>
-              <input
-                type="date"
-                value={editDate}
-                onChange={(e) => setEditDate(e.target.value)}
-                className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
-              />
-            </label>
-            <label className="grid gap-1">
-              <span className="text-[11px] text-zinc-300">Время</span>
-              <input
-                type="time"
-                value={editTime}
-                onChange={(e) => setEditTime(e.target.value)}
-                className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
-              />
-            </label>
-          </div>
-
-          <div className="grid gap-1">
-            <span className="text-[11px] text-zinc-300">Статус</span>
-            <select
-              value={String(editStatus)}
-              onChange={(e) => setEditStatus(e.target.value)}
-              className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
-            >
-              <option value="planned">Запланировано</option>
-              <option value="in_progress">В процессе</option>
-              <option value="done">Завершено</option>
-              <option value="cancelled">Отменено</option>
-            </select>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <button
-              onClick={() => {
-                if (!editJobId) return
-                setCancelJobId(editJobId)
-                setCancelOpen(true)
-              }}
-              className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/40"
-            >
-              Отменить смену
-            </button>
-
-            <button
-              onClick={saveEdit}
-              disabled={busy || !editJobId}
-              className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-2 text-xs font-semibold text-yellow-100 hover:border-yellow-200/70 disabled:opacity-60"
-            >
-              Сохранить
-            </button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* МОДАЛКА: КАРТОЧКА РАБОТНИКА */}
-      <Modal open={workerCardOpen} title="Карточка работника" onClose={() => setWorkerCardOpen(false)}>
-        <div className="grid gap-4">
-          <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-4">
-            <div className="flex flex-wrap gap-4">
-              <div className="h-20 w-20 overflow-hidden rounded-2xl border border-yellow-400/15 bg-black/30">
-                {wcAvatarUrl ? (
-                  <img src={wcAvatarUrl} alt="Фото" className="h-full w-full object-cover" />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-[10px] text-zinc-500">нет фото</div>
-                )}
-              </div>
-
-              <div className="min-w-[220px] flex-1">
-                <div className="text-sm font-semibold text-yellow-100">
-                  {`${wcFirstName} ${wcLastName}`.trim() || workerCardProfile?.full_name || workersById.get(workerCardId)?.full_name || 'Работник'}
-                </div>
-
-                <div className="mt-1 text-xs text-zinc-300">
-                  Email: <span className="text-zinc-100">{workerCardProfile?.email || '—'}</span>
-                </div>
-
-                <div className="mt-1 text-xs text-zinc-300">
-                  Телефон: <span className="text-zinc-100">{workerCardProfile?.phone || '—'}</span>
-                </div>
-
-                <div className="mt-1 text-xs text-zinc-300">
-                  Статус: <span className="text-zinc-100">{workerCardProfile?.active === false ? 'выключен' : 'активен'}</span> • Роль:{' '}
-                  <span className="text-zinc-100">{workerCardProfile?.role || 'worker'}</span>
-                </div>
-
-                <div className="mt-1 text-xs text-zinc-300">
-                  Диапазон: <span className="text-zinc-100">{fmtD(dateFrom)} — {fmtD(dateTo)}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              <label className="grid gap-1">
-                <span className="text-[11px] text-zinc-300">Имя</span>
-                <input
-                  value={wcFirstName}
-                  onChange={(e) => setWcFirstName(e.target.value)}
-                  placeholder="Имя"
-                  className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
-                />
-              </label>
-
-              <label className="grid gap-1">
-                <span className="text-[11px] text-zinc-300">Фамилия</span>
-                <input
-                  value={wcLastName}
-                  onChange={(e) => setWcLastName(e.target.value)}
-                  placeholder="Фамилия"
-                  className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
-                />
-              </label>
-
-              <label className="grid gap-1 md:col-span-2">
-                <span className="text-[11px] text-zinc-300">Фото (URL)</span>
-                <input
-                  value={wcAvatarUrl}
-                  onChange={(e) => setWcAvatarUrl(e.target.value)}
-                  placeholder="https://..."
-                  className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
-                />
-              </label>
-
-              <label className="grid gap-1">
-                <span className="text-[11px] text-zinc-300">Телефон</span>
-                <input
-                  value={wcPhone}
-                  onChange={(e) => setWcPhone(e.target.value)}
-                  placeholder="+31..."
-                  className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
-                />
-              </label>
-
-              <label className="grid gap-1">
-                <span className="text-[11px] text-zinc-300">Адрес</span>
-                <input
-                  value={wcAddress}
-                  onChange={(e) => setWcAddress(e.target.value)}
-                  placeholder="Адрес"
-                  className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
-                />
-              </label>
-
-              <label className="grid gap-1 md:col-span-2">
-                <span className="text-[11px] text-zinc-300">Заметки</span>
-                <textarea
-                  value={wcNotes}
-                  onChange={(e) => setWcNotes(e.target.value)}
-                  placeholder="Заметки по работнику"
-                  rows={4}
-                  className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
-                />
-              </label>
-            </div>
-
-            <div className="mt-3 flex items-center justify-end">
-              <button
-                onClick={saveWorkerProfile}
-                disabled={busy || !workerCardId}
-                className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-2 text-xs font-semibold text-yellow-100 hover:border-yellow-200/70 disabled:opacity-60"
-              >
-                Сохранить карточку
-              </button>
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-4">
-            <div className="text-sm font-semibold text-yellow-100">Смены</div>
-
-            <div className="mt-3 grid gap-2">
-              {workerCardItems.length === 0 ? (
-                <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-3 text-xs text-zinc-500">Смен нет</div>
-              ) : null}
-
-              {workerCardItems.map((j) => (
-                <div key={j.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-yellow-400/10 bg-black/30 px-3 py-2">
-                  <div className="text-xs text-zinc-200">
-                    <span className="text-zinc-100">{fmtD(j.job_date)}</span> • <span className="text-zinc-100">{timeHHMM(j.scheduled_time)}</span> •{' '}
-                    <span className="text-zinc-100">{j.site_name || '—'}</span> • <span className="text-zinc-500">{statusRu(String(j.status || ''))}</span>
-                    <div className="mt-1 text-[11px] text-zinc-400">Начал: {fmtDT(j.started_at)} • Закончил: {fmtDT(j.stopped_at)}</div>
-                  </div>
-                  <button
-                    onClick={() => openEditForJob(j)}
-                    disabled={busy}
-                    className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40 disabled:opacity-60"
-                  >
-                    Править
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </Modal>
-
-      {/* МОДАЛКА: ПЕРЕНОС СМЕНЫ НА ДРУГОГО РАБОТНИКА */}
-      <Modal open={moveJobOpen} title="Перенести смену" onClose={() => setMoveJobOpen(false)}>
-        <div className="grid gap-3">
-          <div className="grid gap-1">
-            <span className="text-[11px] text-zinc-300">Кому перенести</span>
-            <select
-              value={moveJobTargetWorker}
-              onChange={(e) => setMoveJobTargetWorker(e.target.value)}
-              className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
-            >
-              <option value="">Выбери работника…</option>
-              {workersForSelect.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.full_name || 'Работник'}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <button
-            onClick={() => {
-              if (!moveJobId || !moveJobTargetWorker) return
-              void moveJob(moveJobId, { worker_id: moveJobTargetWorker })
-              setMoveJobOpen(false)
-            }}
-            disabled={busy || !moveJobId || !moveJobTargetWorker}
-            className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-yellow-100 hover:border-yellow-200/70 disabled:opacity-60"
-          >
-            Перенести
-          </button>
-        </div>
-      </Modal>
-
-      {/* МОДАЛКА: ПЕРЕНОС ДНЯ */}
-      <Modal open={moveDayOpen} title="Перенести день" onClose={() => setMoveDayOpen(false)}>
-        <div className="grid gap-3">
-          <div className="grid gap-1">
-            <span className="text-[11px] text-zinc-300">Дата</span>
-            <input
-              type="date"
-              value={moveDayDate}
-              onChange={(e) => setMoveDayDate(e.target.value)}
-              className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
-            />
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="grid gap-1">
-              <span className="text-[11px] text-zinc-300">С кого</span>
-              <select
-                value={moveDayFromWorker}
-                onChange={(e) => setMoveDayFromWorker(e.target.value)}
-                className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
-              >
-                <option value="">Выбери работника…</option>
-                {workersForSelect.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.full_name || 'Работник'}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="grid gap-1">
-              <span className="text-[11px] text-zinc-300">На кого</span>
-              <select
-                value={moveDayToWorker}
-                onChange={(e) => setMoveDayToWorker(e.target.value)}
-                className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
-              >
-                <option value="">Выбери работника…</option>
-                {workersForSelect.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.full_name || 'Работник'}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          <label className="flex items-center gap-2 rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-3 text-xs text-zinc-200">
-            <input
-              type="checkbox"
-              checked={moveDayOnlyPlanned}
-              onChange={(e) => setMoveDayOnlyPlanned(e.target.checked)}
-              className="h-4 w-4 accent-yellow-400"
-            />
-            Переносить только “Запланировано”
-          </label>
-
-          <button
-            onClick={moveDay}
-            disabled={busy || !moveDayFromWorker || !moveDayToWorker || !moveDayDate}
-            className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-yellow-100 hover:border-yellow-200/70 disabled:opacity-60"
-          >
-            Перенести день
-          </button>
-        </div>
-      </Modal>
-
-      {/* МОДАЛКА: ОТМЕНА */}
-      <Modal open={cancelOpen} title="Отмена смены" onClose={() => setCancelOpen(false)}>
-        <div className="grid gap-3">
-          <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-4 py-3 text-sm text-zinc-200">
-            Это уберёт смену из работы (статус “Отменено”). Отчёты не ломаем.
-          </div>
-
-          <button
-            onClick={() => cancelJob(cancelJobId)}
-            disabled={busy || !cancelJobId}
-            className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-yellow-100 hover:border-yellow-200/70 disabled:opacity-60"
-          >
-            Отменить
-          </button>
-        </div>
-      </Modal>
-    </main>
-  )
+      }
+    >
+      <AdminInner />
+    </Suspense>
+  );
 }

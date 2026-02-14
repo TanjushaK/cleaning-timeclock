@@ -24,6 +24,7 @@ type JobRow = {
   title: string | null
   job_date: string | null
   scheduled_time: string | null
+  planned_minutes: number | null
   status: string | null
   site: SiteRow | null
 }
@@ -46,6 +47,25 @@ function timeHHMM(v?: string | null) {
   const m = /^(\d{2}):(\d{2})/.exec(v)
   if (m) return `${m[1]}:${m[2]}`
   return v
+}
+
+function addMinutesHHMM(hhmm: string, minutes: number) {
+  const m = /^(\d{2}):(\d{2})$/.exec(hhmm)
+  if (!m) return '—'
+  const base = Number(m[1]) * 60 + Number(m[2])
+  const total = (base + minutes) % 1440
+  const norm = (total + 1440) % 1440
+  const hh = pad2(Math.floor(norm / 60))
+  const mm = pad2(norm % 60)
+  return `${hh}:${mm}`
+}
+
+function plannedRange(start?: string | null, plannedMinutes?: number | null) {
+  const s = timeHHMM(start)
+  if (s === '—') return '—'
+  const mins = typeof plannedMinutes === 'number' && Number.isFinite(plannedMinutes) ? plannedMinutes : 60
+  const e = addMinutesHHMM(s, Math.max(0, Math.round(mins)))
+  return `${s}–${e}`
 }
 
 function statusRu(s?: string | null) {
@@ -462,7 +482,7 @@ export default function HomePage() {
                   <div className="min-w-0">
                     <div className="truncate text-sm font-semibold text-yellow-100">{j.site?.name || j.title || 'Смена'}</div>
                     <div className="mt-1 text-xs text-zinc-300">
-                      {formatDateRu(j.job_date)} • {timeHHMM(j.scheduled_time)} • <span className="text-zinc-500">{statusRu(j.status)}</span>
+                      {formatDateRu(j.job_date)} • {plannedRange(j.scheduled_time, j.planned_minutes)} • <span className="text-zinc-500">{statusRu(j.status)}</span>
                     </div>
                     <div className="mt-1 text-[11px] text-zinc-500">id: {j.id}</div>
                   </div>

@@ -4,66 +4,73 @@ import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-function isEmail(s: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)
-}
-
-async function findUserIdByEmail(supabase: any, email: string): Promise<string | null> {
-  let page = 1
-  const perPage = 200
-  const emailLc = email.trim().toLowerCase()
-
-  for (let i = 0; i < 50; i++) {
-    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage })
-    if (error) throw new ApiError(500, `Не смог прочитать auth users: ${error.message}`)
-
-    const users = data?.users ?? []
-    const hit = users.find((u: any) => String(u.email ?? '').toLowerCase() === emailLc)
-    if (hit?.id) return hit.id
-
-    if (users.length < perPage) break
-    page += 1
-  }
-
-  return null
+function normStr(v: unknown, max = 120) {
+  const s = String(v ?? '').trim()
+  return s ? s.slice(0, max) : null
 }
 
 export async function POST(req: Request) {
   try {
-    const { supabase, userId } = await requireAdmin(req)
+    const { supabase } = await requireAdmin(req)
+    const body = await req.json().catch(() => ({}))
 
-    const body = await req.json().catch(() => ({} as any))
-    const email = String(body?.email ?? '').trim().toLowerCase()
-    const role = String(body?.role ?? 'worker').trim().toLowerCase()
-    const active = body?.active === false ? false : true
+    const email = normStr(body.email, 160)
+    const role = normStr(body.role, 40) || 'worker'
+    const active = typeof body.active === 'boolean' ? body.active : true
 
-    if (!email) throw new ApiError(400, 'Нужен email')
-    if (!isEmail(email)) throw new ApiError(400, 'Неверный email')
-    if (role !== 'worker' && role !== 'admin') throw new ApiError(400, 'role должен быть worker или admin')
+    const first_name = normStr(body.first_name)
+    const last_name = normStr(body.last_name)
+    const phone = normStr(body.phone)
+    const address = normStr(body.address, 240)
+    const notes = normStr(body.notes, 4000)
 
-    // 1) invite
-    const { data: inv, error: invErr } = await supabase.auth.admin.inviteUserByEmail(email)
-    let targetUserId: string | null = inv?.user?.id ?? null
+    if (!email) throw new ApiError(400, 'email обязателен')
 
-    // 2) если invite не дал id — ищем существующего юзера через listUsers
-    if (!targetUserId) {
-      targetUserId = await findUserIdByEmail(supabase, email)
+    const full_name =
+      normStr(body.full_name) ||
+      (first_name || last_name ? [first_name, last_name].filter(Boolean).join(' ') : null) ||
+      email.split('@')[0]
+
+    // 1) Invite (Supabase sends email by default)
+    const { data: invited, error: invErr } = await supabase.auth.admin.inviteUserByEmail(email)
+    if (invErr) throw new ApiError(400, invErr.message)
+    const userId = invited.user?.id
+    if (!userId) throw new ApiError(500, 'Не удалось получить user.id')
+
+    // 2) Store profile fields
+    const { error: upErr } = await supabase.from('profiles').upsert({
+      id: userId,
+      email,
+      role,
+      active,
+      full_name,
+      first_name,
+      last_name,
+      phone,
+      address,
+      notes,
+    })
+    if (upErr) throw new ApiError(400, upErr.message)
+
+    // 3) Also return a direct invite link (useful if email delivery is slow)
+    let invite_link: string | null = null
+    try {
+      // `generateLink` is available in supabase-js v2
+      const { data: gl, error: glErr } = await supabase.auth.admin.generateLink({ type: 'invite', email })
+      if (!glErr) {
+        // Different versions expose it slightly differently
+        invite_link =
+          (gl as any)?.properties?.action_link ||
+          (gl as any)?.action_link ||
+          (gl as any)?.properties?.actionLink ||
+          null
+      }
+    } catch {
+      invite_link = null
     }
 
-    if (!targetUserId) {
-      const msg = invErr?.message ? `: ${invErr.message}` : ''
-      throw new ApiError(400, `Не смог пригласить/найти пользователя${msg}`)
-    }
-
-    // 3) upsert profile
-    const { error: pErr } = await supabase
-      .from('profiles')
-      .upsert({ id: targetUserId, role, active }, { onConflict: 'id' })
-
-    if (pErr) throw new ApiError(500, `Не смог создать/обновить profile: ${pErr.message}`)
-
-    return NextResponse.json({ ok: true, invited_user_id: targetUserId, invited_by: userId }, { status: 200 })
-  } catch (e) {
-    return toErrorResponse(e)
+    return NextResponse.json({ ok: true, user_id: userId, invite_link })
+  } catch (err) {
+    return toErrorResponse(err)
   }
 }

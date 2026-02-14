@@ -69,6 +69,13 @@ export async function POST(req: NextRequest) {
       patch.scheduled_time = t
     }
 
+
+    if (body?.planned_minutes != null) {
+      const n = Number(body.planned_minutes)
+      if (!Number.isFinite(n) || n < 1 || n > 1440) return NextResponse.json({ error: 'planned_minutes должен быть 1..1440' }, { status: 400 })
+      patch.planned_minutes = Math.round(n)
+    }
+
     if (body?.worker_id !== undefined) patch.worker_id = body.worker_id ? String(body.worker_id) : null
     if (body?.site_id !== undefined) patch.site_id = body.site_id ? String(body.site_id) : null
     if (body?.status !== undefined) patch.status = body.status ? String(body.status) : null

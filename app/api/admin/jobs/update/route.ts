@@ -50,42 +50,38 @@ export async function POST(req: NextRequest) {
     if (body?.site_id != null) patch.site_id = String(body.site_id).trim() || null
     if (body?.worker_id != null) patch.worker_id = String(body.worker_id).trim() || null
     if (body?.job_date != null) patch.job_date = String(body.job_date).trim() || null
+
     if (body?.scheduled_time != null) {
       const t = String(body.scheduled_time).trim()
       patch.scheduled_time = t ? (t.length === 5 ? `${t}:00` : t) : null
     }
+
+    if (body?.planned_minutes != null) {
+      const n = Number(body.planned_minutes)
+      if (!Number.isFinite(n) || n < 1 || n > 1440) {
+        return NextResponse.json({ error: 'planned_minutes должен быть числом 1..1440' }, { status: 400 })
+      }
+      patch.planned_minutes = Math.round(n)
+    }
+
     if (body?.status != null) patch.status = String(body.status).trim() || null
 
-    if (Object.keys(patch).length === 0) return NextResponse.json({ error: 'Нечего обновлять' }, { status: 400 })
+    if (Object.keys(patch).length === 0) return NextResponse.json({ error: 'Нет изменений' }, { status: 400 })
 
     const url = envOrThrow('NEXT_PUBLIC_SUPABASE_URL')
     const service = envOrThrow('SUPABASE_SERVICE_ROLE_KEY')
     const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } })
 
-    const { data: logs, error: logsErr } = await admin.from('time_logs').select('id').eq('job_id', jobId).limit(1)
-    if (logsErr) return NextResponse.json({ error: logsErr.message }, { status: 500 })
-
-    const hasLogs = Array.isArray(logs) && logs.length > 0
-
-    if (hasLogs) {
-      if (patch.worker_id != null && patch.worker_id !== undefined) {
-        return NextResponse.json({ error: 'Нельзя сменить работника: по смене уже есть отметки времени.' }, { status: 400 })
-      }
-      if (patch.site_id != null && patch.site_id !== undefined) {
-        return NextResponse.json({ error: 'Нельзя сменить объект: по смене уже есть отметки времени.' }, { status: 400 })
-      }
-      if (patch.job_date != null && patch.job_date !== undefined) {
-        return NextResponse.json({ error: 'Нельзя сменить дату: по смене уже есть отметки времени.' }, { status: 400 })
-      }
-      if (patch.scheduled_time != null && patch.scheduled_time !== undefined) {
-        return NextResponse.json({ error: 'Нельзя сменить время: по смене уже есть отметки времени.' }, { status: 400 })
-      }
+    // если scheduled_time пришло в HH:MM — дополним :00
+    if (patch.scheduled_time != null && typeof patch.scheduled_time === 'string') {
+      const v = patch.scheduled_time
+      if (/^\d{2}:\d{2}$/.test(v)) patch.scheduled_time = `${v}:00`
     }
 
-    const { error } = await admin.from('jobs').update(patch).eq('id', jobId)
+    const { data, error } = await admin.from('jobs').update(patch).eq('id', jobId).select('id').maybeSingle()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-    return NextResponse.json({ ok: true })
+    return NextResponse.json({ ok: true, job: data ?? null })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Ошибка сервера' }, { status: 500 })
   }
