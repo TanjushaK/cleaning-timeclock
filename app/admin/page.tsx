@@ -138,6 +138,17 @@ function GoldButton(
   );
 }
 
+function SmallActionButton(
+  props: React.ButtonHTMLAttributes<HTMLButtonElement> & { tone?: 'gold' | 'danger' }
+) {
+  const { className, tone = 'gold', ...rest } = props;
+  const base =
+    'rounded-full px-3 py-1.5 text-xs transition border disabled:opacity-50 disabled:cursor-not-allowed';
+  const gold = 'border-[#3b3212] bg-black/20 text-[#d9c37a] hover:bg-black/30';
+  const danger = 'border-[#3b1212] bg-black/20 text-[#f0b6b6] hover:bg-black/30';
+  return <button {...rest} className={clsx(base, tone === 'danger' ? danger : gold, className)} />;
+}
+
 function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
   const { className, ...rest } = props;
   return (
@@ -362,6 +373,37 @@ function AdminInner() {
     }
   }
 
+  async function makeAdmin(worker_id: string) {
+    setBanner(null);
+    try {
+      await authFetchJson('/api/admin/workers/set-role', {
+        method: 'POST',
+        body: { worker_id, role: 'admin' },
+      });
+      setBanner({ kind: 'ok', text: 'Роль обновлена: админ.' });
+      await loadAll();
+    } catch (e: any) {
+      setBanner({ kind: 'err', text: e?.message || 'Не удалось назначить админа.' });
+    }
+  }
+
+  async function deleteWorker(worker_id: string) {
+    const ok = window.confirm('Удалить работника? Это действие нельзя отменить.');
+    if (!ok) return;
+
+    setBanner(null);
+    try {
+      await authFetchJson('/api/admin/workers/delete', {
+        method: 'POST',
+        body: { worker_id },
+      });
+      setBanner({ kind: 'ok', text: 'Работник удалён.' });
+      await loadAll();
+    } catch (e: any) {
+      setBanner({ kind: 'err', text: e?.message || 'Не удалось удалить работника.' });
+    }
+  }
+
   function parseNumOrNull(v: string): number | null {
     const t = v.trim();
     if (!t) return null;
@@ -576,7 +618,6 @@ function AdminInner() {
   return (
     <div className="min-h-screen bg-black text-[#f2e6b8]">
       <div className="mx-auto max-w-6xl p-6">
-        {/* Header */}
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="text-2xl font-semibold">Админ-панель</div>
@@ -592,7 +633,6 @@ function AdminInner() {
           </div>
         </div>
 
-        {/* Tabs row + counters */}
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <GoldButton variant={tab === 'sites' ? 'primary' : 'ghost'} onClick={() => setTab('sites')}>
@@ -604,10 +644,7 @@ function AdminInner() {
             <GoldButton variant={tab === 'jobs' ? 'primary' : 'ghost'} onClick={() => setTab('jobs')}>
               Смены
             </GoldButton>
-            <GoldButton
-              variant={tab === 'schedule' ? 'primary' : 'ghost'}
-              onClick={() => setTab('schedule')}
-            >
+            <GoldButton variant={tab === 'schedule' ? 'primary' : 'ghost'} onClick={() => setTab('schedule')}>
               График
             </GoldButton>
           </div>
@@ -641,7 +678,6 @@ function AdminInner() {
           </div>
         ) : null}
 
-        {/* Content */}
         {tab === 'sites' ? (
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -649,7 +685,6 @@ function AdminInner() {
               <GoldButton onClick={() => setAddSiteOpen(true)}>Добавить объект</GoldButton>
             </div>
 
-            {/* Quick assign */}
             <div className="rounded-2xl border border-[#3b3212] bg-gradient-to-b from-[#0f0f0f] to-[#070707] p-5">
               <div className="text-base font-semibold">Быстрое назначение</div>
               <div className="mt-1 text-sm text-[#d9c37a]">
@@ -682,17 +717,13 @@ function AdminInner() {
                 </div>
 
                 <div className="flex items-end">
-                  <GoldButton
-                    onClick={() => assign(quickSiteId, quickWorkerId)}
-                    disabled={!quickSiteId || !quickWorkerId}
-                  >
+                  <GoldButton onClick={() => assign(quickSiteId, quickWorkerId)} disabled={!quickSiteId || !quickWorkerId}>
                     Назначить
                   </GoldButton>
                 </div>
               </div>
             </div>
 
-            {/* Sites list */}
             <div className="space-y-3">
               {filteredSites.length === 0 ? (
                 <div className="rounded-2xl border border-[#3b3212] bg-black/20 p-5 text-sm text-[#d9c37a]">
@@ -776,7 +807,6 @@ function AdminInner() {
               })}
             </div>
 
-            {/* Add site modal */}
             <Modal
               open={addSiteOpen}
               title="Добавить объект"
@@ -802,10 +832,7 @@ function AdminInner() {
 
                 <div className="md:col-span-2">
                   <div className="mb-1 text-xs text-[#d9c37a]">Адрес</div>
-                  <Input
-                    value={newSite.address}
-                    onChange={(e) => setNewSite({ ...newSite, address: e.target.value })}
-                  />
+                  <Input value={newSite.address} onChange={(e) => setNewSite({ ...newSite, address: e.target.value })} />
                 </div>
 
                 <div>
@@ -867,15 +894,20 @@ function AdminInner() {
                 {workers.map((w) => {
                   const label = titleWorker(w);
                   const active = w.active !== false;
+                  const isAdmin = (w.role || '').toLowerCase() === 'admin';
 
                   return (
-                    <button
+                    <div
                       key={w.id}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => openWorkerCard(w.id)}
-                      className="flex w-full items-center justify-between gap-3 rounded-2xl border border-[#3b3212] bg-black/20 px-4 py-3 text-left hover:bg-black/30"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') openWorkerCard(w.id);
+                      }}
+                      className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-2xl border border-[#3b3212] bg-black/20 px-4 py-3 text-left hover:bg-black/30"
                     >
                       <div className="flex min-w-0 items-center gap-3">
-                        {/* Avatar */}
                         <div className="h-10 w-10 shrink-0 overflow-hidden rounded-xl border border-[#3b3212] bg-black/30">
                           {w.avatar_url ? (
                             // eslint-disable-next-line @next/next/no-img-element
@@ -887,21 +919,44 @@ function AdminInner() {
                           )}
                         </div>
 
-                        {/* Text */}
                         <div className="min-w-0">
                           <div className="truncate text-sm">{label}</div>
                           <div className="mt-0.5 truncate text-xs text-[#d9c37a]">{w.phone || w.address || ''}</div>
                         </div>
                       </div>
 
-                      <Badge>{active ? 'активен' : 'неактивен'}</Badge>
-                    </button>
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        <Badge>{active ? 'активен' : 'неактивен'}</Badge>
+                        {isAdmin ? <Badge>админ</Badge> : null}
+
+                        <SmallActionButton
+                          disabled={isAdmin}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            makeAdmin(w.id);
+                          }}
+                          title={isAdmin ? 'Уже админ' : 'Сделать админом'}
+                        >
+                          Сделать админом
+                        </SmallActionButton>
+
+                        <SmallActionButton
+                          tone="danger"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteWorker(w.id);
+                          }}
+                          title="Удалить работника"
+                        >
+                          Удалить
+                        </SmallActionButton>
+                      </div>
+                    </div>
                   );
                 })}
               </div>
             </div>
 
-            {/* Add worker modal */}
             <Modal
               open={addWorkerOpen}
               title="Добавить работника"
@@ -990,14 +1045,11 @@ function AdminInner() {
                       Копировать
                     </GoldButton>
                   </div>
-                  <div className="mt-2 text-xs text-[#d9c37a]">
-                    Можно отправить работнику вручную, если письмо задерживается.
-                  </div>
+                  <div className="mt-2 text-xs text-[#d9c37a]">Можно отправить работнику вручную.</div>
                 </div>
               ) : null}
             </Modal>
 
-            {/* Worker card modal */}
             <Modal
               open={workerOpen}
               title={workerDetail ? `Карточка работника: ${titleWorker(workerDetail)}` : 'Карточка работника'}
