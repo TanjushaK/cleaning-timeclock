@@ -1,41 +1,47 @@
-import { NextResponse } from 'next/server';
-import { ApiError, requireAdmin } from '@/lib/supabase-server';
+import { NextResponse } from 'next/server'
+import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+function toNum(v: any): number | null {
+  const n = typeof v === 'number' ? v : (typeof v === 'string' ? Number(v) : NaN)
+  return Number.isFinite(n) ? n : null
+}
 
 export async function POST(req: Request) {
   try {
-    const { supabase } = await requireAdmin(req);
-    const body = await req.json();
+    const { supabase } = await requireAdmin(req)
 
-    const name = (body?.name ?? '').toString().trim();
-    const address = body?.address == null ? null : String(body.address).trim() || null;
+    const body = await req.json().catch(() => ({} as any))
+    const name = String(body?.name ?? '').trim()
+    if (!name) throw new ApiError(400, 'name_required')
 
-    const lat = body?.lat == null ? null : Number(body.lat);
-    const lng = body?.lng == null ? null : Number(body.lng);
-    const radius = body?.radius == null ? null : Number(body.radius);
+    const address = String(body?.address ?? '').trim() || null
+    const lat = toNum(body?.lat)
+    const lng = toNum(body?.lng)
+    const radius = toNum(body?.radius)
+    const default_minutes = toNum(body?.default_minutes)
 
-    if (!name) throw new ApiError(400, 'Нужно название объекта');
-
-    const safeLat = lat != null && Number.isFinite(lat) ? lat : null;
-    const safeLng = lng != null && Number.isFinite(lng) ? lng : null;
-    const safeRadius = radius != null && Number.isFinite(radius) ? radius : 150;
+    const photo_url = String(body?.photo_url ?? '').trim() || null
 
     const { data, error } = await supabase
       .from('sites')
       .insert({
         name,
         address,
-        lat: safeLat,
-        lng: safeLng,
-        radius: safeRadius,
+        lat,
+        lng,
+        radius: radius ?? 150,
+        default_minutes: default_minutes ?? 120,
+        photo_url,
       })
-      .select('id, name, address, lat, lng, radius')
-      .single();
+      .select('id, name, address, lat, lng, radius, default_minutes, photo_url, archived_at')
+      .single()
 
-    if (error) throw new ApiError(500, error.message || 'Не смог создать объект');
-
-    return NextResponse.json({ site: data }, { status: 200 });
-  } catch (e: any) {
-    const status = e?.status ?? 500;
-    return NextResponse.json({ error: e?.message ?? 'Ошибка' }, { status });
+    if (error) throw new ApiError(500, error.message || 'create_site_failed')
+    return NextResponse.json({ site: data }, { status: 200 })
+  } catch (e) {
+    return toErrorResponse(e)
   }
 }
