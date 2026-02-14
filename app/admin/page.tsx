@@ -1,7 +1,5 @@
 'use client';
 
-export const dynamic = 'force-dynamic';
-
 import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
@@ -307,9 +305,14 @@ function AdminInner() {
   }
 
   async function ensureSession() {
-    const token = await getAccessToken();
-    setSessionOk(Boolean(token));
-    setChecking(false);
+    try {
+      const token = await getAccessToken();
+      setSessionOk(Boolean(token));
+    } catch {
+      setSessionOk(false);
+    } finally {
+      setChecking(false);
+    }
   }
 
   async function loadAll() {
@@ -510,8 +513,7 @@ function AdminInner() {
 
       const res = await authFetchForm<{ ok: boolean; url: string }>('/api/admin/upload/avatar', form);
 
-      const next = { ...(workerDetail || {}), avatar_url: res.url };
-      setWorkerDetail(next);
+      setWorkerDetail({ ...(workerDetail || {}), avatar_url: res.url });
       setBanner({ kind: 'ok', text: 'Фото обновлено.' });
       await loadAll();
     } catch (e: any) {
@@ -565,9 +567,30 @@ function AdminInner() {
   }
 
   useEffect(() => {
-    ensureSession();
-    const { data: sub } = supabase.auth.onAuthStateChange(() => ensureSession());
-    return () => sub.subscription.unsubscribe();
+    let alive = true;
+
+    (async () => {
+      try {
+        const token = await getAccessToken();
+        if (!alive) return;
+        setSessionOk(Boolean(token));
+      } catch {
+        if (!alive) return;
+        setSessionOk(false);
+      } finally {
+        if (!alive) return;
+        setChecking(false);
+      }
+    })();
+
+    const { data: sub } = supabase.auth.onAuthStateChange(() => {
+      ensureSession();
+    });
+
+    return () => {
+      alive = false;
+      sub.subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -737,11 +760,7 @@ function AdminInner() {
                       </div>
 
                       <div className="flex flex-wrap items-center justify-end gap-2">
-                        <SmallActionButton
-                          tone="danger"
-                          onClick={() => deleteSite(s.id)}
-                          title="Удалить объект"
-                        >
+                        <SmallActionButton tone="danger" onClick={() => deleteSite(s.id)} title="Удалить объект">
                           Удалить объект
                         </SmallActionButton>
                       </div>
@@ -871,9 +890,7 @@ function AdminInner() {
               <div className="text-base font-semibold">Работники</div>
 
               <div className="mt-3 space-y-2">
-                {visibleWorkers.length === 0 ? (
-                  <div className="text-sm text-[#d9c37a]">Пока нет работников.</div>
-                ) : null}
+                {visibleWorkers.length === 0 ? <div className="text-sm text-[#d9c37a]">Пока нет работников.</div> : null}
 
                 {visibleWorkers.map((w) => {
                   const label = titleWorker(w);
@@ -919,7 +936,6 @@ function AdminInner() {
                             e.stopPropagation();
                             makeAdmin(w.id);
                           }}
-                          title={isAdmin ? 'Уже админ' : 'Сделать админом'}
                         >
                           Сделать админом
                         </SmallActionButton>
@@ -930,7 +946,6 @@ function AdminInner() {
                             e.stopPropagation();
                             deleteWorker(w.id);
                           }}
-                          title="Удалить работника"
                         >
                           Удалить
                         </SmallActionButton>
@@ -1047,12 +1062,8 @@ function AdminInner() {
 
                       <div className="min-w-0">
                         <div className="text-sm font-semibold">{titleWorker(workerDetail)}</div>
-                        <div className="mt-1 text-xs text-[#d9c37a]">
-                          ID: <span className="select-all">{workerDetail.id}</span>
-                        </div>
-                        <div className="mt-1 text-xs text-[#d9c37a]">
-                          Статус: {workerDetail.active === false ? 'неактивен' : 'активен'}
-                        </div>
+                        <div className="mt-1 text-xs text-[#d9c37a]">ID: <span className="select-all">{workerDetail.id}</span></div>
+                        <div className="mt-1 text-xs text-[#d9c37a]">Статус: {workerDetail.active === false ? 'неактивен' : 'активен'}</div>
                       </div>
                     </div>
 
