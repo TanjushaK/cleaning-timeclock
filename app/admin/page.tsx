@@ -161,12 +161,16 @@ function appleNavUrl(lat: number, lng: number) {
   return `https://maps.apple.com/?daddr=${encodeURIComponent(dest)}`;
 }
 
-function osmStaticMapUrl(lat: number, lng: number, w = 320, h = 200, zoom = 16) {
-  const center = `${lat},${lng}`;
-  const markers = `${lat},${lng},red-pushpin`;
-  return `https://staticmap.openstreetmap.de/staticmap.php?center=${encodeURIComponent(
-    center
-  )}&zoom=${zoom}&size=${w}x${h}&maptype=mapnik&markers=${encodeURIComponent(markers)}`;
+// OSM embed iframe (стабильнее, чем бесплатные staticmap)
+function osmEmbedUrl(lat: number, lng: number, delta = 0.006) {
+  const left = (lng - delta).toFixed(6);
+  const bottom = (lat - delta).toFixed(6);
+  const right = (lng + delta).toFixed(6);
+  const top = (lat + delta).toFixed(6);
+  const marker = `${lat.toFixed(6)},${lng.toFixed(6)}`;
+  return `https://www.openstreetmap.org/export/embed.html?bbox=${left}%2C${bottom}%2C${right}%2C${top}&layer=mapnik&marker=${encodeURIComponent(
+    marker
+  )}`;
 }
 
 function CategoryPicker({
@@ -253,8 +257,6 @@ function MapMini({
   lng: number | null;
   onClick: () => void;
 }) {
-  const [err, setErr] = useState(false);
-
   if (lat == null || lng == null) {
     return (
       <div className="flex h-[92px] w-[150px] items-center justify-center rounded-2xl border border-yellow-400/10 bg-black/20 text-[11px] text-yellow-100/40">
@@ -263,70 +265,34 @@ function MapMini({
     );
   }
 
-  if (err) {
-    return (
+  return (
+    <div className="relative h-[92px] w-[150px] overflow-hidden rounded-2xl border border-yellow-400/20 bg-black/20">
+      <iframe src={osmEmbedUrl(lat, lng, 0.004)} className="h-full w-full" loading="lazy" />
       <button
         onClick={onClick}
-        className="flex h-[92px] w-[150px] items-center justify-center rounded-2xl border border-yellow-400/20 bg-yellow-400/10 text-[11px] font-semibold text-yellow-100 hover:border-yellow-300/50"
+        className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/0 to-black/0"
         title="Открыть навигацию"
-      >
-        Навигация
-      </button>
-    );
-  }
-
-  return (
-    <button
-      onClick={onClick}
-      className="group relative overflow-hidden rounded-2xl border border-yellow-400/20 bg-black/20 hover:border-yellow-300/50"
-      title="Открыть навигацию"
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={osmStaticMapUrl(lat, lng, 300, 184, 16)}
-        alt="map"
-        className="h-[92px] w-[150px] object-cover brightness-110 contrast-110"
-        loading="lazy"
-        onError={() => setErr(true)}
       />
-      <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/0 to-black/0 opacity-70" />
       <div className="absolute bottom-1 left-2 text-[10px] font-semibold text-yellow-100/90">
         Навигация
       </div>
-    </button>
+    </div>
   );
 }
 
 function MapLarge({ lat, lng }: { lat: number; lng: number }) {
-  const [err, setErr] = useState(false);
-
-  if (err) {
-    return (
-      <div className="flex h-[180px] items-center justify-center rounded-2xl border border-yellow-400/20 bg-yellow-400/10 text-xs text-yellow-100/85">
-        Карта не загрузилась (кликни Google/Apple ниже)
-      </div>
-    );
-  }
-
   return (
-    <button
-      onClick={() => window.open(googleNavUrl(lat, lng), '_blank', 'noopener,noreferrer')}
-      className="group relative overflow-hidden rounded-2xl border border-yellow-400/20 bg-black/20 hover:border-yellow-300/50"
-      title="Открыть навигацию"
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={osmStaticMapUrl(lat, lng, 640, 400, 16)}
-        alt="map"
-        className="h-[180px] w-full object-cover brightness-110 contrast-110"
-        loading="lazy"
-        onError={() => setErr(true)}
+    <div className="relative h-[180px] overflow-hidden rounded-2xl border border-yellow-400/20 bg-black/20">
+      <iframe src={osmEmbedUrl(lat, lng, 0.01)} className="h-full w-full" loading="lazy" />
+      <button
+        onClick={() => window.open(googleNavUrl(lat, lng), '_blank', 'noopener,noreferrer')}
+        className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/0 to-black/0"
+        title="Открыть навигацию"
       />
-      <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/0 to-black/0 opacity-70" />
       <div className="absolute bottom-2 left-3 text-xs font-semibold text-yellow-100/90">
         Открыть навигацию
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -599,24 +565,39 @@ function AdminInner() {
     }
   }
 
+  // IMPORTANT: multipart через обычный fetch (не authFetchJson)
   async function uploadSitePhotos(siteId: string, files: FileList | null) {
     if (!files || files.length === 0) return;
     setPhotoBusy(true);
     setGlobalMsg(null);
+
     try {
       let current = editSitePhotos;
+
       for (const f of Array.from(files)) {
         if (current.length >= 5) break;
+
         const fd = new FormData();
         fd.append('file', f);
-        const r = await authFetchJson<{ site: Site }>(`/api/admin/sites/${siteId}/photos`, {
+
+        const resp = await fetch(`/api/admin/sites/${siteId}/photos`, {
           method: 'POST',
           body: fd,
+          credentials: 'include',
         });
-        const next = Array.isArray(r?.site?.photos) ? (r.site.photos as SitePhoto[]) : [];
+
+        const json = await resp.json().catch(() => null);
+
+        if (!resp.ok) {
+          const msg = json?.error || json?.message || `Upload failed (${resp.status})`;
+          throw new Error(msg);
+        }
+
+        const next = Array.isArray(json?.site?.photos) ? (json.site.photos as SitePhoto[]) : [];
         current = next;
         setEditSitePhotos(next);
       }
+
       await refreshAll();
       setGlobalMsg({ kind: 'ok', text: 'Фото добавлены' });
     } catch (e: any) {
@@ -858,7 +839,7 @@ function AdminInner() {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <div className="text-sm font-semibold text-yellow-100">Объекты</div>
-                  <div className="mt-1 text-xs text-yellow-100/50">Карта, навигация, категории, заметки, фото</div>
+                  <div className="mt-1 text-xs text-yellow-100/50">OSM карта (iframe) + навигация Google/Apple</div>
                 </div>
                 <button
                   onClick={() => setSiteCreateOpen(true)}
@@ -1157,7 +1138,7 @@ function AdminInner() {
                   </div>
 
                   <div className="grid gap-3 rounded-3xl border border-yellow-400/10 bg-black/20 p-4">
-                    <div className="text-sm font-semibold text-yellow-100">Мини-карта</div>
+                    <div className="text-sm font-semibold text-yellow-100">Мини-карта (OSM)</div>
 
                     <div className="grid gap-2">
                       {(() => {
@@ -1207,7 +1188,6 @@ function AdminInner() {
                         <div className="text-xs text-yellow-100/55">Сейчас: {editSitePhotos.length}/5</div>
 
                         <div className="flex flex-wrap gap-2">
-                          {/* Загрузка из файлов */}
                           <label
                             className={cx(
                               'rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-xs text-yellow-100/70 hover:border-yellow-300/40',
@@ -1230,7 +1210,6 @@ function AdminInner() {
                             />
                           </label>
 
-                          {/* Камера (телефон) */}
                           <label
                             className={cx(
                               'rounded-xl border border-yellow-300/35 bg-yellow-400/10 px-3 py-2 text-xs font-semibold text-yellow-100 hover:border-yellow-200/70',
