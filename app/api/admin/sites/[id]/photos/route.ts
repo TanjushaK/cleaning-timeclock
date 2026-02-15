@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import { NextRequest, NextResponse } from 'next/server'
 import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
 
@@ -133,5 +134,151 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     return NextResponse.json({ site }, { status: 200 })
   } catch (e) {
     return toErrorResponse(e)
+=======
+// app/api/admin/sites/[id]/photos/route.ts
+import { NextRequest, NextResponse } from 'next/server'
+import { requireAdmin } from '@/lib/admin-auth'
+import { supabaseAdmin } from '@/lib/supabase-admin'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+type Ctx = { params: Promise<{ id: string }> }
+
+type SitePhoto = {
+  path: string
+  url: string
+  created_at?: string
+}
+
+const BUCKET = process.env.SUPABASE_SITE_PHOTOS_BUCKET || 'site-photos'
+const MAX_PHOTOS = 5
+
+function jsonError(message: string, status = 400) {
+  return NextResponse.json({ error: message }, { status })
+}
+
+function safeExt(name: string) {
+  const m = /\.([a-zA-Z0-9]+)$/.exec(name || '')
+  const ext = m?.[1]?.toLowerCase() || 'jpg'
+  return ext.slice(0, 8)
+}
+
+function moveToFront(arr: SitePhoto[], path: string) {
+  const idx = arr.findIndex((x) => x.path === path)
+  if (idx <= 0) return arr
+  const copy = arr.slice()
+  const [it] = copy.splice(idx, 1)
+  copy.unshift(it)
+  return copy
+}
+
+async function loadSitePhotos(siteId: string): Promise<SitePhoto[]> {
+  const { data, error } = await supabaseAdmin.from('sites').select('photos').eq('id', siteId).maybeSingle()
+  if (error) throw new Error(error.message)
+  const photos = (data as any)?.photos
+  return Array.isArray(photos) ? (photos as SitePhoto[]) : []
+}
+
+async function saveSitePhotos(siteId: string, photos: SitePhoto[]) {
+  const { data, error } = await supabaseAdmin.from('sites').update({ photos }).eq('id', siteId).select('id, photos').single()
+  if (error) throw new Error(error.message)
+  return data as any
+}
+
+async function publicUrl(path: string) {
+  const { data } = supabaseAdmin.storage.from(BUCKET).getPublicUrl(path)
+  return data?.publicUrl || null
+}
+
+export async function POST(req: NextRequest, ctx: Ctx) {
+  try {
+    await requireAdmin(req)
+
+    const { id: siteId } = await ctx.params
+    if (!siteId) return jsonError('Нет site id', 400)
+
+    const current = await loadSitePhotos(siteId)
+    if (current.length >= MAX_PHOTOS) return jsonError(`Лимит фото: ${MAX_PHOTOS}`, 400)
+
+    const form = await req.formData()
+    const file = form.get('file')
+
+    if (!(file instanceof File)) return jsonError('Ожидается файл в поле "file"', 400)
+    if (!file.size) return jsonError('Пустой файл', 400)
+
+    const ext = safeExt(file.name)
+    const ts = Date.now()
+    const path = `sites/${siteId}/${ts}.${ext}`
+
+    const buf = Buffer.from(await file.arrayBuffer())
+
+    const up = await supabaseAdmin.storage.from(BUCKET).upload(path, buf, {
+      contentType: file.type || 'application/octet-stream',
+      upsert: false,
+    })
+
+    if (up.error) return jsonError(up.error.message || 'Не удалось загрузить файл', 500)
+
+    const url = (await publicUrl(path)) || ''
+
+    const next: SitePhoto[] = [
+      ...current,
+      { path, url, created_at: new Date().toISOString() },
+    ].slice(0, MAX_PHOTOS)
+
+    const saved = await saveSitePhotos(siteId, next)
+    return NextResponse.json({ site: saved })
+  } catch (e: any) {
+    return jsonError(e?.message || 'Ошибка загрузки', 500)
+  }
+}
+
+export async function DELETE(req: NextRequest, ctx: Ctx) {
+  try {
+    await requireAdmin(req)
+
+    const { id: siteId } = await ctx.params
+    if (!siteId) return jsonError('Нет site id', 400)
+
+    const body = await req.json().catch(() => null)
+    const path = String(body?.path || '')
+    if (!path) return jsonError('Нет path', 400)
+
+    // storage delete (не критично для UX: если файла нет — всё равно чистим список)
+    await supabaseAdmin.storage.from(BUCKET).remove([path])
+
+    const current = await loadSitePhotos(siteId)
+    const next = current.filter((p) => p.path !== path)
+
+    const saved = await saveSitePhotos(siteId, next)
+    return NextResponse.json({ site: saved })
+  } catch (e: any) {
+    return jsonError(e?.message || 'Ошибка удаления', 500)
+  }
+}
+
+export async function PATCH(req: NextRequest, ctx: Ctx) {
+  try {
+    await requireAdmin(req)
+
+    const { id: siteId } = await ctx.params
+    if (!siteId) return jsonError('Нет site id', 400)
+
+    const body = await req.json().catch(() => null)
+    const action = String(body?.action || '')
+    const path = String(body?.path || '')
+
+    if (action !== 'make_primary') return jsonError('Неизвестное действие', 400)
+    if (!path) return jsonError('Нет path', 400)
+
+    const current = await loadSitePhotos(siteId)
+    const next = moveToFront(current, path)
+
+    const saved = await saveSitePhotos(siteId, next)
+    return NextResponse.json({ site: saved })
+  } catch (e: any) {
+    return jsonError(e?.message || 'Ошибка обновления', 500)
+>>>>>>> 8350926 (fix build (cookies async) + supabase-route)
   }
 }
