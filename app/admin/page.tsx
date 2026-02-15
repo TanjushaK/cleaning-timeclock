@@ -253,6 +253,8 @@ function MapMini({
   lng: number | null;
   onClick: () => void;
 }) {
+  const [err, setErr] = useState(false);
+
   if (lat == null || lng == null) {
     return (
       <div className="flex h-[92px] w-[150px] items-center justify-center rounded-2xl border border-yellow-400/10 bg-black/20 text-[11px] text-yellow-100/40">
@@ -261,19 +263,69 @@ function MapMini({
     );
   }
 
+  if (err) {
+    return (
+      <button
+        onClick={onClick}
+        className="flex h-[92px] w-[150px] items-center justify-center rounded-2xl border border-yellow-400/20 bg-yellow-400/10 text-[11px] font-semibold text-yellow-100 hover:border-yellow-300/50"
+        title="Открыть навигацию"
+      >
+        Навигация
+      </button>
+    );
+  }
+
   return (
     <button
       onClick={onClick}
-      className="group overflow-hidden rounded-2xl border border-yellow-400/10 bg-black/20"
+      className="group relative overflow-hidden rounded-2xl border border-yellow-400/20 bg-black/20 hover:border-yellow-300/50"
       title="Открыть навигацию"
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={osmStaticMapUrl(lat, lng, 300, 184, 16)}
         alt="map"
-        className="h-[92px] w-[150px] object-cover opacity-95 transition group-hover:opacity-100"
+        className="h-[92px] w-[150px] object-cover brightness-110 contrast-110"
         loading="lazy"
+        onError={() => setErr(true)}
       />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/0 to-black/0 opacity-70" />
+      <div className="absolute bottom-1 left-2 text-[10px] font-semibold text-yellow-100/90">
+        Навигация
+      </div>
+    </button>
+  );
+}
+
+function MapLarge({ lat, lng }: { lat: number; lng: number }) {
+  const [err, setErr] = useState(false);
+
+  if (err) {
+    return (
+      <div className="flex h-[180px] items-center justify-center rounded-2xl border border-yellow-400/20 bg-yellow-400/10 text-xs text-yellow-100/85">
+        Карта не загрузилась (кликни Google/Apple ниже)
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => window.open(googleNavUrl(lat, lng), '_blank', 'noopener,noreferrer')}
+      className="group relative overflow-hidden rounded-2xl border border-yellow-400/20 bg-black/20 hover:border-yellow-300/50"
+      title="Открыть навигацию"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={osmStaticMapUrl(lat, lng, 640, 400, 16)}
+        alt="map"
+        className="h-[180px] w-full object-cover brightness-110 contrast-110"
+        loading="lazy"
+        onError={() => setErr(true)}
+      />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/0 to-black/0 opacity-70" />
+      <div className="absolute bottom-2 left-3 text-xs font-semibold text-yellow-100/90">
+        Открыть навигацию
+      </div>
     </button>
   );
 }
@@ -591,6 +643,26 @@ function AdminInner() {
       setGlobalMsg({ kind: 'ok', text: 'Фото удалено' });
     } catch (e: any) {
       setGlobalMsg({ kind: 'error', text: e?.message || 'Не удалось удалить фото' });
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
+
+  async function makePrimaryPhoto(siteId: string, path: string) {
+    setPhotoBusy(true);
+    setGlobalMsg(null);
+    try {
+      const r = await authFetchJson<{ site: Site }>(`/api/admin/sites/${siteId}/photos`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'make_primary', path }),
+      });
+      const next = Array.isArray(r?.site?.photos) ? (r.site.photos as SitePhoto[]) : [];
+      setEditSitePhotos(next);
+      await refreshAll();
+      setGlobalMsg({ kind: 'ok', text: 'Главное фото обновлено' });
+    } catch (e: any) {
+      setGlobalMsg({ kind: 'error', text: e?.message || 'Не удалось сделать фото главным' });
     } finally {
       setPhotoBusy(false);
     }
@@ -985,7 +1057,7 @@ function AdminInner() {
                     value={newSiteNotes}
                     onChange={(e) => setNewSiteNotes(e.target.value)}
                     className="min-h-[110px] rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm text-yellow-100/90 outline-none focus:border-yellow-300/50"
-                    placeholder="Тут можно хранить код домофона, инструкции, доступ, нюансы…"
+                    placeholder="Коды, инструкции, доступ…"
                   />
                 </div>
 
@@ -1068,7 +1140,7 @@ function AdminInner() {
                         value={editSiteNotes}
                         onChange={(e) => setEditSiteNotes(e.target.value)}
                         className="min-h-[140px] rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm text-yellow-100/90 outline-none focus:border-yellow-300/50"
-                        placeholder="Коды, инструкции, ключи, что важно…"
+                        placeholder="Коды, инструкции, ключи…"
                       />
                     </div>
 
@@ -1098,21 +1170,7 @@ function AdminInner() {
                             </div>
                           );
                         }
-                        return (
-                          <button
-                            onClick={() => window.open(googleNavUrl(lat, lng), '_blank', 'noopener,noreferrer')}
-                            className="group overflow-hidden rounded-2xl border border-yellow-400/10 bg-black/20"
-                            title="Открыть навигацию"
-                          >
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={osmStaticMapUrl(lat, lng, 640, 400, 16)}
-                              alt="map"
-                              className="h-[180px] w-full object-cover opacity-95 transition group-hover:opacity-100"
-                              loading="lazy"
-                            />
-                          </button>
-                        );
+                        return <MapLarge lat={lat} lng={lng} />;
                       })()}
 
                       {(() => {
@@ -1121,10 +1179,20 @@ function AdminInner() {
                         if (lat == null || lng == null || Number.isNaN(lat) || Number.isNaN(lng)) return null;
                         return (
                           <div className="flex items-center gap-3 text-xs text-yellow-100/70">
-                            <a className="underline decoration-yellow-400/20 hover:decoration-yellow-300/50" href={googleNavUrl(lat, lng)} target="_blank" rel="noreferrer">
+                            <a
+                              className="underline decoration-yellow-400/20 hover:decoration-yellow-300/50"
+                              href={googleNavUrl(lat, lng)}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
                               Google навигация
                             </a>
-                            <a className="underline decoration-yellow-400/20 hover:decoration-yellow-300/50" href={appleNavUrl(lat, lng)} target="_blank" rel="noreferrer">
+                            <a
+                              className="underline decoration-yellow-400/20 hover:decoration-yellow-300/50"
+                              href={appleNavUrl(lat, lng)}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
                               Apple навигация
                             </a>
                           </div>
@@ -1137,22 +1205,54 @@ function AdminInner() {
                     <div className="grid gap-2">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="text-xs text-yellow-100/55">Сейчас: {editSitePhotos.length}/5</div>
-                        <label className={cx('rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-xs text-yellow-100/70 hover:border-yellow-300/40', (photoBusy || !editSiteId || editSitePhotos.length >= 5) ? 'opacity-70' : '')}>
-                          Добавить фото
-                          <input
-                            type="file"
-                            accept="image/*"
-                            multiple
-                            disabled={photoBusy || !editSiteId || editSitePhotos.length >= 5}
-                            className="hidden"
-                            onChange={async (e) => {
-                              const files = e.target.files;
-                              e.target.value = '';
-                              if (!editSiteId) return;
-                              await uploadSitePhotos(editSiteId, files);
-                            }}
-                          />
-                        </label>
+
+                        <div className="flex flex-wrap gap-2">
+                          {/* Загрузка из файлов */}
+                          <label
+                            className={cx(
+                              'rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-xs text-yellow-100/70 hover:border-yellow-300/40',
+                              photoBusy || !editSiteId || editSitePhotos.length >= 5 ? 'opacity-70' : ''
+                            )}
+                          >
+                            Загрузить фото
+                            <input
+                              type="file"
+                              accept="image/*"
+                              multiple
+                              disabled={photoBusy || !editSiteId || editSitePhotos.length >= 5}
+                              className="hidden"
+                              onChange={async (e) => {
+                                const files = e.target.files;
+                                e.target.value = '';
+                                if (!editSiteId) return;
+                                await uploadSitePhotos(editSiteId, files);
+                              }}
+                            />
+                          </label>
+
+                          {/* Камера (телефон) */}
+                          <label
+                            className={cx(
+                              'rounded-xl border border-yellow-300/35 bg-yellow-400/10 px-3 py-2 text-xs font-semibold text-yellow-100 hover:border-yellow-200/70',
+                              photoBusy || !editSiteId || editSitePhotos.length >= 5 ? 'opacity-70' : ''
+                            )}
+                          >
+                            Сделать фото
+                            <input
+                              type="file"
+                              accept="image/*"
+                              capture="environment"
+                              disabled={photoBusy || !editSiteId || editSitePhotos.length >= 5}
+                              className="hidden"
+                              onChange={async (e) => {
+                                const files = e.target.files;
+                                e.target.value = '';
+                                if (!editSiteId) return;
+                                await uploadSitePhotos(editSiteId, files);
+                              }}
+                            />
+                          </label>
+                        </div>
                       </div>
 
                       {editSitePhotos.length === 0 ? (
@@ -1161,34 +1261,55 @@ function AdminInner() {
                         </div>
                       ) : (
                         <div className="grid grid-cols-2 gap-2">
-                          {editSitePhotos.map((p) => (
-                            <div key={p.path} className="relative overflow-hidden rounded-2xl border border-yellow-400/10 bg-black/20">
+                          {editSitePhotos.map((p, idx) => (
+                            <div
+                              key={p.path}
+                              className="relative overflow-hidden rounded-2xl border border-yellow-400/10 bg-black/20"
+                            >
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img src={p.url} alt="site" className="h-36 w-full object-cover" loading="lazy" />
-                              <button
-                                onClick={() => {
-                                  if (!editSiteId) return;
-                                  void removeSitePhoto(editSiteId, p.path);
-                                }}
-                                disabled={photoBusy || !editSiteId}
-                                className={cx(
-                                  'absolute right-2 top-2 rounded-xl border border-red-500/25 bg-red-500/15 px-2 py-1 text-[11px] text-red-100/85',
-                                  photoBusy ? 'opacity-70' : 'hover:border-red-400/45'
-                                )}
-                              >
-                                Удалить
-                              </button>
-                              <div className="absolute left-2 top-2 rounded-xl border border-yellow-400/15 bg-black/40 px-2 py-1 text-[11px] text-yellow-100/70">
-                                {editSitePhotos[0]?.path === p.path ? 'главное' : ''}
+
+                              <div className="absolute left-2 top-2 rounded-xl border border-yellow-400/15 bg-black/50 px-2 py-1 text-[11px] text-yellow-100/80">
+                                {idx === 0 ? 'главное' : ''}
+                              </div>
+
+                              <div className="absolute right-2 top-2 flex gap-2">
+                                {idx !== 0 ? (
+                                  <button
+                                    onClick={() => {
+                                      if (!editSiteId) return;
+                                      void makePrimaryPhoto(editSiteId, p.path);
+                                    }}
+                                    disabled={photoBusy || !editSiteId}
+                                    className={cx(
+                                      'rounded-xl border border-yellow-300/35 bg-yellow-400/10 px-2 py-1 text-[11px] font-semibold text-yellow-100',
+                                      photoBusy ? 'opacity-70' : 'hover:border-yellow-200/70'
+                                    )}
+                                  >
+                                    Главное
+                                  </button>
+                                ) : null}
+
+                                <button
+                                  onClick={() => {
+                                    if (!editSiteId) return;
+                                    void removeSitePhoto(editSiteId, p.path);
+                                  }}
+                                  disabled={photoBusy || !editSiteId}
+                                  className={cx(
+                                    'rounded-xl border border-red-500/25 bg-red-500/15 px-2 py-1 text-[11px] text-red-100/85',
+                                    photoBusy ? 'opacity-70' : 'hover:border-red-400/45'
+                                  )}
+                                >
+                                  Удалить
+                                </button>
                               </div>
                             </div>
                           ))}
                         </div>
                       )}
 
-                      {photoBusy ? (
-                        <div className="text-xs text-yellow-100/45">Обработка фото…</div>
-                      ) : null}
+                      {photoBusy ? <div className="text-xs text-yellow-100/45">Обработка…</div> : null}
                     </div>
                   </div>
                 </div>
