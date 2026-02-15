@@ -1,29 +1,4 @@
-<<<<<<< HEAD
-import { NextRequest, NextResponse } from 'next/server'
-import { requireAdmin, ApiError, toErrorResponse } from '@/lib/supabase-server'
-
-export async function GET(req: NextRequest) {
-  try {
-    const { supabase } = await requireAdmin(req)
-
-    const includeArchived = req.nextUrl.searchParams.get('include_archived') === '1'
-
-    let q = supabase
-      .from('sites')
-      .select('id,name,address,lat,lng,radius,category,notes,photos,archived_at')
-      .order('name', { ascending: true })
-
-    if (!includeArchived) {
-      q = q.is('archived_at', null)
-    }
-
-    const { data, error } = await q
-    if (error) throw new ApiError(500, error.message || 'Не удалось загрузить объекты')
-
-    return NextResponse.json({ sites: data ?? [] }, { status: 200 })
-  } catch (e) {
-    return toErrorResponse(e)
-=======
+// app/api/admin/sites/list/route.ts
 import { NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/require-admin'
 import { supabaseAdmin } from '@/lib/supabase-admin'
@@ -52,11 +27,7 @@ async function signPhotos(photos: SitePhoto[] | null): Promise<SitePhoto[] | nul
   for (const p of photos) {
     if (!p?.path) continue
     const { data } = await supabaseAdmin.storage.from(BUCKET).createSignedUrl(p.path, SIGNED_URL_TTL)
-    out.push({
-      ...p,
-      url: data?.signedUrl || p.url || '',
-    })
->>>>>>> 8350926 (fix build (cookies async) + supabase-route)
+    out.push({ ...p, url: data?.signedUrl || p.url || '' })
   }
   return out
 }
@@ -76,15 +47,12 @@ export async function GET(req: Request) {
   if (!includeArchived) q = q.is('archived_at', null)
 
   const { data, error } = await q
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   const sites = (data as SiteRow[]).map((s) => ({ ...s }))
   for (const s of sites) {
     s.photos = await signPhotos(s.photos)
   }
 
-  return NextResponse.json({ sites })
+  return NextResponse.json({ sites }, { status: 200 })
 }
