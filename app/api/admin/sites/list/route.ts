@@ -1,58 +1,81 @@
-// app/api/admin/sites/list/route.ts
-import { NextResponse } from 'next/server'
-import { requireAdmin } from '@/lib/require-admin'
-import { supabaseAdmin } from '@/lib/supabase-admin'
+import { NextRequest, NextResponse } from 'next/server'
+import { requireAdmin, ApiError, toErrorResponse } from '@/lib/supabase-server'
+
+type SitePhoto = { path: string; url?: string; created_at?: string | null }
 
 const BUCKET = process.env.SITE_PHOTOS_BUCKET || 'site-photos'
-const SIGNED_URL_TTL = Number(process.env.SITE_PHOTOS_SIGNED_URL_TTL || '3600')
 
-type SitePhoto = { path: string; url?: string; created_at?: string }
-type SiteRow = {
-  id: string
-  name: string | null
-  address: string | null
-  lat: number | null
-  lng: number | null
-  radius: number | null
-  category: number | null
-  notes: string | null
-  photos: SitePhoto[] | null
-  archived_at: string | null
+function getSignedTtlSeconds() {
+  const raw = process.env.SITE_PHOTOS_SIGNED_URL_TTL
+  const n = raw ? Number.parseInt(raw, 10) : 86400
+  return Number.isFinite(n) && n > 0 ? n : 86400
 }
 
-async function signPhotos(photos: SitePhoto[] | null): Promise<SitePhoto[] | null> {
-  if (!photos || photos.length === 0) return photos
-
-  const out: SitePhoto[] = []
-  for (const p of photos) {
-    if (!p?.path) continue
-    const { data } = await supabaseAdmin.storage.from(BUCKET).createSignedUrl(p.path, SIGNED_URL_TTL)
-    out.push({ ...p, url: data?.signedUrl || p.url || '' })
-  }
-  return out
+function normalizePhotos(v: any): SitePhoto[] {
+  if (!Array.isArray(v)) return []
+  return v
+    .filter((p) => p && typeof p === 'object' && typeof (p as any).path === 'string')
+    .map((p) => ({
+      path: String((p as any).path),
+      url: (p as any).url ? String((p as any).url) : undefined,
+      created_at: (p as any).created_at ? String((p as any).created_at) : undefined,
+    }))
 }
 
-export async function GET(req: Request) {
-  const auth = await requireAdmin(req)
-  if (!auth.ok) return auth.res
+export async function GET(req: NextRequest) {
+  try {
+    const { supabase } = await requireAdmin(req.headers)
 
-  const u = new URL(req.url)
-  const includeArchived = u.searchParams.get('include_archived') === '1'
+    const includeArchived = req.nextUrl.searchParams.get('include_archived') === '1'
 
-  let q = supabaseAdmin
-    .from('sites')
-    .select('id,name,address,lat,lng,radius,category,notes,photos,archived_at')
-    .order('name', { ascending: true })
+    let q = supabase
+      .from('sites')
+      .select('id,name,address,lat,lng,radius,category,notes,photos,archived_at')
+      .order('name', { ascending: true })
 
-  if (!includeArchived) q = q.is('archived_at', null)
+    if (!includeArchived) {
+      q = q.is('archived_at', null)
+    }
 
-  const { data, error } = await q
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    const { data, error } = await q
+    if (error) throw new ApiError(500, error.message || 'Не удалось загрузить объекты')
 
-  const sites = (data as SiteRow[]).map((s) => ({ ...s }))
-  for (const s of sites) {
-    s.photos = await signPhotos(s.photos)
+    const sites = (data ?? []).map((s: any) => ({ ...s, photos: normalizePhotos(s.photos) }))
+
+    // Подменяем url на signed URL (не сохраняем signed URL в БД)
+    const allPaths = Array.from(
+      new Set(
+        sites
+          .flatMap((s: any) => (Array.isArray(s.photos) ? s.photos : []))
+          .map((p: any) => (p?.path ? String(p.path) : ''))
+          .filter(Boolean)
+      )
+    )
+
+    if (allPaths.length > 0) {
+      const ttl = getSignedTtlSeconds()
+      const { data: signed, error: signErr } = await supabase.storage.from(BUCKET).createSignedUrls(allPaths, ttl)
+
+      if (!signErr && Array.isArray(signed)) {
+        const urlByPath = new Map<string, string>()
+        for (const item of signed as any[]) {
+          const p = item?.path ? String(item.path) : ''
+          const u = item?.signedUrl ? String(item.signedUrl) : ''
+          if (p && u) urlByPath.set(p, u)
+        }
+
+        for (const s of sites) {
+          if (!Array.isArray((s as any).photos)) continue
+          ;(s as any).photos = (s as any).photos.map((p: any) => ({
+            ...p,
+            url: urlByPath.get(String(p.path)) || p.url,
+          }))
+        }
+      }
+    }
+
+    return NextResponse.json({ sites }, { status: 200 })
+  } catch (e) {
+    return toErrorResponse(e)
   }
-
-  return NextResponse.json({ sites }, { status: 200 })
 }

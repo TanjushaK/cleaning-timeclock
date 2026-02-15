@@ -1,54 +1,75 @@
 import { NextResponse } from 'next/server'
-import { supabaseAdmin } from '@/lib/supabase-admin'
+import type { SupabaseClient, User } from '@supabase/supabase-js'
+import { getSupabaseAdmin } from '@/lib/supabase-admin'
 
-type AdminAuthResult =
-  | { ok: true; userId: string }
-  | { ok: false; res: NextResponse }
-
-function getBearerToken(req: Request): string | null {
-  const h = req.headers.get('authorization') || req.headers.get('Authorization')
-  if (!h) return null
-  const m = /^Bearer\s+(.+)$/i.exec(h.trim())
-  return m?.[1] || null
+export type AdminAuthOk = {
+  ok: true
+  supabase: SupabaseClient
+  token: string
+  user: User
+  userId: string
 }
 
-export async function requireAdmin(req: Request): Promise<AdminAuthResult> {
-  const token = getBearerToken(req)
+export type AdminAuthFail = {
+  ok: false
+  response: NextResponse
+}
+
+export type AdminAuthResult = AdminAuthOk | AdminAuthFail
+
+function bearerTokenFrom(headers: Headers): string | null {
+  const auth = headers.get('authorization') || headers.get('Authorization') || ''
+  const m = auth.match(/^Bearer\s+(.+)$/i)
+  const token = m?.[1]?.trim()
+  return token || null
+}
+
+/**
+ * Проверяет Authorization: Bearer <token> и что пользователь admin + active=true.
+ * Возвращает либо { ok: true, ... } либо { ok: false, response }.
+ */
+export async function requireAdmin(reqOrHeaders: Request | Headers): Promise<AdminAuthResult> {
+  const headers = reqOrHeaders instanceof Headers ? reqOrHeaders : reqOrHeaders.headers
+
+  const token = bearerTokenFrom(headers)
   if (!token) {
     return {
       ok: false,
-      res: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }),
+      response: NextResponse.json({ error: 'Нет токена (Authorization: Bearer ...)' }, { status: 401 }),
     }
   }
 
-  const { data: userData, error: userErr } = await supabaseAdmin.auth.getUser(token)
-  const userId = userData?.user?.id || null
-  if (userErr || !userId) {
+  const supabase = getSupabaseAdmin()
+
+  const { data: u, error: uErr } = await supabase.auth.getUser(token)
+  if (uErr || !u?.user) {
     return {
       ok: false,
-      res: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }),
+      response: NextResponse.json({ error: 'Неверный токен' }, { status: 401 }),
     }
   }
 
-  const { data: profile, error: profErr } = await supabaseAdmin
+  const userId = u.user.id
+
+  const { data: prof, error: profErr } = await supabase
     .from('profiles')
-    .select('role')
+    .select('id, role, active')
     .eq('id', userId)
     .maybeSingle()
 
-  if (profErr) {
+  if (profErr || !prof) {
     return {
       ok: false,
-      res: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }),
+      response: NextResponse.json({ error: 'Нет профиля (profiles) или нет доступа' }, { status: 403 }),
     }
   }
 
-  if ((profile?.role || '') !== 'admin') {
+  if (prof.role !== 'admin' || prof.active !== true) {
     return {
       ok: false,
-      res: NextResponse.json({ error: 'Forbidden' }, { status: 403 }),
+      response: NextResponse.json({ error: 'Нет доступа' }, { status: 403 }),
     }
   }
 
-  return { ok: true, userId }
+  return { ok: true, supabase, token, user: u.user, userId }
 }
