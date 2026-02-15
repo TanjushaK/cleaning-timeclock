@@ -161,7 +161,6 @@ function appleNavUrl(lat: number, lng: number) {
   return `https://maps.apple.com/?daddr=${encodeURIComponent(dest)}`;
 }
 
-// OSM embed iframe (стабильнее, чем бесплатные staticmap)
 function osmEmbedUrl(lat: number, lng: number, delta = 0.006) {
   const left = (lng - delta).toFixed(6);
   const bottom = (lat - delta).toFixed(6);
@@ -565,13 +564,17 @@ function AdminInner() {
     }
   }
 
-  // IMPORTANT: multipart через обычный fetch (не authFetchJson)
+  // FIX: multipart + Bearer token (иначе requireAdmin вернёт 401)
   async function uploadSitePhotos(siteId: string, files: FileList | null) {
     if (!files || files.length === 0) return;
     setPhotoBusy(true);
     setGlobalMsg(null);
 
     try {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error('Нужно войти (нет активной сессии)');
+
       let current = editSitePhotos;
 
       for (const f of Array.from(files)) {
@@ -582,8 +585,11 @@ function AdminInner() {
 
         const resp = await fetch(`/api/admin/sites/${siteId}/photos`, {
           method: 'POST',
+          headers: {
+            authorization: `Bearer ${token}`,
+          },
           body: fd,
-          credentials: 'include',
+          cache: 'no-store',
         });
 
         const json = await resp.json().catch(() => null);
