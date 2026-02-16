@@ -154,22 +154,36 @@ async function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T
 }
 
 async function authFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const { data } = await supabase.auth.getSession()
-  const token = data?.session?.access_token
+  const sessionRes = await withTimeout(supabase.auth.getSession(), 3000, { data: { session: null } } as any)
+  const token = sessionRes?.data?.session?.access_token
   if (!token) throw new Error('Нет входа. Авторизуйся в админке.')
 
-  const res = await fetch(url, {
-    ...init,
-    headers: {
-      ...(init?.headers || {}),
-      Authorization: `Bearer ${token}`,
-    },
-    cache: 'no-store',
-  })
+  const ctrl = new AbortController()
+  const ms = 15000
+  const t = setTimeout(() => ctrl.abort(), ms)
 
-  const payload = await res.json().catch(() => ({} as any))
-  if (!res.ok) throw new Error(payload?.error || `HTTP ${res.status}`)
-  return payload as T
+  try {
+    const res = await fetch(url, {
+      ...init,
+      headers: {
+        ...(init?.headers || {}),
+        Authorization: `Bearer ${token}`,
+      },
+      cache: 'no-store',
+      signal: ctrl.signal,
+    })
+
+    const payload = await res.json().catch(() => ({} as any))
+    if (!res.ok) throw new Error(payload?.error || `HTTP ${res.status}`)
+    return payload as T
+  } catch (e: any) {
+    if (e?.name === 'AbortError') {
+      throw new Error('Таймаут запроса (15с). Нажми “Обновить данные” ещё раз.')
+    }
+    throw e
+  } finally {
+    clearTimeout(t)
+  }
 }
 
 function Modal(props: { open: boolean; title: string; onClose: () => void; children: React.ReactNode }) {
@@ -475,6 +489,7 @@ export default function AdminPage() {
   const [password, setPassword] = useState('')
 
   const [busy, setBusy] = useState(false)
+  const refreshSeqRef = useRef(0)
   const [error, setError] = useState<string | null>(null)
 
   const [showArchivedSites, setShowArchivedSites] = useState(false)
@@ -659,6 +674,7 @@ export default function AdminPage() {
   }
 
   async function refreshAll() {
+    const seq = ++refreshSeqRef.current
     setBusy(true)
     setError(null)
     try {
@@ -667,7 +683,7 @@ export default function AdminPage() {
     } catch (e: any) {
       setError(e?.message || 'Ошибка загрузки')
     } finally {
-      setBusy(false)
+      if (seq === refreshSeqRef.current) setBusy(false)
     }
   }
 
