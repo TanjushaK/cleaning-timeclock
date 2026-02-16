@@ -1,163 +1,214 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
+import { NextRequest, NextResponse } from "next/server";
+import { ApiError, requireAdmin, toErrorResponse } from "@/lib/supabase-server";
 
-export const runtime = 'nodejs'
+export const runtime = "nodejs";
 
-type SitePhoto = { path: string; created_at?: string }
+const DEFAULT_BUCKET = "site-photos";
+const DEFAULT_TTL = 86400;
 
-function s(v: any) {
-  return String(v ?? '').trim()
+function getBucket() {
+  return process.env.SITE_PHOTOS_BUCKET || DEFAULT_BUCKET;
 }
 
-function sanitizeFilename(name: string) {
-  return (
-    name
-      .replace(/[^\p{L}\p{N}\.\-_]+/gu, '_')
-      .replace(/_+/g, '_')
-      .slice(0, 120) || 'photo'
-  )
+function getTtl() {
+  const raw = process.env.SITE_PHOTOS_SIGNED_URL_TTL;
+  const n = raw ? Number(raw) : DEFAULT_TTL;
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_TTL;
 }
 
-function rand() {
-  return Math.random().toString(36).slice(2, 10)
-}
+type Photo = {
+  path?: string;
+  url?: string;
+  created_at?: string;
+};
 
-function getBucket(): string {
-  return process.env.SITE_PHOTOS_BUCKET || 'site-photos'
-}
+async function withSignedUrls(supabase: any, photos: Photo[] | null) {
+  const bucket = getBucket();
+  const ttl = getTtl();
 
-function getTtlSeconds(): number {
-  const raw = process.env.SITE_PHOTOS_SIGNED_URL_TTL || '86400'
-  const n = Number(raw)
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 86400
-}
+  const arr = Array.isArray(photos) ? photos : [];
+  const out = await Promise.all(
+    arr.map(async (p) => {
+      const path = typeof p?.path === "string" ? p.path : "";
+      if (!path) return p;
 
-async function loadPhotos(supabase: any, siteId: string): Promise<SitePhoto[]> {
-  const { data, error } = await supabase.from('sites').select('photos').eq('id', siteId).single()
-  if (error) throw new ApiError(404, 'Объект не найден')
-  const raw = (data as any)?.photos
-  if (!Array.isArray(raw)) return []
-  return raw
-    .map((p: any) => {
-      if (typeof p === 'string') return { path: p }
-      const path = s(p?.path)
-      if (!path) return null
-      return { path, created_at: p?.created_at }
+      const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, ttl);
+      if (error || !data?.signedUrl) return { ...p, url: p.url };
+
+      return { ...p, url: data.signedUrl };
     })
-    .filter(Boolean) as SitePhoto[]
+  );
+  return out;
 }
 
-async function savePhotos(supabase: any, siteId: string, photos: SitePhoto[]) {
-  const { data, error } = await supabase
-    .from('sites')
-    .update({ photos })
-    .eq('id', siteId)
-    .select('id,name,address,lat,lng,radius,category,notes,photos,archived_at')
-    .single()
-
-  if (error) throw new ApiError(500, error.message || 'Не удалось сохранить фото')
-  return data
+function safeName(name: string) {
+  return name.replace(/[^\w.\-]+/g, "_").slice(0, 80);
 }
 
-async function signPhotos(supabase: any, photos: SitePhoto[]) {
-  const bucket = getBucket()
-  const ttl = getTtlSeconds()
-  const out: any[] = []
-  for (const p of photos) {
-    const { data } = await supabase.storage.from(bucket).createSignedUrl(p.path, ttl)
-    out.push({ path: p.path, url: data?.signedUrl || null, created_at: p.created_at || null })
-  }
-  return out
-}
-
-export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+export async function POST(
+  req: NextRequest,
+  ctx: { params: Promise<{ id: string }> }
+) {
   try {
-    const { supabase } = await requireAdmin(req)
-    const { id: siteId } = await ctx.params
+    const { supabase } = await requireAdmin(req);
+    const { id } = await ctx.params;
 
-    const fd = await req.formData()
-    const file = fd.get('file')
+    const bucket = getBucket();
 
-    if (!file || !(file instanceof File)) throw new ApiError(400, 'Нужен файл (file)')
-    if (!file.type?.startsWith('image/')) throw new ApiError(400, 'Нужна картинка (image/*)')
+    const form = await req.formData();
+    const file = form.get("file");
 
-    const bucket = getBucket()
-    const photos = await loadPhotos(supabase, siteId)
-    if (photos.length >= 5) throw new ApiError(400, 'Максимум 5 фото')
+    if (!(file instanceof File)) throw new ApiError(400, "Файл не найден");
 
-    const filename = sanitizeFilename(s(file.name))
-    const path = `site-${siteId}/${Date.now()}-${rand()}-${filename}`
+    const { data: siteRow, error: siteErr } = await supabase
+      .from("sites")
+      .select("id, photos")
+      .eq("id", id)
+      .single();
 
-    const ab = await file.arrayBuffer()
-    const bytes = new Uint8Array(ab)
+    if (siteErr) throw new ApiError(404, siteErr.message);
 
-    const up = await supabase.storage.from(bucket).upload(path, bytes, {
-      contentType: file.type || 'image/jpeg',
+    const existing: Photo[] = Array.isArray(siteRow.photos) ? siteRow.photos : [];
+    if (existing.length >= 5) throw new ApiError(400, "Максимум 5 фото");
+
+    const path = `sites/${id}/${Date.now()}-${safeName(file.name || "photo")}`;
+
+    const buf = new Uint8Array(await file.arrayBuffer());
+    const { error: upErr } = await supabase.storage.from(bucket).upload(path, buf, {
+      contentType: file.type || "application/octet-stream",
       upsert: false,
-    })
-    if (up.error) throw new ApiError(500, up.error.message || 'Не удалось загрузить фото')
+    });
 
-    const nextPhotos: SitePhoto[] = [...photos, { path, created_at: new Date().toISOString() }]
-    const site = await savePhotos(supabase, siteId, nextPhotos)
+    if (upErr) throw new ApiError(500, upErr.message);
 
-    const signed = await signPhotos(supabase, nextPhotos)
-    return NextResponse.json({ site: { ...(site as any), photos: signed } }, { status: 200 })
+    const nextPhotos: Photo[] = [
+      ...existing,
+      { path, created_at: new Date().toISOString() },
+    ];
+
+    const { error: updErr } = await supabase
+      .from("sites")
+      .update({ photos: nextPhotos })
+      .eq("id", id);
+
+    if (updErr) throw new ApiError(500, updErr.message);
+
+    const { data: updated, error: readErr } = await supabase
+      .from("sites")
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    if (readErr) throw new ApiError(500, readErr.message);
+
+    updated.photos = await withSignedUrls(supabase, updated.photos);
+
+    return NextResponse.json({ site: updated });
   } catch (e) {
-    return toErrorResponse(e)
+    return toErrorResponse(e);
   }
 }
 
-export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+export async function PATCH(
+  req: NextRequest,
+  ctx: { params: Promise<{ id: string }> }
+) {
   try {
-    const { supabase } = await requireAdmin(req)
-    const { id: siteId } = await ctx.params
+    const { supabase } = await requireAdmin(req);
+    const { id } = await ctx.params;
 
-    const body = await req.json().catch(() => ({} as any))
-    const action = s(body?.action)
+    const body = await req.json().catch(() => ({}));
+    const action = String(body?.action ?? "");
 
-    if (action !== 'make_primary') throw new ApiError(400, 'Неверное action (нужно make_primary)')
+    const { data: siteRow, error: siteErr } = await supabase
+      .from("sites")
+      .select("id, photos")
+      .eq("id", id)
+      .single();
 
-    const path = s(body?.path)
-    if (!path) throw new ApiError(400, 'Нужен path')
+    if (siteErr) throw new ApiError(404, siteErr.message);
 
-    const photos = await loadPhotos(supabase, siteId)
-    const idx = photos.findIndex((p) => p.path === path)
-    if (idx < 0) throw new ApiError(404, 'Фото не найдено')
+    const photos: Photo[] = Array.isArray(siteRow.photos) ? siteRow.photos : [];
 
-    const picked = photos[idx]
-    const rest = photos.filter((p) => p.path !== path)
-    const nextPhotos = [picked, ...rest]
+    if (action === "make_primary") {
+      const path = String(body?.path ?? "");
+      const idx = photos.findIndex((p) => p.path === path);
+      if (idx < 0) throw new ApiError(404, "Фото не найдено");
 
-    const site = await savePhotos(supabase, siteId, nextPhotos)
-    const signed = await signPhotos(supabase, nextPhotos)
-    return NextResponse.json({ site: { ...(site as any), photos: signed } }, { status: 200 })
-  } catch (e) {
-    return toErrorResponse(e)
-  }
-}
+      const [picked] = photos.splice(idx, 1);
+      const next = [picked, ...photos];
 
-export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  try {
-    const { supabase } = await requireAdmin(req)
-    const { id: siteId } = await ctx.params
+      const { error: updErr } = await supabase
+        .from("sites")
+        .update({ photos: next })
+        .eq("id", id);
 
-    const body = await req.json().catch(() => ({} as any))
-    const path = s(body?.path)
-    if (!path) throw new ApiError(400, 'Нужен path')
+      if (updErr) throw new ApiError(500, updErr.message);
 
-    const bucket = getBucket()
-    const photos = await loadPhotos(supabase, siteId)
-    const nextPhotos = photos.filter((p) => p.path !== path)
+      const { data: updated, error: readErr } = await supabase
+        .from("sites")
+        .select("*")
+        .eq("id", id)
+        .single();
 
-    const rm = await supabase.storage.from(bucket).remove([path])
-    if (rm.error) {
-      // даже если файл не удалился, всё равно обновим список в БД
+      if (readErr) throw new ApiError(500, readErr.message);
+
+      updated.photos = await withSignedUrls(supabase, updated.photos);
+      return NextResponse.json({ site: updated });
     }
 
-    const site = await savePhotos(supabase, siteId, nextPhotos)
-    const signed = await signPhotos(supabase, nextPhotos)
-    return NextResponse.json({ site: { ...(site as any), photos: signed } }, { status: 200 })
+    throw new ApiError(400, "Неизвестное действие");
   } catch (e) {
-    return toErrorResponse(e)
+    return toErrorResponse(e);
+  }
+}
+
+export async function DELETE(
+  req: NextRequest,
+  ctx: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { supabase } = await requireAdmin(req);
+    const { id } = await ctx.params;
+
+    const body = await req.json().catch(() => ({}));
+    const path = String(body?.path ?? "");
+    if (!path) throw new ApiError(400, "path обязателен");
+
+    const bucket = getBucket();
+
+    const { data: siteRow, error: siteErr } = await supabase
+      .from("sites")
+      .select("id, photos")
+      .eq("id", id)
+      .single();
+
+    if (siteErr) throw new ApiError(404, siteErr.message);
+
+    const photos: Photo[] = Array.isArray(siteRow.photos) ? siteRow.photos : [];
+    const next = photos.filter((p) => p.path !== path);
+
+    // удаляем объект из storage (ошибку удаления из storage не превращаем в падение БД)
+    await supabase.storage.from(bucket).remove([path]);
+
+    const { error: updErr } = await supabase
+      .from("sites")
+      .update({ photos: next })
+      .eq("id", id);
+
+    if (updErr) throw new ApiError(500, updErr.message);
+
+    const { data: updated, error: readErr } = await supabase
+      .from("sites")
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    if (readErr) throw new ApiError(500, readErr.message);
+
+    updated.photos = await withSignedUrls(supabase, updated.photos);
+    return NextResponse.json({ site: updated });
+  } catch (e) {
+    return toErrorResponse(e);
   }
 }

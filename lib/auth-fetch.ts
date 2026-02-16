@@ -1,49 +1,59 @@
-import { supabase } from '@/lib/supabase';
+import { supabase } from "@/lib/supabase";
 
-type AnyJson = Record<string, any>;
-
-export async function authFetchJson<T = AnyJson>(
-  input: RequestInfo | URL,
-  init?: RequestInit
-): Promise<T> {
+export async function getAccessToken(): Promise<string | null> {
   const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
+  return data.session?.access_token ?? null;
+}
 
-  if (!token) {
-    // Важно: убрали токсичную техничку про Bearer
-    throw new Error('Нужно войти (нет активной сессии)');
-  }
+export async function authFetch(
+  input: RequestInfo | URL,
+  init: RequestInit = {}
+): Promise<Response> {
+  const token = await getAccessToken();
+  const headers = new Headers(init.headers ?? {});
+  if (token) headers.set("authorization", `Bearer ${token}`);
+  return fetch(input, { ...init, headers });
+}
 
-  const headers = new Headers(init?.headers || {});
-  headers.set('authorization', `Bearer ${token}`);
+export async function authFetchJson<T = any>(
+  url: string,
+  init: RequestInit = {}
+): Promise<T> {
+  const headers = new Headers(init.headers ?? {});
+  headers.set("accept", "application/json");
 
-  // если отправляем строковый body и не задан content-type — поставим JSON
-  if (!headers.has('content-type') && typeof init?.body === 'string') {
-    headers.set('content-type', 'application/json');
-  }
+  // Если body уже строка — считаем что это JSON
+  const body = init.body;
+  const isJsonBody = typeof body === "string";
 
-  const res = await fetch(input, {
-    ...init,
-    headers,
-    cache: 'no-store',
-  });
+  if (isJsonBody) headers.set("content-type", "application/json");
 
-  const raw = await res.text();
-  let json: any = null;
-  try {
-    json = raw ? JSON.parse(raw) : null;
-  } catch {
-    json = raw ? { error: raw } : null;
+  const res = await authFetch(url, { ...init, headers });
+
+  const text = await res.text();
+  const ct = res.headers.get("content-type") || "";
+
+  let payload: any = null;
+  if (ct.includes("application/json")) {
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      payload = null;
+    }
   }
 
   if (!res.ok) {
     const msg =
-      json?.error ||
-      json?.message ||
-      (raw ? String(raw) : '') ||
-      `HTTP ${res.status}`;
+      payload?.error ||
+      payload?.message ||
+      (text?.trim() ? text : `HTTP ${res.status}`);
     throw new Error(msg);
   }
 
-  return (json ?? ({} as any)) as T;
+  if (!ct.includes("application/json")) {
+    // чтобы не молча падать на HTML/текст
+    return (text as unknown) as T;
+  }
+
+  return payload as T;
 }

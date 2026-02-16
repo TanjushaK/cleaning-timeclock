@@ -1,211 +1,106 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
+import { NextRequest, NextResponse } from "next/server";
+import { ApiError, requireAdmin, toErrorResponse } from "@/lib/supabase-server";
 
-export const runtime = 'nodejs'
+export const runtime = "nodejs";
 
-type SitePhoto = { path?: string; url?: string; created_at?: string } | string
+async function geocodeIfNeeded(req: NextRequest, address: string) {
+  const origin = req.nextUrl.origin;
+  const url = new URL("/api/geocode", origin);
+  url.searchParams.set("q", address);
 
-function s(v: any) {
-  return String(v ?? '').trim()
+  const r = await fetch(url.toString(), { method: "GET" });
+  const j = await r.json().catch(() => null);
+
+  if (!r.ok || !j?.ok) return { lat: null as number | null, lng: null as number | null };
+  const lat = Number(j.lat);
+  const lng = Number(j.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return { lat: null, lng: null };
+  return { lat, lng };
 }
 
-function toNumOrNull(v: any): number | null {
-  if (v === null || v === undefined || v === '') return null
-  const n = Number(v)
-  return Number.isFinite(n) ? n : null
-}
-
-function toIntOrDefault(v: any, def: number): number {
-  const n = Number(v)
-  if (!Number.isFinite(n)) return def
-  const i = Math.round(n)
-  return i > 0 ? i : def
-}
-
-function isRelMissing(err: any): boolean {
-  const msg = String(err?.message || '')
-  const code = String(err?.code || '')
-  return code === '42P01' || msg.includes('does not exist') || msg.includes('relation') && msg.includes('does not exist')
-}
-
-function getTtlSeconds(): number {
-  const raw = process.env.SITE_PHOTOS_SIGNED_URL_TTL || '86400'
-  const n = Number(raw)
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 86400
-}
-
-function getBucket(): string {
-  return process.env.SITE_PHOTOS_BUCKET || 'site-photos'
-}
-
-async function geocodeAddress(addr: string): Promise<{ lat: number; lng: number } | null> {
-  const q = addr.trim()
-  if (!q) return null
-
-  const ua =
-    process.env.NOMINATIM_USER_AGENT ||
-    'Tanija Cleaning Timeclock (geocode); contact=admin@tanjusha.nl'
-
-  const url =
-    `https://nominatim.openstreetmap.org/search` +
-    `?format=json&limit=1&addressdetails=1&q=${encodeURIComponent(q)}`
-
-  const r = await fetch(url, {
-    headers: {
-      'User-Agent': ua,
-      'Accept-Language': 'en,ru;q=0.8',
-    },
-    cache: 'no-store',
-  })
-
-  if (!r.ok) return null
-
-  const data = (await r.json()) as any
-  if (!Array.isArray(data) || data.length === 0) return null
-
-  const item = data[0]
-  const lat = Number(item?.lat)
-  const lng = Number(item?.lon)
-
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
-  return { lat, lng }
-}
-
-async function signPhotos(supabase: any, photosRaw: any): Promise<any[]> {
-  const bucket = getBucket()
-  const ttl = getTtlSeconds()
-
-  const arr: any[] = Array.isArray(photosRaw) ? photosRaw : []
-  const out: any[] = []
-
-  for (const p of arr) {
-    if (typeof p === 'string') {
-      const path = p
-      const { data } = await supabase.storage.from(bucket).createSignedUrl(path, ttl)
-      out.push({ path, url: data?.signedUrl || null })
-      continue
-    }
-
-    const path = s(p?.path)
-    const created_at = p?.created_at || null
-
-    if (!path) {
-      out.push(p)
-      continue
-    }
-
-    const { data } = await supabase.storage.from(bucket).createSignedUrl(path, ttl)
-    out.push({ path, url: data?.signedUrl || null, created_at })
-  }
-
-  return out
-}
-
-export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+export async function PATCH(
+  req: NextRequest,
+  ctx: { params: Promise<{ id: string }> }
+) {
   try {
-    const { supabase } = await requireAdmin(req)
-    const { id } = await ctx.params
+    const { supabase } = await requireAdmin(req);
+    const { id } = await ctx.params;
+
+    const body = await req.json().catch(() => ({}));
+
+    const name = body?.name !== undefined ? String(body.name).trim() : undefined;
+    const address = body?.address !== undefined ? String(body.address).trim() : undefined;
+
+    const radius = body?.radius === undefined ? undefined : body.radius;
+    const category = body?.category === undefined ? undefined : body.category;
+    const notes = body?.notes === undefined ? undefined : body.notes;
+
+    let lat: number | null | undefined =
+      body?.lat === undefined ? undefined : body.lat === null ? null : Number(body.lat);
+    let lng: number | null | undefined =
+      body?.lng === undefined ? undefined : body.lng === null ? null : Number(body.lng);
+
+    // если прислали адрес, но не прислали координаты — геокодим
+    const needsGeocode =
+      address !== undefined &&
+      address.trim() &&
+      (lat === undefined || lng === undefined || !Number.isFinite(lat as number) || !Number.isFinite(lng as number));
+
+    if (needsGeocode) {
+      const g = await geocodeIfNeeded(req, address.trim());
+      lat = g.lat;
+      lng = g.lng;
+    }
+
+    const patch: any = {};
+    if (name !== undefined) patch.name = name;
+    if (address !== undefined) patch.address = address || null;
+    if (radius !== undefined) patch.radius = radius === null ? null : Number(radius);
+    if (category !== undefined) patch.category = category;
+    if (notes !== undefined) patch.notes = notes;
+
+    if (lat !== undefined) patch.lat = Number.isFinite(lat as number) ? lat : null;
+    if (lng !== undefined) patch.lng = Number.isFinite(lng as number) ? lng : null;
 
     const { data, error } = await supabase
-      .from('sites')
-      .select('id,name,address,lat,lng,radius,category,notes,photos,archived_at')
-      .eq('id', id)
-      .single()
-
-    if (error) throw new ApiError(404, 'Объект не найден')
-
-    const photos = await signPhotos(supabase, (data as any)?.photos)
-    return NextResponse.json({ site: { ...(data as any), photos } }, { status: 200 })
-  } catch (e) {
-    return toErrorResponse(e)
-  }
-}
-
-export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  try {
-    const { supabase } = await requireAdmin(req)
-    const { id } = await ctx.params
-
-    const body = await req.json()
-
-    const name = body?.name !== undefined ? s(body.name) : undefined
-    const address = body?.address !== undefined ? s(body.address) : undefined
-    const notes = body?.notes !== undefined ? s(body.notes) : undefined
-
-    const radius =
-      body?.radius !== undefined ? toIntOrDefault(body.radius, 150) : undefined
-
-    const category =
-      body?.category !== undefined ? (body.category === null ? null : s(body.category)) : undefined
-
-    let lat = body?.lat !== undefined ? toNumOrNull(body.lat) : undefined
-    let lng = body?.lng !== undefined ? toNumOrNull(body.lng) : undefined
-
-    // Автогеокодинг: если адрес пришёл, а lat/lng не пришли — пробуем найти координаты
-    if (address !== undefined && lat === undefined && lng === undefined) {
-      const geo = await geocodeAddress(address)
-      if (geo) {
-        lat = geo.lat
-        lng = geo.lng
-      } else {
-        // если не нашли — просто сохраняем адрес, GPS останется пустым
-        lat = null
-        lng = null
-      }
-    }
-
-    const patch: any = {}
-    if (name !== undefined) patch.name = name
-    if (address !== undefined) patch.address = address
-    if (notes !== undefined) patch.notes = notes
-    if (radius !== undefined) patch.radius = radius
-    if (category !== undefined) patch.category = category
-    if (lat !== undefined) patch.lat = lat
-    if (lng !== undefined) patch.lng = lng
-
-    const { data, error } = await supabase
-      .from('sites')
+      .from("sites")
       .update(patch)
-      .eq('id', id)
-      .select('id,name,address,lat,lng,radius,category,notes,photos,archived_at')
-      .single()
+      .eq("id", id)
+      .select("*")
+      .single();
 
-    if (error) throw new ApiError(500, error.message || 'Не удалось сохранить объект')
-
-    const photos = await signPhotos(supabase, (data as any)?.photos)
-    return NextResponse.json({ site: { ...(data as any), photos } }, { status: 200 })
+    if (error) throw new ApiError(500, error.message);
+    return NextResponse.json({ site: data });
   } catch (e) {
-    return toErrorResponse(e)
+    return toErrorResponse(e);
   }
 }
 
-export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+export async function DELETE(
+  req: NextRequest,
+  ctx: { params: Promise<{ id: string }> }
+) {
   try {
-    const { supabase } = await requireAdmin(req)
-    const { id } = await ctx.params
+    const { supabase } = await requireAdmin(req);
+    const { id } = await ctx.params;
 
-    // 1) Отвязываем jobs (вариант 3)
-    const j = await supabase.from('jobs').update({ site_id: null }).eq('site_id', id)
-    if (j.error) throw new ApiError(500, j.error.message || 'Не удалось отвязать jobs от объекта')
-
-    // 2) Чистим assignments (если есть)
-    const a = await supabase.from('assignments').delete().eq('site_id', id)
-    if (a.error && !isRelMissing(a.error)) {
-      throw new ApiError(500, a.error.message || 'Не удалось удалить assignments объекта')
+    // 1) отвязываем jobs
+    const upd = await supabase.from("jobs").update({ site_id: null }).eq("site_id", id);
+    if (upd.error) {
+      // чаще всего это NOT NULL или права/rls
+      throw new ApiError(409, upd.error.message);
     }
 
-    // 3) Удаляем объект
-    const del = await supabase
-      .from('sites')
-      .delete()
-      .eq('id', id)
-      .select('id')
-      .single()
+    // 2) чистим assignments (обычно там FK на site_id)
+    const delAssign = await supabase.from("assignments").delete().eq("site_id", id);
+    if (delAssign.error) throw new ApiError(409, delAssign.error.message);
 
-    if (del.error) throw new ApiError(500, del.error.message || 'Не удалось удалить объект')
+    // 3) удаляем сам объект
+    const delSite = await supabase.from("sites").delete().eq("id", id);
+    if (delSite.error) throw new ApiError(409, delSite.error.message);
 
-    return NextResponse.json({ ok: true, id }, { status: 200 })
+    return NextResponse.json({ ok: true });
   } catch (e) {
-    return toErrorResponse(e)
+    return toErrorResponse(e);
   }
 }

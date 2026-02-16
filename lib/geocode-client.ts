@@ -1,42 +1,60 @@
-"use client";
-
 export type GeocodeOk = {
   ok: true;
-  q: string;
-  display_name: string | null;
   lat: number;
   lng: number;
+  display_name?: string;
 };
 
 export type GeocodeFail = {
   ok: false;
   error: string;
-  details?: string;
 };
 
-export async function geocodeAddress(q: string): Promise<GeocodeOk> {
-  const url = `/api/geocode?q=${encodeURIComponent(q)}`;
-  const res = await fetch(url, { method: "GET", cache: "no-store" });
+export type GeocodeResult = GeocodeOk | GeocodeFail;
 
-  const ct = res.headers.get("content-type") || "";
-  const text = await res.text();
+export async function geocodeAddress(q: string): Promise<GeocodeResult> {
+  const query = (q || "").trim();
+  if (!query) return { ok: false, error: "Пустой адрес" };
 
-  if (!res.ok) {
-    let payload: GeocodeFail | null = null;
-    if (ct.includes("application/json")) {
-      try {
-        payload = JSON.parse(text);
-      } catch {}
+  try {
+    const url = `/api/geocode?q=${encodeURIComponent(query)}`;
+    const res = await fetch(url, { method: "GET" });
+
+    const ct = res.headers.get("content-type") || "";
+    const text = await res.text();
+
+    if (!ct.includes("application/json")) {
+      return { ok: false, error: `Geocode: не-JSON (HTTP ${res.status})` };
     }
-    throw new Error(payload?.error || `Geocode HTTP ${res.status}`);
+
+    let data: any = null;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      return { ok: false, error: "Geocode: JSON parse error" };
+    }
+
+    if (!res.ok) {
+      return { ok: false, error: data?.error || `Geocode HTTP ${res.status}` };
+    }
+
+    if (!data?.ok) {
+      return { ok: false, error: data?.error || "Geocode: неизвестная ошибка" };
+    }
+
+    const lat = Number(data.lat);
+    const lng = Number(data.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return { ok: false, error: "Geocode: невалидные координаты" };
+    }
+
+    return {
+      ok: true,
+      lat,
+      lng,
+      display_name: typeof data.display_name === "string" ? data.display_name : undefined,
+    };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || "Geocode: ошибка сети" };
   }
-
-  if (!ct.includes("application/json")) {
-    throw new Error("Geocode: ожидался JSON, пришёл не-JSON");
-  }
-
-  const data = JSON.parse(text) as GeocodeOk | GeocodeFail;
-  if (!data.ok) throw new Error(data.error);
-
-  return data;
 }
