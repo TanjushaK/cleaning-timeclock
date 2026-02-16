@@ -1,73 +1,110 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
 
-type SitePhoto = { path: string; url?: string; created_at?: string | null }
+export const runtime = 'nodejs'
 
-const BUCKET = process.env.SITE_PHOTOS_BUCKET || 'site-photos'
+type SitePhoto = { path?: string; url?: string; created_at?: string } | string
 
-function getSignedTtlSeconds() {
-  const raw = process.env.SITE_PHOTOS_SIGNED_URL_TTL
-  const n = raw ? Number.parseInt(raw, 10) : 86400
-  return Number.isFinite(n) && n > 0 ? n : 86400
+function s(v: any) {
+  return String(v ?? '').trim()
 }
 
-function toFiniteOrNull(v: any): number | null {
-  if (v == null) return null
+function toNumOrNull(v: any): number | null {
+  if (v === null || v === undefined || v === '') return null
   const n = Number(v)
   return Number.isFinite(n) ? n : null
 }
 
-function toCategoryOrNull(v: any): number | null {
-  if (v == null || v === '' || v === 0 || v === '0') return null
+function toIntOrDefault(v: any, def: number): number {
   const n = Number(v)
-  if (!Number.isFinite(n)) return null
-  const i = Math.trunc(n)
-  if (i < 1 || i > 15) throw new ApiError(400, 'Категория должна быть от 1 до 15')
-  return i
+  if (!Number.isFinite(n)) return def
+  const i = Math.round(n)
+  return i > 0 ? i : def
 }
 
-function normalizePhotos(v: any): SitePhoto[] {
-  if (!Array.isArray(v)) return []
-  return v
-    .filter((p) => p && typeof p === 'object' && typeof (p as any).path === 'string')
-    .map((p) => ({
-      path: String((p as any).path),
-      url: (p as any).url ? String((p as any).url) : undefined,
-      created_at: (p as any).created_at ? String((p as any).created_at) : undefined,
-    }))
+function isRelMissing(err: any): boolean {
+  const msg = String(err?.message || '')
+  const code = String(err?.code || '')
+  return code === '42P01' || msg.includes('does not exist') || msg.includes('relation') && msg.includes('does not exist')
 }
 
-async function withSignedUrls(supabase: any, site: any) {
-  const photos = normalizePhotos(site?.photos)
-  if (photos.length === 0) return { ...site, photos }
-
-  const paths = Array.from(new Set(photos.map((p) => p.path).filter(Boolean)))
-  const ttl = getSignedTtlSeconds()
-  const { data: signed, error } = await supabase.storage.from(BUCKET).createSignedUrls(paths, ttl)
-
-  if (error || !Array.isArray(signed)) {
-    return { ...site, photos }
-  }
-
-  const urlByPath = new Map<string, string>()
-  for (const item of signed as any[]) {
-    const p = item?.path ? String(item.path) : ''
-    const u = item?.signedUrl ? String(item.signedUrl) : ''
-    if (p && u) urlByPath.set(p, u)
-  }
-
-  return {
-    ...site,
-    photos: photos.map((p) => ({ ...p, url: urlByPath.get(p.path) || p.url })),
-  }
+function getTtlSeconds(): number {
+  const raw = process.env.SITE_PHOTOS_SIGNED_URL_TTL || '86400'
+  const n = Number(raw)
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 86400
 }
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+function getBucket(): string {
+  return process.env.SITE_PHOTOS_BUCKET || 'site-photos'
+}
+
+async function geocodeAddress(addr: string): Promise<{ lat: number; lng: number } | null> {
+  const q = addr.trim()
+  if (!q) return null
+
+  const ua =
+    process.env.NOMINATIM_USER_AGENT ||
+    'Tanija Cleaning Timeclock (geocode); contact=admin@tanjusha.nl'
+
+  const url =
+    `https://nominatim.openstreetmap.org/search` +
+    `?format=json&limit=1&addressdetails=1&q=${encodeURIComponent(q)}`
+
+  const r = await fetch(url, {
+    headers: {
+      'User-Agent': ua,
+      'Accept-Language': 'en,ru;q=0.8',
+    },
+    cache: 'no-store',
+  })
+
+  if (!r.ok) return null
+
+  const data = (await r.json()) as any
+  if (!Array.isArray(data) || data.length === 0) return null
+
+  const item = data[0]
+  const lat = Number(item?.lat)
+  const lng = Number(item?.lon)
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+  return { lat, lng }
+}
+
+async function signPhotos(supabase: any, photosRaw: any): Promise<any[]> {
+  const bucket = getBucket()
+  const ttl = getTtlSeconds()
+
+  const arr: any[] = Array.isArray(photosRaw) ? photosRaw : []
+  const out: any[] = []
+
+  for (const p of arr) {
+    if (typeof p === 'string') {
+      const path = p
+      const { data } = await supabase.storage.from(bucket).createSignedUrl(path, ttl)
+      out.push({ path, url: data?.signedUrl || null })
+      continue
+    }
+
+    const path = s(p?.path)
+    const created_at = p?.created_at || null
+
+    if (!path) {
+      out.push(p)
+      continue
+    }
+
+    const { data } = await supabase.storage.from(bucket).createSignedUrl(path, ttl)
+    out.push({ path, url: data?.signedUrl || null, created_at })
+  }
+
+  return out
+}
+
+export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const { id } = await params
-    if (!id) throw new ApiError(400, 'id_required')
-
-    const { supabase } = await requireAdmin(req.headers)
+    const { supabase } = await requireAdmin(req)
+    const { id } = await ctx.params
 
     const { data, error } = await supabase
       .from('sites')
@@ -75,86 +112,99 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       .eq('id', id)
       .single()
 
-    if (error) throw new ApiError(400, error.message || 'Не удалось загрузить объект')
+    if (error) throw new ApiError(404, 'Объект не найден')
 
-    const site = await withSignedUrls(supabase, data)
-    return NextResponse.json({ site })
+    const photos = await signPhotos(supabase, (data as any)?.photos)
+    return NextResponse.json({ site: { ...(data as any), photos } }, { status: 200 })
   } catch (e) {
     return toErrorResponse(e)
   }
 }
 
-export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const { id } = await params
-    if (!id) throw new ApiError(400, 'id_required')
+    const { supabase } = await requireAdmin(req)
+    const { id } = await ctx.params
 
-    const { supabase } = await requireAdmin(req.headers)
+    const body = await req.json()
 
-    let body: any = null
-    try {
-      body = await req.json()
-    } catch {
-      body = null
-    }
-    if (!body || typeof body !== 'object') throw new ApiError(400, 'invalid_body')
+    const name = body?.name !== undefined ? s(body.name) : undefined
+    const address = body?.address !== undefined ? s(body.address) : undefined
+    const notes = body?.notes !== undefined ? s(body.notes) : undefined
 
-    const updates: any = {}
+    const radius =
+      body?.radius !== undefined ? toIntOrDefault(body.radius, 150) : undefined
 
-    if (body.name !== undefined) {
-      const name = String(body.name ?? '').trim()
-      if (!name) throw new ApiError(400, 'Нужно название объекта')
-      updates.name = name
-    }
+    const category =
+      body?.category !== undefined ? (body.category === null ? null : s(body.category)) : undefined
 
-    if (body.address !== undefined) {
-      const address = body.address == null ? null : String(body.address).trim() || null
-      updates.address = address
-    }
+    let lat = body?.lat !== undefined ? toNumOrNull(body.lat) : undefined
+    let lng = body?.lng !== undefined ? toNumOrNull(body.lng) : undefined
 
-    if (body.lat !== undefined) updates.lat = toFiniteOrNull(body.lat)
-    if (body.lng !== undefined) updates.lng = toFiniteOrNull(body.lng)
-
-    if (body.radius !== undefined || body.radius_m !== undefined) {
-      const r = toFiniteOrNull(body.radius ?? body.radius_m)
-      updates.radius = r == null ? 150 : r
+    // Автогеокодинг: если адрес пришёл, а lat/lng не пришли — пробуем найти координаты
+    if (address !== undefined && lat === undefined && lng === undefined) {
+      const geo = await geocodeAddress(address)
+      if (geo) {
+        lat = geo.lat
+        lng = geo.lng
+      } else {
+        // если не нашли — просто сохраняем адрес, GPS останется пустым
+        lat = null
+        lng = null
+      }
     }
 
-    if (body.category !== undefined) updates.category = toCategoryOrNull(body.category)
-
-    if (body.notes !== undefined) {
-      updates.notes = body.notes == null ? null : String(body.notes)
-    }
-
-    if (Object.keys(updates).length === 0) throw new ApiError(400, 'no_updates')
+    const patch: any = {}
+    if (name !== undefined) patch.name = name
+    if (address !== undefined) patch.address = address
+    if (notes !== undefined) patch.notes = notes
+    if (radius !== undefined) patch.radius = radius
+    if (category !== undefined) patch.category = category
+    if (lat !== undefined) patch.lat = lat
+    if (lng !== undefined) patch.lng = lng
 
     const { data, error } = await supabase
       .from('sites')
-      .update(updates)
+      .update(patch)
       .eq('id', id)
       .select('id,name,address,lat,lng,radius,category,notes,photos,archived_at')
       .single()
 
-    if (error) throw new ApiError(400, error.message || 'Не удалось обновить объект')
+    if (error) throw new ApiError(500, error.message || 'Не удалось сохранить объект')
 
-    const site = await withSignedUrls(supabase, data)
-    return NextResponse.json({ ok: true, site })
+    const photos = await signPhotos(supabase, (data as any)?.photos)
+    return NextResponse.json({ site: { ...(data as any), photos } }, { status: 200 })
   } catch (e) {
     return toErrorResponse(e)
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const { id } = await params
-    if (!id) throw new ApiError(400, 'id_required')
+    const { supabase } = await requireAdmin(req)
+    const { id } = await ctx.params
 
-    const { supabase } = await requireAdmin(req.headers)
+    // 1) Отвязываем jobs (вариант 3)
+    const j = await supabase.from('jobs').update({ site_id: null }).eq('site_id', id)
+    if (j.error) throw new ApiError(500, j.error.message || 'Не удалось отвязать jobs от объекта')
 
-    const { error } = await supabase.from('sites').delete().eq('id', id)
-    if (error) throw new ApiError(400, error.message || 'Не удалось удалить объект')
+    // 2) Чистим assignments (если есть)
+    const a = await supabase.from('assignments').delete().eq('site_id', id)
+    if (a.error && !isRelMissing(a.error)) {
+      throw new ApiError(500, a.error.message || 'Не удалось удалить assignments объекта')
+    }
 
-    return NextResponse.json({ ok: true })
+    // 3) Удаляем объект
+    const del = await supabase
+      .from('sites')
+      .delete()
+      .eq('id', id)
+      .select('id')
+      .single()
+
+    if (del.error) throw new ApiError(500, del.error.message || 'Не удалось удалить объект')
+
+    return NextResponse.json({ ok: true, id }, { status: 200 })
   } catch (e) {
     return toErrorResponse(e)
   }

@@ -3,181 +3,160 @@ import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
 
 export const runtime = 'nodejs'
 
-type SitePhoto = { path: string; url?: string; created_at?: string | null }
+type SitePhoto = { path: string; created_at?: string }
 
-const BUCKET = process.env.SITE_PHOTOS_BUCKET || 'site-photos'
-
-function getSignedTtlSeconds() {
-  const raw = process.env.SITE_PHOTOS_SIGNED_URL_TTL
-  const n = raw ? Number.parseInt(raw, 10) : 86400
-  return Number.isFinite(n) && n > 0 ? n : 86400
+function s(v: any) {
+  return String(v ?? '').trim()
 }
 
 function sanitizeFilename(name: string) {
-  return name
-    .replace(/\s+/g, '_')
-    .replace(/[^a-zA-Z0-9_\-.а-яА-ЯёЁ]/g, '')
-    .slice(0, 120)
+  return (
+    name
+      .replace(/[^\p{L}\p{N}\.\-_]+/gu, '_')
+      .replace(/_+/g, '_')
+      .slice(0, 120) || 'photo'
+  )
 }
 
-function normalizePhotos(v: any): SitePhoto[] {
-  if (!Array.isArray(v)) return []
-  return v
-    .filter((p) => p && typeof p === 'object' && typeof (p as any).path === 'string')
-    .map((p) => ({
-      path: String((p as any).path),
-      url: (p as any).url ? String((p as any).url) : undefined,
-      created_at: (p as any).created_at ? String((p as any).created_at) : undefined,
-    }))
+function rand() {
+  return Math.random().toString(36).slice(2, 10)
 }
 
-async function withSignedUrls(supabase: any, site: any) {
-  const photos = normalizePhotos(site?.photos)
-  if (photos.length === 0) return { ...site, photos }
-
-  const paths = Array.from(new Set(photos.map((p) => p.path).filter(Boolean)))
-  const ttl = getSignedTtlSeconds()
-  const { data: signed, error } = await supabase.storage.from(BUCKET).createSignedUrls(paths, ttl)
-
-  if (error || !Array.isArray(signed)) {
-    return { ...site, photos }
-  }
-
-  const urlByPath = new Map<string, string>()
-  for (const item of signed as any[]) {
-    const p = item?.path ? String(item.path) : ''
-    const u = item?.signedUrl ? String(item.signedUrl) : ''
-    if (p && u) urlByPath.set(p, u)
-  }
-
-  return {
-    ...site,
-    photos: photos.map((p) => ({ ...p, url: urlByPath.get(p.path) || p.url })),
-  }
+function getBucket(): string {
+  return process.env.SITE_PHOTOS_BUCKET || 'site-photos'
 }
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+function getTtlSeconds(): number {
+  const raw = process.env.SITE_PHOTOS_SIGNED_URL_TTL || '86400'
+  const n = Number(raw)
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 86400
+}
+
+async function loadPhotos(supabase: any, siteId: string): Promise<SitePhoto[]> {
+  const { data, error } = await supabase.from('sites').select('photos').eq('id', siteId).single()
+  if (error) throw new ApiError(404, 'Объект не найден')
+  const raw = (data as any)?.photos
+  if (!Array.isArray(raw)) return []
+  return raw
+    .map((p: any) => {
+      if (typeof p === 'string') return { path: p }
+      const path = s(p?.path)
+      if (!path) return null
+      return { path, created_at: p?.created_at }
+    })
+    .filter(Boolean) as SitePhoto[]
+}
+
+async function savePhotos(supabase: any, siteId: string, photos: SitePhoto[]) {
+  const { data, error } = await supabase
+    .from('sites')
+    .update({ photos })
+    .eq('id', siteId)
+    .select('id,name,address,lat,lng,radius,category,notes,photos,archived_at')
+    .single()
+
+  if (error) throw new ApiError(500, error.message || 'Не удалось сохранить фото')
+  return data
+}
+
+async function signPhotos(supabase: any, photos: SitePhoto[]) {
+  const bucket = getBucket()
+  const ttl = getTtlSeconds()
+  const out: any[] = []
+  for (const p of photos) {
+    const { data } = await supabase.storage.from(bucket).createSignedUrl(p.path, ttl)
+    out.push({ path: p.path, url: data?.signedUrl || null, created_at: p.created_at || null })
+  }
+  return out
+}
+
+export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const { id } = await params
-    if (!id) throw new ApiError(400, 'id_required')
+    const { supabase } = await requireAdmin(req)
+    const { id: siteId } = await ctx.params
 
-    const { supabase } = await requireAdmin(req.headers)
+    const fd = await req.formData()
+    const file = fd.get('file')
 
-    const form = await req.formData()
-    const file = form.get('file')
-    if (!file || !(file instanceof File)) throw new ApiError(400, 'file_required')
+    if (!file || !(file instanceof File)) throw new ApiError(400, 'Нужен файл (file)')
+    if (!file.type?.startsWith('image/')) throw new ApiError(400, 'Нужна картинка (image/*)')
 
-    const { data: siteData, error: siteErr } = await supabase.from('sites').select('id,photos').eq('id', id).single()
-    if (siteErr) throw new ApiError(400, siteErr.message || 'site_not_found')
+    const bucket = getBucket()
+    const photos = await loadPhotos(supabase, siteId)
+    if (photos.length >= 5) throw new ApiError(400, 'Максимум 5 фото')
 
-    const currentPhotos = normalizePhotos(siteData?.photos)
-    if (currentPhotos.length >= 5) throw new ApiError(400, 'photo_limit')
+    const filename = sanitizeFilename(s(file.name))
+    const path = `site-${siteId}/${Date.now()}-${rand()}-${filename}`
 
-    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
-    const safeBase = sanitizeFilename(file.name.replace(/\.[^.]+$/, '')) || 'photo'
-    const filename = `${Date.now()}_${safeBase}.${ext}`
-    const path = `${id}/${filename}`
+    const ab = await file.arrayBuffer()
+    const bytes = new Uint8Array(ab)
 
-    const arrayBuffer = await file.arrayBuffer()
-    const bytes = new Uint8Array(arrayBuffer)
-
-    const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, bytes, {
+    const up = await supabase.storage.from(bucket).upload(path, bytes, {
       contentType: file.type || 'image/jpeg',
       upsert: false,
     })
+    if (up.error) throw new ApiError(500, up.error.message || 'Не удалось загрузить фото')
 
-    if (upErr) throw new ApiError(500, upErr.message || 'upload_failed')
+    const nextPhotos: SitePhoto[] = [...photos, { path, created_at: new Date().toISOString() }]
+    const site = await savePhotos(supabase, siteId, nextPhotos)
 
-    // Храним в БД устойчивый public URL (или оставляем пустым), а в ответе возвращаем signed URL.
-    const publicUrl = supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl
-
-    const nextPhotos = [...currentPhotos, { path, url: publicUrl, created_at: new Date().toISOString() }]
-
-    const { data: updated, error: updErr } = await supabase
-      .from('sites')
-      .update({ photos: nextPhotos })
-      .eq('id', id)
-      .select('id,name,address,lat,lng,radius,category,notes,photos,archived_at')
-      .single()
-
-    if (updErr) throw new ApiError(500, updErr.message || 'db_update_failed')
-
-    const site = await withSignedUrls(supabase, updated)
-    return NextResponse.json({ ok: true, site })
+    const signed = await signPhotos(supabase, nextPhotos)
+    return NextResponse.json({ site: { ...(site as any), photos: signed } }, { status: 200 })
   } catch (e) {
     return toErrorResponse(e)
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const { id } = await params
-    if (!id) throw new ApiError(400, 'id_required')
+    const { supabase } = await requireAdmin(req)
+    const { id: siteId } = await ctx.params
 
-    const { supabase } = await requireAdmin(req.headers)
+    const body = await req.json().catch(() => ({} as any))
+    const action = s(body?.action)
 
-    const body = await req.json().catch(() => null)
-    const path = String(body?.path || '')
-    if (!path) throw new ApiError(400, 'path_required')
+    if (action !== 'make_primary') throw new ApiError(400, 'Неверное action (нужно make_primary)')
 
-    const { data: siteData, error: siteErr } = await supabase.from('sites').select('id,photos').eq('id', id).single()
-    if (siteErr) throw new ApiError(400, siteErr.message || 'site_not_found')
+    const path = s(body?.path)
+    if (!path) throw new ApiError(400, 'Нужен path')
 
-    const photos = normalizePhotos(siteData?.photos)
+    const photos = await loadPhotos(supabase, siteId)
+    const idx = photos.findIndex((p) => p.path === path)
+    if (idx < 0) throw new ApiError(404, 'Фото не найдено')
+
+    const picked = photos[idx]
+    const rest = photos.filter((p) => p.path !== path)
+    const nextPhotos = [picked, ...rest]
+
+    const site = await savePhotos(supabase, siteId, nextPhotos)
+    const signed = await signPhotos(supabase, nextPhotos)
+    return NextResponse.json({ site: { ...(site as any), photos: signed } }, { status: 200 })
+  } catch (e) {
+    return toErrorResponse(e)
+  }
+}
+
+export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  try {
+    const { supabase } = await requireAdmin(req)
+    const { id: siteId } = await ctx.params
+
+    const body = await req.json().catch(() => ({} as any))
+    const path = s(body?.path)
+    if (!path) throw new ApiError(400, 'Нужен path')
+
+    const bucket = getBucket()
+    const photos = await loadPhotos(supabase, siteId)
     const nextPhotos = photos.filter((p) => p.path !== path)
 
-    const { error: delErr } = await supabase.storage.from(BUCKET).remove([path])
-    if (delErr) throw new ApiError(500, delErr.message || 'remove_failed')
+    const rm = await supabase.storage.from(bucket).remove([path])
+    if (rm.error) {
+      // даже если файл не удалился, всё равно обновим список в БД
+    }
 
-    const { data: updated, error: updErr } = await supabase
-      .from('sites')
-      .update({ photos: nextPhotos })
-      .eq('id', id)
-      .select('id,name,address,lat,lng,radius,category,notes,photos,archived_at')
-      .single()
-
-    if (updErr) throw new ApiError(500, updErr.message || 'db_update_failed')
-
-    const site = await withSignedUrls(supabase, updated)
-    return NextResponse.json({ ok: true, site })
-  } catch (e) {
-    return toErrorResponse(e)
-  }
-}
-
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  try {
-    const { id } = await params
-    if (!id) throw new ApiError(400, 'id_required')
-
-    const { supabase } = await requireAdmin(req.headers)
-
-    const body = await req.json().catch(() => null)
-    const action = String(body?.action || '')
-    const path = String(body?.path || '')
-    if (action !== 'make_primary') throw new ApiError(400, 'invalid_action')
-    if (!path) throw new ApiError(400, 'path_required')
-
-    const { data: siteData, error: siteErr } = await supabase.from('sites').select('id,photos').eq('id', id).single()
-    if (siteErr) throw new ApiError(400, siteErr.message || 'site_not_found')
-
-    const photos = normalizePhotos(siteData?.photos)
-    const idx = photos.findIndex((p) => p.path === path)
-    if (idx < 0) throw new ApiError(400, 'photo_not_found')
-
-    const nextPhotos = [photos[idx], ...photos.slice(0, idx), ...photos.slice(idx + 1)]
-
-    const { data: updated, error: updErr } = await supabase
-      .from('sites')
-      .update({ photos: nextPhotos })
-      .eq('id', id)
-      .select('id,name,address,lat,lng,radius,category,notes,photos,archived_at')
-      .single()
-
-    if (updErr) throw new ApiError(500, updErr.message || 'db_update_failed')
-
-    const site = await withSignedUrls(supabase, updated)
-    return NextResponse.json({ ok: true, site })
+    const site = await savePhotos(supabase, siteId, nextPhotos)
+    const signed = await signPhotos(supabase, nextPhotos)
+    return NextResponse.json({ site: { ...(site as any), photos: signed } }, { status: 200 })
   } catch (e) {
     return toErrorResponse(e)
   }

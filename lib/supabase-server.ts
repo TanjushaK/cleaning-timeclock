@@ -3,7 +3,6 @@ import { createClient, type SupabaseClient, type User } from '@supabase/supabase
 
 export class ApiError extends Error {
   status: number
-
   constructor(status: number, message: string) {
     super(message)
     this.status = status
@@ -40,7 +39,7 @@ export function supabaseService(): SupabaseClient {
   const url = mustEnv('NEXT_PUBLIC_SUPABASE_URL')
   const key = mustEnv('SUPABASE_SERVICE_ROLE_KEY')
   _service = createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false }
+    auth: { persistSession: false, autoRefreshToken: false },
   })
   return _service
 }
@@ -56,16 +55,12 @@ export async function requireUser(reqOrHeaders: Request | Headers): Promise<User
   const headers = reqOrHeaders instanceof Headers ? reqOrHeaders : reqOrHeaders.headers
   const token = getBearer(headers)
 
-  if (!token) {
-    throw new ApiError(401, 'Нет токена (Authorization: Bearer ...)')
-  }
+  if (!token) throw new ApiError(401, 'Нет токена (Authorization: Bearer ...)')
 
   const supabase = supabaseService()
   const { data, error } = await supabase.auth.getUser(token)
 
-  if (error || !data?.user) {
-    throw new ApiError(401, 'Токен неверный/просрочен (перелогинься)')
-  }
+  if (error || !data?.user) throw new ApiError(401, 'Токен неверный/просрочен (перелогинься)')
 
   return { supabase, token, user: data.user, userId: data.user.id }
 }
@@ -80,17 +75,14 @@ export async function requireAdmin(reqOrHeaders: Request | Headers): Promise<Adm
     .maybeSingle()
 
   if (profErr || !prof) throw new ApiError(403, 'Нет профиля (profiles) или нет доступа')
-  if (prof.role !== 'admin' || prof.active !== true) throw new ApiError(403, 'Нужна роль admin и active=true')
+  if (prof.role !== 'admin' || prof.active !== true)
+    throw new ApiError(403, 'Нужна роль admin и active=true')
 
   return { ...guard, profile: prof as ProfileRow }
 }
 
 export function toErrorResponse(err: unknown): NextResponse {
-  if (err instanceof ApiError) {
-    return NextResponse.json({ error: err.message }, { status: err.status })
-  }
-  if (err instanceof Error) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
-  }
+  if (err instanceof ApiError) return NextResponse.json({ error: err.message }, { status: err.status })
+  if (err instanceof Error) return NextResponse.json({ error: err.message }, { status: 500 })
   return NextResponse.json({ error: 'Unknown error' }, { status: 500 })
 }
