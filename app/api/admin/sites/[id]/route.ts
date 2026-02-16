@@ -1,106 +1,174 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ApiError, requireAdmin, toErrorResponse } from "@/lib/supabase-server";
+import { requireAdmin } from "@/lib/require-admin";
 
 export const runtime = "nodejs";
 
+function safeStr(v: unknown) {
+  return typeof v === "string" ? v.trim() : "";
+}
+
+function asNum(v: unknown): number | null | undefined {
+  // undefined => field not provided
+  if (v === undefined) return undefined;
+  if (v === null) return null;
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  if (typeof v === "string") {
+    const t = v.trim();
+    if (!t) return null;
+    const n = Number(t);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
 async function geocodeIfNeeded(req: NextRequest, address: string) {
-  const origin = req.nextUrl.origin;
-  const url = new URL("/api/geocode", origin);
-  url.searchParams.set("q", address);
+  const q = safeStr(address);
+  if (!q) return null;
 
-  const r = await fetch(url.toString(), { method: "GET" });
-  const j = await r.json().catch(() => null);
+  // Use our internal API (it already sets User-Agent via env).
+  const url = new URL("/api/geocode", req.nextUrl.origin);
+  url.searchParams.set("q", q);
 
-  if (!r.ok || !j?.ok) return { lat: null as number | null, lng: null as number | null };
-  const lat = Number(j.lat);
-  const lng = Number(j.lng);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return { lat: null, lng: null };
+  const res = await fetch(url.toString(), { method: "GET", cache: "no-store" });
+  if (!res.ok) return null;
+
+  const data = (await res.json()) as any;
+  if (!data?.ok) return null;
+
+  const lat = asNum(data?.lat);
+  const lng = asNum(data?.lng);
+  if (typeof lat !== "number" || typeof lng !== "number") return null;
+
   return { lat, lng };
 }
 
-export async function PATCH(
-  req: NextRequest,
-  ctx: { params: Promise<{ id: string }> }
-) {
+async function handleUpdate(req: NextRequest, id: string) {
+  const { supabase } = await requireAdmin(req);
+
+  let payload: any = null;
   try {
-    const { supabase } = await requireAdmin(req);
-    const { id } = await ctx.params;
-
-    const body = await req.json().catch(() => ({}));
-
-    const name = body?.name !== undefined ? String(body.name).trim() : undefined;
-    const address = body?.address !== undefined ? String(body.address).trim() : undefined;
-
-    const radius = body?.radius === undefined ? undefined : body.radius;
-    const category = body?.category === undefined ? undefined : body.category;
-    const notes = body?.notes === undefined ? undefined : body.notes;
-
-    let lat: number | null | undefined =
-      body?.lat === undefined ? undefined : body.lat === null ? null : Number(body.lat);
-    let lng: number | null | undefined =
-      body?.lng === undefined ? undefined : body.lng === null ? null : Number(body.lng);
-
-    // если прислали адрес, но не прислали координаты — геокодим
-    const needsGeocode =
-      address !== undefined &&
-      address.trim() &&
-      (lat === undefined || lng === undefined || !Number.isFinite(lat as number) || !Number.isFinite(lng as number));
-
-    if (needsGeocode) {
-      const g = await geocodeIfNeeded(req, address.trim());
-      lat = g.lat;
-      lng = g.lng;
-    }
-
-    const patch: any = {};
-    if (name !== undefined) patch.name = name;
-    if (address !== undefined) patch.address = address || null;
-    if (radius !== undefined) patch.radius = radius === null ? null : Number(radius);
-    if (category !== undefined) patch.category = category;
-    if (notes !== undefined) patch.notes = notes;
-
-    if (lat !== undefined) patch.lat = Number.isFinite(lat as number) ? lat : null;
-    if (lng !== undefined) patch.lng = Number.isFinite(lng as number) ? lng : null;
-
-    const { data, error } = await supabase
-      .from("sites")
-      .update(patch)
-      .eq("id", id)
-      .select("*")
-      .single();
-
-    if (error) throw new ApiError(500, error.message);
-    return NextResponse.json({ site: data });
-  } catch (e) {
-    return toErrorResponse(e);
+    payload = await req.json();
+  } catch {
+    return NextResponse.json({ ok: false, error: "Bad JSON" }, { status: 400 });
   }
+
+  // Support both {category} and {categoryId}
+  const categoryRaw = payload?.category ?? payload?.categoryId;
+
+  const name = payload?.name;
+  const address = payload?.address;
+  const radius = payload?.radius;
+  const latRaw = payload?.lat;
+  const lngRaw = payload?.lng;
+  const notes = payload?.notes;
+
+  // Only include fields that were actually sent.
+  const patch: Record<string, any> = {};
+
+  if (Object.prototype.hasOwnProperty.call(payload, "name")) {
+    patch.name = typeof name === "string" ? name : safeStr(name);
+  }
+
+  const addressProvided = Object.prototype.hasOwnProperty.call(payload, "address");
+  if (addressProvided) {
+    patch.address = typeof address === "string" ? address : safeStr(address);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(payload, "radius")) {
+    const r = asNum(radius);
+    patch.radius = typeof r === "number" ? r : null;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(payload, "notes")) {
+    patch.notes = notes === null ? null : String(notes ?? "");
+  }
+
+  if (Object.prototype.hasOwnProperty.call(payload, "category") || Object.prototype.hasOwnProperty.call(payload, "categoryId")) {
+    if (categoryRaw === null) patch.category = null;
+    else if (typeof categoryRaw === "number") patch.category = categoryRaw;
+    else if (typeof categoryRaw === "string" && categoryRaw.trim() !== "") patch.category = Number(categoryRaw);
+    else patch.category = null;
+  }
+
+  const latProvided = Object.prototype.hasOwnProperty.call(payload, "lat");
+  const lngProvided = Object.prototype.hasOwnProperty.call(payload, "lng");
+
+  if (latProvided) {
+    const v = asNum(latRaw);
+    patch.lat = typeof v === "number" ? v : null;
+  }
+  if (lngProvided) {
+    const v = asNum(lngRaw);
+    patch.lng = typeof v === "number" ? v : null;
+  }
+
+  // If address changed but coords weren't explicitly provided (or cleared), try geocoding.
+  const shouldGeocode =
+    addressProvided &&
+    safeStr(patch.address).length > 0 &&
+    (!latProvided || patch.lat === null) &&
+    (!lngProvided || patch.lng === null);
+
+  if (shouldGeocode) {
+    const geo = await geocodeIfNeeded(req, patch.address);
+    if (geo) {
+      patch.lat = geo.lat;
+      patch.lng = geo.lng;
+    }
+  }
+
+  if (Object.keys(patch).length === 0) {
+    return NextResponse.json({ ok: true, site: null });
+  }
+
+  const { data: site, error } = await supabase
+    .from("sites")
+    .update(patch)
+    .eq("id", id)
+    .select("*")
+    .single();
+
+  if (error) {
+    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true, site });
 }
 
-export async function DELETE(
-  req: NextRequest,
-  ctx: { params: Promise<{ id: string }> }
-) {
-  try {
-    const { supabase } = await requireAdmin(req);
-    const { id } = await ctx.params;
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const { supabase } = await requireAdmin(req);
 
-    // 1) отвязываем jobs
-    const upd = await supabase.from("jobs").update({ site_id: null }).eq("site_id", id);
-    if (upd.error) {
-      // чаще всего это NOT NULL или права/rls
-      throw new ApiError(409, upd.error.message);
-    }
+  const { data: site, error } = await supabase.from("sites").select("*").eq("id", id).single();
+  if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
 
-    // 2) чистим assignments (обычно там FK на site_id)
-    const delAssign = await supabase.from("assignments").delete().eq("site_id", id);
-    if (delAssign.error) throw new ApiError(409, delAssign.error.message);
+  return NextResponse.json({ ok: true, site });
+}
 
-    // 3) удаляем сам объект
-    const delSite = await supabase.from("sites").delete().eq("id", id);
-    if (delSite.error) throw new ApiError(409, delSite.error.message);
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  return handleUpdate(req, id);
+}
 
-    return NextResponse.json({ ok: true });
-  } catch (e) {
-    return toErrorResponse(e);
-  }
+// Frontend uses PUT in нескольких местах (сохранение карточки + быстрая смена категории)
+export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  return handleUpdate(req, id);
+}
+
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const { supabase } = await requireAdmin(req);
+
+  // Вариант 3: «отвязать» jobs и assignments от объекта, чтобы FK не блокировал удаление
+  const { error: jobsErr } = await supabase.from("jobs").update({ site_id: null }).eq("site_id", id);
+  if (jobsErr) return NextResponse.json({ ok: false, error: jobsErr.message }, { status: 500 });
+
+  const { error: asgErr } = await supabase.from("assignments").delete().eq("site_id", id);
+  if (asgErr) return NextResponse.json({ ok: false, error: asgErr.message }, { status: 500 });
+
+  const { error } = await supabase.from("sites").delete().eq("id", id);
+  if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+
+  return NextResponse.json({ ok: true });
 }
