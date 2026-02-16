@@ -1,75 +1,44 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
+import { requireAdmin, ApiError, toErrorResponse } from '@/lib/supabase-server'
 
-export const runtime = 'nodejs'
-export const dynamic = 'force-dynamic'
+type SitePhoto = { path: string; url?: string; created_at?: string | null }
 
-type PhotoIn = { path?: string; created_at?: string } | string
-type PhotoOut = { path: string; url: string | null; created_at: string | null }
+const BUCKET = process.env.SITE_PHOTOS_BUCKET || 'site-photos'
 
-function s(v: any) {
-  return String(v ?? '').trim()
+function getSignedTtlSeconds() {
+  const raw = process.env.SITE_PHOTOS_SIGNED_URL_TTL
+  const n = raw ? Number.parseInt(raw, 10) : 86400
+  return Number.isFinite(n) && n > 0 ? n : 86400
 }
 
-function getBucket(): string {
-  return process.env.SITE_PHOTOS_BUCKET || 'site-photos'
-}
-
-function getTtlSeconds(): number {
-  const raw = process.env.SITE_PHOTOS_SIGNED_URL_TTL || '86400'
-  const n = Number(raw)
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 86400
-}
-
-function normalizePhotos(raw: any): { path: string; created_at: string | null }[] {
-  if (!Array.isArray(raw)) return []
-  const out: { path: string; created_at: string | null }[] = []
-
-  for (const p of raw as PhotoIn[]) {
-    if (typeof p === 'string') {
-      const path = p.trim()
-      if (path) out.push({ path, created_at: null })
-      continue
-    }
-    const path = s((p as any)?.path)
-    if (!path) continue
-    const created_at = s((p as any)?.created_at) || null
-    out.push({ path, created_at })
+function normalizePhotos(v: any): SitePhoto[] {
+  if (Array.isArray(v)) {
+    return v
+      .filter((p) => p && typeof p === 'object' && typeof (p as any).path === 'string')
+      .map((p) => ({
+        path: String((p as any).path),
+        url: (p as any).url ? String((p as any).url) : undefined,
+        created_at: (p as any).created_at ? String((p as any).created_at) : undefined,
+      }))
   }
 
-  return out
+  // text column storing JSON
+  if (typeof v === 'string' && v.trim()) {
+    try {
+      const parsed = JSON.parse(v)
+      return normalizePhotos(parsed)
+    } catch {
+      return []
+    }
+  }
+
+  return []
 }
 
-async function photoUrl(supabase: any, path: string): Promise<string | null> {
-  const bucket = getBucket()
-  const ttl = getTtlSeconds()
-
-  const signed = await supabase.storage.from(bucket).createSignedUrl(path, ttl)
-  const signedUrl = signed?.data?.signedUrl
-  if (signedUrl) return signedUrl
-
-  const pub = supabase.storage.from(bucket).getPublicUrl(path)
-  const publicUrl = pub?.data?.publicUrl
-  if (publicUrl) return publicUrl
-
-  return null
-}
-
-async function signPhotos(supabase: any, raw: any): Promise<PhotoOut[]> {
-  const base = normalizePhotos(raw)
-  const out = await Promise.all(
-    base.map(async (p) => ({
-      path: p.path,
-      created_at: p.created_at,
-      url: await photoUrl(supabase, p.path),
-    })),
-  )
-  return out
-}
 
 export async function GET(req: NextRequest) {
   try {
-    const { supabase } = await requireAdmin(req)
+    const { supabase } = await requireAdmin(req.headers)
 
     const includeArchived = req.nextUrl.searchParams.get('include_archived') === '1'
 
@@ -78,18 +47,46 @@ export async function GET(req: NextRequest) {
       .select('id,name,address,lat,lng,radius,category,notes,photos,archived_at')
       .order('name', { ascending: true })
 
-    if (!includeArchived) q = q.is('archived_at', null)
+    if (!includeArchived) {
+      q = q.is('archived_at', null)
+    }
 
     const { data, error } = await q
     if (error) throw new ApiError(500, error.message || 'Не удалось загрузить объекты')
 
-    const rows = Array.isArray(data) ? (data as any[]) : []
-    const sites = await Promise.all(
-      rows.map(async (site) => {
-        const photos = await signPhotos(supabase, site?.photos)
-        return { ...site, photos }
-      }),
+    const sites = (data ?? []).map((s: any) => ({ ...s, photos: normalizePhotos(s.photos) }))
+
+    // Подменяем url на signed URL (не сохраняем signed URL в БД)
+    const allPaths = Array.from(
+      new Set(
+        sites
+          .flatMap((s: any) => (Array.isArray(s.photos) ? s.photos : []))
+          .map((p: any) => (p?.path ? String(p.path) : ''))
+          .filter(Boolean)
+      )
     )
+
+    if (allPaths.length > 0) {
+      const ttl = getSignedTtlSeconds()
+      const { data: signed, error: signErr } = await supabase.storage.from(BUCKET).createSignedUrls(allPaths, ttl)
+
+      if (!signErr && Array.isArray(signed)) {
+        const urlByPath = new Map<string, string>()
+        for (const item of signed as any[]) {
+          const p = item?.path ? String(item.path) : ''
+          const u = item?.signedUrl ? String(item.signedUrl) : ''
+          if (p && u) urlByPath.set(p, u)
+        }
+
+        for (const s of sites) {
+          if (!Array.isArray((s as any).photos)) continue
+          ;(s as any).photos = (s as any).photos.map((p: any) => ({
+            ...p,
+            url: urlByPath.get(String(p.path)) || p.url,
+          }))
+        }
+      }
+    }
 
     return NextResponse.json({ sites }, { status: 200 })
   } catch (e) {

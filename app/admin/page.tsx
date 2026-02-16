@@ -153,38 +153,167 @@ async function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T
   return res
 }
 
+
+
+let __cachedAccessToken: string | null = null
+let __cachedAccessTokenAt = 0
+let __authListenerInit = false
+
+function initAuthTokenCache() {
+  if (__authListenerInit) return
+  if (typeof window === 'undefined') return
+  __authListenerInit = true
+  supabase.auth.onAuthStateChange((_event, session) => {
+    __cachedAccessToken = session?.access_token || null
+    __cachedAccessTokenAt = Date.now()
+  })
+}
 async function authFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const sessionRes = await withTimeout(supabase.auth.getSession(), 3000, { data: { session: null } } as any)
-  const token = sessionRes?.data?.session?.access_token
+  initAuthTokenCache()
+
+  const method = String((init?.method || 'GET')).toUpperCase()
+
+  // Берём токен из кэша (если недавно обновлялся)
+  const now = Date.now()
+  let token = __cachedAccessToken && now - __cachedAccessTokenAt < 55 * 60 * 1000 ? __cachedAccessToken : null
+
+  // Если кэша нет — пробуем получить сессию (но с таймаутом и 1 ретраем)
+  if (!token) {
+    const s1 = await withTimeout(supabase.auth.getSession(), 8000, { data: { session: null } } as any)
+    token = s1?.data?.session?.access_token || null
+
+    if (!token) {
+      const s2 = await withTimeout(supabase.auth.getSession(), 8000, { data: { session: null } } as any)
+      token = s2?.data?.session?.access_token || null
+    }
+
+    if (token) {
+      __cachedAccessToken = token
+      __cachedAccessTokenAt = Date.now()
+    }
+  }
+
   if (!token) throw new Error('Нет входа. Авторизуйся в админке.')
 
-  const ctrl = new AbortController()
-  const ms = 15000
-  const t = setTimeout(() => ctrl.abort(), ms)
+  // Не даём подвисать fetch (чтобы "Обновляю..." не оставалось навсегда)
+  const controller = new AbortController()
 
-  try {
+  // Если передан внешний signal — пробрасываем его в наш controller
+  if (init?.signal) {
+    if (init.signal.aborted) controller.abort()
+    else init.signal.addEventListener('abort', () => controller.abort(), { once: true })
+  }
+
+  // Таймаут: для обычных запросов меньше, для upload — больше
+  const isUpload = method === 'POST' && typeof FormData !== 'undefined' && init?.body instanceof FormData
+  const timeoutMs = isUpload ? 60000 : 20000
+  const t = setTimeout(() => controller.abort(), timeoutMs)
+
+  async function attempt(tok: string) {
     const res = await fetch(url, {
       ...init,
+      signal: controller.signal,
       headers: {
         ...(init?.headers || {}),
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${tok}`,
       },
       cache: 'no-store',
-      signal: ctrl.signal,
     })
 
-    const payload = await res.json().catch(() => ({} as any))
-    if (!res.ok) throw new Error(payload?.error || `HTTP ${res.status}`)
-    return payload as T
-  } catch (e: any) {
-    if (e?.name === 'AbortError') {
-      throw new Error('Таймаут запроса (15с). Нажми “Обновить данные” ещё раз.')
+    const ct = res.headers.get('content-type') || ''
+    const payload = ct.includes('application/json') ? await res.json().catch(() => ({} as any)) : await res.text().catch(() => '')
+    return { res, ct, payload }
+  }
+
+  try {
+    let out = await attempt(token)
+
+    // Если токен устарел — пробуем взять свежий и повторить 1 раз
+    if (out.res.status === 401) {
+      __cachedAccessToken = null
+      __cachedAccessTokenAt = 0
+      const s = await withTimeout(supabase.auth.getSession(), 8000, { data: { session: null } } as any)
+      const token2 = s?.data?.session?.access_token || null
+      if (token2) {
+        __cachedAccessToken = token2
+        __cachedAccessTokenAt = Date.now()
+        out = await attempt(token2)
+      }
     }
+
+    if (!out.res.ok) {
+      const msg = typeof out.payload === 'string' ? out.payload : (out.payload as any)?.error
+      throw new Error(msg || `HTTP ${out.res.status}`)
+    }
+
+    return out.payload as T
+  } catch (e: any) {
+    if (e?.name === 'AbortError') throw new Error('Запрос завис или слишком долгий. Попробуй ещё раз.')
     throw e
   } finally {
     clearTimeout(t)
   }
 }
+
+async function loadImageFromFile(file: File): Promise<HTMLImageElement> {
+  const url = URL.createObjectURL(file)
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = document.createElement('img')
+      el.onload = () => resolve(el)
+      el.onerror = () => reject(new Error('Не удалось прочитать изображение'))
+      el.src = url
+    })
+    return img
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
+async function compressImage(file: File): Promise<File> {
+  // Сжимаем только картинки; если не картинка — отдаём как есть.
+  if (!file.type.startsWith('image/')) return file
+
+  // Если уже маленький файл — не трогаем.
+  if (file.size <= 3_500_000) return file
+
+  const img = await loadImageFromFile(file)
+
+  // Уменьшаем по длинной стороне
+  const maxSide = 1600
+  const iw = img.naturalWidth || img.width
+  const ih = img.naturalHeight || img.height
+
+  const scale = Math.min(1, maxSide / Math.max(iw, ih))
+  const w = Math.max(1, Math.round(iw * scale))
+  const h = Math.max(1, Math.round(ih * scale))
+
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = h
+
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return file
+
+  ctx.drawImage(img, 0, 0, w, h)
+
+  // Подбираем качество, чтобы уложиться в ~3.5MB
+  let quality = 0.85
+  let blob: Blob | null = null
+
+  for (let i = 0; i < 6; i++) {
+    blob = await new Promise<Blob | null>((resolve) => canvas.toBlob((b) => resolve(b), 'image/jpeg', quality))
+    if (!blob) break
+    if (blob.size <= 3_500_000) break
+    quality = Math.max(0.45, quality - 0.1)
+  }
+
+  if (!blob) return file
+
+  const nameBase = (file.name || 'photo').replace(/\.[^.]+$/, '')
+  return new File([blob], `${nameBase}.jpg`, { type: 'image/jpeg' })
+}
+
 
 function Modal(props: { open: boolean; title: string; onClose: () => void; children: React.ReactNode }) {
   if (!props.open) return null
@@ -346,6 +475,24 @@ function MapMini(props: { lat: number | null; lng: number | null; onClick: () =>
   )
 }
 
+
+function PhotoMini(props: { src: string; lat: number | null; lng: number | null; onClick: () => void }) {
+  const { src, lat, lng } = props
+  const hasGps = lat != null && lng != null
+  return (
+    <div className={cn('relative h-[92px] w-[150px] overflow-hidden rounded-2xl border bg-black/20', hasGps ? 'border-yellow-400/20' : 'border-yellow-400/10')}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt="site" className="h-full w-full object-cover" loading="lazy" />
+      {hasGps ? (
+        <>
+          <button onClick={props.onClick} className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/0 to-black/0" title="Открыть навигацию" />
+          <div className="absolute bottom-1 left-2 text-[10px] font-semibold text-yellow-100/90">Навигация</div>
+        </>
+      ) : null}
+    </div>
+  )
+}
+
 function MapLarge(props: { lat: number; lng: number }) {
   const { lat, lng } = props
   return (
@@ -489,7 +636,6 @@ export default function AdminPage() {
   const [password, setPassword] = useState('')
 
   const [busy, setBusy] = useState(false)
-  const refreshSeqRef = useRef(0)
   const [error, setError] = useState<string | null>(null)
 
   const [showArchivedSites, setShowArchivedSites] = useState(false)
@@ -674,7 +820,6 @@ export default function AdminPage() {
   }
 
   async function refreshAll() {
-    const seq = ++refreshSeqRef.current
     setBusy(true)
     setError(null)
     try {
@@ -683,7 +828,7 @@ export default function AdminPage() {
     } catch (e: any) {
       setError(e?.message || 'Ошибка загрузки')
     } finally {
-      if (seq === refreshSeqRef.current) setBusy(false)
+      setBusy(false)
     }
   }
 
@@ -968,8 +1113,9 @@ export default function AdminPage() {
     }
   }
 
-  async function uploadSitePhotos(siteId: string, files: FileList | null) {
-    if (!files || files.length === 0) return
+  async function uploadSitePhotos(siteId: string, filesInput: FileList | File[] | null) {
+    const files = Array.isArray(filesInput) ? filesInput : filesInput ? Array.from(filesInput) : []
+    if (files.length === 0) return
 
     setPhotoBusy(true)
     setError(null)
@@ -977,11 +1123,12 @@ export default function AdminPage() {
     try {
       const current = (siteCardId === siteId ? siteCardPhotos.length : (sitesById.get(siteId)?.photos || []).length) || 0
       const left = Math.max(0, 5 - current)
-      const toUpload = Array.from(files).slice(0, left)
+      const toUpload = files.slice(0, left)
 
       for (const f of toUpload) {
+        const prepared = await compressImage(f)
         const fd = new FormData()
-        fd.append('file', f)
+        fd.append('file', prepared)
         const res = await authFetchJson<{ site: Site }>(`/api/admin/sites/${encodeURIComponent(siteId)}/photos`, {
           method: 'POST',
           body: fd,
@@ -1837,10 +1984,15 @@ export default function AdminPage() {
                                   <div className="flex min-w-0 flex-1 flex-wrap items-start gap-4">
                                     <div className="w-[150px] shrink-0">
                                       {primaryUrl ? (
-                                        <div className="relative h-[92px] w-[150px] overflow-hidden rounded-2xl border border-yellow-400/20 bg-black/20">
-                                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                                          <img src={primaryUrl} alt="site" className="h-full w-full object-cover" loading="lazy" />
-                                        </div>
+                                        <PhotoMini
+                                          src={primaryUrl}
+                                          lat={s.lat ?? null}
+                                          lng={s.lng ?? null}
+                                          onClick={() => {
+                                            if (s.lat == null || s.lng == null) return
+                                            window.open(googleNavUrl(s.lat, s.lng), '_blank', 'noopener,noreferrer')
+                                          }}
+                                        />
                                       ) : (
                                         <MapMini
                                           lat={s.lat ?? null}
@@ -1877,10 +2029,34 @@ export default function AdminPage() {
 
                                       {s.address ? <div className="mt-2 text-xs text-zinc-300">Адрес: {s.address}</div> : null}
 
-                                      <div className="mt-2 flex flex-wrap gap-2">
+                                      <div className="mt-2 flex flex-wrap items-center gap-2">
                                         <Pill>радиус: {s.radius ?? 150} м</Pill>
                                         <Pill>GPS: {s.lat != null && s.lng != null ? `${s.lat}, ${s.lng}` : 'нет'}</Pill>
                                         <Pill>фото: {photos.length}/5</Pill>
+
+                                        {photos.length < 5 ? (
+                                          <label
+                                            className={cn(
+                                              'rounded-xl border border-yellow-400/15 bg-black/30 px-2 py-1 text-[11px] text-yellow-100/70 hover:border-yellow-300/40',
+                                              photoBusy ? 'opacity-70' : ''
+                                            )}
+                                            title="Загрузить фото без открытия карточки"
+                                          >
+                                            + фото
+                                            <input
+                                              type="file"
+                                              accept="image/*"
+                                              multiple
+                                              disabled={photoBusy}
+                                              className="hidden"
+                                              onChange={async (e) => {
+                                                const files = e.target.files ? Array.from(e.target.files) : []
+                                                e.target.value = ''
+                                                await uploadSitePhotos(s.id, files)
+                                              }}
+                                            />
+                                          </label>
+                                        ) : null}
                                       </div>
 
                                       {s.notes ? <div className="mt-2 text-xs text-zinc-300">Заметки: {String(s.notes).slice(0, 160)}</div> : null}
@@ -2175,7 +2351,7 @@ export default function AdminPage() {
                                         disabled={photoBusy || !siteCardId || siteCardPhotos.length >= 5}
                                         className="hidden"
                                         onChange={async (e) => {
-                                          const files = e.target.files
+                                          const files = e.target.files ? Array.from(e.target.files) : []
                                           e.target.value = ''
                                           if (!siteCardId) return
                                           await uploadSitePhotos(siteCardId, files)
@@ -2197,7 +2373,7 @@ export default function AdminPage() {
                                         disabled={photoBusy || !siteCardId || siteCardPhotos.length >= 5}
                                         className="hidden"
                                         onChange={async (e) => {
-                                          const files = e.target.files
+                                          const files = e.target.files ? Array.from(e.target.files) : []
                                           e.target.value = ''
                                           if (!siteCardId) return
                                           await uploadSitePhotos(siteCardId, files)
