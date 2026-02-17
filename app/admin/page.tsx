@@ -158,18 +158,30 @@ async function authFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const token = data?.session?.access_token
   if (!token) throw new Error('Нет входа. Авторизуйся в админке.')
 
-  const res = await fetch(url, {
-    ...init,
-    headers: {
-      ...(init?.headers || {}),
-      Authorization: `Bearer ${token}`,
-    },
-    cache: 'no-store',
-  })
+  const controller = new AbortController()
+  const timeoutMs = 15000
+  const t = setTimeout(() => controller.abort(), timeoutMs)
 
-  const payload = await res.json().catch(() => ({} as any))
-  if (!res.ok) throw new Error(payload?.error || `HTTP ${res.status}`)
-  return payload as T
+  try {
+    const res = await fetch(url, {
+      ...init,
+      signal: init?.signal ?? controller.signal,
+      headers: {
+        ...(init?.headers || {}),
+        Authorization: `Bearer ${token}`,
+      },
+      cache: 'no-store',
+    })
+
+    const payload = await res.json().catch(() => ({} as any))
+    if (!res.ok) throw new Error(payload?.error || `HTTP ${res.status}`)
+    return payload as T
+  } catch (e: any) {
+    if (e?.name === 'AbortError') throw new Error('Запрос слишком долго выполняется. Попробуй ещё раз.')
+    throw e
+  } finally {
+    clearTimeout(t)
+  }
 }
 
 function Modal(props: { open: boolean; title: string; onClose: () => void; children: React.ReactNode }) {
@@ -487,6 +499,8 @@ export default function AdminPage() {
   const [newObjRadius, setNewObjRadius] = useState('150')
   const [newObjCategory, setNewObjCategory] = useState<number | null>(null)
   const [newObjNotes, setNewObjNotes] = useState('')
+  const [lastCreatedSiteId, setLastCreatedSiteId] = useState<string | null>(null)
+
 
   const [siteCardOpen, setSiteCardOpen] = useState(false)
   const [siteCardId, setSiteCardId] = useState<string | null>(null)
@@ -727,6 +741,13 @@ export default function AdminPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterSite, filterWorker])
 
+  useEffect(() => {
+    if (!lastCreatedSiteId) return
+    const el = document.getElementById(`site-card-${lastCreatedSiteId}`)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    setLastCreatedSiteId(null)
+  }, [sites, lastCreatedSiteId])
+
   async function onLogin(e: React.FormEvent) {
     e.preventDefault()
     setBusy(true)
@@ -850,7 +871,7 @@ export default function AdminPage() {
     setBusy(true)
     setError(null)
     try {
-      await authFetchJson<{ site: Site }>('/api/admin/sites', {
+      const res = await authFetchJson<{ site: Site }>('/api/admin/sites', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -870,6 +891,8 @@ export default function AdminPage() {
       setNewObjNotes('')
 
       await refreshCore()
+      const createdId = res?.site?.id ? String(res.site.id) : null
+      if (createdId) setLastCreatedSiteId(createdId)
     } catch (e: any) {
       setError(e?.message || 'Не удалось создать объект')
     } finally {
@@ -1040,6 +1063,32 @@ export default function AdminPage() {
       setBusy(false)
     }
   }
+  async function deleteWorker(workerId: string, label: string) {
+    if (meId && workerId === meId) {
+      setError('Нельзя удалить самого себя.')
+      return
+    }
+
+    const name = (label || '').trim()
+    const ok = window.confirm(`Удалить работника${name ? ` "${name}"` : ''}? Это действие нельзя отменить.`)
+    if (!ok) return
+
+    setBusy(true)
+    setError(null)
+    try {
+      await authFetchJson('/api/admin/workers/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ worker_id: workerId }),
+      })
+      await refreshCore()
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось удалить работника')
+    } finally {
+      setBusy(false)
+    }
+  }
+
 
   async function quickAssign() {
     if (!qaSite || !qaWorker) return
@@ -1816,7 +1865,7 @@ export default function AdminPage() {
                             const primaryUrl = photos?.[0]?.url || null
 
                             return (
-                              <div key={s.id} className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
+                              <div id={`site-card-${s.id}`} key={s.id} className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
                                 <div className="flex flex-wrap items-start justify-between gap-4">
                                   <div className="flex min-w-0 flex-1 flex-wrap items-start gap-4">
                                     <div className="w-[150px] shrink-0">
@@ -2323,6 +2372,16 @@ export default function AdminPage() {
                                 Сделать работником
                               </button>
                             )}
+
+                            {!isAdmin ? (
+                              <button
+                                onClick={() => deleteWorker(w.id, w.full_name || '')}
+                                disabled={busy || isMe}
+                                className="rounded-2xl border border-red-500/20 bg-red-950/30 px-4 py-2 text-xs font-semibold text-red-100 transition hover:border-red-400/40 disabled:opacity-60"
+                              >
+                                Удалить
+                              </button>
+                            ) : null}
                           </div>
 
                           {!isAdmin ? (

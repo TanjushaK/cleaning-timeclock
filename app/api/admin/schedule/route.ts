@@ -44,18 +44,23 @@ function endOfWeek(d: Date) {
 
 function pickRange(sp: URLSearchParams) {
   // Поддерживаем оба формата, чтобы UI и API не ломались при разных версиях.
-  // Приоритет: date_from/date_to (новое), затем from/to (старое).
+  // Приоритет: date_from/date_to, затем from/to.
   let from = (sp.get('date_from') || sp.get('from') || '').trim()
   let to = (sp.get('date_to') || sp.get('to') || '').trim()
 
+  const baseStr = (isISODate(from) ? from : '') || (isISODate(to) ? to : '') || toISODate(new Date())
+  const base = new Date(baseStr + 'T00:00:00')
+
   if (!from || !to) {
-    const now = new Date()
-    from = toISODate(startOfWeek(now))
-    to = toISODate(endOfWeek(now))
+    const s = startOfWeek(base)
+    const e = endOfWeek(base)
+    if (!from) from = toISODate(s)
+    if (!to) to = toISODate(e)
   }
 
   if (!isISODate(from) || !isISODate(to)) return null
   return { from, to }
+}
 }
 
 async function assertAdmin(req: NextRequest) {
