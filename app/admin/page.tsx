@@ -43,6 +43,7 @@ type ScheduleItem = {
   status: JobStatus
   job_date: string | null
   scheduled_time: string | null
+  scheduled_end_time?: string | null
   site_id: string | null
   site_name: string | null
   worker_id: string | null
@@ -129,6 +130,14 @@ function timeHHMM(t?: string | null) {
   if (!t) return '—'
   const x = String(t)
   return x.length >= 5 ? x.slice(0, 5) : x
+}
+
+function timeRangeHHMM(from?: string | null, to?: string | null) {
+  const a = timeHHMM(from)
+  const b = timeHHMM(to)
+  if (a === '—') return a
+  if (b && b !== '—') return `${a}–${b}`
+  return a
 }
 
 function statusRu(s: string) {
@@ -549,9 +558,9 @@ export default function AdminPage() {
   const [newWorkers, setNewWorkers] = useState<string[]>([])
   const [newDate, setNewDate] = useState<string>(toISODate(new Date()))
   const [newTime, setNewTime] = useState<string>('09:00')
-  const [newTimeTo, setNewTimeTo] = useState<string>('17:00')
 
-  const [editOpen, setEditOpen] = useState(false)
+    const [newTimeTo, setNewTimeTo] = useState<string>('')
+const [editOpen, setEditOpen] = useState(false)
   const [editJobId, setEditJobId] = useState<string | null>(null)
   const [editSiteId, setEditSiteId] = useState<string>('')
   const [editWorkerId, setEditWorkerId] = useState<string>('')
@@ -1127,14 +1136,14 @@ export default function AdminPage() {
   }
 
   async function createJobs() {
-    if (!newSiteId || newWorkers.length === 0 || !newDate || !newTime || !newTimeTo) return
+    if (!newSiteId || newWorkers.length === 0 || !newDate || !newTime) return
     setBusy(true)
     setError(null)
     try {
       await authFetchJson('/api/admin/jobs/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ site_id: newSiteId, worker_ids: newWorkers, job_date: newDate, scheduled_time: newTime, scheduled_time_to: newTimeTo }),
+        body: JSON.stringify({ site_id: newSiteId, worker_ids: newWorkers, job_date: newDate, scheduled_time: newTime, scheduled_end_time: newTimeTo || null }),
       })
       setNewWorkers([])
       setJobsView('table')
@@ -1250,7 +1259,7 @@ export default function AdminPage() {
 
   function jobCard(j: ScheduleItem, compact: boolean) {
     const left = planMode === 'workers' ? (j.site_name || 'Объект') : (j.worker_name || 'Работник')
-    const right = `${timeHHMM(j.scheduled_time)} • ${statusRu(String(j.status || ''))}`
+    const right = `${timeRangeHHMM(j.scheduled_time, j.scheduled_end_time)} • ${statusRu(String(j.status || ''))}`
     return (
       <div
         key={j.id}
@@ -2449,7 +2458,7 @@ export default function AdminPage() {
                   </label>
 
                   <label className="grid gap-1">
-                    <span className="text-[11px] text-zinc-300">Начало</span>
+                    <span className="text-[11px] text-zinc-300">Время</span>
                     <input
                       type="time"
                       value={newTime}
@@ -2467,6 +2476,7 @@ export default function AdminPage() {
                       className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
                     />
                   </label>
+
 
                   <button
                     onClick={createJobs}
@@ -2636,7 +2646,7 @@ export default function AdminPage() {
                           .map((j) => (
                             <tr key={j.id} className="border-t border-yellow-400/5 hover:bg-yellow-400/5">
                               <td className="px-4 py-3">{fmtD(j.job_date)}</td>
-                              <td className="px-4 py-3">{timeHHMM(j.scheduled_time)}</td>
+                              <td className="px-4 py-3">{timeRangeHHMM(j.scheduled_time, j.scheduled_end_time)}</td>
                               <td className="px-4 py-3">{j.site_name || '—'}</td>
                               <td className="px-4 py-3">
                                 {j.worker_id ? (
@@ -2801,7 +2811,7 @@ export default function AdminPage() {
             {workerCardItems.map((j) => (
               <div key={j.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-yellow-400/10 bg-black/30 px-3 py-2">
                 <div className="text-xs text-zinc-200">
-                  <span className="text-zinc-100">{fmtD(j.job_date)}</span> • <span className="text-zinc-100">{timeHHMM(j.scheduled_time)}</span> •{' '}
+                  <span className="text-zinc-100">{fmtD(j.job_date)}</span> • <span className="text-zinc-100">{timeRangeHHMM(j.scheduled_time, j.scheduled_end_time)}</span> •{' '}
                   <span className="text-zinc-100">{j.site_name || '—'}</span> • <span className="text-zinc-500">{statusRu(String(j.status || ''))}</span>
                   <div className="mt-1 text-[11px] text-zinc-400">
                     Начал: {fmtDT(j.started_at)} • Закончил: {fmtDT(j.stopped_at)}
