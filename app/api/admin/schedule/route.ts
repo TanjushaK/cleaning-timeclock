@@ -61,7 +61,6 @@ function pickRange(sp: URLSearchParams) {
   if (!isISODate(from) || !isISODate(to)) return null
   return { from, to }
 }
-}
 
 async function assertAdmin(req: NextRequest) {
   const token = bearer(req)

@@ -158,53 +158,64 @@ async function authFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const token = data?.session?.access_token
   if (!token) throw new Error('Нет входа. Авторизуйся в админке.')
 
-  const controller = new AbortController()
   const timeoutMs = 15000
-  const t = setTimeout(() => controller.abort(), timeoutMs)
+  const controller = new AbortController()
 
+  let timeoutId: any
   try {
-    const res = await fetch(url, {
-      ...init,
-      signal: init?.signal ?? controller.signal,
-      headers: {
-        ...(init?.headers || {}),
-        Authorization: `Bearer ${token}`,
-      },
-      cache: 'no-store',
-    })
+    const res = (await Promise.race([
+      fetch(url, {
+        ...init,
+        signal: init?.signal ?? controller.signal,
+        headers: {
+          ...(init?.headers || {}),
+          Authorization: 'Bearer ' + token,
+        },
+        cache: 'no-store',
+      }),
+      new Promise<Response>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          try {
+            controller.abort()
+          } catch {}
+          reject(new Error('TIMEOUT'))
+        }, timeoutMs)
+      }),
+    ])) as Response
 
     const payload = await res.json().catch(() => ({} as any))
-    if (!res.ok) throw new Error(payload?.error || `HTTP ${res.status}`)
+    if (!res.ok) throw new Error((payload as any)?.error || ('HTTP ' + res.status))
     return payload as T
   } catch (e: any) {
-    if (e?.name === 'AbortError') throw new Error('Запрос слишком долго выполняется. Попробуй ещё раз.')
+    if (e?.name === 'AbortError' || e?.message === 'TIMEOUT') throw new Error('Запрос слишком долго выполняется. Попробуй ещё раз.')
     throw e
   } finally {
-    clearTimeout(t)
+    if (timeoutId) clearTimeout(timeoutId)
   }
 }
 
 function Modal(props: { open: boolean; title: string; onClose: () => void; children: React.ReactNode }) {
   if (!props.open) return null
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+    <div className="fixed inset-0 z-50 overflow-y-auto">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={props.onClose} />
-      <div className="relative w-full max-w-2xl rounded-3xl border border-yellow-400/20 bg-zinc-950/90 p-5 shadow-[0_25px_90px_rgba(0,0,0,0.75)]">
-        <div className="flex items-center justify-between gap-3">
-          <div className="text-sm font-semibold text-yellow-100">{props.title}</div>
-          <button
-            onClick={props.onClose}
-            className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40"
-          >
-            Закрыть
-          </button>
+      <div className="relative flex min-h-full items-start justify-center px-4 py-10">
+        <div className="w-full max-w-2xl max-h-[calc(100vh-5rem)] overflow-auto rounded-3xl border border-yellow-400/20 bg-zinc-950/90 p-5 shadow-[0_25px_90px_rgba(0,0,0,0.75)]">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm font-semibold text-yellow-100">{props.title}</div>
+            <button
+              onClick={props.onClose}
+              className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40"
+            >
+              Закрыть
+            </button>
+          </div>
+          <div className="mt-4">{props.children}</div>
         </div>
-        <div className="mt-4">{props.children}</div>
       </div>
     </div>
   )
 }
-
 
 function Pill({ children }: { children: any }) {
   return (
@@ -743,10 +754,11 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (!lastCreatedSiteId) return
-    const el = document.getElementById(`site-card-${lastCreatedSiteId}`)
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    try {
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } catch {}
     setLastCreatedSiteId(null)
-  }, [sites, lastCreatedSiteId])
+  }, [lastCreatedSiteId])
 
   async function onLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -857,6 +869,9 @@ export default function AdminPage() {
   }
 
   function openSiteCard(s: Site) {
+    try {
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } catch {}
     fillSiteCardFromSite(s)
     setSiteCardOpen(true)
   }
@@ -1139,6 +1154,9 @@ export default function AdminPage() {
   }
 
   async function openWorkerCard(workerId: string) {
+    try {
+      window.scrollTo({ top:  0, behavior: 'smooth' })
+    } catch {}
     setWorkerCardId(workerId)
     setWorkerCardOpen(true)
     try {
@@ -2369,19 +2387,17 @@ export default function AdminPage() {
                                 disabled={busy || isMe}
                                 className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 transition hover:border-yellow-300/40 disabled:opacity-60"
                               >
-                                Сделать работником
+                                Разжаловать
                               </button>
                             )}
 
-                            {!isAdmin ? (
-                              <button
-                                onClick={() => deleteWorker(w.id, w.full_name || '')}
-                                disabled={busy || isMe}
-                                className="rounded-2xl border border-red-500/20 bg-red-950/30 px-4 py-2 text-xs font-semibold text-red-100 transition hover:border-red-400/40 disabled:opacity-60"
-                              >
-                                Удалить
-                              </button>
-                            ) : null}
+                            <button
+                              onClick={() => deleteWorker(w.id, w.full_name || '')}
+                              disabled={busy || isMe}
+                              className="rounded-2xl border border-red-500/20 bg-red-950/30 px-4 py-2 text-xs font-semibold text-red-100 transition hover:border-red-400/40 disabled:opacity-60"
+                            >
+                              Удалить
+                            </button>
                           </div>
 
                           {!isAdmin ? (
