@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
 function bearer(req: NextRequest) {
   const h = req.headers.get('authorization') || ''
   const m = /^Bearer\s+(.+)$/i.exec(h)
@@ -11,6 +14,48 @@ function envOrThrow(name: string) {
   const v = process.env[name]
   if (!v) throw new Error(`Missing env: ${name}`)
   return v
+}
+
+function isISODate(s: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(s)
+}
+
+function toISODate(d: Date) {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${dd}`
+}
+
+function startOfWeek(d: Date) {
+  const x = new Date(d)
+  const day = x.getDay()
+  const diff = (day === 0 ? -6 : 1) - day
+  x.setDate(x.getDate() + diff)
+  return new Date(x.getFullYear(), x.getMonth(), x.getDate())
+}
+
+function endOfWeek(d: Date) {
+  const s = startOfWeek(d)
+  const e = new Date(s)
+  e.setDate(e.getDate() + 6)
+  return e
+}
+
+function pickRange(sp: URLSearchParams) {
+  // Поддерживаем оба формата, чтобы UI и API не ломались при разных версиях.
+  // Приоритет: date_from/date_to (новое), затем from/to (старое).
+  let from = (sp.get('date_from') || sp.get('from') || '').trim()
+  let to = (sp.get('date_to') || sp.get('to') || '').trim()
+
+  if (!from || !to) {
+    const now = new Date()
+    from = toISODate(startOfWeek(now))
+    to = toISODate(endOfWeek(now))
+  }
+
+  if (!isISODate(from) || !isISODate(to)) return null
+  return { from, to }
 }
 
 async function assertAdmin(req: NextRequest) {
@@ -45,12 +90,13 @@ export async function GET(req: NextRequest) {
     const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } })
 
     const sp = req.nextUrl.searchParams
-    const dateFrom = (sp.get('date_from') || '').trim()
-    const dateTo = (sp.get('date_to') || '').trim()
+    const range = pickRange(sp)
+    if (!range) return NextResponse.json({ error: 'Неверный диапазон дат' }, { status: 400 })
+
+    const dateFrom = range.from
+    const dateTo = range.to
     const siteId = (sp.get('site_id') || '').trim()
     const workerId = (sp.get('worker_id') || '').trim()
-
-    if (!dateFrom || !dateTo) return NextResponse.json({ error: 'date_from и date_to обязательны' }, { status: 400 })
 
     let q = admin
       .from('jobs')
@@ -113,7 +159,7 @@ export async function GET(req: NextRequest) {
       }
     })
 
-    return NextResponse.json({ items })
+    return NextResponse.json({ date_from: dateFrom, date_to: dateTo, items })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Ошибка сервера' }, { status: 500 })
   }
