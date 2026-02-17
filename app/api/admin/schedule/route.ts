@@ -20,44 +20,6 @@ function isISODate(s: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(s)
 }
 
-function toISODate(d: Date) {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${dd}`
-}
-
-function startOfWeek(d: Date) {
-  const x = new Date(d)
-  const day = x.getDay()
-  const diff = (day === 0 ? -6 : 1) - day
-  x.setDate(x.getDate() + diff)
-  return new Date(x.getFullYear(), x.getMonth(), x.getDate())
-}
-
-function endOfWeek(d: Date) {
-  const s = startOfWeek(d)
-  const e = new Date(s)
-  e.setDate(e.getDate() + 6)
-  return e
-}
-
-function pickRange(sp: URLSearchParams) {
-  // Поддерживаем оба формата, чтобы UI и API не ломались при разных версиях.
-  // Приоритет: date_from/date_to (новое), затем from/to (старое).
-  let from = (sp.get('date_from') || sp.get('from') || '').trim()
-  let to = (sp.get('date_to') || sp.get('to') || '').trim()
-
-  if (!from || !to) {
-    const now = new Date()
-    from = toISODate(startOfWeek(now))
-    to = toISODate(endOfWeek(now))
-  }
-
-  if (!isISODate(from) || !isISODate(to)) return null
-  return { from, to }
-}
-
 async function assertAdmin(req: NextRequest) {
   const token = bearer(req)
   if (!token) return { ok: false as const, status: 401, error: 'Нет входа. Авторизуйся в админке.' }
@@ -90,11 +52,17 @@ export async function GET(req: NextRequest) {
     const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } })
 
     const sp = req.nextUrl.searchParams
-    const range = pickRange(sp)
-    if (!range) return NextResponse.json({ error: 'Неверный диапазон дат' }, { status: 400 })
 
-    const dateFrom = range.from
-    const dateTo = range.to
+    // Совместимость: UI может слать date_from/date_to, а старые версии — from/to.
+    const rawFrom = (sp.get('date_from') || sp.get('from') || '').trim()
+    const rawTo = (sp.get('date_to') || sp.get('to') || '').trim()
+
+    if (!rawFrom || !rawTo) return NextResponse.json({ error: 'from и to обязательны' }, { status: 400 })
+    if (!isISODate(rawFrom) || !isISODate(rawTo)) return NextResponse.json({ error: 'Неверный диапазон дат' }, { status: 400 })
+
+    const dateFrom = rawFrom
+    const dateTo = rawTo
+
     const siteId = (sp.get('site_id') || '').trim()
     const workerId = (sp.get('worker_id') || '').trim()
 
@@ -159,7 +127,7 @@ export async function GET(req: NextRequest) {
       }
     })
 
-    return NextResponse.json({ date_from: dateFrom, date_to: dateTo, items })
+    return NextResponse.json({ items })
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Ошибка сервера' }, { status: 500 })
   }
