@@ -2020,7 +2020,7 @@ const [editOpen, setEditOpen] = useState(false)
                                             accept="image/*"
                                             multiple
                                             disabled={photoBusy || busy || archived || photos.length >= 5}
-                                            className="hidden"
+                                            className="sr-only"
                                             onChange={async (e) => {
                                               const files = e.target.files
                                               e.target.value = ''
@@ -2042,7 +2042,7 @@ const [editOpen, setEditOpen] = useState(false)
                                             accept="image/*"
                                             capture="environment"
                                             disabled={photoBusy || busy || archived || photos.length >= 5}
-                                            className="hidden"
+                                            className="sr-only"
                                             onChange={async (e) => {
                                               const files = e.target.files
                                               e.target.value = ''
@@ -2330,7 +2330,7 @@ const [editOpen, setEditOpen] = useState(false)
                                         accept="image/*"
                                         multiple
                                         disabled={photoBusy || !siteCardId || siteCardPhotos.length >= 5}
-                                        className="hidden"
+                                        className="sr-only"
                                         onChange={async (e) => {
                                           const files = e.target.files
                                           e.target.value = ''
@@ -2352,7 +2352,7 @@ const [editOpen, setEditOpen] = useState(false)
                                         accept="image/*"
                                         capture="environment"
                                         disabled={photoBusy || !siteCardId || siteCardPhotos.length >= 5}
-                                        className="hidden"
+                                        className="sr-only"
                                         onChange={async (e) => {
                                           const files = e.target.files
                                           e.target.value = ''
