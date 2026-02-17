@@ -549,6 +549,7 @@ export default function AdminPage() {
   const [newWorkers, setNewWorkers] = useState<string[]>([])
   const [newDate, setNewDate] = useState<string>(toISODate(new Date()))
   const [newTime, setNewTime] = useState<string>('09:00')
+  const [newTimeTo, setNewTimeTo] = useState<string>('17:00')
 
   const [editOpen, setEditOpen] = useState(false)
   const [editJobId, setEditJobId] = useState<string | null>(null)
@@ -1126,14 +1127,14 @@ export default function AdminPage() {
   }
 
   async function createJobs() {
-    if (!newSiteId || newWorkers.length === 0 || !newDate || !newTime) return
+    if (!newSiteId || newWorkers.length === 0 || !newDate || !newTime || !newTimeTo) return
     setBusy(true)
     setError(null)
     try {
       await authFetchJson('/api/admin/jobs/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ site_id: newSiteId, worker_ids: newWorkers, job_date: newDate, scheduled_time: newTime }),
+        body: JSON.stringify({ site_id: newSiteId, worker_ids: newWorkers, job_date: newDate, scheduled_time: newTime, scheduled_time_to: newTimeTo }),
       })
       setNewWorkers([])
       setJobsView('table')
@@ -2411,7 +2412,7 @@ export default function AdminPage() {
                 <div className="text-sm font-semibold text-yellow-100">Создать смену</div>
                 <div className="mt-1 text-xs text-zinc-300">Объект + дата + время + несколько работников.</div>
 
-                <div className="mt-4 grid gap-3 lg:grid-cols-[1.3fr_1.7fr_0.8fr_0.7fr_auto]">
+                <div className="mt-4 grid gap-3 lg:grid-cols-[1.3fr_1.7fr_0.8fr_0.7fr_0.7fr_auto]">
                   <label className="grid gap-1">
                     <span className="text-[11px] text-zinc-300">Объект</span>
                     <select
@@ -2448,11 +2449,21 @@ export default function AdminPage() {
                   </label>
 
                   <label className="grid gap-1">
-                    <span className="text-[11px] text-zinc-300">Время</span>
+                    <span className="text-[11px] text-zinc-300">Начало</span>
                     <input
                       type="time"
                       value={newTime}
                       onChange={(e) => setNewTime(e.target.value)}
+                      className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
+                    />
+                  </label>
+
+                  <label className="grid gap-1">
+                    <span className="text-[11px] text-zinc-300">Конец</span>
+                    <input
+                      type="time"
+                      value={newTimeTo}
+                      onChange={(e) => setNewTimeTo(e.target.value)}
                       className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
                     />
                   </label>

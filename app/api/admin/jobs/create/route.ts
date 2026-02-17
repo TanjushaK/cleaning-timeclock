@@ -58,6 +58,38 @@ async function resolveAssignmentsTable(admin: SupabaseClient) {
   throw new Error('Не найдена таблица назначений (assignments/site_workers).')
 }
 
+let JOBS_END_TIME_COL: string | null | undefined = undefined
+
+async function resolveJobsEndTimeColumn(admin: SupabaseClient) {
+  if (JOBS_END_TIME_COL !== undefined) return JOBS_END_TIME_COL
+
+  const candidates = ['scheduled_time_to', 'scheduled_end_time', 'scheduled_time_end', 'end_time', 'time_to', 'scheduled_to']
+  for (const c of candidates) {
+    const { error } = await admin.from('jobs').select(c).limit(1)
+    if (!error) {
+      JOBS_END_TIME_COL = c
+      return c
+    }
+
+    const msg = String(error?.message || '')
+    const missing = msg.includes('does not exist') || msg.includes('Could not find') || msg.includes('column') || msg.includes('unknown')
+    if (!missing) {
+      // какая-то другая ошибка — всё равно запомним колонку, чтобы не крутить детектор бесконечно
+      JOBS_END_TIME_COL = c
+      return c
+    }
+  }
+
+  JOBS_END_TIME_COL = null
+  return null
+}
+
+function normalizeHHMM(v: string) {
+  const t = String(v || '').trim()
+  if (!t) return null
+  return t.length === 5 ? `${t}:00` : t
+}
+
 export async function POST(req: NextRequest) {
   try {
     const guard = await assertAdmin(req)
@@ -68,6 +100,10 @@ export async function POST(req: NextRequest) {
     const siteId = String(body?.site_id || '').trim()
     const jobDate = String(body?.job_date || '').trim() // YYYY-MM-DD
     const scheduledTime = String(body?.scheduled_time || '').trim() // HH:MM
+
+    const scheduledTimeToRaw =
+      body?.scheduled_time_to ?? body?.scheduled_end_time ?? body?.scheduled_time_end ?? body?.end_time ?? body?.time_to ?? null
+
     const workerIdsRaw = Array.isArray(body?.worker_ids) ? body.worker_ids : []
     const workerIds = workerIdsRaw.map((x: any) => String(x).trim()).filter(Boolean)
 
@@ -91,15 +127,23 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const time = scheduledTime.length === 5 ? `${scheduledTime}:00` : scheduledTime
+    const timeFrom = normalizeHHMM(scheduledTime)
+    if (!timeFrom) return NextResponse.json({ error: 'scheduled_time обязателен' }, { status: 400 })
 
-    const rows = workerIds.map((worker_id: string) => ({
-      site_id: siteId,
-      worker_id,
-      job_date: jobDate,
-      scheduled_time: time,
-      status: 'planned',
-    }))
+    const timeTo = scheduledTimeToRaw == null ? null : normalizeHHMM(String(scheduledTimeToRaw))
+    const endCol = timeTo ? await resolveJobsEndTimeColumn(admin) : null
+
+    const rows = workerIds.map((worker_id: string) => {
+      const row: Record<string, any> = {
+        site_id: siteId,
+        worker_id,
+        job_date: jobDate,
+        scheduled_time: timeFrom,
+        status: 'planned',
+      }
+      if (endCol && timeTo) row[endCol] = timeTo
+      return row
+    })
 
     const { data, error } = await admin.from('jobs').insert(rows).select('id')
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
