@@ -153,69 +153,59 @@ async function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T
   return res
 }
 
-async function authFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+async function authFetchJson<T>(url: string, init?: RequestInit, timeoutMs = 15000): Promise<T> {
   const { data } = await supabase.auth.getSession()
   const token = data?.session?.access_token
   if (!token) throw new Error('Нет входа. Авторизуйся в админке.')
 
-  const timeoutMs = 15000
   const controller = new AbortController()
+  const t = setTimeout(() => controller.abort(), timeoutMs)
 
-  let timeoutId: any
   try {
-    const res = (await Promise.race([
-      fetch(url, {
-        ...init,
-        signal: init?.signal ?? controller.signal,
-        headers: {
-          ...(init?.headers || {}),
-          Authorization: 'Bearer ' + token,
-        },
-        cache: 'no-store',
-      }),
-      new Promise<Response>((_, reject) => {
-        timeoutId = setTimeout(() => {
-          try {
-            controller.abort()
-          } catch {}
-          reject(new Error('TIMEOUT'))
-        }, timeoutMs)
-      }),
-    ])) as Response
+    const res = await fetch(url, {
+      ...init,
+      headers: {
+        ...(init?.headers || {}),
+        Authorization: `Bearer ${token}`,
+      },
+      cache: 'no-store',
+      signal: controller.signal,
+    })
 
     const payload = await res.json().catch(() => ({} as any))
-    if (!res.ok) throw new Error((payload as any)?.error || ('HTTP ' + res.status))
+    if (!res.ok) throw new Error(payload?.error || `HTTP ${res.status}`)
     return payload as T
   } catch (e: any) {
-    if (e?.name === 'AbortError' || e?.message === 'TIMEOUT') throw new Error('Запрос слишком долго выполняется. Попробуй ещё раз.')
+    if (e?.name === 'AbortError') {
+      throw new Error('Таймаут запроса (15с). Если висит — проверь интернет и доступность Supabase/Vercel.')
+    }
     throw e
   } finally {
-    if (timeoutId) clearTimeout(timeoutId)
+    clearTimeout(t)
   }
 }
 
 function Modal(props: { open: boolean; title: string; onClose: () => void; children: React.ReactNode }) {
   if (!props.open) return null
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto px-4 py-6">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={props.onClose} />
-      <div className="relative flex min-h-full items-start justify-center px-4 py-10">
-        <div className="w-full max-w-2xl max-h-[calc(100vh-5rem)] overflow-auto rounded-3xl border border-yellow-400/20 bg-zinc-950/90 p-5 shadow-[0_25px_90px_rgba(0,0,0,0.75)]">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-sm font-semibold text-yellow-100">{props.title}</div>
-            <button
-              onClick={props.onClose}
-              className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40"
-            >
-              Закрыть
-            </button>
-          </div>
-          <div className="mt-4">{props.children}</div>
+      <div className="relative w-full max-w-2xl rounded-3xl border border-yellow-400/20 bg-zinc-950/90 p-5 shadow-[0_25px_90px_rgba(0,0,0,0.75)] max-h-[calc(100vh-3rem)] overflow-y-auto">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-sm font-semibold text-yellow-100">{props.title}</div>
+          <button
+            onClick={props.onClose}
+            className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40"
+          >
+            Закрыть
+          </button>
         </div>
+        <div className="mt-4">{props.children}</div>
       </div>
     </div>
   )
 }
+
 
 function Pill({ children }: { children: any }) {
   return (
@@ -510,8 +500,6 @@ export default function AdminPage() {
   const [newObjRadius, setNewObjRadius] = useState('150')
   const [newObjCategory, setNewObjCategory] = useState<number | null>(null)
   const [newObjNotes, setNewObjNotes] = useState('')
-  const [lastCreatedSiteId, setLastCreatedSiteId] = useState<string | null>(null)
-
 
   const [siteCardOpen, setSiteCardOpen] = useState(false)
   const [siteCardId, setSiteCardId] = useState<string | null>(null)
@@ -752,14 +740,6 @@ export default function AdminPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterSite, filterWorker])
 
-  useEffect(() => {
-    if (!lastCreatedSiteId) return
-    try {
-      window.scrollTo({ top: 0, behavior: 'smooth' })
-    } catch {}
-    setLastCreatedSiteId(null)
-  }, [lastCreatedSiteId])
-
   async function onLogin(e: React.FormEvent) {
     e.preventDefault()
     setBusy(true)
@@ -869,9 +849,6 @@ export default function AdminPage() {
   }
 
   function openSiteCard(s: Site) {
-    try {
-      window.scrollTo({ top: 0, behavior: 'smooth' })
-    } catch {}
     fillSiteCardFromSite(s)
     setSiteCardOpen(true)
   }
@@ -886,7 +863,7 @@ export default function AdminPage() {
     setBusy(true)
     setError(null)
     try {
-      const res = await authFetchJson<{ site: Site }>('/api/admin/sites', {
+      await authFetchJson<{ site: Site }>('/api/admin/sites', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -906,8 +883,6 @@ export default function AdminPage() {
       setNewObjNotes('')
 
       await refreshCore()
-      const createdId = res?.site?.id ? String(res.site.id) : null
-      if (createdId) setLastCreatedSiteId(createdId)
     } catch (e: any) {
       setError(e?.message || 'Не удалось создать объект')
     } finally {
@@ -1078,32 +1053,6 @@ export default function AdminPage() {
       setBusy(false)
     }
   }
-  async function deleteWorker(workerId: string, label: string) {
-    if (meId && workerId === meId) {
-      setError('Нельзя удалить самого себя.')
-      return
-    }
-
-    const name = (label || '').trim()
-    const ok = window.confirm(`Удалить работника${name ? ` "${name}"` : ''}? Это действие нельзя отменить.`)
-    if (!ok) return
-
-    setBusy(true)
-    setError(null)
-    try {
-      await authFetchJson('/api/admin/workers/delete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ worker_id: workerId }),
-      })
-      await refreshCore()
-    } catch (e: any) {
-      setError(e?.message || 'Не удалось удалить работника')
-    } finally {
-      setBusy(false)
-    }
-  }
-
 
   async function quickAssign() {
     if (!qaSite || !qaWorker) return
@@ -1154,9 +1103,6 @@ export default function AdminPage() {
   }
 
   async function openWorkerCard(workerId: string) {
-    try {
-      window.scrollTo({ top:  0, behavior: 'smooth' })
-    } catch {}
     setWorkerCardId(workerId)
     setWorkerCardOpen(true)
     try {
@@ -1883,7 +1829,7 @@ export default function AdminPage() {
                             const primaryUrl = photos?.[0]?.url || null
 
                             return (
-                              <div id={`site-card-${s.id}`} key={s.id} className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
+                              <div key={s.id} className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
                                 <div className="flex flex-wrap items-start justify-between gap-4">
                                   <div className="flex min-w-0 flex-1 flex-wrap items-start gap-4">
                                     <div className="w-[150px] shrink-0">
@@ -2390,15 +2336,16 @@ export default function AdminPage() {
                                 Разжаловать
                               </button>
                             )}
-
+                          
                             <button
-                              onClick={() => deleteWorker(w.id, w.full_name || '')}
-                              disabled={busy || isMe}
+                              onClick={() => deleteWorker(w.id, w.full_name || 'Без имени')}
+                              disabled={busy || isMe || isAdmin}
                               className="rounded-2xl border border-red-500/20 bg-red-950/30 px-4 py-2 text-xs font-semibold text-red-100 transition hover:border-red-400/40 disabled:opacity-60"
+                              title={isAdmin ? 'Админа удалить нельзя' : isMe ? 'Нельзя удалить себя' : 'Удалить работника'}
                             >
                               Удалить
                             </button>
-                          </div>
+</div>
 
                           {!isAdmin ? (
                             <div className="flex flex-wrap items-end gap-2">
@@ -2812,7 +2759,16 @@ export default function AdminPage() {
       {/* МОДАЛКА: КАРТОЧКА РАБОТНИКА */}
       <Modal open={workerCardOpen} title="Карточка работника" onClose={() => setWorkerCardOpen(false)}>
         <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-4">
-          <div className="text-sm font-semibold text-yellow-100">{workersById.get(workerCardId)?.full_name || 'Работник'}</div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-sm font-semibold text-yellow-100">{workersById.get(workerCardId)?.full_name || 'Работник'}</div>
+            <button
+              onClick={() => deleteWorker(workerCardId, workersById.get(workerCardId)?.full_name || 'Без имени')}
+              disabled={busy || !workerCardId || (meId && workerCardId === meId) || ((workersById.get(workerCardId)?.role || '') === 'admin')}
+              className="rounded-2xl border border-red-500/20 bg-red-950/30 px-4 py-2 text-xs font-semibold text-red-100 transition hover:border-red-400/40 disabled:opacity-60"
+            >
+              Удалить
+            </button>
+          </div>
           <div className="mt-1 text-xs text-zinc-300">
             Диапазон: {fmtD(dateFrom)} — {fmtD(dateTo)}
           </div>
@@ -2963,3 +2919,38 @@ export default function AdminPage() {
     </main>
   )
 }
+
+
+  async function deleteWorker(workerId: string, label: string) {
+    if (meId && workerId === meId) {
+      setError('Нельзя удалить самого себя.')
+      return
+    }
+
+    const w = workersById.get(workerId)
+    if ((w?.role || '') === 'admin') {
+      setError('Админа удалить нельзя. Сначала разжалуй.')
+      return
+    }
+
+    const ok = window.confirm(`Удалить работника: ${label || workerId}?
+
+Если у него есть таймлоги или смены — удаление будет запрещено. В этом случае используй «Отключить».`)
+    if (!ok) return
+
+    setBusy(true)
+    setError(null)
+    try {
+      await authFetchJson('/api/admin/workers/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ worker_id: workerId }),
+      })
+      if (workerCardId === workerId) setWorkerCardOpen(false)
+      await refreshCore()
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось удалить работника')
+    } finally {
+      setBusy(false)
+    }
+  }
