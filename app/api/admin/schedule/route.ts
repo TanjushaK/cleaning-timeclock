@@ -27,6 +27,16 @@ function toISODate(d: Date) {
   return `${y}-${m}-${dd}`
 }
 
+function todayISOInTZ(tz: string) {
+  // Формат en-CA выдаёт YYYY-MM-DD, что идеально для ISO даты.
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date())
+}
+
 function startOfWeek(d: Date) {
   const x = new Date(d)
   const day = x.getDay()
@@ -48,13 +58,42 @@ function pickRange(sp: URLSearchParams) {
   let from = (sp.get('date_from') || sp.get('from') || '').trim()
   let to = (sp.get('date_to') || sp.get('to') || '').trim()
 
-  if (!from || !to) {
-    const now = new Date()
-    from = toISODate(startOfWeek(now))
-    to = toISODate(endOfWeek(now))
+  // Для автодефолта можно передать range=day|week|month и (опционально) anchor=YYYY-MM-DD.
+  // Если range не задан — считаем week.
+  const rangeRaw = (sp.get('range') || sp.get('view') || '').trim().toLowerCase()
+  const range = rangeRaw === 'day' || rangeRaw === 'today' ? 'day' : rangeRaw === 'month' ? 'month' : 'week'
+
+  const anchorRaw = (sp.get('anchor') || sp.get('date') || '').trim()
+  const todayNL = todayISOInTZ('Europe/Amsterdam')
+  const anchor = isISODate(anchorRaw) ? anchorRaw : todayNL
+  const anchorDate = new Date(anchor + 'T00:00:00')
+
+  if (!from && !to) {
+    if (range === 'day') {
+      from = anchor
+      to = anchor
+    } else if (range === 'month') {
+      from = toISODate(startOfMonth(anchorDate))
+      to = toISODate(endOfMonth(anchorDate))
+    } else {
+      from = toISODate(startOfWeek(anchorDate))
+      to = toISODate(endOfWeek(anchorDate))
+    }
+  } else if (from && !to) {
+    to = from
+  } else if (!from && to) {
+    from = to
   }
 
   if (!isISODate(from) || !isISODate(to)) return null
+
+  // Нормализуем порядок, если прилетело наоборот.
+  if (from > to) {
+    const tmp = from
+    from = to
+    to = tmp
+  }
+
   return { from, to }
 }
 

@@ -479,6 +479,7 @@ type DragPayload = {
 
 export default function AdminPage() {
   const [tab, setTab] = useState<TabKey>('jobs')
+  const bootedRef = useRef(false)
 
   const [sessionLoading, setSessionLoading] = useState(true)
   const [sessionToken, setSessionToken] = useState<string | null>(null)
@@ -488,7 +489,9 @@ export default function AdminPage() {
   const [password, setPassword] = useState('')
 
   const [busy, setBusy] = useState(false)
+  const [loginBusy, setLoginBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [errorsEnabled, setErrorsEnabled] = useState(false)
 
   const [showArchivedSites, setShowArchivedSites] = useState(false)
 
@@ -665,20 +668,21 @@ export default function AdminPage() {
     const url =
       `/api/admin/schedule?date_from=${encodeURIComponent(dateFrom)}` +
       `&date_to=${encodeURIComponent(dateTo)}` +
+      `&range=${encodeURIComponent(planView)}&anchor=${encodeURIComponent(anchorDate)}` +
       (filterSite ? `&site_id=${encodeURIComponent(filterSite)}` : '') +
       (filterWorker ? `&worker_id=${encodeURIComponent(filterWorker)}` : '')
     const sch = await authFetchJson<{ items: ScheduleItem[] }>(url)
     setSchedule(Array.isArray(sch?.items) ? sch.items : [])
   }
 
-  async function refreshAll() {
+  async function refreshAll(opts?: { silent?: boolean }) {
     setBusy(true)
-    setError(null)
+    if (!opts?.silent) setError(null)
     try {
       await refreshCore()
       await refreshSchedule()
     } catch (e: any) {
-      setError(e?.message || 'Ошибка загрузки')
+      if (!opts?.silent) setError(e?.message || 'Ошибка загрузки')
     } finally {
       setBusy(false)
     }
@@ -690,12 +694,14 @@ export default function AdminPage() {
       const sessionRes = await withTimeout(supabase.auth.getSession(), 2000, { data: { session: null } } as any)
       const token = sessionRes?.data?.session?.access_token ?? null
       setSessionToken(token)
+      setErrorsEnabled(!!token)
 
       const meRes = await withTimeout(supabase.auth.getUser(), 2000, { data: { user: null } } as any)
       setMeId(meRes?.data?.user?.id ?? null)
 
-      if (token) await refreshAll()
+      if (token) await refreshAll({ silent: true })
     } finally {
+      bootedRef.current = true
       setSessionLoading(false)
     }
   }
@@ -706,18 +712,22 @@ export default function AdminPage() {
     const { data: sub } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
       const token = newSession?.access_token ?? null
       setSessionToken(token)
+      setErrorsEnabled(!!token)
       setError(null)
 
       const meRes = await withTimeout(supabase.auth.getUser(), 2000, { data: { user: null } } as any)
       setMeId(meRes?.data?.user?.id ?? null)
 
       if (token) {
-        await refreshAll()
+        await refreshAll({ silent: true })
       } else {
         setSites([])
         setWorkers([])
         setAssignments([])
         setSchedule([])
+        setBusy(false)
+        setLoginBusy(false)
+        setPhotoBusy(false)
       }
     })
 
@@ -726,23 +736,40 @@ export default function AdminPage() {
   }, [])
 
   useEffect(() => {
-    if (sessionToken) void refreshAll()
+    if (!bootedRef.current) return
+    if (sessionToken) void refreshAll({ silent: !errorsEnabled })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showArchivedSites])
 
   useEffect(() => {
-    if (sessionToken) void refreshSchedule()
+    if (!bootedRef.current) return
+    if (!sessionToken) return
+    void (async () => {
+      try {
+        await refreshSchedule()
+      } catch (e: any) {
+        if (errorsEnabled) setError(e?.message || 'Ошибка загрузки')
+      }
+    })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateFrom, dateTo])
 
   useEffect(() => {
-    if (sessionToken) void refreshSchedule()
+    if (!bootedRef.current) return
+    if (!sessionToken) return
+    void (async () => {
+      try {
+        await refreshSchedule()
+      } catch (e: any) {
+        if (errorsEnabled) setError(e?.message || 'Ошибка загрузки')
+      }
+    })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterSite, filterWorker])
 
   async function onLogin(e: React.FormEvent) {
     e.preventDefault()
-    setBusy(true)
+    setLoginBusy(true)
     setError(null)
     try {
       const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
@@ -750,7 +777,7 @@ export default function AdminPage() {
     } catch (e: any) {
       setError(e?.message || 'Ошибка входа')
     } finally {
-      setBusy(false)
+      setLoginBusy(false)
     }
   }
 
@@ -760,6 +787,7 @@ export default function AdminPage() {
     try {
       await supabase.auth.signOut()
       setSessionToken(null)
+      setErrorsEnabled(false)
       setMeId(null)
       setSites([])
       setWorkers([])
@@ -1671,10 +1699,10 @@ export default function AdminPage() {
 
               <button
                 type="submit"
-                disabled={busy}
+                disabled={loginBusy}
                 className="mt-2 rounded-2xl border border-yellow-300/40 bg-gradient-to-r from-yellow-500/10 via-yellow-400/10 to-yellow-300/10 px-4 py-3 text-sm font-semibold text-yellow-100 shadow-[0_0_0_1px_rgba(255,215,0,0.18)] transition hover:border-yellow-200/70 hover:bg-yellow-400/10 disabled:opacity-60"
               >
-                {busy ? 'Вхожу…' : 'Войти'}
+                {loginBusy ? 'Вхожу…' : 'Войти'}
               </button>
             </form>
           </div>
@@ -1699,7 +1727,10 @@ export default function AdminPage() {
 
           <div className="flex items-center gap-2">
             <button
-              onClick={refreshAll}
+              onClick={() => {
+                setErrorsEnabled(true)
+                void refreshAll()
+              }}
               disabled={busy}
               className="rounded-xl border border-yellow-400/40 bg-black/40 px-4 py-2 text-sm text-yellow-100 transition hover:border-yellow-300/70 hover:bg-black/60 disabled:opacity-60"
             >
@@ -1739,7 +1770,10 @@ export default function AdminPage() {
                   <input
                     type="checkbox"
                     checked={showArchivedSites}
-                    onChange={(e) => setShowArchivedSites(e.target.checked)}
+                    onChange={(e) => {
+                        setErrorsEnabled(true)
+                        setShowArchivedSites(e.target.checked)
+                      }}
                     className="h-4 w-4 accent-yellow-400"
                   />
                   Показать архив
@@ -1752,7 +1786,7 @@ export default function AdminPage() {
             </div>
           </div>
 
-          {error ? (
+          {error && errorsEnabled ? (
             <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-950/30 px-4 py-3 text-sm text-red-100">{error}</div>
           ) : null}
 
@@ -2514,7 +2548,10 @@ export default function AdminPage() {
                       <input
                         type="date"
                         value={dateFrom}
-                        onChange={(e) => setDateFrom(e.target.value)}
+                        onChange={(e) => {
+                        setErrorsEnabled(true)
+                        setDateFrom(e.target.value)
+                      }}
                         className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                       />
                     </label>
@@ -2523,7 +2560,10 @@ export default function AdminPage() {
                       <input
                         type="date"
                         value={dateTo}
-                        onChange={(e) => setDateTo(e.target.value)}
+                        onChange={(e) => {
+                        setErrorsEnabled(true)
+                        setDateTo(e.target.value)
+                      }}
                         className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                       />
                     </label>
@@ -2532,7 +2572,10 @@ export default function AdminPage() {
                       <span className="text-[11px] text-zinc-300">Объект</span>
                       <select
                         value={filterSite}
-                        onChange={(e) => setFilterSite(e.target.value)}
+                        onChange={(e) => {
+                        setErrorsEnabled(true)
+                        setFilterSite(e.target.value)
+                      }}
                         className="w-[220px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                       >
                         <option value="">Все</option>
@@ -2551,7 +2594,10 @@ export default function AdminPage() {
                       <span className="text-[11px] text-zinc-300">Работник</span>
                       <select
                         value={filterWorker}
-                        onChange={(e) => setFilterWorker(e.target.value)}
+                        onChange={(e) => {
+                        setErrorsEnabled(true)
+                        setFilterWorker(e.target.value)
+                      }}
                         className="w-[220px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                       >
                         <option value="">Все</option>
