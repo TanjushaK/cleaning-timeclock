@@ -198,19 +198,23 @@ async function authFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 function Modal(props: { open: boolean; title: string; onClose: () => void; children: React.ReactNode }) {
   if (!props.open) return null
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={props.onClose} />
-      <div className="relative w-full max-w-2xl rounded-3xl border border-yellow-400/20 bg-zinc-950/90 p-5 shadow-[0_25px_90px_rgba(0,0,0,0.75)]">
-        <div className="flex items-center justify-between gap-3">
-          <div className="text-sm font-semibold text-yellow-100">{props.title}</div>
-          <button
-            onClick={props.onClose}
-            className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40"
-          >
-            Закрыть
-          </button>
+    <div className="fixed inset-0 z-50 overflow-y-auto">
+      <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={props.onClose} />
+      <div className="relative min-h-full px-4 py-8">
+        <div className="mx-auto flex w-full max-w-2xl items-start justify-center">
+          <div className="relative z-10 w-full rounded-3xl border border-yellow-400/20 bg-zinc-950/90 p-5 shadow-[0_25px_90px_rgba(0,0,0,0.75)]">
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-sm font-semibold text-yellow-100">{props.title}</div>
+              <button
+                onClick={props.onClose}
+                className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40"
+              >
+                Закрыть
+              </button>
+            </div>
+            <div className="mt-4">{props.children}</div>
+          </div>
         </div>
-        <div className="mt-4">{props.children}</div>
       </div>
     </div>
   )
@@ -1113,7 +1117,7 @@ const [editOpen, setEditOpen] = useState(false)
     }
 
     const ok = window.confirm(
-      'Удалить работника НАВСЕГДА?\n\nВажно: если у него есть таймлоги/смены (или старая история смен), сервер запретит удаление. Тогда используй “Удалить (анонимизировать)”.'
+      'Удалить работника НАВСЕГДА?\n\nВажно: если у него есть таймлоги/смены, сервер запретит удаление (и это нормально).'
     )
     if (!ok) return
 
@@ -1132,34 +1136,6 @@ const [editOpen, setEditOpen] = useState(false)
       setBusy(false)
     }
   }
-  async function anonymizeWorker(workerId: string) {
-    if (meId && workerId === meId) {
-      setError('Нельзя удалить самого себя.')
-      return
-    }
-
-    const ok = window.confirm(
-      'Удалить (анонимизировать) работника?\n\nЭто безопасное удаление: доступ будет отозван, имя/телефон будут очищены, но история смен и таймлогов сохранится для отчётов.'
-    )
-    if (!ok) return
-
-    setBusy(true)
-    setError(null)
-    try {
-      await authFetchJson('/api/admin/workers/anonymize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ worker_id: workerId }),
-      })
-      await refreshCore()
-    } catch (e: any) {
-      setError(e?.message || 'Не удалось анонимизировать работника')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-
 
   async function quickAssign() {
     if (!qaSite || !qaWorker) return
@@ -2472,14 +2448,6 @@ const [editOpen, setEditOpen] = useState(false)
                                 )}
                               >
                                 {w.active === false ? 'Вернуть из архива' : 'Архивировать'}
-                              </button>
-
-                              <button
-                                onClick={() => anonymizeWorker(w.id)}
-                                disabled={busy}
-                                className="rounded-2xl border border-red-300/15 bg-black/30 px-4 py-2 text-xs font-semibold text-red-100 transition hover:border-red-200/30 hover:bg-red-500/10 disabled:opacity-60"
-                              >
-                                Удалить (анонимизировать)
                               </button>
 
                               <button
