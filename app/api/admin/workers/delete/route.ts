@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
     if (logsErr) return NextResponse.json({ error: logsErr.message }, { status: 500 })
     if (logsHit && logsHit.length > 0) {
       return NextResponse.json(
-        { error: 'Нельзя удалить работника: есть таймлоги. Используй "Отключить".' },
+        { error: 'Нельзя удалить работника: есть таймлоги. Используй "Отключить" или "Удалить (анонимизировать)".' },
         { status: 409 }
       )
     }
@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
       // если в схеме нет worker_id — не валим удаление, просто идём дальше
     } else if (jobsHit && jobsHit.length > 0) {
       return NextResponse.json(
-        { error: 'Нельзя удалить работника: есть смены. Используй "Отключить".' },
+        { error: 'Нельзя удалить работника: есть смены (или история смен). Используй "Отключить" или "Удалить (анонимизировать)".' },
         { status: 409 }
       )
     }

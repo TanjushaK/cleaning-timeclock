@@ -1113,7 +1113,7 @@ const [editOpen, setEditOpen] = useState(false)
     }
 
     const ok = window.confirm(
-      'Удалить работника НАВСЕГДА?\n\nВажно: если у него есть таймлоги/смены, сервер запретит удаление (и это нормально).'
+      'Удалить работника НАВСЕГДА?\n\nВажно: если у него есть таймлоги/смены (или старая история смен), сервер запретит удаление. Тогда используй “Удалить (анонимизировать)”.'
     )
     if (!ok) return
 
@@ -1132,6 +1132,34 @@ const [editOpen, setEditOpen] = useState(false)
       setBusy(false)
     }
   }
+  async function anonymizeWorker(workerId: string) {
+    if (meId && workerId === meId) {
+      setError('Нельзя удалить самого себя.')
+      return
+    }
+
+    const ok = window.confirm(
+      'Удалить (анонимизировать) работника?\n\nЭто безопасное удаление: доступ будет отозван, имя/телефон будут очищены, но история смен и таймлогов сохранится для отчётов.'
+    )
+    if (!ok) return
+
+    setBusy(true)
+    setError(null)
+    try {
+      await authFetchJson('/api/admin/workers/anonymize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ worker_id: workerId }),
+      })
+      await refreshCore()
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось анонимизировать работника')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+
 
   async function quickAssign() {
     if (!qaSite || !qaWorker) return
@@ -2444,6 +2472,14 @@ const [editOpen, setEditOpen] = useState(false)
                                 )}
                               >
                                 {w.active === false ? 'Вернуть из архива' : 'Архивировать'}
+                              </button>
+
+                              <button
+                                onClick={() => anonymizeWorker(w.id)}
+                                disabled={busy}
+                                className="rounded-2xl border border-red-300/15 bg-black/30 px-4 py-2 text-xs font-semibold text-red-100 transition hover:border-red-200/30 hover:bg-red-500/10 disabled:opacity-60"
+                              >
+                                Удалить (анонимизировать)
                               </button>
 
                               <button
