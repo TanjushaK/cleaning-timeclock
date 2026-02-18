@@ -159,6 +159,16 @@ function cn(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(' ')
 }
 
+function initials(name?: string | null) {
+  const raw = String(name || '').trim()
+  if (!raw) return '—'
+  const parts = raw.split(/\s+/).filter(Boolean)
+  const a = parts[0]?.[0] || ''
+  const b = parts.length > 1 ? (parts[parts.length - 1]?.[0] || '') : ''
+  const out = (a + b).toUpperCase()
+  return out || '—'
+}
+
 async function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
   let t: any
   const timeout = new Promise<T>((resolve) => {
@@ -633,6 +643,48 @@ const [editOpen, setEditOpen] = useState(false)
   const [workerCardPhotos, setWorkerCardPhotos] = useState<WorkerPhoto[]>([])
   const [workerPhotoMeta, setWorkerPhotoMeta] = useState<Record<string, WorkerPhotoMeta>>({})
 
+  // worker photos meta prefetch (list badge + mini-avatar): cached + concurrency-limited
+  const photoMetaQueueRef = useRef<string[]>([])
+  const photoMetaInFlightRef = useRef<Set<string>>(new Set())
+  const photoMetaRunningRef = useRef(0)
+  const PHOTO_META_CONCURRENCY = 6
+
+  function enqueueWorkerPhotoMeta(ids: string[]) {
+    const known = workerPhotoMeta
+    const q = photoMetaQueueRef.current
+
+    for (const id of ids) {
+      if (!id) continue
+      if (known[id]) continue
+      if (photoMetaInFlightRef.current.has(id)) continue
+      if (q.includes(id)) continue
+      q.push(id)
+    }
+
+    void drainWorkerPhotoMetaQueue()
+  }
+
+  async function drainWorkerPhotoMetaQueue() {
+    // keep draining until we hit concurrency cap
+    while (photoMetaRunningRef.current < PHOTO_META_CONCURRENCY && photoMetaQueueRef.current.length > 0) {
+      const id = photoMetaQueueRef.current.shift()
+      if (!id) continue
+      if (workerPhotoMeta[id]) continue
+      if (photoMetaInFlightRef.current.has(id)) continue
+
+      photoMetaInFlightRef.current.add(id)
+      photoMetaRunningRef.current += 1
+
+      void loadWorkerPhotoMeta(id)
+        .catch(() => null)
+        .finally(() => {
+          photoMetaInFlightRef.current.delete(id)
+          photoMetaRunningRef.current -= 1
+          void drainWorkerPhotoMetaQueue()
+        })
+    }
+  }
+
   const [planView, setPlanView] = useState<PlanView>('week')
   const [planMode, setPlanMode] = useState<PlanMode>('workers')
 
@@ -832,10 +884,8 @@ const [editOpen, setEditOpen] = useState(false)
   useEffect(() => {
     if (!sessionToken) return
     if (tab !== 'workers') return
-    // подгружаем счётчик фото для списка работников в фоне
-    for (const w of workers) {
-      void loadWorkerPhotoMeta(w.id)
-    }
+    // подгружаем счётчик + мини-аватар в фоне (ограничиваем параллелизм, чтобы не душить API)
+    enqueueWorkerPhotoMeta(workers.map((w) => w.id))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, workers, sessionToken])
 
@@ -2511,11 +2561,28 @@ const [editOpen, setEditOpen] = useState(false)
                   return (
                     <div key={w.id} className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
                       <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <div className="text-base font-semibold text-yellow-100">
-                            <button onClick={() => openWorkerCard(w.id)} className="hover:text-yellow-100">
-                              {w.full_name || 'Без имени'}
-                            </button>{' '}
+                        <div className="flex items-start gap-3">
+                          <div className="relative mt-0.5">
+                            {workerPhotoMeta[w.id]?.thumb ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={workerPhotoMeta[w.id]?.thumb || ''}
+                                alt="avatar"
+                                className="h-10 w-10 rounded-full border border-yellow-400/20 object-cover shadow-sm"
+                                loading="lazy"
+                              />
+                            ) : (
+                              <div className="flex h-10 w-10 items-center justify-center rounded-full border border-yellow-400/15 bg-black/30 text-[12px] font-semibold text-yellow-100/80">
+                                {initials(w.full_name)}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="min-w-[220px]">
+                            <div className="text-base font-semibold text-yellow-100">
+                              <button onClick={() => openWorkerCard(w.id)} className="hover:text-yellow-100">
+                                {w.full_name || 'Без имени'}
+                              </button>{' '}
                             {isAdmin ? (
                               <span className="ml-2 rounded-xl border border-yellow-400/30 bg-yellow-400/10 px-2 py-1 text-[11px] text-yellow-100">
                                 админ
@@ -2554,6 +2621,7 @@ const [editOpen, setEditOpen] = useState(false)
                               ))}
                             </div>
                           )}
+                        </div>
                         </div>
 
                         <div className="flex flex-col items-end gap-2">
