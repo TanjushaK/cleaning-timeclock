@@ -162,29 +162,57 @@ async function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T
   return res
 }
 
-async function authFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const sessionRes = await withTimeout(supabase.auth.getSession(), 3000, { data: { session: null } } as any)
-  const token = sessionRes?.data?.session?.access_token
-  if (!token) throw new Error('Нет входа. Авторизуйся в админке.')
+async function getAccessToken(): Promise<string> {
+  const s1 = await supabase.auth.getSession()
+  const t1 = s1?.data?.session?.access_token
+  if (t1) return t1
 
+  // Иногда сессия ещё не гидратировалась или токен протух — пробуем refresh 1 раз
+  const s2 = await supabase.auth.refreshSession().catch(() => ({ data: { session: null } } as any))
+  const t2 = (s2 as any)?.data?.session?.access_token
+  if (t2) return t2
+
+  throw new Error('Сессия не найдена или истекла. Перелогинься в админке.')
+}
+
+async function authFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const ctrl = new AbortController()
   const ms = 15000
   const t = setTimeout(() => ctrl.abort(), ms)
 
   try {
-    const res = await fetch(url, {
-      ...init,
-      headers: {
-        ...(init?.headers || {}),
-        Authorization: `Bearer ${token}`,
-      },
-      cache: 'no-store',
-      signal: ctrl.signal,
-    })
+    let token = await getAccessToken()
 
-    const payload = await res.json().catch(() => ({} as any))
-    if (!res.ok) throw new Error(payload?.error || `HTTP ${res.status}`)
-    return payload as T
+    const attempt = async (tok: string) => {
+      const res = await fetch(url, {
+        ...init,
+        headers: {
+          ...(init?.headers || {}),
+          Authorization: `Bearer ${tok}`,
+        },
+        cache: 'no-store',
+        signal: ctrl.signal,
+      })
+
+      const payload = await res.json().catch(() => ({} as any))
+      return { res, payload }
+    }
+
+    let out = await attempt(token)
+
+    // Если словили 401/403 — часто это просто протухший access_token.
+    // Пытаемся refresh + retry один раз.
+    if (!out.res.ok && (out.res.status === 401 || out.res.status === 403)) {
+      const s2 = await supabase.auth.refreshSession().catch(() => ({ data: { session: null } } as any))
+      const token2 = (s2 as any)?.data?.session?.access_token
+      if (token2 && token2 !== token) {
+        token = token2
+        out = await attempt(token)
+      }
+    }
+
+    if (!out.res.ok) throw new Error(out.payload?.error || `HTTP ${out.res.status}`)
+    return out.payload as T
   } catch (e: any) {
     if (e?.name === 'AbortError') {
       throw new Error('Таймаут запроса (15с). Нажми “Обновить данные” ещё раз.')
@@ -194,7 +222,6 @@ async function authFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
     clearTimeout(t)
   }
 }
-
 function Modal(props: { open: boolean; title: string; onClose: () => void; children: React.ReactNode }) {
   if (!props.open) return null
   return (
@@ -710,14 +737,15 @@ const [editOpen, setEditOpen] = useState(false)
   async function boot() {
     setSessionLoading(true)
     try {
-      const sessionRes = await withTimeout(supabase.auth.getSession(), 2000, { data: { session: null } } as any)
-      const token = sessionRes?.data?.session?.access_token ?? null
+      const { data } = await supabase.auth.getSession()
+      const token = data?.session?.access_token ?? null
       setSessionToken(token)
-
-      const meRes = await withTimeout(supabase.auth.getUser(), 2000, { data: { user: null } } as any)
-      setMeId(meRes?.data?.user?.id ?? null)
+      setMeId(data?.session?.user?.id ?? null)
 
       if (token) await refreshAll()
+    } catch {
+      setSessionToken(null)
+      setMeId(null)
     } finally {
       setSessionLoading(false)
     }
@@ -731,8 +759,7 @@ const [editOpen, setEditOpen] = useState(false)
       setSessionToken(token)
       setError(null)
 
-      const meRes = await withTimeout(supabase.auth.getUser(), 2000, { data: { user: null } } as any)
-      setMeId(meRes?.data?.user?.id ?? null)
+      setMeId(newSession?.user?.id ?? null)
 
       if (token) {
         await refreshAll()
