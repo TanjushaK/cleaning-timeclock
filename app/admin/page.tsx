@@ -872,6 +872,7 @@ const [editOpen, setEditOpen] = useState(false)
   }
 
   function openSiteCard(s: Site) {
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
     fillSiteCardFromSite(s)
     setSiteCardOpen(true)
   }
@@ -1182,6 +1183,7 @@ const [editOpen, setEditOpen] = useState(false)
   }
 
   async function openWorkerCard(workerId: string) {
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
     setWorkerCardId(workerId)
     setWorkerCardOpen(true)
     try {
