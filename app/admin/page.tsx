@@ -4,6 +4,9 @@ import Image from 'next/image'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 
+// Cache access token in-memory to avoid calling supabase.auth.getSession() on every request (can occasionally hang)
+let TOKEN_CACHE: string | null = null
+
 type TabKey = 'sites' | 'workers' | 'jobs' | 'plan'
 type JobsView = 'board' | 'table'
 type PlanView = 'day' | 'week' | 'month'
@@ -163,26 +166,38 @@ async function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T
 }
 
 async function getAccessToken(): Promise<string> {
-  const s1 = await supabase.auth.getSession()
+  if (TOKEN_CACHE) return TOKEN_CACHE
+
+  const s1 = await withTimeout(supabase.auth.getSession(), 5000, null as any)
   const t1 = s1?.data?.session?.access_token
-  if (t1) return t1
+  if (t1) {
+    TOKEN_CACHE = t1
+    return t1
+  }
 
   // Иногда сессия ещё не гидратировалась или токен протух — пробуем refresh 1 раз
-  const s2 = await supabase.auth.refreshSession().catch(() => ({ data: { session: null } } as any))
+  const s2 = await withTimeout(
+    supabase.auth.refreshSession().catch(() => ({ data: { session: null } } as any)),
+    8000,
+    null as any
+  )
   const t2 = (s2 as any)?.data?.session?.access_token
-  if (t2) return t2
+  if (t2) {
+    TOKEN_CACHE = t2
+    return t2
+  }
 
   throw new Error('Сессия не найдена или истекла. Перелогинься в админке.')
 }
 
 async function authFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+  let token = await getAccessToken()
+
   const ctrl = new AbortController()
   const ms = 15000
   const t = setTimeout(() => ctrl.abort(), ms)
 
   try {
-    let token = await getAccessToken()
-
     const attempt = async (tok: string) => {
       const res = await fetch(url, {
         ...init,
@@ -203,10 +218,15 @@ async function authFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
     // Если словили 401/403 — часто это просто протухший access_token.
     // Пытаемся refresh + retry один раз.
     if (!out.res.ok && (out.res.status === 401 || out.res.status === 403)) {
-      const s2 = await supabase.auth.refreshSession().catch(() => ({ data: { session: null } } as any))
+      const s2 = await withTimeout(
+        supabase.auth.refreshSession().catch(() => ({ data: { session: null } } as any)),
+        8000,
+        null as any
+      )
       const token2 = (s2 as any)?.data?.session?.access_token
       if (token2 && token2 !== token) {
         token = token2
+        TOKEN_CACHE = token2
         out = await attempt(token)
       }
     }
@@ -222,6 +242,7 @@ async function authFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
     clearTimeout(t)
   }
 }
+
 function Modal(props: { open: boolean; title: string; onClose: () => void; children: React.ReactNode }) {
   if (!props.open) return null
   return (
@@ -746,11 +767,13 @@ const [editOpen, setEditOpen] = useState(false)
       const { data } = await supabase.auth.getSession()
       const token = data?.session?.access_token ?? null
       setSessionToken(token)
+      TOKEN_CACHE = token
       setMeId(data?.session?.user?.id ?? null)
 
       if (token) await refreshAll()
     } catch {
       setSessionToken(null)
+      TOKEN_CACHE = null
       setMeId(null)
     } finally {
       setSessionLoading(false)
@@ -763,6 +786,7 @@ const [editOpen, setEditOpen] = useState(false)
     const { data: sub } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
       const token = newSession?.access_token ?? null
       setSessionToken(token)
+      TOKEN_CACHE = token
       setError(null)
 
       setMeId(newSession?.user?.id ?? null)
