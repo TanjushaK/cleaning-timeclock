@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import Image from 'next/image'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -1061,7 +1061,7 @@ const [editOpen, setEditOpen] = useState(false)
     try {
       const current = (siteCardId === siteId ? siteCardPhotos.length : (sitesById.get(siteId)?.photos || []).length) || 0
       const left = Math.max(0, 5 - current)
-      const toUpload = files.slice(0, left)
+      const toUpload = Array.from(files).slice(0, left)
 
       for (const f of toUpload) {
         const fd = new FormData()
@@ -1259,7 +1259,7 @@ const [editOpen, setEditOpen] = useState(false)
     try {
       const current = workerCardPhotos.length || 0
       const left = Math.max(0, 5 - current)
-      const toUpload = files.slice(0, left)
+      const toUpload = Array.from(files).slice(0, left)
 
       for (const f of toUpload) {
         const fd = new FormData()
@@ -3252,3 +3252,4 @@ const [editOpen, setEditOpen] = useState(false)
     </main>
   )
 }
+
