@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+*.bak_*
+vercel-prod-*.log
+photo-fix-pack*.zip
