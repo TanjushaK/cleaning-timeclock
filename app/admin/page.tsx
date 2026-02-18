@@ -198,21 +198,19 @@ async function authFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 function Modal(props: { open: boolean; title: string; onClose: () => void; children: React.ReactNode }) {
   if (!props.open) return null
   return (
-    <div className="fixed inset-0 z-50">
+    <div className="fixed inset-0 z-50 flex items-start justify-center px-4 py-6 overflow-y-auto">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={props.onClose} />
-      <div className="absolute inset-0 flex items-center justify-center p-4">
-        <div className="relative z-10 w-full max-w-2xl max-h-[calc(100vh-2rem)] overflow-y-auto rounded-3xl border border-yellow-400/20 bg-zinc-950/90 p-5 shadow-[0_25px_90px_rgba(0,0,0,0.75)]">
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-sm font-semibold text-yellow-100">{props.title}</div>
-            <button
-              onClick={props.onClose}
-              className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40"
-            >
-              Закрыть
-            </button>
-          </div>
-          <div className="mt-4">{props.children}</div>
+      <div className="relative flex w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-yellow-400/20 bg-zinc-950/90 p-5 shadow-[0_25px_90px_rgba(0,0,0,0.75)] max-h-[calc(100vh-3rem)]">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-sm font-semibold text-yellow-100">{props.title}</div>
+          <button
+            onClick={props.onClose}
+            className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40"
+          >
+            Закрыть
+          </button>
         </div>
+        <div className="mt-4 flex-1 overflow-y-auto pr-1">{props.children}</div>
       </div>
     </div>
   )
