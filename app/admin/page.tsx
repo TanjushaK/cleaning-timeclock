@@ -18,6 +18,17 @@ type WorkerPhoto = { path: string; url?: string; created_at?: string | null }
 
 type WorkerPhotoMeta = { count: number; thumb?: string }
 
+type WorkerProfile = {
+  id: string
+  full_name?: string | null
+  role?: string | null
+  active?: boolean | null
+  email?: string | null
+  phone?: string | null
+  notes?: string | null
+  avatar_path?: string | null
+}
+
 type Site = {
   id: string
   name?: string | null
@@ -642,6 +653,14 @@ const [editOpen, setEditOpen] = useState(false)
 
   const [workerCardPhotos, setWorkerCardPhotos] = useState<WorkerPhoto[]>([])
   const [workerPhotoMeta, setWorkerPhotoMeta] = useState<Record<string, WorkerPhotoMeta>>({})
+
+  const [workerProfileById, setWorkerProfileById] = useState<Record<string, WorkerProfile>>({})
+  const [workerProfileLoading, setWorkerProfileLoading] = useState(false)
+  const [workerProfileSaving, setWorkerProfileSaving] = useState(false)
+
+  const [workerCardFullName, setWorkerCardFullName] = useState('')
+  const [workerCardNotes, setWorkerCardNotes] = useState('')
+  const [workerCardAvatarPath, setWorkerCardAvatarPath] = useState<string | null>(null)
 
   // worker photos meta prefetch (list badge + mini-avatar): cached + concurrency-limited
   const photoMetaQueueRef = useRef<string[]>([])
@@ -1310,9 +1329,22 @@ const [editOpen, setEditOpen] = useState(false)
 
   async function loadWorkerPhotoMeta(workerId: string) {
     try {
+      // 1) профиль: узнаём выбранный аватар (если есть)
+      let avatarPath = workerProfileById?.[workerId]?.avatar_path ?? null
+      if (!avatarPath) {
+        const prof = await authFetchJson<{ worker: WorkerProfile }>(`/api/admin/workers/${encodeURIComponent(workerId)}/profile`).catch(() => null as any)
+        const w = prof?.worker
+        if (w?.id) {
+          setWorkerProfileById((prev) => ({ ...prev, [workerId]: w }))
+          avatarPath = w.avatar_path ?? null
+        }
+      }
+
+      // 2) фото
       const res = await authFetchJson<{ photos: WorkerPhoto[] }>(`/api/admin/workers/${encodeURIComponent(workerId)}/photos`)
       const photos = Array.isArray(res?.photos) ? res.photos : []
-      setWorkerPhotoMeta((prev) => ({ ...prev, [workerId]: { count: photos.length, thumb: photos[0]?.url } }))
+      const thumb = avatarPath ? photos.find((p) => p.path === avatarPath)?.url || photos[0]?.url : photos[0]?.url
+      setWorkerPhotoMeta((prev) => ({ ...prev, [workerId]: { count: photos.length, thumb } }))
     } catch {
       // ignore
     }
@@ -1322,7 +1354,73 @@ const [editOpen, setEditOpen] = useState(false)
     const res = await authFetchJson<{ photos: WorkerPhoto[] }>(`/api/admin/workers/${encodeURIComponent(workerId)}/photos`)
     const photos = Array.isArray(res?.photos) ? res.photos : []
     setWorkerCardPhotos(photos)
-    setWorkerPhotoMeta((prev) => ({ ...prev, [workerId]: { count: photos.length, thumb: photos[0]?.url } }))
+    const avatarPath = workerProfileById?.[workerId]?.avatar_path ?? null
+    const thumb = avatarPath ? photos.find((p) => p.path === avatarPath)?.url || photos[0]?.url : photos[0]?.url
+    setWorkerPhotoMeta((prev) => ({ ...prev, [workerId]: { count: photos.length, thumb } }))
+  }
+
+  async function loadWorkerProfile(workerId: string) {
+    setWorkerProfileLoading(true)
+    try {
+      const res = await authFetchJson<{ worker: WorkerProfile }>(`/api/admin/workers/${encodeURIComponent(workerId)}/profile`)
+      const w = res?.worker
+      if (w?.id) {
+        setWorkerProfileById((prev) => ({ ...prev, [workerId]: w }))
+        setWorkerCardFullName(String(w.full_name || ''))
+        setWorkerCardNotes(String(w.notes || ''))
+        setWorkerCardAvatarPath(w.avatar_path ?? null)
+      }
+    } finally {
+      setWorkerProfileLoading(false)
+    }
+  }
+
+  async function saveWorkerProfile(workerId: string) {
+    setWorkerProfileSaving(true)
+    setError(null)
+    try {
+      const payload = {
+        full_name: workerCardFullName.trim() || null,
+        notes: workerCardNotes || null,
+        avatar_path: workerCardAvatarPath || null,
+      }
+      const res = await authFetchJson<{ worker: WorkerProfile }>(`/api/admin/workers/${encodeURIComponent(workerId)}/profile`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const w = res?.worker
+      if (w?.id) {
+        setWorkerProfileById((prev) => ({ ...prev, [workerId]: w }))
+        // обновим core workers (имя) локально, чтобы список не мигал
+        setWorkers((prev) => prev.map((x) => (x.id === workerId ? { ...x, full_name: w.full_name ?? x.full_name } : x)))
+      }
+      // обновим thumb для списка
+      await loadWorkerPhotoMeta(workerId)
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось сохранить профиль')
+    } finally {
+      setWorkerProfileSaving(false)
+    }
+  }
+
+  async function setWorkerAvatar(workerId: string, path: string) {
+    setWorkerCardAvatarPath(path)
+    try {
+      const res = await authFetchJson<{ worker: WorkerProfile }>(`/api/admin/workers/${encodeURIComponent(workerId)}/profile`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ avatar_path: path }),
+      })
+      const w = res?.worker
+      if (w?.id) {
+        setWorkerProfileById((prev) => ({ ...prev, [workerId]: w }))
+        setWorkerCardAvatarPath(w.avatar_path ?? null)
+      }
+      await loadWorkerPhotoMeta(workerId)
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось выбрать аватар')
+    }
   }
 
   async function uploadWorkerPhotos(workerId: string, files: File[]) {
@@ -1377,8 +1475,12 @@ const [editOpen, setEditOpen] = useState(false)
     setWorkerCardPhotos([])
     setError(null)
 
+    setWorkerCardFullName('')
+    setWorkerCardNotes('')
+    setWorkerCardAvatarPath(workerProfileById?.[workerId]?.avatar_path ?? null)
+
     try {
-      await Promise.all([loadWorkerCard(workerId), loadWorkerPhotos(workerId)])
+      await Promise.all([loadWorkerCard(workerId), loadWorkerPhotos(workerId), loadWorkerProfile(workerId)])
     } catch (e: any) {
       setError(e?.message || 'Не удалось загрузить карточку работника')
     }
@@ -3115,6 +3217,69 @@ const [editOpen, setEditOpen] = useState(false)
                 </div>
 
                 <div className="grid gap-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-sm font-semibold text-yellow-100">Данные и заметки</div>
+
+                    <button
+                      onClick={() => {
+                        if (!workerCardId) return
+                        void saveWorkerProfile(workerCardId)
+                      }}
+                      disabled={workerProfileSaving || !workerCardId}
+                      className={cn(
+                        'rounded-xl border border-yellow-300/35 bg-yellow-400/10 px-3 py-2 text-xs font-semibold text-yellow-100 hover:border-yellow-200/70',
+                        workerProfileSaving ? 'opacity-70' : ''
+                      )}
+                    >
+                      {workerProfileSaving ? 'Сохранение…' : 'Сохранить'}
+                    </button>
+                  </div>
+
+                  {workerProfileLoading ? (
+                    <div className="rounded-2xl border border-yellow-400/10 bg-black/20 px-3 py-3 text-xs text-yellow-100/55">Загрузка данных…</div>
+                  ) : (
+                    <div className="grid gap-2 rounded-3xl border border-yellow-400/10 bg-black/20 p-3">
+                      <div className="grid gap-2 md:grid-cols-2">
+                        <div className="grid gap-1">
+                          <div className="text-[11px] text-zinc-400">ФИО</div>
+                          <input
+                            value={workerCardFullName}
+                            onChange={(e) => setWorkerCardFullName(e.target.value)}
+                            placeholder="Имя работника"
+                            className="w-full rounded-xl border border-yellow-400/10 bg-black/30 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-yellow-300/40"
+                          />
+                        </div>
+
+                        <div className="grid gap-1">
+                          <div className="text-[11px] text-zinc-400">Контакты</div>
+                          <div className="rounded-xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-xs text-zinc-200">
+                            <div>
+                              <span className="text-zinc-500">Email:</span>{' '}
+                              <span className="text-zinc-200">{workerProfileById?.[workerCardId]?.email || '—'}</span>
+                            </div>
+                            <div className="mt-1">
+                              <span className="text-zinc-500">Тел:</span>{' '}
+                              <span className="text-zinc-200">{workerProfileById?.[workerCardId]?.phone || '—'}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-1">
+                        <div className="text-[11px] text-zinc-400">Заметки</div>
+                        <textarea
+                          value={workerCardNotes}
+                          onChange={(e) => setWorkerCardNotes(e.target.value)}
+                          placeholder="Заметки: график, ключи, инструкции, нюансы…"
+                          rows={4}
+                          className="w-full resize-none rounded-2xl border border-yellow-400/10 bg-black/30 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-yellow-300/40"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid gap-2">
                   <div className="text-sm font-semibold text-yellow-100">Фото (до 5)</div>
 
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -3189,6 +3354,25 @@ const [editOpen, setEditOpen] = useState(false)
                               )}
                             >
                               Удалить
+                            </button>
+                          </div>
+
+                          <div className="absolute left-2 top-2 flex gap-2">
+                            <button
+                              onClick={() => {
+                                if (!workerCardId) return
+                                void setWorkerAvatar(workerCardId, p.path)
+                              }}
+                              disabled={workerPhotoBusy || !workerCardId}
+                              className={cn(
+                                'rounded-xl border bg-black/40 px-2 py-1 text-[11px] text-yellow-100/85',
+                                workerCardAvatarPath === p.path
+                                  ? 'border-yellow-300/60 bg-yellow-400/15'
+                                  : 'border-yellow-400/15 hover:border-yellow-300/40',
+                                workerPhotoBusy ? 'opacity-70' : ''
+                              )}
+                            >
+                              {workerCardAvatarPath === p.path ? 'Аватар' : 'Сделать аватаром'}
                             </button>
                           </div>
                         </div>
