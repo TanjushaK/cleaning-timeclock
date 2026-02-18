@@ -1061,7 +1061,7 @@ const [editOpen, setEditOpen] = useState(false)
     try {
       const current = (siteCardId === siteId ? siteCardPhotos.length : (sitesById.get(siteId)?.photos || []).length) || 0
       const left = Math.max(0, 5 - current)
-      const toUpload = Array.from(files).slice(0, left)
+      const toUpload = files.slice(0, left)
 
       for (const f of toUpload) {
         const fd = new FormData()
@@ -1250,7 +1250,7 @@ const [editOpen, setEditOpen] = useState(false)
     setWorkerCardPhotos(Array.isArray(res?.photos) ? res.photos : [])
   }
 
-  async function uploadWorkerPhotos(workerId: string, files: FileList | null) {
+  async function uploadWorkerPhotos(workerId: string, files: File[]) {
     if (!files || files.length === 0) return
 
     setWorkerPhotoBusy(true)
@@ -1259,7 +1259,7 @@ const [editOpen, setEditOpen] = useState(false)
     try {
       const current = workerCardPhotos.length || 0
       const left = Math.max(0, 5 - current)
-      const toUpload = Array.from(files).slice(0, left)
+      const toUpload = files.slice(0, left)
 
       for (const f of toUpload) {
         const fd = new FormData()
@@ -3039,7 +3039,7 @@ const [editOpen, setEditOpen] = useState(false)
                           disabled={workerPhotoBusy || !workerCardId || workerCardPhotos.length >= 5}
                           className="hidden"
                           onChange={async (e) => {
-                            const files = e.target.files
+                            const files = Array.from(e.target.files || [])
                             e.target.value = ''
                             if (!workerCardId) return
                             await uploadWorkerPhotos(workerCardId, files)
@@ -3061,7 +3061,7 @@ const [editOpen, setEditOpen] = useState(false)
                           disabled={workerPhotoBusy || !workerCardId || workerCardPhotos.length >= 5}
                           className="hidden"
                           onChange={async (e) => {
-                            const files = e.target.files
+                            const files = Array.from(e.target.files || [])
                             e.target.value = ''
                             if (!workerCardId) return
                             await uploadWorkerPhotos(workerCardId, files)
