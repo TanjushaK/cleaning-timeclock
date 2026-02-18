@@ -1344,7 +1344,7 @@ const [editOpen, setEditOpen] = useState(false)
       const res = await authFetchJson<{ photos: WorkerPhoto[] }>(`/api/admin/workers/${encodeURIComponent(workerId)}/photos`)
       const photos = Array.isArray(res?.photos) ? res.photos : []
       const thumb = avatarPath ? photos.find((p) => p.path === avatarPath)?.url || photos[0]?.url : photos[0]?.url
-      setWorkerPhotoMeta((prev) => ({ ...prev, [workerId]: { count: photos.length, thumb } }))
+      setWorkerPhotoMeta((prev) => ({ ...prev, [workerId]: { count: Math.min(photos.length, 5), thumb } }))
     } catch {
       // ignore
     }
@@ -1356,7 +1356,7 @@ const [editOpen, setEditOpen] = useState(false)
     setWorkerCardPhotos(photos)
     const avatarPath = workerProfileById?.[workerId]?.avatar_path ?? null
     const thumb = avatarPath ? photos.find((p) => p.path === avatarPath)?.url || photos[0]?.url : photos[0]?.url
-    setWorkerPhotoMeta((prev) => ({ ...prev, [workerId]: { count: photos.length, thumb } }))
+    setWorkerPhotoMeta((prev) => ({ ...prev, [workerId]: { count: Math.min(photos.length, 5), thumb } }))
   }
 
   async function loadWorkerProfile(workerId: string) {
@@ -1475,8 +1475,9 @@ const [editOpen, setEditOpen] = useState(false)
     setWorkerCardPhotos([])
     setError(null)
 
-    setWorkerCardFullName('')
-    setWorkerCardNotes('')
+    const core = workersById.get(workerId)
+    setWorkerCardFullName(String(workerProfileById?.[workerId]?.full_name ?? core?.full_name ?? ''))
+    setWorkerCardNotes(String(workerProfileById?.[workerId]?.notes ?? ''))
     setWorkerCardAvatarPath(workerProfileById?.[workerId]?.avatar_path ?? null)
 
     try {

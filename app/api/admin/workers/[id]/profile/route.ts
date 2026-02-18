@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireAdmin, toErrorResponse } from '@/lib/supabase-server'
+import { requireAdmin } from '@/lib/supabase-server'
 
 type NotesKey = 'notes' | 'extra_note' | 'note' | null
 type AvatarKey = 'avatar_path' | 'avatar_url' | 'photo_path' | null
@@ -7,74 +7,81 @@ type AvatarKey = 'avatar_path' | 'avatar_url' | 'photo_path' | null
 let NOTES_KEY: NotesKey = null
 let AVATAR_KEY: AvatarKey = null
 
-async function resolveNotesKey(sb: any): Promise<NotesKey> {
+function errJson(message: string, status = 500, extra?: any) {
+  return NextResponse.json(
+    { error: message, ...(extra ? { extra } : {}) },
+    { status }
+  )
+}
+
+async function resolveNotesKey(supabase: any): Promise<NotesKey> {
   if (NOTES_KEY) return NOTES_KEY
   const candidates: NotesKey[] = ['notes', 'extra_note', 'note']
   for (const k of candidates) {
     if (!k) continue
-    const { error } = await sb.from('profiles').select(k).limit(1)
+    const { error } = await supabase.from('profiles').select(k).limit(1)
     if (!error) {
       NOTES_KEY = k
       return k
     }
-    const msg = String(error?.message || '')
+    const msg = String((error as any)?.message || '')
     if (msg.includes('column') && msg.includes('does not exist')) continue
-    // если ошибка не про колонку — не гадаем, но пусть будет notes
   }
   NOTES_KEY = 'notes'
   return NOTES_KEY
 }
 
-async function resolveAvatarKey(sb: any): Promise<AvatarKey> {
+async function resolveAvatarKey(supabase: any): Promise<AvatarKey> {
   if (AVATAR_KEY) return AVATAR_KEY
   const candidates: AvatarKey[] = ['avatar_path', 'avatar_url', 'photo_path']
   for (const k of candidates) {
     if (!k) continue
-    const { error } = await sb.from('profiles').select(k).limit(1)
+    const { error } = await supabase.from('profiles').select(k).limit(1)
     if (!error) {
       AVATAR_KEY = k
       return k
     }
-    const msg = String(error?.message || '')
+    const msg = String((error as any)?.message || '')
     if (msg.includes('column') && msg.includes('does not exist')) continue
   }
   AVATAR_KEY = 'avatar_path'
   return AVATAR_KEY
 }
 
-function pick<T extends Record<string, any>>(obj: T, key: string): any {
-  return (obj as any)?.[key]
+function pick(obj: any, key: string): any {
+  return obj?.[key]
 }
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     const guard = await requireAdmin(req)
+    const supabase = (guard as any).supabase
 
     const params = await ctx.params
     const workerId = String(params?.id || '').trim()
-    if (!workerId) return NextResponse.json({ error: 'id обязателен' }, { status: 400 })
+    if (!workerId) return errJson('id обязателен', 400)
 
-    const notesKey = await resolveNotesKey(guard.supabase)
-    const avatarKey = await resolveAvatarKey(guard.supabase)
+    const notesKey = await resolveNotesKey(supabase)
+    const avatarKey = await resolveAvatarKey(supabase)
 
     const selectCols = ['id', 'full_name', 'role', 'active']
     if (notesKey) selectCols.push(notesKey)
     if (avatarKey) selectCols.push(avatarKey)
 
-    const { data: prof, error: profErr } = await guard.supabase
+    const { data: prof, error: profErr } = await supabase
       .from('profiles')
       .select(selectCols.join(','))
       .eq('id', workerId)
       .maybeSingle()
 
-    if (profErr) return NextResponse.json({ error: profErr.message }, { status: 500 })
-    if (!prof) return NextResponse.json({ error: 'Профиль не найден' }, { status: 404 })
+    if (profErr) return errJson(profErr.message, 500)
+    if (!prof) return errJson('Профиль не найден', 404)
 
     // email/phone — из Auth (если доступно)
     let email: string | null = null
     let phone: string | null = null
     try {
-      const { data: u } = await guard.supabase.auth.admin.getUserById(workerId)
+      const { data: u } = await supabase.auth.admin.getUserById(workerId)
       email = u?.user?.email ?? null
       phone = (u?.user as any)?.phone ?? null
     } catch {
@@ -93,23 +100,24 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     }
 
     return NextResponse.json({ worker: out })
-  } catch (e) {
-    return toErrorResponse(e)
+  } catch (e: any) {
+    return errJson(e?.message || 'Unexpected error', 500)
   }
 }
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     const guard = await requireAdmin(req)
+    const supabase = (guard as any).supabase
 
     const params = await ctx.params
     const workerId = String(params?.id || '').trim()
-    if (!workerId) return NextResponse.json({ error: 'id обязателен' }, { status: 400 })
+    if (!workerId) return errJson('id обязателен', 400)
 
     const body = await req.json().catch(() => ({} as any))
 
-    const notesKey = await resolveNotesKey(guard.supabase)
-    const avatarKey = await resolveAvatarKey(guard.supabase)
+    const notesKey = await resolveNotesKey(supabase)
+    const avatarKey = await resolveAvatarKey(supabase)
 
     const patch: any = {}
 
@@ -126,41 +134,36 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       patch[avatarKey] = body.avatar_path == null ? null : String(body.avatar_path)
     }
 
-    if (Object.keys(patch).length === 0) {
-      return NextResponse.json({ error: 'Нечего обновлять' }, { status: 400 })
-    }
+    if (Object.keys(patch).length === 0) return errJson('Нечего обновлять', 400)
 
-    const { data: updated, error: updErr } = await guard.supabase
+    const { data: updated, error: updErr } = await supabase
       .from('profiles')
       .update(patch)
       .eq('id', workerId)
       .select('id,full_name,role,active')
       .maybeSingle()
 
-    if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
-    if (!updated) return NextResponse.json({ error: 'Профиль не найден' }, { status: 404 })
+    if (updErr) return errJson(updErr.message, 500)
+    if (!updated) return errJson('Профиль не найден', 404)
 
     // вернём worker как в GET
     let email: string | null = null
     let phone: string | null = null
     try {
-      const { data: u } = await guard.supabase.auth.admin.getUserById(workerId)
+      const { data: u } = await supabase.auth.admin.getUserById(workerId)
       email = u?.user?.email ?? null
       phone = (u?.user as any)?.phone ?? null
     } catch {
       // ignore
     }
 
-    const { data: prof2 } = await guard.supabase
+    const { data: prof2 } = await supabase
       .from('profiles')
-      .select([
-        'id',
-        'full_name',
-        'role',
-        'active',
-        notesKey || '',
-        avatarKey || '',
-      ].filter(Boolean).join(','))
+      .select(
+        ['id', 'full_name', 'role', 'active', notesKey || '', avatarKey || '']
+          .filter(Boolean)
+          .join(',')
+      )
       .eq('id', workerId)
       .maybeSingle()
 
@@ -176,7 +179,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     }
 
     return NextResponse.json({ worker: out })
-  } catch (e) {
-    return toErrorResponse(e)
+  } catch (e: any) {
+    return errJson(e?.message || 'Unexpected error', 500)
   }
 }
