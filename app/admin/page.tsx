@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import Image from 'next/image'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -15,6 +15,8 @@ type PlanMode = 'workers' | 'sites'
 type SitePhoto = { path: string; url?: string; created_at?: string | null }
 
 type WorkerPhoto = { path: string; url?: string; created_at?: string | null }
+
+type WorkerPhotoMeta = { count: number; thumb?: string }
 
 type Site = {
   id: string
@@ -629,6 +631,7 @@ const [editOpen, setEditOpen] = useState(false)
   const [workerCardItems, setWorkerCardItems] = useState<ScheduleItem[]>([])
 
   const [workerCardPhotos, setWorkerCardPhotos] = useState<WorkerPhoto[]>([])
+  const [workerPhotoMeta, setWorkerPhotoMeta] = useState<Record<string, WorkerPhotoMeta>>({})
 
   const [planView, setPlanView] = useState<PlanView>('week')
   const [planMode, setPlanMode] = useState<PlanMode>('workers')
@@ -825,6 +828,16 @@ const [editOpen, setEditOpen] = useState(false)
     if (sessionToken) void refreshSchedule()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterSite, filterWorker])
+
+  useEffect(() => {
+    if (!sessionToken) return
+    if (tab !== 'workers') return
+    // подгружаем счётчик фото для списка работников в фоне
+    for (const w of workers) {
+      void loadWorkerPhotoMeta(w.id)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, workers, sessionToken])
 
   async function onLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -1245,9 +1258,21 @@ const [editOpen, setEditOpen] = useState(false)
     setWorkerCardItems(Array.isArray(sch?.items) ? sch.items : [])
   }
 
+  async function loadWorkerPhotoMeta(workerId: string) {
+    try {
+      const res = await authFetchJson<{ photos: WorkerPhoto[] }>(`/api/admin/workers/${encodeURIComponent(workerId)}/photos`)
+      const photos = Array.isArray(res?.photos) ? res.photos : []
+      setWorkerPhotoMeta((prev) => ({ ...prev, [workerId]: { count: photos.length, thumb: photos[0]?.url } }))
+    } catch {
+      // ignore
+    }
+  }
+
   async function loadWorkerPhotos(workerId: string) {
     const res = await authFetchJson<{ photos: WorkerPhoto[] }>(`/api/admin/workers/${encodeURIComponent(workerId)}/photos`)
-    setWorkerCardPhotos(Array.isArray(res?.photos) ? res.photos : [])
+    const photos = Array.isArray(res?.photos) ? res.photos : []
+    setWorkerCardPhotos(photos)
+    setWorkerPhotoMeta((prev) => ({ ...prev, [workerId]: { count: photos.length, thumb: photos[0]?.url } }))
   }
 
   async function uploadWorkerPhotos(workerId: string, files: File[]) {
@@ -2505,6 +2530,9 @@ const [editOpen, setEditOpen] = useState(false)
                                 отключён
                               </span>
                             ) : null}
+                            <span className="ml-2 rounded-xl border border-yellow-400/15 bg-black/30 px-2 py-1 text-[11px] text-zinc-200">
+                              фото: {workerPhotoMeta[w.id]?.count ?? '…'}/5
+                            </span>
                           </div>
 
                           <div className="mt-3 text-xs text-zinc-300">Объекты:</div>
