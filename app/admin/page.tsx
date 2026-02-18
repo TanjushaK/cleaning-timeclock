@@ -14,6 +14,8 @@ type PlanMode = 'workers' | 'sites'
 
 type SitePhoto = { path: string; url?: string; created_at?: string | null }
 
+type WorkerPhoto = { path: string; url?: string; created_at?: string | null }
+
 type Site = {
   id: string
   name?: string | null
@@ -567,6 +569,8 @@ export default function AdminPage() {
 
   const [photoBusy, setPhotoBusy] = useState(false)
 
+  const [workerPhotoBusy, setWorkerPhotoBusy] = useState(false)
+
   const [siteCreateOpen, setSiteCreateOpen] = useState(false)
   const [newObjName, setNewObjName] = useState('')
   const [newObjAddress, setNewObjAddress] = useState('')
@@ -623,6 +627,8 @@ const [editOpen, setEditOpen] = useState(false)
   const [workerCardOpen, setWorkerCardOpen] = useState(false)
   const [workerCardId, setWorkerCardId] = useState<string>('')
   const [workerCardItems, setWorkerCardItems] = useState<ScheduleItem[]>([])
+
+  const [workerCardPhotos, setWorkerCardPhotos] = useState<WorkerPhoto[]>([])
 
   const [planView, setPlanView] = useState<PlanView>('week')
   const [planMode, setPlanMode] = useState<PlanMode>('workers')
@@ -1239,12 +1245,65 @@ const [editOpen, setEditOpen] = useState(false)
     setWorkerCardItems(Array.isArray(sch?.items) ? sch.items : [])
   }
 
+  async function loadWorkerPhotos(workerId: string) {
+    const res = await authFetchJson<{ photos: WorkerPhoto[] }>(`/api/admin/workers/${encodeURIComponent(workerId)}/photos`)
+    setWorkerCardPhotos(Array.isArray(res?.photos) ? res.photos : [])
+  }
+
+  async function uploadWorkerPhotos(workerId: string, files: FileList | null) {
+    if (!files || files.length === 0) return
+
+    setWorkerPhotoBusy(true)
+    setError(null)
+
+    try {
+      const current = workerCardPhotos.length || 0
+      const left = Math.max(0, 5 - current)
+      const toUpload = Array.from(files).slice(0, left)
+
+      for (const f of toUpload) {
+        const fd = new FormData()
+        fd.append('file', f)
+        const res = await authFetchJson<{ photos: WorkerPhoto[] }>(`/api/admin/workers/${encodeURIComponent(workerId)}/photos`, {
+          method: 'POST',
+          body: fd,
+        })
+        setWorkerCardPhotos(Array.isArray(res?.photos) ? res.photos : [])
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось загрузить фото')
+    } finally {
+      setWorkerPhotoBusy(false)
+    }
+  }
+
+  async function removeWorkerPhoto(workerId: string, path: string) {
+    setWorkerPhotoBusy(true)
+    setError(null)
+    try {
+      const res = await authFetchJson<{ photos: WorkerPhoto[] }>(`/api/admin/workers/${encodeURIComponent(workerId)}/photos`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path }),
+      })
+      setWorkerCardPhotos(Array.isArray(res?.photos) ? res.photos : [])
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось удалить фото')
+    } finally {
+      setWorkerPhotoBusy(false)
+    }
+  }
+
   async function openWorkerCard(workerId: string) {
     if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
     setWorkerCardId(workerId)
     setWorkerCardOpen(true)
+    setWorkerCardItems([])
+    setWorkerCardPhotos([])
+    setError(null)
+
     try {
-      await loadWorkerCard(workerId)
+      await Promise.all([loadWorkerCard(workerId), loadWorkerPhotos(workerId)])
     } catch (e: any) {
       setError(e?.message || 'Не удалось загрузить карточку работника')
     }
@@ -2938,35 +2997,139 @@ const [editOpen, setEditOpen] = useState(false)
       {/* МОДАЛКА: КАРТОЧКА РАБОТНИКА */}
       <Modal open={workerCardOpen} title="Карточка работника" onClose={() => setWorkerCardOpen(false)}>
         <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-4">
-          <div className="text-sm font-semibold text-yellow-100">{workersById.get(workerCardId)?.full_name || 'Работник'}</div>
-          <div className="mt-1 text-xs text-zinc-300">
-            Диапазон: {fmtD(dateFrom)} — {fmtD(dateTo)}
-          </div>
+          {(() => {
+            const w = workersById.get(workerCardId)
+            const archived = w?.active === false
+            const role = w?.role === 'admin' ? 'Админ' : 'Работник'
 
-          <div className="mt-3 grid gap-2">
-            {workerCardItems.length === 0 ? (
-              <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-3 text-xs text-zinc-500">Смен нет</div>
-            ) : null}
-
-            {workerCardItems.map((j) => (
-              <div key={j.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-yellow-400/10 bg-black/30 px-3 py-2">
-                <div className="text-xs text-zinc-200">
-                  <span className="text-zinc-100">{fmtD(j.job_date)}</span> • <span className="text-zinc-100">{timeRangeHHMM(j.scheduled_time, j.scheduled_end_time)}</span> •{' '}
-                  <span className="text-zinc-100">{j.site_name || '—'}</span> • <span className="text-zinc-500">{statusRu(String(j.status || ''))}</span>
-                  <div className="mt-1 text-[11px] text-zinc-400">
-                    Начал: {fmtDT(j.started_at)} • Закончил: {fmtDT(j.stopped_at)}
+            return (
+              <div className="grid gap-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-yellow-100">{w?.full_name || 'Работник'}</div>
+                    <div className="mt-1 text-xs text-zinc-300">
+                      {role}
+                      {archived ? ' • в архиве' : ' • активен'}
+                      <span className="text-zinc-500"> • </span>
+                      <span className="text-zinc-400">ID:</span>{' '}
+                      <span className="font-mono text-[11px] text-zinc-400">{workerCardId}</span>
+                    </div>
+                    <div className="mt-1 text-xs text-zinc-300">Диапазон: {fmtD(dateFrom)} — {fmtD(dateTo)}</div>
                   </div>
                 </div>
-                <button
-                  onClick={() => openEditForJob(j)}
-                  disabled={busy}
-                  className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40 disabled:opacity-60"
-                >
-                  Править
-                </button>
+
+                <div className="grid gap-2">
+                  <div className="text-sm font-semibold text-yellow-100">Фото (до 5)</div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-xs text-yellow-100/55">Сейчас: {workerCardPhotos.length}/5</div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <label
+                        className={cn(
+                          'rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-xs text-yellow-100/70 hover:border-yellow-300/40',
+                          workerPhotoBusy || !workerCardId || workerCardPhotos.length >= 5 ? 'opacity-70' : ''
+                        )}
+                      >
+                        Загрузить фото
+                        <input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          disabled={workerPhotoBusy || !workerCardId || workerCardPhotos.length >= 5}
+                          className="hidden"
+                          onChange={async (e) => {
+                            const files = e.target.files
+                            e.target.value = ''
+                            if (!workerCardId) return
+                            await uploadWorkerPhotos(workerCardId, files)
+                          }}
+                        />
+                      </label>
+
+                      <label
+                        className={cn(
+                          'rounded-xl border border-yellow-300/35 bg-yellow-400/10 px-3 py-2 text-xs font-semibold text-yellow-100 hover:border-yellow-200/70',
+                          workerPhotoBusy || !workerCardId || workerCardPhotos.length >= 5 ? 'opacity-70' : ''
+                        )}
+                      >
+                        Сделать фото
+                        <input
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          disabled={workerPhotoBusy || !workerCardId || workerCardPhotos.length >= 5}
+                          className="hidden"
+                          onChange={async (e) => {
+                            const files = e.target.files
+                            e.target.value = ''
+                            if (!workerCardId) return
+                            await uploadWorkerPhotos(workerCardId, files)
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  {workerCardPhotos.length === 0 ? (
+                    <div className="rounded-2xl border border-yellow-400/10 bg-black/20 px-3 py-3 text-xs text-yellow-100/55">Фото нет</div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2">
+                      {workerCardPhotos.map((p) => (
+                        <div key={p.path} className="relative overflow-hidden rounded-2xl border border-yellow-400/10 bg-black/20">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={p.url || ''} alt="worker" className="h-36 w-full object-cover" loading="lazy" />
+
+                          <div className="absolute right-2 top-2">
+                            <button
+                              onClick={() => {
+                                if (!workerCardId) return
+                                void removeWorkerPhoto(workerCardId, p.path)
+                              }}
+                              disabled={workerPhotoBusy || !workerCardId}
+                              className={cn(
+                                'rounded-xl border border-red-500/25 bg-red-500/15 px-2 py-1 text-[11px] text-red-100/85',
+                                workerPhotoBusy ? 'opacity-70' : 'hover:border-red-400/45'
+                              )}
+                            >
+                              Удалить
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {workerPhotoBusy ? <div className="text-xs text-yellow-100/45">Обработка…</div> : null}
+                </div>
+
+                <div className="mt-1 grid gap-2">
+                  <div className="text-sm font-semibold text-yellow-100">Смены</div>
+
+                  {workerCardItems.length === 0 ? (
+                    <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-3 text-xs text-zinc-500">Смен нет</div>
+                  ) : null}
+
+                  {workerCardItems.map((j) => (
+                    <div key={j.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-yellow-400/10 bg-black/30 px-3 py-2">
+                      <div className="text-xs text-zinc-200">
+                        <span className="text-zinc-100">{fmtD(j.job_date)}</span> • <span className="text-zinc-100">{timeRangeHHMM(j.scheduled_time, j.scheduled_end_time)}</span> •{' '}
+                        <span className="text-zinc-100">{j.site_name || '—'}</span> • <span className="text-zinc-500">{statusRu(String(j.status || ''))}</span>
+                        <div className="mt-1 text-[11px] text-zinc-400">Начал: {fmtDT(j.started_at)} • Закончил: {fmtDT(j.stopped_at)}</div>
+                      </div>
+                      <button
+                        onClick={() => openEditForJob(j)}
+                        disabled={busy}
+                        className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40 disabled:opacity-60"
+                      >
+                        Править
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
-            ))}
-          </div>
+            )
+          })()}
         </div>
       </Modal>
 
