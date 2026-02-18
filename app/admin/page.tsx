@@ -198,22 +198,20 @@ async function authFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 function Modal(props: { open: boolean; title: string; onClose: () => void; children: React.ReactNode }) {
   if (!props.open) return null
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div className="fixed inset-0 bg-black/70 backdrop-blur-sm" onClick={props.onClose} />
-      <div className="relative min-h-full px-4 py-8">
-        <div className="mx-auto flex w-full max-w-2xl items-start justify-center">
-          <div className="relative z-10 w-full rounded-3xl border border-yellow-400/20 bg-zinc-950/90 p-5 shadow-[0_25px_90px_rgba(0,0,0,0.75)]">
-            <div className="flex items-center justify-between gap-3">
-              <div className="text-sm font-semibold text-yellow-100">{props.title}</div>
-              <button
-                onClick={props.onClose}
-                className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40"
-              >
-                Закрыть
-              </button>
-            </div>
-            <div className="mt-4">{props.children}</div>
+    <div className="fixed inset-0 z-50">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={props.onClose} />
+      <div className="absolute inset-0 flex items-center justify-center p-4">
+        <div className="relative z-10 w-full max-w-2xl max-h-[calc(100vh-2rem)] overflow-y-auto rounded-3xl border border-yellow-400/20 bg-zinc-950/90 p-5 shadow-[0_25px_90px_rgba(0,0,0,0.75)]">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm font-semibold text-yellow-100">{props.title}</div>
+            <button
+              onClick={props.onClose}
+              className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40"
+            >
+              Закрыть
+            </button>
           </div>
+          <div className="mt-4">{props.children}</div>
         </div>
       </div>
     </div>
