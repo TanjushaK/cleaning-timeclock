@@ -525,18 +525,22 @@ export default function AdminPage() {
   const [password, setPassword] = useState('')
 
   const [busy, setBusy] = useState(false)
+  const [busySeq, setBusySeq] = useState(0)
   const refreshSeqRef = useRef(0)
   const [error, setError] = useState<string | null>(null)
 
   // Safety-net: если UI залип на "Обновляю…" — отпускаем кнопку и показываем ошибку
+  // Важно: учитываем "поколение" обновления, чтобы не стрелять в ногу при параллельных refresh.
   useEffect(() => {
     if (!busy) return
+    const seq = busySeq
     const t = window.setTimeout(() => {
+      if (refreshSeqRef.current !== seq) return
       setBusy(false)
       setError('Обновление зависло. Обычно это сеть/таймаут. Нажми “Обновить данные” ещё раз.')
     }, 25000)
     return () => window.clearTimeout(t)
-  }, [busy])
+  }, [busy, busySeq])
 
   const [showArchivedSites, setShowArchivedSites] = useState(false)
 
@@ -722,11 +726,13 @@ const [editOpen, setEditOpen] = useState(false)
 
   async function refreshAll() {
     const seq = ++refreshSeqRef.current
+    setBusySeq(seq)
     setBusy(true)
     setError(null)
     try {
-      await refreshCore()
-      await refreshSchedule()
+      // Раньше было последовательно (core -> schedule) и в сумме могло переваливать за safety-net.
+      // Параллелим: максимум = один таймаут fetch, а не два подряд.
+      await Promise.all([refreshCore(), refreshSchedule()])
     } catch (e: any) {
       setError(e?.message || 'Ошибка загрузки')
     } finally {
