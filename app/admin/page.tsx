@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 
 type TabKey = 'sites' | 'workers' | 'jobs' | 'plan'
 type JobsView = 'board' | 'table'
-type PlanView = 'day' | 'week' | 'month' | 'range'
+type PlanView = 'day' | 'week' | 'month'
 type PlanMode = 'workers' | 'sites'
 
 type SitePhoto = { path: string; url?: string; created_at?: string | null }
@@ -653,10 +653,6 @@ const [editOpen, setEditOpen] = useState(false)
   function recalcRange(nextPlanView: PlanView, baseISO: string) {
     const d = new Date(baseISO + 'T00:00:00')
     if (Number.isNaN(d.getTime())) return
-    if (nextPlanView === 'range') {
-      setAnchorDate(toISODate(d))
-      return
-    }
     if (nextPlanView === 'day') {
       const iso = toISODate(d)
       setDateFrom(iso)
@@ -1081,6 +1077,62 @@ const [editOpen, setEditOpen] = useState(false)
     }
   }
 
+  async function setWorkerArchived(workerId: string, archive: boolean) {
+    if (meId && workerId === meId) {
+      setError('Нельзя архивировать самого себя.')
+      return
+    }
+
+    const ok = window.confirm(
+      archive
+        ? 'Заархивировать работника? Он не сможет работать в приложении.'
+        : 'Вернуть работника из архива?'
+    )
+    if (!ok) return
+
+    setBusy(true)
+    setError(null)
+    try {
+      await authFetchJson('/api/admin/workers/toggle-active', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ worker_id: workerId, active: !archive }),
+      })
+      await refreshCore()
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось обновить статус работника')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function deleteWorker(workerId: string) {
+    if (meId && workerId === meId) {
+      setError('Нельзя удалить самого себя.')
+      return
+    }
+
+    const ok = window.confirm(
+      'Удалить работника НАВСЕГДА?\n\nВажно: если у него есть таймлоги/смены, сервер запретит удаление (и это нормально).'
+    )
+    if (!ok) return
+
+    setBusy(true)
+    setError(null)
+    try {
+      await authFetchJson('/api/admin/workers/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ worker_id: workerId }),
+      })
+      await refreshCore()
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось удалить работника')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function quickAssign() {
     if (!qaSite || !qaWorker) return
     await assign(qaSite, qaWorker)
@@ -1314,7 +1366,6 @@ const [editOpen, setEditOpen] = useState(false)
   }
 
   function PlanToolbar() {
-    const isRange = planView === 'range'
     return (
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-yellow-400/15 bg-black/20 p-4">
         <div className="flex flex-wrap items-center gap-2">
@@ -1325,9 +1376,7 @@ const [editOpen, setEditOpen] = useState(false)
             }}
             className={cn(
               'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
-              planView === 'day'
-                ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100'
-                : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
+              planView === 'day' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
             )}
           >
             День
@@ -1339,9 +1388,7 @@ const [editOpen, setEditOpen] = useState(false)
             }}
             className={cn(
               'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
-              planView === 'week'
-                ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100'
-                : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
+              planView === 'week' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
             )}
           >
             Неделя
@@ -1353,26 +1400,10 @@ const [editOpen, setEditOpen] = useState(false)
             }}
             className={cn(
               'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
-              planView === 'month'
-                ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100'
-                : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
+              planView === 'month' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
             )}
           >
             Месяц
-          </button>
-          <button
-            onClick={() => {
-              setPlanView('range')
-              setAnchorDate(dateFrom)
-            }}
-            className={cn(
-              'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
-              planView === 'range'
-                ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100'
-                : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
-            )}
-          >
-            Период
           </button>
 
           <div className="mx-2 h-7 w-px bg-yellow-400/10" />
@@ -1381,9 +1412,7 @@ const [editOpen, setEditOpen] = useState(false)
             onClick={() => setPlanMode('workers')}
             className={cn(
               'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
-              planMode === 'workers'
-                ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100'
-                : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
+              planMode === 'workers' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
             )}
           >
             По работникам
@@ -1392,9 +1421,7 @@ const [editOpen, setEditOpen] = useState(false)
             onClick={() => setPlanMode('sites')}
             className={cn(
               'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
-              planMode === 'sites'
-                ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100'
-                : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
+              planMode === 'sites' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
             )}
           >
             По объектам
@@ -1402,80 +1429,30 @@ const [editOpen, setEditOpen] = useState(false)
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {isRange ? (
-            <>
-              <label className="grid gap-1">
-                <span className="text-[11px] text-zinc-300">С</span>
-                <input
-                  type="date"
-                  value={dateFrom}
-                  onChange={(e) => {
-                    const v = e.target.value
-                    setDateFrom(v)
-                    setAnchorDate(v)
-                    if (dateTo && v && v > dateTo) setDateTo(v)
-                  }}
-                  className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs text-zinc-200 outline-none transition focus:border-yellow-300/60"
-                />
-              </label>
+          <label className="grid gap-1">
+            <span className="text-[11px] text-zinc-300">Дата</span>
+            <input
+              type="date"
+              value={anchorDate}
+              onChange={(e) => {
+                const v = e.target.value
+                setAnchorDate(v)
+                recalcRange(planView, v)
+              }}
+              className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs text-zinc-200 outline-none transition focus:border-yellow-300/60"
+            />
+          </label>
 
-              <label className="grid gap-1">
-                <span className="text-[11px] text-zinc-300">По</span>
-                <input
-                  type="date"
-                  value={dateTo}
-                  onChange={(e) => {
-                    const v = e.target.value
-                    setDateTo(v)
-                    if (dateFrom && v && v < dateFrom) {
-                      setDateFrom(v)
-                      setAnchorDate(v)
-                    }
-                  }}
-                  className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs text-zinc-200 outline-none transition focus:border-yellow-300/60"
-                />
-              </label>
-
-              <button
-                onClick={() => {
-                  const t = toISODate(new Date())
-                  setDateFrom(t)
-                  setDateTo(t)
-                  setAnchorDate(t)
-                }}
-                className="mt-5 rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/40"
-              >
-                Сегодня
-              </button>
-            </>
-          ) : (
-            <>
-              <label className="grid gap-1">
-                <span className="text-[11px] text-zinc-300">Дата</span>
-                <input
-                  type="date"
-                  value={anchorDate}
-                  onChange={(e) => {
-                    const v = e.target.value
-                    setAnchorDate(v)
-                    recalcRange(planView, v)
-                  }}
-                  className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs text-zinc-200 outline-none transition focus:border-yellow-300/60"
-                />
-              </label>
-
-              <button
-                onClick={() => {
-                  const t = toISODate(new Date())
-                  setAnchorDate(t)
-                  recalcRange(planView, t)
-                }}
-                className="mt-5 rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/40"
-              >
-                Сегодня
-              </button>
-            </>
-          )}
+          <button
+            onClick={() => {
+              const t = toISODate(new Date())
+              setAnchorDate(t)
+              recalcRange(planView, t)
+            }}
+            className="mt-5 rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/40"
+          >
+            Сегодня
+          </button>
 
           <button
             onClick={() => {
@@ -2007,50 +1984,6 @@ const [editOpen, setEditOpen] = useState(false)
                                           }}
                                         />
 
-                                        <label
-                                          title={archived ? 'Архивный объект' : photos.length >= 5 ? 'Лимит фото: 5' : 'Загрузить фото'}
-                                          className={cn(
-                                            'rounded-2xl border border-yellow-300/35 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15',
-                                            photoBusy || busy || archived || photos.length >= 5 ? 'opacity-60' : ''
-                                          )}
-                                        >
-                                          Фото
-                                          <input
-                                            type="file"
-                                            accept="image/*"
-                                            multiple
-                                            disabled={photoBusy || busy || archived || photos.length >= 5}
-                                            className="sr-only"
-                                            onChange={async (e) => {
-                                              const files = e.target.files
-                                              e.target.value = ''
-                                              await uploadSitePhotos(s.id, files)
-                                            }}
-                                          />
-                                        </label>
-
-                                        <label
-                                          title={archived ? 'Архивный объект' : photos.length >= 5 ? 'Лимит фото: 5' : 'Сделать фото'}
-                                          className={cn(
-                                            'rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 transition hover:border-yellow-300/40',
-                                            photoBusy || busy || archived || photos.length >= 5 ? 'opacity-60' : ''
-                                          )}
-                                        >
-                                          Камера
-                                          <input
-                                            type="file"
-                                            accept="image/*"
-                                            capture="environment"
-                                            disabled={photoBusy || busy || archived || photos.length >= 5}
-                                            className="sr-only"
-                                            onChange={async (e) => {
-                                              const files = e.target.files
-                                              e.target.value = ''
-                                              await uploadSitePhotos(s.id, files)
-                                            }}
-                                          />
-                                        </label>
-
                                         <button
                                           onClick={() => openSiteCard(s)}
                                           disabled={busy}
@@ -2330,7 +2263,7 @@ const [editOpen, setEditOpen] = useState(false)
                                         accept="image/*"
                                         multiple
                                         disabled={photoBusy || !siteCardId || siteCardPhotos.length >= 5}
-                                        className="sr-only"
+                                        className="hidden"
                                         onChange={async (e) => {
                                           const files = e.target.files
                                           e.target.value = ''
@@ -2352,7 +2285,7 @@ const [editOpen, setEditOpen] = useState(false)
                                         accept="image/*"
                                         capture="environment"
                                         disabled={photoBusy || !siteCardId || siteCardPhotos.length >= 5}
-                                        className="sr-only"
+                                        className="hidden"
                                         onChange={async (e) => {
                                           const files = e.target.files
                                           e.target.value = ''
@@ -2497,6 +2430,31 @@ const [editOpen, setEditOpen] = useState(false)
                               </button>
                             )}
                           </div>
+
+                          {!isAdmin ? (
+                            <div className="flex flex-wrap items-center justify-end gap-2">
+                              <button
+                                onClick={() => setWorkerArchived(w.id, w.active !== false)}
+                                disabled={busy}
+                                className={cn(
+                                  'rounded-2xl border px-4 py-2 text-xs font-semibold transition disabled:opacity-60',
+                                  w.active === false
+                                    ? 'border-yellow-300/45 bg-yellow-400/10 text-yellow-100 hover:border-yellow-200/70 hover:bg-yellow-400/15'
+                                    : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
+                                )}
+                              >
+                                {w.active === false ? 'Вернуть из архива' : 'Архивировать'}
+                              </button>
+
+                              <button
+                                onClick={() => deleteWorker(w.id)}
+                                disabled={busy}
+                                className="rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-2 text-xs font-semibold text-red-100 transition hover:border-red-300/40 hover:bg-red-500/15 disabled:opacity-60"
+                              >
+                                Удалить
+                              </button>
+                            </div>
+                          ) : null}
 
                           {!isAdmin ? (
                             <div className="flex flex-wrap items-end gap-2">
@@ -2813,7 +2771,7 @@ const [editOpen, setEditOpen] = useState(false)
             <div className="mt-6">
               <PlanToolbar />
 
-              {planView === 'week' || planView === 'range' ? <PlanWeekGrid /> : null}
+              {planView === 'week' ? <PlanWeekGrid /> : null}
               {planView === 'day' ? <PlanDayGrid /> : null}
               {planView === 'month' ? <PlanMonthGrid /> : null}
 
