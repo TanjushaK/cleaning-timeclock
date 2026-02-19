@@ -1134,7 +1134,7 @@ const [editOpen, setEditOpen] = useState(false)
     }
   }
 
-  async function uploadSitePhotos(siteId: string, files: FileList | null) {
+  async function uploadSitePhotos(siteId: string, files: File[] | null) {
     if (!files || files.length === 0) return
 
     setPhotoBusy(true)
@@ -2561,8 +2561,9 @@ const [editOpen, setEditOpen] = useState(false)
                                         disabled={photoBusy || !siteCardId || siteCardPhotos.length >= 5}
                                         className="hidden"
                                         onChange={async (e) => {
-                                          const files = e.target.files
-                                          e.target.value = ''
+                                          const input = e.target as HTMLInputElement
+                                          const files = input.files ? Array.from(input.files) : []
+                                          input.value = ''
                                           if (!siteCardId) return
                                           await uploadSitePhotos(siteCardId, files)
                                         }}
@@ -2583,8 +2584,9 @@ const [editOpen, setEditOpen] = useState(false)
                                         disabled={photoBusy || !siteCardId || siteCardPhotos.length >= 5}
                                         className="hidden"
                                         onChange={async (e) => {
-                                          const files = e.target.files
-                                          e.target.value = ''
+                                          const input = e.target as HTMLInputElement
+                                          const files = input.files ? Array.from(input.files) : []
+                                          input.value = ''
                                           if (!siteCardId) return
                                           await uploadSitePhotos(siteCardId, files)
                                         }}
