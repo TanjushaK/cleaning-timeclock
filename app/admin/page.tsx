@@ -1,13 +1,13 @@
 'use client'
 
 import Image from 'next/image'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 
 // Cache access token in-memory to avoid calling supabase.auth.getSession() on every request (can occasionally hang)
 let TOKEN_CACHE: string | null = null
 
-type TabKey = 'sites' | 'workers' | 'jobs' | 'plan'
+type TabKey = 'sites' | 'workers' | 'jobs' | 'plan' | 'reports'
 type JobsView = 'board' | 'table'
 type PlanView = 'day' | 'week' | 'month'
 type PlanMode = 'workers' | 'sites'
@@ -112,6 +112,23 @@ function endOfWeek(d: Date) {
   return e
 }
 
+function buildPayrollPeriods(count: number) {
+  // 4-недельные периоды (28 дней), якорь — понедельник текущей недели
+  const today = new Date()
+  const currentStart = startOfWeek(today) // Monday
+  const periods: { from: string; to: string; label: string }[] = []
+  for (let i = 0; i < count; i++) {
+    const s = new Date(currentStart)
+    s.setDate(s.getDate() - i * 28)
+    const e = new Date(s)
+    e.setDate(e.getDate() + 27)
+    const from = toISODate(s)
+    const to = toISODate(e)
+    periods.push({ from, to, label: `${fmtD(from)} — ${fmtD(to)}` })
+  }
+  return periods
+}
+
 function startOfMonth(d: Date) {
   return new Date(d.getFullYear(), d.getMonth(), 1)
 }
@@ -156,6 +173,14 @@ function timeRangeHHMM(from?: string | null, to?: string | null) {
   if (a === '—') return a
   if (b && b !== '—') return `${a}–${b}`
   return a
+}
+
+
+function fmtMinutesHM(totalMinutes: number) {
+  const mins = Math.max(0, Math.floor(totalMinutes || 0))
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return `${h}:${pad2(m)}`
 }
 
 function statusRu(s: string) {
@@ -558,6 +583,333 @@ function MultiWorkerPicker(props: {
 
 type DragPayload = {
   job_id: string
+}
+
+
+// Reports panel (time totals) — isolated component to keep AdminPage hooks stable
+function payrollForReports(d: Date) {
+  const day = d.getDate()
+  const y = d.getFullYear()
+  const m = d.getMonth() // 0-based
+  const from = new Date(y, m, 16)
+  if (day < 16) from.setMonth(from.getMonth() - 1)
+  const to = new Date(from)
+  to.setMonth(to.getMonth() + 1)
+  to.setDate(15)
+  return { from: toISODate(from), to: toISODate(to) }
+}
+
+function ReportsPanel() {
+  const initialPayroll = useMemo(() => payrollForReports(new Date()), [])
+  const [reportsView, setReportsView] = useState<'workers' | 'sites'>('workers')
+  const [reportPickerOpen, setReportPickerOpen] = useState(false)
+  const [reportPickerTab, setReportPickerTab] = useState<'payroll' | 'custom'>('payroll')
+  const [reportFrom, setReportFrom] = useState<string>(initialPayroll.from)
+  const [reportTo, setReportTo] = useState<string>(initialPayroll.to)
+  const [reportPayrollFrom, setReportPayrollFrom] = useState<string>(initialPayroll.from)
+  const [reportPayrollTo, setReportPayrollTo] = useState<string>(initialPayroll.to)
+  const [reportLoading, setReportLoading] = useState(false)
+  const [reportError, setReportError] = useState<string | null>(null)
+  const [reportSearch, setReportSearch] = useState('')
+  const [reportData, setReportData] = useState<
+    | null
+    | {
+        from: string
+        to: string
+        total_minutes: number
+        by_worker: Array<{ worker_id: string; worker_name: string | null; avatar_url: string | null; minutes: number }>
+        by_site: Array<{ site_id: string; site_name: string | null; minutes: number }>
+      }
+  >(null)
+
+  const payrollOptions = useMemo(() => {
+    const opts: Array<{ from: string; to: string; label: string; year: number }> = []
+    const now = new Date()
+    // last 24 payroll periods (16 -> 15)
+    for (let i = 0; i < 24; i++) {
+      const d = new Date(now)
+      d.setMonth(d.getMonth() - i)
+      const p = payrollForReports(d)
+      const fromD = fmtD(p.from)
+      const toD = fmtD(p.to)
+      const label = `${fromD} — ${toD}`
+      opts.push({ from: p.from, to: p.to, label, year: new Date(p.from).getFullYear() })
+    }
+    return opts
+  }, [])
+
+  const loadReports = useCallback(async (fromISO: string, toISO: string) => {
+    setReportLoading(true)
+    setReportError(null)
+    try {
+      const data = await authFetchJson<{
+        from: string
+        to: string
+        total_minutes: number
+        by_worker: Array<{ worker_id: string; worker_name: string | null; avatar_url: string | null; minutes: number }>
+        by_site: Array<{ site_id: string; site_name: string | null; minutes: number }>
+      }>(`/api/admin/reports?from=${encodeURIComponent(fromISO)}&to=${encodeURIComponent(toISO)}`)
+
+      setReportData(data)
+    } catch (e: any) {
+      setReportError(String(e?.message || 'Ошибка отчёта'))
+      setReportData(null)
+    } finally {
+      setReportLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadReports(reportFrom, reportTo)
+  }, [loadReports, reportFrom, reportTo])
+
+  return (
+  <div className="mt-6 grid gap-4">
+    <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-yellow-100">Контроль рабочего времени</div>
+          <div className="mt-1 text-xs text-zinc-300">
+            Период: {fmtD(reportFrom)} — {fmtD(reportTo)}
+          </div>
+        </div>
+  
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setReportPickerOpen(true)}
+            className="rounded-2xl border border-yellow-400/25 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/50"
+          >
+            Выбрать период
+          </button>
+  
+          <div className="flex items-center gap-2 rounded-2xl border border-yellow-400/10 bg-black/25 p-1">
+            <button
+              type="button"
+              onClick={() => setReportsView('workers')}
+              className={cn(
+                'rounded-2xl px-3 py-2 text-[11px] font-semibold transition',
+                reportsView === 'workers' ? 'bg-yellow-400/10 text-yellow-100' : 'text-zinc-200 hover:text-yellow-100'
+              )}
+            >
+              По работникам
+            </button>
+            <button
+              type="button"
+              onClick={() => setReportsView('sites')}
+              className={cn(
+                'rounded-2xl px-3 py-2 text-[11px] font-semibold transition',
+                reportsView === 'sites' ? 'bg-yellow-400/10 text-yellow-100' : 'text-zinc-200 hover:text-yellow-100'
+              )}
+            >
+              По объектам
+            </button>
+          </div>
+        </div>
+      </div>
+  
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <div className="rounded-3xl border border-yellow-400/10 bg-black/30 p-4">
+          <div className="text-[11px] text-zinc-300">Итог периода</div>
+          <div className="mt-1 text-2xl font-semibold tracking-tight text-yellow-100">
+            {fmtMinutesHM(reportData?.total_minutes ?? 0)}
+          </div>
+          <div className="mt-1 text-[11px] text-zinc-400">часы:минуты</div>
+        </div>
+  
+        <div className="rounded-3xl border border-yellow-400/10 bg-black/30 p-4 md:col-span-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-[11px] text-zinc-300">Поиск</div>
+            <div className="text-[11px] text-zinc-400">{reportLoading ? 'Считаю…' : reportData ? 'Готово' : '—'}</div>
+          </div>
+          <input
+            value={reportSearch}
+            onChange={(e) => setReportSearch(e.target.value)}
+            placeholder="Имя работника / объект"
+            className="mt-2 w-full rounded-2xl border border-yellow-400/15 bg-black/35 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 outline-none focus:border-yellow-300/40"
+          />
+          {reportError ? (
+            <div className="mt-2 rounded-2xl border border-red-500/30 bg-red-950/30 px-3 py-2 text-xs text-red-100">{reportError}</div>
+          ) : null}
+        </div>
+      </div>
+  
+      <div className="mt-4 overflow-hidden rounded-3xl border border-yellow-400/10 bg-black/25">
+        {(reportsView === 'workers' ? reportData?.by_worker ?? [] : reportData?.by_site ?? [])
+          .filter((x: any) => {
+            const q = reportSearch.trim().toLowerCase()
+            if (!q) return true
+            const name = (reportsView === 'workers' ? x.worker_name : x.site_name) ?? ''
+            return String(name).toLowerCase().includes(q)
+          })
+          .map((x: any) => {
+            const id = reportsView === 'workers' ? x.worker_id : x.site_id
+            const title = (reportsView === 'workers' ? x.worker_name : x.site_name) ?? '—'
+            const avatarUrl = reportsView === 'workers' ? x.avatar_url : null
+  
+            return (
+              <div
+                key={id}
+                className="flex items-center justify-between gap-3 border-b border-yellow-400/5 px-4 py-3 last:border-b-0"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="relative h-10 w-10 overflow-hidden rounded-2xl border border-yellow-400/15 bg-black/40">
+                    {avatarUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-zinc-200">
+                        {reportsView === 'workers' ? initials(title) : '🏠'}
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold text-zinc-100">{title}</div>
+                    <div className="mt-0.5 text-[11px] text-zinc-400">{reportsView === 'workers' ? 'Работник' : 'Объект'}</div>
+                  </div>
+                </div>
+  
+                <div className="shrink-0 rounded-2xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-sm font-semibold text-yellow-100">
+                  {fmtMinutesHM(Number(x.minutes) || 0)}
+                </div>
+              </div>
+            )
+          })}
+  
+        {!reportLoading &&
+        (reportsView === 'workers' ? (reportData?.by_worker?.length ?? 0) : (reportData?.by_site?.length ?? 0)) === 0 ? (
+          <div className="px-4 py-6 text-center text-sm text-zinc-400">Нет данных за выбранный период</div>
+        ) : null}
+      </div>
+    </div>
+  
+    {/* Picker modal */}
+    {reportPickerOpen ? (
+      <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4">
+        <div className="w-full max-w-xl overflow-hidden rounded-3xl border border-yellow-400/15 bg-zinc-950/95 shadow-[0_20px_80px_rgba(0,0,0,0.75)] backdrop-blur">
+          <div className="flex items-center justify-between gap-2 border-b border-yellow-400/10 px-5 py-4">
+            <div className="text-sm font-semibold text-yellow-100">Период отчёта</div>
+            <button
+              type="button"
+              onClick={() => setReportPickerOpen(false)}
+              className="rounded-2xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-xs text-zinc-200 hover:border-yellow-300/40"
+            >
+              Закрыть
+            </button>
+          </div>
+  
+          <div className="px-5 pt-4">
+            <div className="flex items-center gap-2 rounded-2xl border border-yellow-400/10 bg-black/25 p-1">
+              <button
+                type="button"
+                onClick={() => setReportPickerTab('payroll')}
+                className={cn(
+                  'flex-1 rounded-2xl px-3 py-2 text-[11px] font-semibold transition',
+                  reportPickerTab === 'payroll' ? 'bg-yellow-400/10 text-yellow-100' : 'text-zinc-200 hover:text-yellow-100'
+                )}
+              >
+                Платёжный период
+              </button>
+              <button
+                type="button"
+                onClick={() => setReportPickerTab('custom')}
+                className={cn(
+                  'flex-1 rounded-2xl px-3 py-2 text-[11px] font-semibold transition',
+                  reportPickerTab === 'custom' ? 'bg-yellow-400/10 text-yellow-100' : 'text-zinc-200 hover:text-yellow-100'
+                )}
+              >
+                Пользовательские даты
+              </button>
+            </div>
+  
+            {reportPickerTab === 'custom' ? (
+              <div className="mt-4 grid gap-3">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <label className="grid gap-1 text-xs text-zinc-300">
+                    С
+                    <input
+                      type="date"
+                      value={reportFrom}
+                      onChange={(e) => setReportFrom(e.target.value)}
+                      className="w-full rounded-2xl border border-yellow-400/15 bg-black/35 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-yellow-300/40"
+                    />
+                  </label>
+                  <label className="grid gap-1 text-xs text-zinc-300">
+                    До
+                    <input
+                      type="date"
+                      value={reportTo}
+                      onChange={(e) => setReportTo(e.target.value)}
+                      className="w-full rounded-2xl border border-yellow-400/15 bg-black/35 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-yellow-300/40"
+                    />
+                  </label>
+                </div>
+  
+                <div className="text-[11px] text-zinc-400">
+                  Можно выставить хоть один день, хоть «сто лет» — серверу всё равно, если база выдержит.
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4 max-h-[52vh] overflow-auto rounded-3xl border border-yellow-400/10 bg-black/25">
+                {payrollOptions.map((p) => {
+                  const checked = reportPayrollFrom === p.from && reportPayrollTo === p.to
+                  return (
+                    <button
+                      key={p.from}
+                      type="button"
+                      onClick={() => {
+                        setReportPayrollFrom(p.from)
+                        setReportPayrollTo(p.to)
+                      }}
+                      className={cn(
+                        'flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm',
+                        'border-b border-yellow-400/5 last:border-b-0 hover:bg-yellow-400/5'
+                      )}
+                    >
+                      <span className="text-zinc-100">
+                        {p.label} <span className="ml-2 text-[11px] text-zinc-400">{p.year}</span>
+                      </span>
+                      <span
+                        className={cn(
+                          'rounded-xl border px-2 py-1 text-[11px]',
+                          checked ? 'border-yellow-300/60 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-300'
+                        )}
+                      >
+                        {checked ? 'выбран' : ' '}
+                      </span>
+                    </button>
+                  )
+                })}              </div>
+            )}
+          </div>
+  
+          <div className="mt-4 flex items-center justify-between gap-3 border-t border-yellow-400/10 px-5 py-4">
+            <button
+              type="button"
+              onClick={() => setReportPickerOpen(false)}
+              className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-sm text-zinc-200 hover:border-yellow-300/40"
+            >
+              Отмена
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (reportPickerTab === 'payroll') {
+                  setReportFrom(reportPayrollFrom)
+                  setReportTo(reportPayrollTo)
+                }
+                setReportPickerOpen(false)
+              }}
+              className="rounded-2xl border border-yellow-400/40 bg-yellow-400/15 px-5 py-2 text-sm font-semibold text-yellow-100 hover:border-yellow-300/70"
+            >
+              Применить
+            </button>
+          </div>
+        </div>
+      </div>
+    ) : null}
+  </div>
+  )
 }
 
 export default function AdminPage() {
@@ -2058,6 +2410,14 @@ const [editOpen, setEditOpen] = useState(false)
     )
   }
 
+
+  function payrollLabel(fromISO: string, toISO: string) {
+    const f = fmtD(fromISO)
+    const tt = fmtD(toISO)
+    return `${f.slice(0, 5)} - ${tt.slice(0, 5)}`
+  }
+
+
   return (
     <main className="min-h-screen bg-gradient-to-b from-zinc-950 via-black to-zinc-950 text-zinc-100">
       <div className="mx-auto max-w-6xl px-4 py-8">
@@ -2094,7 +2454,7 @@ const [editOpen, setEditOpen] = useState(false)
         <div className="rounded-3xl border border-yellow-400/20 bg-zinc-950/50 p-6 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              {(['sites', 'workers', 'jobs', 'plan'] as TabKey[]).map((k) => (
+              {(['sites', 'workers', 'jobs', 'plan', 'reports'] as TabKey[]).map((k) => (
                 <button
                   key={k}
                   onClick={() => setTab(k)}
@@ -2103,7 +2463,7 @@ const [editOpen, setEditOpen] = useState(false)
                     tab === k ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
                   )}
                 >
-                  {k === 'sites' ? 'Объекты' : k === 'workers' ? 'Работники' : k === 'jobs' ? 'Смены' : 'График'}
+                  {k === 'sites' ? 'Объекты' : k === 'workers' ? 'Работники' : k === 'jobs' ? 'Смены' : k === 'plan' ? 'График' : 'Отчёты'}
                 </button>
               ))}
             </div>
@@ -2130,6 +2490,15 @@ const [editOpen, setEditOpen] = useState(false)
           {error ? (
             <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-950/30 px-4 py-3 text-sm text-red-100">{error}</div>
           ) : null}
+
+
+          {/* ОТЧЁТЫ */}
+          {/* ОТЧЁТЫ */}
+          {tab === 'reports' ? (
+            <ReportsPanel />
+          ) : null}
+
+
 
           {/* ОБЪЕКТЫ */}
                     {tab === 'sites' ? (
@@ -3535,4 +3904,3 @@ const [editOpen, setEditOpen] = useState(false)
     </main>
   )
 }
-
