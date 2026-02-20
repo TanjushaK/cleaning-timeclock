@@ -28,8 +28,11 @@ type AdminGuard = UserGuard & {
 }
 
 function cleanEnv(v: string): string {
-  // Убираем BOM (U+FEFF) и лишние пробелы — это лечит ByteString-crash в fetch headers
-  return String(v || '').replace(/^\uFEFF/, '').trim()
+  const s = String(v || '').replace(/\uFEFF/g, '').trim()
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    return s.slice(1, -1).trim()
+  }
+  return s
 }
 
 function mustEnv(name: string): string {

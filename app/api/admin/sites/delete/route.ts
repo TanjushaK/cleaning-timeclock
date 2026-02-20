@@ -8,8 +8,16 @@ function bearer(req: NextRequest) {
   return m?.[1] || null
 }
 
+function cleanEnv(v: string | undefined | null): string {
+  const s = String(v ?? '').replace(/\uFEFF/g, '').trim()
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    return s.slice(1, -1).trim()
+  }
+  return s
+}
+
 function envOrThrow(name: string) {
-  const v = process.env[name]
+  const v = cleanEnv(process.env[name])
   if (!v) throw new Error(`Missing env: ${name}`)
   return v
 }
