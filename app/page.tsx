@@ -9,6 +9,7 @@ interface Job {
   status: string;
   site_id?: string;
   worker_id?: string;
+  title?: string;
 }
 type JobStatus = "planned" | "in_progress" | "done";
 
