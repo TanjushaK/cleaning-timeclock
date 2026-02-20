@@ -1,23 +1,25 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
-function cleanEnv(v: string | undefined | null): string {
-  // Убираем BOM (U+FEFF) и лишние пробелы — частая причина ByteString ошибок после copy/paste в Vercel
-  const s = String(v ?? '').replace(/^\uFEFF/, '').trim()
-  // Иногда Vercel/копипаст оставляет кавычки
-  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
-    return s.slice(1, -1).trim()
-  }
-  return s
+function cleanEnv(v: string): string {
+  return String(v || '').replace(/^\uFEFF/, '').trim()
 }
 
 function mustEnv(name: string): string {
-  const v = cleanEnv(process.env[name])
+  const raw = process.env[name]
+  const v = cleanEnv(raw || '')
   if (!v) throw new Error(`Missing env: ${name}`)
   return v
 }
 
-export function supabaseAdminClient() {
+let _admin: SupabaseClient | null = null
+
+// ВАЖНО: export именно с этим именем — его импортят routes (archive/anonymize/toggle-active и т.д.)
+export function getSupabaseAdmin(): SupabaseClient {
+  if (_admin) return _admin
   const url = mustEnv('NEXT_PUBLIC_SUPABASE_URL')
-  const service = mustEnv('SUPABASE_SERVICE_ROLE_KEY')
-  return createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } })
+  const key = mustEnv('SUPABASE_SERVICE_ROLE_KEY')
+  _admin = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
+  return _admin
 }

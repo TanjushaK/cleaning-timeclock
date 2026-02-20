@@ -1,65 +1,103 @@
-import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-
-function cleanEnv(v: string | undefined | null): string {
-  // Убираем BOM (U+FEFF) и лишние пробелы — частая причина ByteString ошибок после copy/paste в Vercel
-  const s = String(v ?? '').replace(/^\uFEFF/, '').trim()
-  // Иногда Vercel/копипаст оставляет кавычки
-  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
-    return s.slice(1, -1).trim()
-  }
-  return s
-}
-
-function mustEnv(name: string): string {
-  const v = cleanEnv(process.env[name])
-  if (!v) throw new Error(`Missing env: ${name}`)
-  return v
-}
+import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js'
 
 export class ApiError extends Error {
   status: number
+
   constructor(status: number, message: string) {
     super(message)
     this.status = status
   }
 }
 
-export function toErrorResponse(err: any) {
-  const status = typeof err?.status === 'number' ? err.status : 500
-  const message =
-    typeof err?.message === 'string' && err.message
-      ? err.message
-      : 'Ошибка сервера. Смотри логи.'
-  return NextResponse.json({ error: message }, { status })
+type ProfileRow = {
+  id: string
+  role: string | null
+  active: boolean | null
 }
 
-export async function requireAdmin(headers: Headers) {
-  const auth = headers.get('authorization') || headers.get('Authorization') || ''
-  if (!auth.toLowerCase().startsWith('bearer ')) {
-    throw new ApiError(401, 'Нет токена. Войдите снова.')
-  }
-  const token = auth.slice(7).trim()
-  if (!token) throw new ApiError(401, 'Пустой токен. Войдите снова.')
+type UserGuard = {
+  supabase: SupabaseClient
+  token: string
+  user: User
+  userId: string
+}
 
+type AdminGuard = UserGuard & {
+  profile: ProfileRow
+}
+
+function cleanEnv(v: string): string {
+  // Убираем BOM (U+FEFF) и лишние пробелы — это лечит ByteString-crash в fetch headers
+  return String(v || '').replace(/^\uFEFF/, '').trim()
+}
+
+function mustEnv(name: string): string {
+  const raw = process.env[name]
+  const v = cleanEnv(raw || '')
+  if (!v) throw new ApiError(500, `Missing env: ${name}`)
+  return v
+}
+
+let _service: SupabaseClient | null = null
+
+// ВАЖНО: export именно с этим именем — его импортят другие роуты
+export function supabaseService(): SupabaseClient {
+  if (_service) return _service
   const url = mustEnv('NEXT_PUBLIC_SUPABASE_URL')
-  const serviceKey = mustEnv('SUPABASE_SERVICE_ROLE_KEY')
-  const supabase = createClient(url, serviceKey, {
+  const key = mustEnv('SUPABASE_SERVICE_ROLE_KEY')
+  _service = createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   })
+  return _service
+}
 
-  const { data: userRes, error: userErr } = await supabase.auth.getUser(token)
-  if (userErr || !userRes?.user) throw new ApiError(401, 'Сессия истекла. Войдите снова.')
+function getBearer(headers: Headers): string | null {
+  const auth = headers.get('authorization') || headers.get('Authorization') || ''
+  const m = auth.match(/^Bearer\s+(.+)$/i)
+  const token = m?.[1]?.trim()
+  return token || null
+}
 
-  const user = userRes.user
-  const { data: prof, error: profErr } = await supabase
+export async function requireUser(reqOrHeaders: Request | Headers): Promise<UserGuard> {
+  const headers = reqOrHeaders instanceof Headers ? reqOrHeaders : reqOrHeaders.headers
+  const token = getBearer(headers)
+
+  if (!token) {
+    throw new ApiError(401, 'Нет токена (Authorization: Bearer ...)')
+  }
+
+  const supabase = supabaseService()
+  const { data, error } = await supabase.auth.getUser(token)
+
+  if (error || !data?.user) {
+    throw new ApiError(401, 'Токен неверный/просрочен (перелогинься)')
+  }
+
+  return { supabase, token, user: data.user, userId: data.user.id }
+}
+
+export async function requireAdmin(reqOrHeaders: Request | Headers): Promise<AdminGuard> {
+  const guard = await requireUser(reqOrHeaders)
+
+  const { data: prof, error: profErr } = await guard.supabase
     .from('profiles')
-    .select('id,role')
-    .eq('id', user.id)
+    .select('id, role, active')
+    .eq('id', guard.userId)
     .maybeSingle()
 
-  if (profErr) throw new ApiError(500, profErr.message)
-  if (!prof || prof.role !== 'admin') throw new ApiError(403, 'Нет доступа администратора.')
+  if (profErr || !prof) throw new ApiError(403, 'Нет профиля (profiles) или нет доступа')
+  if (prof.role !== 'admin' || prof.active !== true) throw new ApiError(403, 'Нужна роль admin и active=true')
 
-  return { supabase, user }
+  return { ...guard, profile: prof as ProfileRow }
+}
+
+export function toErrorResponse(err: unknown): NextResponse {
+  if (err instanceof ApiError) {
+    return NextResponse.json({ error: err.message }, { status: err.status })
+  }
+  if (err instanceof Error) {
+    return NextResponse.json({ error: err.message }, { status: 500 })
+  }
+  return NextResponse.json({ error: 'Unknown error' }, { status: 500 })
 }
