@@ -1,27 +1,19 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js'
 
-let browserClient: SupabaseClient | null = null;
-
-export function getSupabaseBrowser(): SupabaseClient {
-  if (browserClient) return browserClient;
-
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!url || !anon) {
-    throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY');
+function cleanEnv(v: string | undefined | null): string {
+  // Убираем BOM (U+FEFF) и лишние пробелы — частая причина ByteString ошибок после copy/paste в Vercel
+  const s = String(v ?? '').replace(/^\uFEFF/, '').trim()
+  // Иногда Vercel/копипаст оставляет кавычки
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    return s.slice(1, -1).trim()
   }
-
-  browserClient = createClient(url, anon, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-    },
-  });
-
-  return browserClient;
+  return s
 }
 
-// backward-compat: старый импорт { supabase } (forgot/reset pages)
-export const supabase: SupabaseClient = getSupabaseBrowser();
+const supabaseUrl = cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL)
+const supabaseAnonKey = cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
+
+if (!supabaseUrl) throw new Error('Missing env: NEXT_PUBLIC_SUPABASE_URL')
+if (!supabaseAnonKey) throw new Error('Missing env: NEXT_PUBLIC_SUPABASE_ANON_KEY')
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey)

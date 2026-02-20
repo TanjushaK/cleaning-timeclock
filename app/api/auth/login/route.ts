@@ -1,25 +1,37 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 export const runtime = 'nodejs'
 
+function cleanEnv(v: string | undefined | null): string {
+  // Убираем BOM (U+FEFF) и лишние пробелы — частая причина ByteString ошибок после copy/paste в Vercel
+  const s = String(v ?? '').replace(/^\uFEFF/, '').trim()
+  // Иногда Vercel/копипаст оставляет кавычки
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    return s.slice(1, -1).trim()
+  }
+  return s
+}
+
 function mustEnv(name: string): string {
-  const v = process.env[name]
+  const v = cleanEnv(process.env[name])
   if (!v) throw new Error(`Missing env: ${name}`)
   return v
 }
 
-function isProd(): boolean {
-  return process.env.NODE_ENV === 'production'
+function json(status: number, data: any) {
+  return new NextResponse(JSON.stringify(data), {
+    status,
+    headers: { 'content-type': 'application/json; charset=utf-8' },
+  })
 }
 
-export async function POST(req: NextRequest) {
+export async function POST(req: Request) {
   try {
-    const { email, password } = await req.json()
-
-    if (!email || !password) {
-      return NextResponse.json({ error: 'Нужны email и пароль' }, { status: 400 })
-    }
+    const body = await req.json().catch(() => ({}))
+    const email = String(body?.email || '').trim()
+    const password = String(body?.password || '').trim()
+    if (!email || !password) return json(400, { error: 'Email/пароль обязательны' })
 
     const url = mustEnv('NEXT_PUBLIC_SUPABASE_URL')
     const anon = mustEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY')
@@ -29,36 +41,15 @@ export async function POST(req: NextRequest) {
     })
 
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error || !data?.session) {
-      return NextResponse.json({ error: error?.message || 'Login failed' }, { status: 401 })
-    }
+    if (error || !data?.session) return json(401, { error: error?.message || 'Неверный логин/пароль' })
 
-    const access_token = data.session.access_token
-    const refresh_token = data.session.refresh_token
-
-    // Важно: cookies нужны для запросов с FormData (где часто забывают Authorization header).
-    const res = NextResponse.json({ access_token, refresh_token }, { status: 200 })
-
-    // Localhost: secure=false, иначе cookie не сохранится.
-    // SameSite=Lax достаточно для same-origin запросов.
-    res.cookies.set('ct_access_token', access_token, {
-      httpOnly: true,
-      secure: isProd(),
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60, // 1h
+    return json(200, {
+      access_token: data.session.access_token,
+      refresh_token: data.session.refresh_token,
+      user: data.user,
     })
-    res.cookies.set('ct_refresh_token', refresh_token, {
-      httpOnly: true,
-      secure: isProd(),
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60 * 24 * 30, // 30d
-    })
-
-    return res
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : 'Unknown error'
-    return NextResponse.json({ error: msg }, { status: 500 })
+  } catch (e: any) {
+    // важный момент: отдаём реальную причину, иначе сложно дебажить Vercel env
+    return json(500, { error: String(e?.message || e) })
   }
 }

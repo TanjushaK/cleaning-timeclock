@@ -1,26 +1,31 @@
-// lib/supabase-route.ts
-import { cookies } from 'next/headers';
-import { createServerClient } from '@supabase/ssr';
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js'
 
-type CookieToSet = { name: string; value: string; options: any };
+function cleanEnv(v: string | undefined | null): string {
+  // Убираем BOM (U+FEFF) и лишние пробелы — частая причина ByteString ошибок после copy/paste в Vercel
+  const s = String(v ?? '').replace(/^\uFEFF/, '').trim()
+  // Иногда Vercel/копипаст оставляет кавычки
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    return s.slice(1, -1).trim()
+  }
+  return s
+}
 
-export async function supabaseRouteClient(): Promise<SupabaseClient> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+function mustEnv(name: string): string {
+  const v = cleanEnv(process.env[name])
+  if (!v) throw new Error(`Missing env: ${name}`)
+  return v
+}
 
-  const cookieStore = await cookies();
+export function supabaseRouteClient(accessToken?: string) {
+  const url = mustEnv('NEXT_PUBLIC_SUPABASE_URL')
+  const anon = mustEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY')
 
-  return createServerClient(url, anon, {
-    cookies: {
-      getAll() {
-        return cookieStore.getAll();
-      },
-      setAll(cookiesToSet: CookieToSet[]) {
-        for (const c of cookiesToSet) {
-          cookieStore.set(c.name, c.value, c.options);
+  return createClient(url, anon, {
+    global: accessToken
+      ? {
+          headers: { Authorization: `Bearer ${accessToken}` },
         }
-      },
-    },
-  });
+      : undefined,
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
 }
