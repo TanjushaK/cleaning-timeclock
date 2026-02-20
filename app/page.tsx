@@ -1,50 +1,51 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 
-const JobStatus = ({ status }) => {
-    // Improved error handling for JSON parsing
-    let parsedStatus;
-    try {
-        parsedStatus = JSON.parse(status);
-    } catch (error) {
-        console.error('Failed to parse status:', error);
-        return <div>Error parsing status</div>;
-    }
+const AppPage: React.FC = () => {
+    const [jobs, setJobs] = useState<Job[]>([]);
+    const [error, setError] = useState<string | null>(null);
 
-    // Better type safety for JobStatus filtering
-    if (!['pending', 'completed', 'failed'].includes(parsedStatus)) {
-        return <div>Unknown job status</div>;
-    }
+    useEffect(() => {
+        const fetchJobs = async () => {
+            try {
+                const response = await fetch('/api/jobs');
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                const data = await response.json();
+                setJobs(data);
+            } catch (err) {
+                setError('Failed to fetch jobs.');
+            }
+        };
+        fetchJobs();
+    }, []);
 
-    return <div className={`job-status ${parsedStatus}`}>{parsedStatus}</div>;
-};
-
-const ProfileSettings = ({ userData }) => {
-    // Proper sanitization and escaping of user data
-    const sanitizedUserData = {
-        name: escape(userData.name),
-        email: escape(userData.email),
+    const handleJobStatus = (status: JobStatus) => {
+        // Improved type safety here
+        return jobs.filter(job => job.status === status);
     };
 
-    // Simplified profile setting logic
-    const handleUpdate = () => {
-        // Update logic here
+    const sanitizeHTML = (html: string) => {
+        const tempDiv = document.createElement('div');
+        tempDiv.innerText = html;  // Basic HTML sanitization
+        return tempDiv.innerHTML;
+    };
+
+    const renderProfile = () => {
+        return jobs.map(job => (
+            <div key={job.id} className="profile">
+                <h3>{sanitizeHTML(job.title)}</h3>
+                <button className="bg-amber-500 hover:bg-amber-500/10">Apply</button>
+            </div>
+        ));
     };
 
     return (
         <div>
-            <h2>Profile Settings</h2>
-            <input type="text" value={sanitizedUserData.name} onChange={handleUpdate} />
-            <input type="email" value={sanitizedUserData.email} onChange={handleUpdate} />
-            <button onClick={handleUpdate}>Update</button>
+            <h1>Job Listings</h1>
+            {error ? <div className="error">{error}</div> : renderProfile()}
         </div>
     );
 };
 
-export default function App() {
-    return (
-        <div className='app p-4 hover:to-amber-500/10'>
-            <JobStatus status='{"status": "pending"}' />
-            <ProfileSettings userData={{ name: 'John Doe', email: 'john@example.com' }} />
-        </div>
-    );
-}
+export default AppPage;
