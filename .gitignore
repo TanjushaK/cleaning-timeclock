@@ -43,3 +43,9 @@ next-env.d.ts
 vercel-prod-*.log
 photo-fix-pack*.zip
 .env*.local
+# local scratch / backups (do not commit)
+.tmp/
+app/admin/_old_admin_page_*.tsx
+app/admin/*.bak.tsx
+app/admin/*.objects-backup.tsx
+app/admin/*.SITES_OK.bak.tsx

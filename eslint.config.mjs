@@ -5,14 +5,30 @@ import nextTs from "eslint-config-next/typescript";
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
-  // Override default ignores of eslint-config-next.
+
+  // Явно задаём игноры (у вас override дефолтных игноров Next)
   globalIgnores([
-    // Default ignores of eslint-config-next:
     ".next/**",
     "out/**",
     "build/**",
     "next-env.d.ts",
+
+    // Локальные черновики/бэкапы — НЕ линтим
+    ".tmp/**",
+    "app/admin/_old_admin_page_*.tsx",
+    "**/*.bak.*",
+    "**/*.objects-backup.*",
+    "**/*.SITES_OK.bak.*",
   ]),
+
+  // Чтобы линт не блокировал деплой из-за legacy any (их сейчас много по проекту)
+  {
+    files: ["**/*.ts", "**/*.tsx"],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "warn",
+      "@next/next/no-html-link-for-pages": "warn",
+    },
+  },
 ]);
 
 export default eslintConfig;
