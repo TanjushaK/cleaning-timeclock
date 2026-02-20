@@ -1,4 +1,14 @@
+'use client'
+
 import React, { useEffect, useState } from 'react';
+
+type JobStatus = 'planned' | 'in_progress' | 'done' | 'cancelled' | string
+
+type Job = {
+    id: string
+    title?: string | null
+    status?: JobStatus | null
+}
 
 const AppPage: React.FC = () => {
     const [jobs, setJobs] = useState<Job[]>([]);
@@ -7,34 +17,23 @@ const AppPage: React.FC = () => {
     useEffect(() => {
         const fetchJobs = async () => {
             try {
-                const response = await fetch('/api/jobs');
+                const response = await fetch('/api/admin/jobs');
                 if (!response.ok) {
                     throw new Error('Network response was not ok');
                 }
                 const data = await response.json();
-                setJobs(data);
-            } catch (err) {
+                setJobs(data.jobs ?? []);
+            } catch {
                 setError('Failed to fetch jobs.');
             }
         };
         fetchJobs();
     }, []);
 
-    const handleJobStatus = (status: JobStatus) => {
-        // Improved type safety here
-        return jobs.filter(job => job.status === status);
-    };
-
-    const sanitizeHTML = (html: string) => {
-        const tempDiv = document.createElement('div');
-        tempDiv.innerText = html;  // Basic HTML sanitization
-        return tempDiv.innerHTML;
-    };
-
     const renderProfile = () => {
         return jobs.map(job => (
             <div key={job.id} className="profile">
-                <h3>{sanitizeHTML(job.title)}</h3>
+                <h3>{job.title ?? 'Untitled'}</h3>
                 <button className="bg-amber-500 hover:bg-amber-500/10">Apply</button>
             </div>
         ));

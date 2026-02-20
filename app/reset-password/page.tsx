@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 
@@ -113,12 +114,12 @@ export default function ResetPasswordPage() {
             </div>
           )}
 
-          <a
+          <Link
             href="/"
             className="mt-6 block text-center text-sm text-zinc-400 underline decoration-amber-300/40 underline-offset-4 hover:text-zinc-200"
           >
             На главную
-          </a>
+          </Link>
         </div>
       </div>
     </div>
