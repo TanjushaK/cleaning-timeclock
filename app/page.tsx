@@ -47,7 +47,7 @@ const AppPage: React.FC = () => {
     const renderProfile = () => {
         return jobs.map(job => (
             <div key={job.id} className="profile">
-                <h3>{sanitizeHTML(job.title)}</h3>
+               <h3>{sanitizeHTML(job.title)}</h3>
                 <button className="bg-amber-500 hover:bg-amber-500/10">Apply</button>
             </div>
         ));
