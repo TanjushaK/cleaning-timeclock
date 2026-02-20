@@ -10,6 +10,7 @@ interface Job {
   site_id?: string;
   worker_id?: string;
 }
+type JobStatus = "planned" | "in_progress" | "done";
 
 const AppPage: React.FC = () => {
     const [jobs, setJobs] = useState<Job[]>([]);
