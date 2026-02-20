@@ -18,22 +18,23 @@ function toCategoryOrNull(v: any): number | null {
   return i
 }
 
-async function getId(params: any): Promise<string> {
-  const p = await params
-  const id = (p?.id ?? '').toString().trim()
+async function getSiteIdFromCtx(ctx: any): Promise<string> {
+  // Next 16 на build иногда типизирует params как Promise — unwrap безопасно
+  const p = await Promise.resolve(ctx?.params)
+  const id = String(p?.id || '').trim()
   if (!id) throw new ApiError(400, 'Missing site id')
   return id
 }
 
-export async function GET(req: Request, ctx: { params: Promise<{ id: string }> } | { params: { id: string } }) {
+export async function GET(req: Request, ctx: any) {
   try {
     const { supabase } = await requireAdmin(req.headers)
-    const id = await getId((ctx as any).params)
+    const siteId = await getSiteIdFromCtx(ctx)
 
     const { data, error } = await supabase
       .from('sites')
-      .select('id,name,address,lat,lng,radius,category,notes,photos,archived_at,created_at,updated_at')
-      .eq('id', id)
+      .select('id,name,address,lat,lng,radius,category,notes,photos,archived_at')
+      .eq('id', siteId)
       .single()
 
     if (error) throw new ApiError(404, 'Объект не найден')
@@ -44,38 +45,52 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   }
 }
 
-export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> } | { params: { id: string } }) {
+export async function PUT(req: Request, ctx: any) {
   try {
     const { supabase } = await requireAdmin(req.headers)
-    const id = await getId((ctx as any).params)
-
-    const body = await req.json().catch(() => ({} as any))
+    const siteId = await getSiteIdFromCtx(ctx)
+    const body = await req.json().catch(() => ({}))
 
     const name = body?.name == null ? undefined : String(body.name).trim()
-    const address = body?.address === undefined ? undefined : (body?.address == null ? null : String(body.address).trim() || null)
+    const address = body?.address == null ? undefined : String(body.address).trim() || null
 
-    const lat = body?.lat === undefined ? undefined : toFiniteOrNull(body?.lat)
-    const lng = body?.lng === undefined ? undefined : toFiniteOrNull(body?.lng)
-    const radius = body?.radius === undefined && body?.radius_m === undefined ? undefined : toFiniteOrNull(body?.radius ?? body?.radius_m)
-    const category = body?.category === undefined ? undefined : toCategoryOrNull(body?.category)
-    const notes = body?.notes === undefined ? undefined : (body?.notes == null ? null : String(body.notes))
+    const lat = body?.lat === undefined ? undefined : toFiniteOrNull(body.lat)
+    const lng = body?.lng === undefined ? undefined : toFiniteOrNull(body.lng)
 
-    // не даём случайно затереть name в пустоту
-    if (name !== undefined && !name) throw new ApiError(400, 'Нужно название объекта')
+    const radiusRaw = body?.radius ?? body?.radius_m
+    const radius = radiusRaw === undefined ? undefined : toFiniteOrNull(radiusRaw)
+
+    const category = body?.category === undefined ? undefined : toCategoryOrNull(body.category)
+    const notes = body?.notes === undefined ? undefined : (body.notes == null ? null : String(body.notes))
 
     const patch: any = {}
     if (name !== undefined) patch.name = name
     if (address !== undefined) patch.address = address
     if (lat !== undefined) patch.lat = lat
     if (lng !== undefined) patch.lng = lng
-    if (radius !== undefined) patch.radius = radius ?? 150
+    if (radius !== undefined) patch.radius = radius
     if (category !== undefined) patch.category = category
     if (notes !== undefined) patch.notes = notes
+
+    // Ничего не меняем — нечего апдейтить
+    if (Object.keys(patch).length === 0) {
+      const { data, error } = await supabase
+        .from('sites')
+        .select('id,name,address,lat,lng,radius,category,notes,photos,archived_at')
+        .eq('id', siteId)
+        .single()
+
+      if (error) throw new ApiError(404, 'Объект не найден')
+      return NextResponse.json({ site: data }, { status: 200 })
+    }
+
+    // Базовая валидация
+    if (patch.name !== undefined && !patch.name) throw new ApiError(400, 'Нужно название объекта')
 
     const { data, error } = await supabase
       .from('sites')
       .update(patch)
-      .eq('id', id)
+      .eq('id', siteId)
       .select('id,name,address,lat,lng,radius,category,notes,photos,archived_at')
       .single()
 
@@ -87,20 +102,22 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
   }
 }
 
-export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> } | { params: { id: string } }) {
+export async function DELETE(req: Request, ctx: any) {
   try {
     const { supabase } = await requireAdmin(req.headers)
-    const id = await getId((ctx as any).params)
+    const siteId = await getSiteIdFromCtx(ctx)
 
-    // Сначала проверим, что объект существует (и чтобы сообщение было человеческое)
-    const { data: exists, error: exErr } = await supabase.from('sites').select('id').eq('id', id).single()
-    if (exErr || !exists?.id) throw new ApiError(404, 'Объект не найден')
+    // 1) Пытаемся удалить сам объект.
+    // Если есть FK-ограничения — Supabase вернёт ошибку, и мы покажем понятный текст.
+    const { error } = await supabase.from('sites').delete().eq('id', siteId)
 
-    const { error } = await supabase.from('sites').delete().eq('id', id)
-
-    // Если у тебя есть FK на jobs/assignments — тут может вылезти ошибка.
-    // Тогда правильнее архивировать вместо удаления или сначала удалять связанные записи.
-    if (error) throw new ApiError(400, error.message || 'Не удалось удалить объект')
+    if (error) {
+      // Частая причина — связанные назначения/смены. Сообщаем как есть.
+      throw new ApiError(
+        409,
+        `Не удалось удалить объект. Скорее всего есть связанные данные (смены/назначения). Детали: ${error.message}`
+      )
+    }
 
     return NextResponse.json({ ok: true }, { status: 200 })
   } catch (e) {
