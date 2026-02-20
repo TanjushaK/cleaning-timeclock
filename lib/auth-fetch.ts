@@ -7,13 +7,30 @@ const LS_ACCESS = 'ct_access_token';
 const LS_REFRESH = 'ct_refresh_token';
 
 /**
+ * Some environments / copy-pastes may inject BOM (U+FEFF) or other non-ASCII chars.
+ * Browser Headers require ByteString (0..255). JWT must be ASCII.
+ */
+function sanitizeToken(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+
+  // Remove BOM at start and trim whitespace
+  let t = String(raw).replace(/^\uFEFF/, '').trim();
+
+  // Keep only JWT-safe characters (base64url + dot separators)
+  // JWT: header.payload.signature (A-Z a-z 0-9 _ - .)
+  t = t.replace(/[^A-Za-z0-9._-]/g, '');
+
+  return t.length ? t : null;
+}
+
+/**
  * Returns cached access token from localStorage (client-side only).
  * This is intentionally synchronous because pages use it in useEffect guards.
  */
 export function getAccessToken(): string | null {
   if (typeof window === 'undefined') return null;
   try {
-    return window.localStorage.getItem(LS_ACCESS);
+    return sanitizeToken(window.localStorage.getItem(LS_ACCESS));
   } catch {
     return null;
   }
@@ -22,7 +39,7 @@ export function getAccessToken(): string | null {
 export function getRefreshToken(): string | null {
   if (typeof window === 'undefined') return null;
   try {
-    return window.localStorage.getItem(LS_REFRESH);
+    return sanitizeToken(window.localStorage.getItem(LS_REFRESH));
   } catch {
     return null;
   }
@@ -34,8 +51,14 @@ export function getRefreshToken(): string | null {
 export function setAuthTokens(accessToken: string, refreshToken?: string | null) {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(LS_ACCESS, accessToken);
-    if (refreshToken) window.localStorage.setItem(LS_REFRESH, refreshToken);
+    const safeAccess = sanitizeToken(accessToken);
+    const safeRefresh = sanitizeToken(refreshToken ?? null);
+
+    if (safeAccess) window.localStorage.setItem(LS_ACCESS, safeAccess);
+    else window.localStorage.removeItem(LS_ACCESS);
+
+    if (safeRefresh) window.localStorage.setItem(LS_REFRESH, safeRefresh);
+    else window.localStorage.removeItem(LS_REFRESH);
   } catch {
     // ignore storage errors (private mode etc.)
   }
@@ -69,6 +92,7 @@ function buildAuthHeaders(existing?: HeadersInit): HeadersInit {
     }
   }
 
+  // Only add Authorization if token is clean
   if (token) headers['Authorization'] = `Bearer ${token}`;
   return headers;
 }
@@ -77,10 +101,21 @@ export async function authFetchJson<T = AnyJson>(
   input: RequestInfo | URL,
   init?: RequestInit
 ): Promise<T> {
-  const res = await fetch(input, {
-    ...init,
-    headers: buildAuthHeaders(init?.headers),
-  });
+  let res: Response;
+
+  try {
+    res = await fetch(input, {
+      ...init,
+      headers: buildAuthHeaders(init?.headers),
+    });
+  } catch (e: any) {
+    // If something still goes wrong with headers/token, nuke tokens to recover
+    const msg = String(e?.message || e || '');
+    if (msg.includes('ByteString') || msg.includes('65279') || msg.includes('FEFF')) {
+      clearAuthTokens();
+    }
+    throw e;
+  }
 
   if (res.status === 401) {
     // token invalid → wipe to force re-login
