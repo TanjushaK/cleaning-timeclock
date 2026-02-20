@@ -1,5 +1,15 @@
 "use client";
+
 import React, { useEffect, useState } from 'react';
+
+interface Job {
+  id: string;
+  job_date: string;
+  scheduled_time: string;
+  status: string;
+  site_id?: string;
+  worker_id?: string;
+}
 
 const AppPage: React.FC = () => {
     const [jobs, setJobs] = useState<Job[]>([]);
