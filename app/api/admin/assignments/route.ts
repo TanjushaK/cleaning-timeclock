@@ -16,7 +16,7 @@ const serviceRoleKey = sanitize(process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 export async function GET() {
   try {
-    const cookieStore = cookies();
+    const cookieStore = await cookies();
 
     const supabase = createServerClient(
       supabaseUrl,
