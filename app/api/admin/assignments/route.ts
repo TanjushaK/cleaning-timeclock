@@ -3,16 +3,9 @@ import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 
-function sanitize(value: string | undefined) {
-  return (value || "")
-    .replace(/\uFEFF/g, "")
-    .trim()
-    .replace(/^['"]|['"]$/g, "");
-}
-
-const supabaseUrl = sanitize(process.env.NEXT_PUBLIC_SUPABASE_URL);
-const supabaseAnonKey = sanitize(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
-const serviceRoleKey = sanitize(process.env.SUPABASE_SERVICE_ROLE_KEY);
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 export async function GET() {
   try {
@@ -26,28 +19,29 @@ export async function GET() {
           get(name: string) {
             return cookieStore.get(name)?.value;
           },
-        },
+          set() {},
+          remove() {}
+        }
       }
     );
 
     const {
-      data: { user },
-      error: userError,
+      data: { user }
     } = await supabase.auth.getUser();
 
-    if (userError || !user) {
+    if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
-    const { data: profile, error: profileError } = await adminClient
+    const { data: profile } = await adminClient
       .from("profiles")
       .select("role")
       .eq("id", user.id)
       .single();
 
-    if (profileError || !profile || profile.role !== "admin") {
+    if (!profile || profile.role !== "admin") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -61,10 +55,7 @@ export async function GET() {
     }
 
     return NextResponse.json(data);
-  } catch (err: any) {
-    return NextResponse.json(
-      { error: err.message || "Server error" },
-      { status: 500 }
-    );
+  } catch {
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }
