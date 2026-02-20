@@ -1,12 +1,8 @@
 import { NextRequest } from 'next/server'
 
 /**
- * Proxy/redirect for legacy relative image URLs like:
- *   /workers/<workerId>/<filename>
- *
- * We keep the UI simple: anywhere in the app can point <img src="/workers/...">
- * and this route will redirect to Supabase public storage object:
- *   site-photos/workers/<workerId>/<filename>
+ * Safety net: some UI paths previously tried to load "/undefined/<...>" due to a missing prefix.
+ * We map it to "sites/<...>" in Supabase to avoid broken images in reports.
  */
 export async function GET(
   req: NextRequest,
@@ -23,11 +19,10 @@ export async function GET(
     return new Response('Missing path', { status: 400 })
   }
 
-  const objectPath = ['workers', ...path].join('/')
+  const objectPath = ['sites', ...path].join('/')
   const target = `${supabaseUrl.replace(/\/$/, '')}/storage/v1/object/public/site-photos/${encodeURI(
     objectPath
   )}`
 
-  // 307 so browsers keep method if ever used differently; for images it's GET anyway.
   return Response.redirect(target, 307)
 }

@@ -1,83 +1,103 @@
-// app/api/me/jobs/route.ts
-import { NextResponse } from 'next/server';
-import { requireUser, toErrorResponse } from '@/lib/supabase-server';
+import { NextRequest, NextResponse } from 'next/server'
+import { requireUser } from '@/lib/supabase-server'
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
-type SiteRow = {
-  id: string;
-  name: string | null;
-  lat: number | null;
-  lng: number | null;
-  radius: number | null;
-};
+function isISODate(s: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(s)
+}
 
-type JobRow = {
-  id: string;
-  title: string | null;
-  job_date: string | null;
-  scheduled_time: string | null;
-  status: string | null;
-  site: SiteRow | null;
-};
+function todayISO() {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
 
-type JobWorkerRow = {
-  job_id: string | null;
-};
+function addDaysISO(iso: string, deltaDays: number) {
+  const [y, m, d] = iso.split('-').map((x) => parseInt(x, 10))
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  dt.setUTCDate(dt.getUTCDate() + deltaDays)
+  const yy = dt.getUTCFullYear()
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(dt.getUTCDate()).padStart(2, '0')
+  return `${yy}-${mm}-${dd}`
+}
 
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   try {
-    const guard = await requireUser(req);
-    const supabase = guard.supabase;
-    const uid = guard.userId;
+    const { supabase, user } = await requireUser(req)
 
-    const { data: jw, error: jwErr } = await supabase.from('job_workers').select('job_id').eq('worker_id', uid);
-    if (jwErr) return NextResponse.json({ error: jwErr.message }, { status: 400 });
+    const sp = req.nextUrl.searchParams
+    const rawFrom = (sp.get('date_from') || sp.get('from') || '').trim()
+    const rawTo = (sp.get('date_to') || sp.get('to') || '').trim()
 
-    const ids: string[] = ((jw ?? []) as JobWorkerRow[])
-      .map((x) => x.job_id)
-      .filter((v): v is string => typeof v === 'string' && v.length > 0);
+    const dateFrom = rawFrom && isISODate(rawFrom) ? rawFrom : addDaysISO(todayISO(), -30)
+    const dateTo = rawTo && isISODate(rawTo) ? rawTo : addDaysISO(todayISO(), 30)
 
-    const select = 'id,title,job_date,scheduled_time,status,site:sites(id,name,lat,lng,radius)';
-
-    const { data: directJobs, error: dErr } = await supabase
+    const { data: jobs, error: jobsErr } = await supabase
       .from('jobs')
-      .select(select)
-      .eq('worker_id', uid)
+      .select('id,status,job_date,scheduled_time,site_id,worker_id')
+      .eq('worker_id', user.id)
+      .gte('job_date', dateFrom)
+      .lte('job_date', dateTo)
       .order('job_date', { ascending: true })
-      .order('scheduled_time', { ascending: true });
+      .order('scheduled_time', { ascending: true })
 
-    if (dErr) return NextResponse.json({ error: dErr.message }, { status: 400 });
+    if (jobsErr) return NextResponse.json({ error: jobsErr.message }, { status: 400 })
 
-    let extraJobs: JobRow[] = [];
-    if (ids.length > 0) {
-      const { data: extra, error: eErr } = await supabase
-        .from('jobs')
-        .select(select)
-        .in('id', ids)
-        .order('job_date', { ascending: true })
-        .order('scheduled_time', { ascending: true });
+    const siteIds = Array.from(new Set((jobs || []).map((j: any) => j.site_id).filter(Boolean)))
 
-      if (eErr) return NextResponse.json({ error: eErr.message }, { status: 400 });
-      extraJobs = (extra ?? []) as unknown as JobRow[];
+    const [sitesRes, logsRes] = await Promise.all([
+      siteIds.length ? supabase.from('sites').select('id,name').in('id', siteIds) : Promise.resolve({ data: [], error: null } as any),
+      (jobs || []).length
+        ? supabase.from('time_logs').select('job_id,started_at,stopped_at').in(
+            'job_id',
+            (jobs || []).map((j: any) => j.id)
+          )
+        : Promise.resolve({ data: [], error: null } as any),
+    ])
+
+    if (sitesRes.error) return NextResponse.json({ error: sitesRes.error.message }, { status: 400 })
+    if (logsRes.error) return NextResponse.json({ error: logsRes.error.message }, { status: 400 })
+
+    const siteName = new Map<string, string>()
+    for (const s of (sitesRes.data || []) as any[]) siteName.set(String(s.id), s.name || '')
+
+    const logAgg = new Map<string, { started_at: string | null; stopped_at: string | null }>()
+    for (const l of (logsRes.data || []) as any[]) {
+      const id = String(l.job_id)
+      const cur = logAgg.get(id) || { started_at: null, stopped_at: null }
+      if (l.started_at) {
+        if (!cur.started_at || String(l.started_at) < cur.started_at) cur.started_at = String(l.started_at)
+      }
+      if (l.stopped_at) {
+        if (!cur.stopped_at || String(l.stopped_at) > cur.stopped_at) cur.stopped_at = String(l.stopped_at)
+      }
+      logAgg.set(id, cur)
     }
 
-    const map = new Map<string, JobRow>();
-    for (const j of (directJobs ?? []) as unknown as JobRow[]) map.set(j.id, j);
-    for (const j of extraJobs) map.set(j.id, j);
+    const items = (jobs || []).map((j: any) => {
+      const agg = logAgg.get(String(j.id)) || { started_at: null, stopped_at: null }
+      return {
+        id: String(j.id),
+        status: j.status,
+        job_date: j.job_date,
+        scheduled_time: j.scheduled_time,
+        site_id: j.site_id,
+        site_name: j.site_id ? siteName.get(String(j.site_id)) || null : null,
+        worker_id: j.worker_id,
+        started_at: agg.started_at,
+        stopped_at: agg.stopped_at,
+      }
+    })
 
-    const jobs = Array.from(map.values()).sort((a, b) => {
-      const da = a.job_date ?? '';
-      const db = b.job_date ?? '';
-      if (da !== db) return da.localeCompare(db);
-      const ta = a.scheduled_time ?? '';
-      const tb = b.scheduled_time ?? '';
-      return ta.localeCompare(tb);
-    });
-
-    return NextResponse.json({ jobs }, { status: 200 });
-  } catch (err) {
-    return toErrorResponse(err);
+    return NextResponse.json({ items })
+  } catch (e: any) {
+    const msg = e?.message || 'Ошибка'
+    const status = /Нет токена/i.test(msg) ? 401 : 400
+    return NextResponse.json({ error: msg }, { status })
   }
 }

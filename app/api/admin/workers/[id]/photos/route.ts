@@ -6,143 +6,119 @@ export const runtime = 'nodejs'
 
 type WorkerPhoto = { path: string; url?: string; created_at?: string | null }
 
-const BUCKET = process.env.SITE_PHOTOS_BUCKET || 'site-photos'
+// В проекте мы используем общий bucket для фото объектов/работников.
+// Можно переопределить через env WORKER_PHOTOS_BUCKET.
+const BUCKET = process.env.WORKER_PHOTOS_BUCKET || 'site-photos'
 
 function getSignedTtlSeconds(): number {
-  const v = Number(process.env.SITE_PHOTOS_SIGNED_URL_TTL || '86400')
-  if (!Number.isFinite(v)) return 86400
-  if (v < 60) return 60
-  if (v > 60 * 60 * 24 * 7) return 60 * 60 * 24 * 7
-  return Math.floor(v)
+  const v = Number(process.env.WORKER_PHOTOS_SIGNED_URL_TTL || '3600')
+  if (!Number.isFinite(v) || v <= 0) return 3600
+  return Math.min(v, 60 * 60 * 24 * 7) // max 7 days
 }
 
-function sanitizeFilenameBase(name: string): string {
-  // keep letters/digits/._- ; replace everything else
-  const base = name
-    .replace(/\.[^/.]+$/, '')
-    .trim()
-    .replace(/[^a-zA-Z0-9._-]+/g, '_')
-    .replace(/_+/g, '_')
-    .slice(0, 80)
-  return base || 'photo'
-}
+function withCookieBearer(req: NextRequest): Headers {
+  const headers = new Headers(req.headers)
 
-function getExt(name: string): string {
-  const m = name.toLowerCase().match(/\.([a-z0-9]{1,8})$/)
-  return m?.[1] || 'jpg'
-}
+  const auth = headers.get('authorization') || headers.get('Authorization') || ''
+  const hasBearer = /^Bearer\s+.+/i.test(auth)
 
-async function listWorkerPhotos(supabase: any, workerId: string): Promise<WorkerPhoto[]> {
-  const prefix = `workers/${workerId}`
-
-  const { data, error } = await supabase.storage.from(BUCKET).list(prefix, {
-    limit: 100,
-    offset: 0,
-    sortBy: { column: 'created_at', order: 'desc' },
-  })
-  if (error) throw new ApiError(500, error.message || 'Не удалось прочитать список фото')
-
-  const items = Array.isArray(data) ? data : []
-
-  const photos: WorkerPhoto[] = items
-    .filter((it: any) => it && typeof it.name === 'string' && it.name.length > 0)
-    .filter((it: any) => !String(it.name).endsWith('/'))
-    .map((it: any) => ({
-      path: `${prefix}/${it.name}`,
-      created_at: it.created_at || it.updated_at || null,
-    }))
-    .slice(0, 5)
-
-  if (photos.length === 0) return []
-
-  const ttl = getSignedTtlSeconds()
-  const paths = photos.map((p) => p.path)
-
-  const { data: signed, error: signedError } = await supabase.storage.from(BUCKET).createSignedUrls(paths, ttl)
-  if (signedError) throw new ApiError(500, signedError.message || 'Не удалось создать ссылки для фото')
-
-  const urlByPath = new Map<string, string>()
-  for (const s of signed || []) {
-    if (s?.path && s?.signedUrl) urlByPath.set(String(s.path), String(s.signedUrl))
+  if (!hasBearer) {
+    const cookieToken = req.cookies.get('ct_access_token')?.value?.trim()
+    if (cookieToken) headers.set('authorization', `Bearer ${cookieToken}`)
   }
 
-  return photos.map((p) => ({ ...p, url: urlByPath.get(p.path) }))
+  return headers
 }
 
-export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  try {
-    const { id } = await ctx.params
-    if (!id) throw new ApiError(400, 'worker id is required')
-
-    const { supabase } = await requireAdmin(_req)
-    const photos = await listWorkerPhotos(supabase, id)
-
-    return NextResponse.json({ ok: true, photos })
-  } catch (e: any) {
-    return toErrorResponse(e)
-  }
+function safeName(s: string): string {
+  return s.replace(/[^a-zA-Z0-9._-]+/g, '_')
 }
 
-export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+type Ctx = { params: Promise<{ id: string }> }
+
+function prefix(workerId: string): string {
+  return `workers/${workerId}`
+}
+
+export async function GET(req: NextRequest, ctx: Ctx) {
   try {
-    const { id } = await ctx.params
-    if (!id) throw new ApiError(400, 'worker id is required')
+    const { id: workerId } = await ctx.params
 
-    const { supabase } = await requireAdmin(req)
+    const headers = withCookieBearer(req)
+    const admin = await requireAdmin(headers)
 
-    // enforce cap (max 5)
-    const existing = await listWorkerPhotos(supabase, id)
-    if (existing.length >= 5) throw new ApiError(400, 'Лимит 5 фото достигнут')
+    if (!workerId) throw new ApiError(400, 'Missing worker id')
 
-    const form = await req.formData()
-    const file = form.get('file') as File | null
-    if (!file) throw new ApiError(400, 'file is required')
+    const pref = prefix(workerId)
 
-    const contentType = (file as any).type || ''
-    if (contentType && !String(contentType).startsWith('image/')) {
-      throw new ApiError(400, 'Только изображения')
+    // list all objects under prefix workers/<id>/
+    const { data: listed, error: listErr } = await admin.supabase.storage
+      .from(BUCKET)
+      .list(pref, { limit: 100, sortBy: { column: 'created_at', order: 'desc' } })
+
+    if (listErr) throw new ApiError(500, listErr.message)
+
+    const ttl = getSignedTtlSeconds()
+
+    const items: WorkerPhoto[] = []
+    for (const it of listed || []) {
+      if (!it.name) continue
+      const path = `${pref}/${it.name}`
+
+      const { data: signed, error: signErr } = await admin.supabase.storage.from(BUCKET).createSignedUrl(path, ttl)
+
+      if (signErr) {
+        // не валим весь список — просто без url
+        items.push({ path, created_at: (it as any)?.created_at ?? null })
+        continue
+      }
+
+      items.push({ path, url: signed?.signedUrl, created_at: (it as any)?.created_at ?? null })
     }
 
-    const ext = getExt((file as any).name || 'photo.jpg')
-    const base = sanitizeFilenameBase((file as any).name || 'photo')
-    const filename = `${Date.now()}_${Math.random().toString(16).slice(2)}_${base}.${ext}`
-    const path = `workers/${id}/${filename}`
+    return NextResponse.json({ photos: items }, { status: 200 })
+  } catch (err) {
+    return toErrorResponse(err)
+  }
+}
+
+export async function POST(req: NextRequest, ctx: Ctx) {
+  try {
+    const { id: workerId } = await ctx.params
+
+    const headers = withCookieBearer(req)
+    const admin = await requireAdmin(headers)
+
+    if (!workerId) throw new ApiError(400, 'Missing worker id')
+
+    const form = await req.formData()
+    const file = form.get('file')
+    if (!(file instanceof File)) throw new ApiError(400, 'Нет файла (formData file)')
+
+    if (file.size <= 0) throw new ApiError(400, 'Файл пустой')
+
+    const maxBytes = Number(process.env.WORKER_PHOTOS_MAX_BYTES || String(8 * 1024 * 1024))
+    if (Number.isFinite(maxBytes) && file.size > maxBytes) {
+      throw new ApiError(413, `Файл слишком большой (> ${maxBytes} bytes)`)
+    }
+
+    const filename = safeName(`${Date.now()}_${file.name || 'photo'}`)
+    const path = `${prefix(workerId)}/${filename}`
 
     const buf = Buffer.from(await file.arrayBuffer())
 
-    const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, buf, {
-      contentType: contentType || 'image/jpeg',
-      cacheControl: '3600',
+    const { error: upErr } = await admin.supabase.storage.from(BUCKET).upload(path, buf, {
+      contentType: file.type || 'image/jpeg',
       upsert: false,
     })
-    if (upErr) throw new ApiError(500, upErr.message || 'Не удалось загрузить фото')
+    if (upErr) throw new ApiError(500, upErr.message)
 
-    const photos = await listWorkerPhotos(supabase, id)
-    return NextResponse.json({ ok: true, photos })
-  } catch (e: any) {
-    return toErrorResponse(e)
-  }
-}
+    const ttl = getSignedTtlSeconds()
+    const { data: signed, error: signErr } = await admin.supabase.storage.from(BUCKET).createSignedUrl(path, ttl)
+    if (signErr) throw new ApiError(500, signErr.message)
 
-export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  try {
-    const { id } = await ctx.params
-    if (!id) throw new ApiError(400, 'worker id is required')
-
-    const { supabase } = await requireAdmin(req)
-
-    const body = await req.json().catch(() => ({}))
-    const path = String(body?.path || '')
-
-    const expectedPrefix = `workers/${id}/`
-    if (!path || !path.startsWith(expectedPrefix)) throw new ApiError(400, 'invalid path')
-
-    const { error: delErr } = await supabase.storage.from(BUCKET).remove([path])
-    if (delErr) throw new ApiError(500, delErr.message || 'Не удалось удалить фото')
-
-    const photos = await listWorkerPhotos(supabase, id)
-    return NextResponse.json({ ok: true, photos })
-  } catch (e: any) {
-    return toErrorResponse(e)
+    return NextResponse.json({ path, url: signed?.signedUrl }, { status: 200 })
+  } catch (err) {
+    return toErrorResponse(err)
   }
 }

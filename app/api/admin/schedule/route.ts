@@ -66,16 +66,41 @@ export async function GET(req: NextRequest) {
     const siteId = (sp.get('site_id') || '').trim()
     const workerId = (sp.get('worker_id') || '').trim()
 
+    // Смена должна иметь начало и конец.
+    // В разных ревизиях БД колонка конца может называться по-разному,
+    // но в текущем UI мы используем scheduled_end_time.
+    // Поэтому: пытаемся запросить scheduled_end_time; если колонки нет —
+    // повторяем запрос без неё (UI покажет только начало).
+
+    const baseSelect = 'id,status,job_date,scheduled_time,site_id,worker_id'
+
     let q = admin
       .from('jobs')
-      .select('id,status,job_date,scheduled_time,site_id,worker_id')
+      .select(`${baseSelect},scheduled_end_time`)
       .gte('job_date', dateFrom)
       .lte('job_date', dateTo)
 
     if (siteId) q = q.eq('site_id', siteId)
     if (workerId) q = q.eq('worker_id', workerId)
 
-    const { data: jobs, error: jobsErr } = await q
+    let jobs: any[] | null = null
+    let jobsErr: any = null
+
+    ;({ data: jobs, error: jobsErr } = await q)
+
+    if (jobsErr && String(jobsErr?.message || '').toLowerCase().includes('scheduled_end_time')) {
+      let q2 = admin
+        .from('jobs')
+        .select(baseSelect)
+        .gte('job_date', dateFrom)
+        .lte('job_date', dateTo)
+
+      if (siteId) q2 = q2.eq('site_id', siteId)
+      if (workerId) q2 = q2.eq('worker_id', workerId)
+
+      ;({ data: jobs, error: jobsErr } = await q2)
+    }
+
     if (jobsErr) return NextResponse.json({ error: jobsErr.message }, { status: 500 })
 
     const jobIds = (jobs || []).map((j: any) => j.id)
@@ -118,6 +143,7 @@ export async function GET(req: NextRequest) {
         status: j.status,
         job_date: j.job_date,
         scheduled_time: j.scheduled_time,
+        scheduled_end_time: (j as any).scheduled_end_time ?? null,
         site_id: j.site_id,
         site_name: j.site_id ? siteName.get(String(j.site_id)) || null : null,
         worker_id: j.worker_id,

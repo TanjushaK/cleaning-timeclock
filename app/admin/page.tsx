@@ -2,10 +2,17 @@
 
 import Image from 'next/image'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { getAccessToken, setAuthTokens, clearAuthTokens } from '@/lib/auth-fetch'
 
-// Cache access token in-memory to avoid calling supabase.auth.getSession() on every request (can occasionally hang)
-let TOKEN_CACHE: string | null = null
+// Token (localStorage)
+function getAccessTokenOrNull(): string | null {
+  if (typeof window === 'undefined') return null
+  try {
+    return getAccessToken()
+  } catch {
+    return null
+  }
+}
 
 type TabKey = 'sites' | 'workers' | 'jobs' | 'plan' | 'reports'
 type JobsView = 'board' | 'table'
@@ -215,74 +222,33 @@ async function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T
   return res
 }
 
-async function getAccessToken(): Promise<string> {
-  if (TOKEN_CACHE) return TOKEN_CACHE
-
-  const s1 = await withTimeout(supabase.auth.getSession(), 5000, null as any)
-  const t1 = s1?.data?.session?.access_token
-  if (t1) {
-    TOKEN_CACHE = t1
-    return t1
-  }
-
-  // Иногда сессия ещё не гидратировалась или токен протух — пробуем refresh 1 раз
-  const s2 = await withTimeout(
-    supabase.auth.refreshSession().catch(() => ({ data: { session: null } } as any)),
-    8000,
-    null as any
-  )
-  const t2 = (s2 as any)?.data?.session?.access_token
-  if (t2) {
-    TOKEN_CACHE = t2
-    return t2
-  }
-
-  throw new Error('Сессия не найдена или истекла. Перелогинься в админке.')
-}
-
 async function authFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  let token = await getAccessToken()
+  const token = getAccessTokenOrNull()
+  if (!token) throw new Error('Нет токена (Authorization: Bearer ...)')
 
   const ctrl = new AbortController()
   const ms = 15000
   const t = setTimeout(() => ctrl.abort(), ms)
 
   try {
-    const attempt = async (tok: string) => {
-      const res = await fetch(url, {
-        ...init,
-        headers: {
-          ...(init?.headers || {}),
-          Authorization: `Bearer ${tok}`,
-        },
-        cache: 'no-store',
-        signal: ctrl.signal,
-      })
+    const res = await fetch(url, {
+      ...init,
+      headers: {
+        ...(init?.headers || {}),
+        Authorization: `Bearer ${token}`,
+      },
+      cache: 'no-store',
+      signal: ctrl.signal,
+    })
 
-      const payload = await res.json().catch(() => ({} as any))
-      return { res, payload }
+    const payload = await res.json().catch(() => ({} as any))
+
+    if (res.status === 401) {
+      clearAuthTokens()
+      throw new Error('Сессия истекла. Войдите снова.')
     }
-
-    let out = await attempt(token)
-
-    // Если словили 401/403 — часто это просто протухший access_token.
-    // Пытаемся refresh + retry один раз.
-    if (!out.res.ok && (out.res.status === 401 || out.res.status === 403)) {
-      const s2 = await withTimeout(
-        supabase.auth.refreshSession().catch(() => ({ data: { session: null } } as any)),
-        8000,
-        null as any
-      )
-      const token2 = (s2 as any)?.data?.session?.access_token
-      if (token2 && token2 !== token) {
-        token = token2
-        TOKEN_CACHE = token2
-        out = await attempt(token)
-      }
-    }
-
-    if (!out.res.ok) throw new Error(out.payload?.error || `HTTP ${out.res.status}`)
-    return out.payload as T
+    if (!res.ok) throw new Error(payload?.error || `HTTP ${res.status}`)
+    return payload as T
   } catch (e: any) {
     if (e?.name === 'AbortError') {
       throw new Error('Таймаут запроса (15с). Нажми “Обновить данные” ещё раз.')
@@ -292,6 +258,7 @@ async function authFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
     clearTimeout(t)
   }
 }
+
 
 function Modal(props: { open: boolean; title: string; onClose: () => void; children: React.ReactNode }) {
   if (!props.open) return null
@@ -1194,48 +1161,34 @@ const [editOpen, setEditOpen] = useState(false)
   }
 
   async function boot() {
-    setSessionLoading(true)
-    try {
-      const { data } = await supabase.auth.getSession()
-      const token = data?.session?.access_token ?? null
-      setSessionToken(token)
-      TOKEN_CACHE = token
-      setMeId(data?.session?.user?.id ?? null)
-
-      if (token) await refreshAll()
-    } catch {
+  setError(null)
+  setSessionLoading(true)
+  try {
+    const token = getAccessTokenOrNull()
+    if (!token) {
       setSessionToken(null)
-      TOKEN_CACHE = null
       setMeId(null)
-    } finally {
       setSessionLoading(false)
+      return
     }
+    setSessionToken(token)
+    // meId не критичен: админские API сами проверяют роль
+    setMeId(null)
+  } catch (e: any) {
+    setError(e?.message || 'Ошибка сессии')
+    clearAuthTokens()
+    setSessionToken(null)
+    setMeId(null)
+  } finally {
+    setSessionLoading(false)
   }
+}
 
   useEffect(() => {
-    void boot()
-
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
-      const token = newSession?.access_token ?? null
-      setSessionToken(token)
-      TOKEN_CACHE = token
-      setError(null)
-
-      setMeId(newSession?.user?.id ?? null)
-
-      if (token) {
-        await refreshAll()
-      } else {
-        setSites([])
-        setWorkers([])
-        setAssignments([])
-        setSchedule([])
-      }
-    })
-
-    return () => sub?.subscription?.unsubscribe()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  void boot()
+  if (getAccessTokenOrNull()) void refreshAll()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [])
 
   useEffect(() => {
     if (sessionToken) void refreshAll()
@@ -1265,8 +1218,19 @@ const [editOpen, setEditOpen] = useState(false)
     setBusy(true)
     setError(null)
     try {
-      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
-      if (signInError) setError(signInError.message || 'Ошибка входа')
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), password }),
+      })
+      const j = await res.json().catch(() => null)
+      if (!res.ok) throw new Error(j?.error || `HTTP ${res.status}`)
+      if (!j?.access_token) throw new Error('Не удалось получить токен')
+
+      setAuthTokens(String(j.access_token), j.refresh_token ? String(j.refresh_token) : null)
+      setSessionToken(String(j.access_token))
+      setMeId(j?.user?.id || null)
+      await refreshAll()
     } catch (e: any) {
       setError(e?.message || 'Ошибка входа')
     } finally {
@@ -1278,7 +1242,7 @@ const [editOpen, setEditOpen] = useState(false)
     setBusy(true)
     setError(null)
     try {
-      await supabase.auth.signOut()
+      clearAuthTokens()
       setSessionToken(null)
       setMeId(null)
       setSites([])

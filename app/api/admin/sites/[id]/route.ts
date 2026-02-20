@@ -1,15 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
 
-type SitePhoto = { path: string; url?: string; created_at?: string | null }
-
-const BUCKET = process.env.SITE_PHOTOS_BUCKET || 'site-photos'
-
-function getSignedTtlSeconds() {
-  const raw = process.env.SITE_PHOTOS_SIGNED_URL_TTL
-  const n = raw ? Number.parseInt(raw, 10) : 86400
-  return Number.isFinite(n) && n > 0 ? n : 86400
-}
+export const runtime = 'nodejs'
 
 function toFiniteOrNull(v: any): number | null {
   if (v == null) return null
@@ -26,135 +18,91 @@ function toCategoryOrNull(v: any): number | null {
   return i
 }
 
-function normalizePhotos(v: any): SitePhoto[] {
-  if (!Array.isArray(v)) return []
-  return v
-    .filter((p) => p && typeof p === 'object' && typeof (p as any).path === 'string')
-    .map((p) => ({
-      path: String((p as any).path),
-      url: (p as any).url ? String((p as any).url) : undefined,
-      created_at: (p as any).created_at ? String((p as any).created_at) : undefined,
-    }))
+async function getId(params: any): Promise<string> {
+  const p = await params
+  const id = (p?.id ?? '').toString().trim()
+  if (!id) throw new ApiError(400, 'Missing site id')
+  return id
 }
 
-async function withSignedUrls(supabase: any, site: any) {
-  const photos = normalizePhotos(site?.photos)
-  if (photos.length === 0) return { ...site, photos }
-
-  const paths = Array.from(new Set(photos.map((p) => p.path).filter(Boolean)))
-  const ttl = getSignedTtlSeconds()
-  const { data: signed, error } = await supabase.storage.from(BUCKET).createSignedUrls(paths, ttl)
-
-  if (error || !Array.isArray(signed)) {
-    return { ...site, photos }
-  }
-
-  const urlByPath = new Map<string, string>()
-  for (const item of signed as any[]) {
-    const p = item?.path ? String(item.path) : ''
-    const u = item?.signedUrl ? String(item.signedUrl) : ''
-    if (p && u) urlByPath.set(p, u)
-  }
-
-  return {
-    ...site,
-    photos: photos.map((p) => ({ ...p, url: urlByPath.get(p.path) || p.url })),
-  }
-}
-
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, ctx: { params: Promise<{ id: string }> } | { params: { id: string } }) {
   try {
-    const { id } = await params
-    if (!id) throw new ApiError(400, 'id_required')
-
     const { supabase } = await requireAdmin(req.headers)
+    const id = await getId((ctx as any).params)
 
     const { data, error } = await supabase
       .from('sites')
-      .select('id,name,address,lat,lng,radius,category,notes,photos,archived_at')
+      .select('id,name,address,lat,lng,radius,category,notes,photos,archived_at,created_at,updated_at')
       .eq('id', id)
       .single()
 
-    if (error) throw new ApiError(400, error.message || 'Не удалось загрузить объект')
+    if (error) throw new ApiError(404, 'Объект не найден')
 
-    const site = await withSignedUrls(supabase, data)
-    return NextResponse.json({ site })
+    return NextResponse.json({ site: data }, { status: 200 })
   } catch (e) {
     return toErrorResponse(e)
   }
 }
 
-export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> } | { params: { id: string } }) {
   try {
-    const { id } = await params
-    if (!id) throw new ApiError(400, 'id_required')
-
     const { supabase } = await requireAdmin(req.headers)
+    const id = await getId((ctx as any).params)
 
-    let body: any = null
-    try {
-      body = await req.json()
-    } catch {
-      body = null
-    }
-    if (!body || typeof body !== 'object') throw new ApiError(400, 'invalid_body')
+    const body = await req.json().catch(() => ({} as any))
 
-    const updates: any = {}
+    const name = body?.name == null ? undefined : String(body.name).trim()
+    const address = body?.address === undefined ? undefined : (body?.address == null ? null : String(body.address).trim() || null)
 
-    if (body.name !== undefined) {
-      const name = String(body.name ?? '').trim()
-      if (!name) throw new ApiError(400, 'Нужно название объекта')
-      updates.name = name
-    }
+    const lat = body?.lat === undefined ? undefined : toFiniteOrNull(body?.lat)
+    const lng = body?.lng === undefined ? undefined : toFiniteOrNull(body?.lng)
+    const radius = body?.radius === undefined && body?.radius_m === undefined ? undefined : toFiniteOrNull(body?.radius ?? body?.radius_m)
+    const category = body?.category === undefined ? undefined : toCategoryOrNull(body?.category)
+    const notes = body?.notes === undefined ? undefined : (body?.notes == null ? null : String(body.notes))
 
-    if (body.address !== undefined) {
-      const address = body.address == null ? null : String(body.address).trim() || null
-      updates.address = address
-    }
+    // не даём случайно затереть name в пустоту
+    if (name !== undefined && !name) throw new ApiError(400, 'Нужно название объекта')
 
-    if (body.lat !== undefined) updates.lat = toFiniteOrNull(body.lat)
-    if (body.lng !== undefined) updates.lng = toFiniteOrNull(body.lng)
-
-    if (body.radius !== undefined || body.radius_m !== undefined) {
-      const r = toFiniteOrNull(body.radius ?? body.radius_m)
-      updates.radius = r == null ? 150 : r
-    }
-
-    if (body.category !== undefined) updates.category = toCategoryOrNull(body.category)
-
-    if (body.notes !== undefined) {
-      updates.notes = body.notes == null ? null : String(body.notes)
-    }
-
-    if (Object.keys(updates).length === 0) throw new ApiError(400, 'no_updates')
+    const patch: any = {}
+    if (name !== undefined) patch.name = name
+    if (address !== undefined) patch.address = address
+    if (lat !== undefined) patch.lat = lat
+    if (lng !== undefined) patch.lng = lng
+    if (radius !== undefined) patch.radius = radius ?? 150
+    if (category !== undefined) patch.category = category
+    if (notes !== undefined) patch.notes = notes
 
     const { data, error } = await supabase
       .from('sites')
-      .update(updates)
+      .update(patch)
       .eq('id', id)
       .select('id,name,address,lat,lng,radius,category,notes,photos,archived_at')
       .single()
 
-    if (error) throw new ApiError(400, error.message || 'Не удалось обновить объект')
+    if (error) throw new ApiError(500, error.message || 'Не удалось обновить объект')
 
-    const site = await withSignedUrls(supabase, data)
-    return NextResponse.json({ ok: true, site })
+    return NextResponse.json({ site: data }, { status: 200 })
   } catch (e) {
     return toErrorResponse(e)
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: Request, ctx: { params: Promise<{ id: string }> } | { params: { id: string } }) {
   try {
-    const { id } = await params
-    if (!id) throw new ApiError(400, 'id_required')
-
     const { supabase } = await requireAdmin(req.headers)
+    const id = await getId((ctx as any).params)
+
+    // Сначала проверим, что объект существует (и чтобы сообщение было человеческое)
+    const { data: exists, error: exErr } = await supabase.from('sites').select('id').eq('id', id).single()
+    if (exErr || !exists?.id) throw new ApiError(404, 'Объект не найден')
 
     const { error } = await supabase.from('sites').delete().eq('id', id)
+
+    // Если у тебя есть FK на jobs/assignments — тут может вылезти ошибка.
+    // Тогда правильнее архивировать вместо удаления или сначала удалять связанные записи.
     if (error) throw new ApiError(400, error.message || 'Не удалось удалить объект')
 
-    return NextResponse.json({ ok: true })
+    return NextResponse.json({ ok: true }, { status: 200 })
   } catch (e) {
     return toErrorResponse(e)
   }
