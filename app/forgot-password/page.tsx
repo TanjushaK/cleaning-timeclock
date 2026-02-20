@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 
@@ -63,12 +64,12 @@ export default function ForgotPasswordPage() {
               {busy ? 'Отправляю…' : 'Отправить ссылку'}
             </button>
 
-            <a
+            <Link
               href="/"
               className="block text-center text-sm text-zinc-400 underline decoration-amber-300/40 underline-offset-4 hover:text-zinc-200"
             >
               Назад к входу
-            </a>
+            </Link>
 
             {msg ? (
               <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
