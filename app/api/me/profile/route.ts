@@ -10,46 +10,64 @@ export async function GET(req: NextRequest) {
 
     const { data: profile, error } = await supabase
       .from('profiles')
-      .select('id, role, active, full_name, phone, notes')
+      .select('id, role, active, full_name, phone, email, avatar_path, notes, onboarding_submitted_at')
       .eq('id', user.id)
       .maybeSingle()
 
     if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
-    // Автосоздание профиля для нового phone-user / нового auth.user
     if (!profile) {
       const phone = (user as any).phone ? String((user as any).phone) : null
+      const email = user.email ? String(user.email) : null
 
       const { data: created, error: cErr } = await supabase
         .from('profiles')
         .insert({
           id: user.id,
           role: 'worker',
-          active: false, // ✅ важно: новые phone-users неактивны
+          active: false,
           full_name: null,
           phone,
+          email,
+          avatar_path: null,
           notes: '',
+          onboarding_submitted_at: null,
         })
-        .select('id, role, active, full_name, phone, notes')
+        .select('id, role, active, full_name, phone, email, avatar_path, notes, onboarding_submitted_at')
         .single()
 
       if (cErr) return NextResponse.json({ error: cErr.message }, { status: 400 })
 
       return NextResponse.json({
-        user: { id: user.id, email: user.email ?? null },
+        user: {
+          id: user.id,
+          email: user.email ?? null,
+          phone: (user as any).phone ?? null,
+          email_confirmed_at: (user as any).email_confirmed_at ?? null,
+        },
         profile: created,
       })
     }
 
-    // Если профиль есть, но phone пуст — дольём из auth.user.phone
     const uPhone = (user as any).phone ? String((user as any).phone) : null
-    if (uPhone && !profile.phone) {
-      await supabase.from('profiles').update({ phone: uPhone }).eq('id', user.id)
-      ;(profile as any).phone = uPhone
+    const uEmail = user.email ? String(user.email) : null
+
+    const patch: any = {}
+    if (uPhone && !profile.phone) patch.phone = uPhone
+    if (uEmail && !profile.email) patch.email = uEmail
+
+    if (Object.keys(patch).length) {
+      await supabase.from('profiles').update(patch).eq('id', user.id)
+      Object.assign(profile as any, patch)
     }
 
     return NextResponse.json({
-      user: { id: user.id, email: user.email ?? null },
+      user: {
+        id: user.id,
+        email: user.email ?? null,
+        phone: (user as any).phone ?? null,
+        email_confirmed_at: (user as any).email_confirmed_at ?? null,
+      },
       profile,
     })
   } catch (e: any) {
