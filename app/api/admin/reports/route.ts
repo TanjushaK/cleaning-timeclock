@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { supabaseService, toErrorResponse } from '@/lib/supabase-server'
 
+type SitePhoto = { path: string; url?: string; created_at?: string | null }
+
 function asDateISO(d: Date) {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
@@ -9,7 +11,6 @@ function asDateISO(d: Date) {
 }
 
 function parseDateISO(s: string): Date | null {
-  // Accept YYYY-MM-DD
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null
   const d = new Date(`${s}T00:00:00.000Z`)
   if (Number.isNaN(d.getTime())) return null
@@ -22,6 +23,17 @@ function minutesBetween(startISO: string, stopISO: string): number {
   if (!Number.isFinite(a) || !Number.isFinite(b)) return 0
   const diff = Math.max(0, b - a)
   return Math.round(diff / 60000)
+}
+
+function normalizePhotos(v: any): SitePhoto[] {
+  if (!Array.isArray(v)) return []
+  return v
+    .filter((p) => p && typeof p === 'object' && typeof (p as any).path === 'string')
+    .map((p) => ({
+      path: String((p as any).path),
+      url: (p as any).url ? String((p as any).url) : undefined,
+      created_at: (p as any).created_at ? String((p as any).created_at) : undefined,
+    }))
 }
 
 async function requireAdmin(req: Request): Promise<{ ok: true; userId: string } | { ok: false; status: number; error: string } > {
@@ -63,11 +75,9 @@ export async function GET(req: Request) {
 
     const sb = supabaseService()
 
-    // Inclusive dates for jobs
     const fromISO = asDateISO(fromD)
     const toISO = asDateISO(toD)
 
-    // 1) Jobs within period (this defines the population for the report)
     const jobsRes = await sb
       .from('jobs')
       .select('id, worker_id, site_id, job_date')
@@ -80,7 +90,6 @@ export async function GET(req: Request) {
 
     const jobs = (jobsRes.data || []).filter((j: any) => !!j?.id && !!j?.worker_id && !!j?.site_id)
 
-    // If no jobs — return empty report
     if (jobs.length === 0) {
       return NextResponse.json({
         from: fromISO,
@@ -92,8 +101,6 @@ export async function GET(req: Request) {
       })
     }
 
-    // 2) Time logs in the same period (by started_at window)
-    // NOTE: We avoid PostgREST "embed" because there can be multiple FK paths between time_logs and jobs.
     const startAtMin = `${fromISO}T00:00:00.000Z`
     const startAtMax = `${toISO}T23:59:59.999Z`
 
@@ -124,7 +131,6 @@ export async function GET(req: Request) {
       logsByJob.set(id, arr)
     }
 
-    // 3) Aggregate
     type WorkerAgg = { worker_id: string; minutes: number; jobs_count: number; logged_jobs: number }
     type SiteAgg = { site_id: string; minutes: number; jobs_count: number; logged_jobs: number }
 
@@ -157,10 +163,9 @@ export async function GET(req: Request) {
     const workerIds = Array.from(workerAgg.keys())
     const siteIds = Array.from(siteAgg.keys())
 
-    // 4) Names
     const [profilesRes, sitesRes] = await Promise.all([
       sb.from('profiles').select('id, full_name, avatar_url').in('id', workerIds),
-      sb.from('sites').select('id, name').in('id', siteIds),
+      sb.from('sites').select('id, name, photos').in('id', siteIds),
     ])
 
     if (profilesRes.error) return NextResponse.json({ error: profilesRes.error.message }, { status: 500 })
@@ -174,9 +179,11 @@ export async function GET(req: Request) {
       })
     }
 
-    const siteById = new Map<string, { name: string | null }>()
+    const siteById = new Map<string, { name: string | null; avatar_url: string | null }>()
     for (const s of sitesRes.data || []) {
-      siteById.set(String((s as any).id), { name: (s as any).name ?? null })
+      const photos = normalizePhotos((s as any).photos)
+      const avatar_url = photos?.[0]?.url ? String(photos[0].url) : null
+      siteById.set(String((s as any).id), { name: (s as any).name ?? null, avatar_url })
     }
 
     const by_worker = workerIds
@@ -201,6 +208,7 @@ export async function GET(req: Request) {
         return {
           site_id: id,
           site_name: s?.name ?? null,
+          avatar_url: s?.avatar_url ?? null,
           minutes: a.minutes,
           jobs_count: a.jobs_count,
           logged_jobs: a.logged_jobs,
@@ -208,7 +216,6 @@ export async function GET(req: Request) {
       })
       .sort((a, b) => b.minutes - a.minutes || String(a.site_name || '').localeCompare(String(b.site_name || '')))
 
-    // Optional: detailed entries for search on frontend (worker/site/date filtering)
     const entries: any[] = []
     for (const j of jobs as any[]) {
       const jobId = String(j.id)
@@ -247,3 +254,4 @@ export async function GET(req: Request) {
     return toErrorResponse(err)
   }
 }
+
