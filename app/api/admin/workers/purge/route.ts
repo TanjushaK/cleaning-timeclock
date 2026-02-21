@@ -4,14 +4,31 @@ import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-function isMissingTableMsg(msg: string) {
+function isMissingMsg(msg: string) {
   const m = String(msg || '')
   return (
     m.includes('Could not find the table') ||
     m.includes('does not exist') ||
     m.includes('relation') ||
-    m.includes('schema cache')
+    m.includes('schema cache') ||
+    (m.includes('column') && m.includes('does not exist'))
   )
+}
+
+async function tryDeleteIn(sb: any, table: string, col: string, ids: string[], out: any) {
+  const r = await sb.from(table).delete().in(col, ids)
+  if (r.error) {
+    if (isMissingMsg(r.error.message)) out.warnings.push(`${table}: ${r.error.message}`)
+    else throw new ApiError(500, `${table}: ${r.error.message}`)
+  }
+}
+
+async function tryUpdateIn(sb: any, table: string, patch: any, col: string, ids: string[], out: any) {
+  const r = await sb.from(table).update(patch).in(col, ids)
+  if (r.error) {
+    if (isMissingMsg(r.error.message)) out.warnings.push(`${table}: ${r.error.message}`)
+    else throw new ApiError(500, `${table}: ${r.error.message}`)
+  }
 }
 
 export async function POST(req: Request) {
@@ -36,12 +53,8 @@ export async function POST(req: Request) {
     }
 
     out.step = 'load_workers'
-    const { data: workers, error: wErr } = await sb
-      .from('profiles')
-      .select('id, role')
-      .eq('role', 'worker')
-
-    if (wErr) throw new ApiError(500, `load_workers: ${wErr.message}`)
+    const { data: workers, error: wErr } = await sb.from('profiles').select('id').eq('role', 'worker')
+    if (wErr) throw new ApiError(500, `profiles: ${wErr.message}`)
 
     const ids = (workers || []).map((x: any) => String(x.id)).filter(Boolean)
     out.deleted_workers = ids.length
@@ -52,27 +65,23 @@ export async function POST(req: Request) {
       return NextResponse.json(out, { status: 200 })
     }
 
+    // ✅ главное: чистим time_logs по worker_id (у тебя это есть)
+    out.step = 'delete_time_logs'
+    await tryDeleteIn(sb, 'time_logs', 'worker_id', ids, out)
+
     out.step = 'delete_assignments'
-    const aRes = await sb.from('assignments').delete().in('worker_id', ids)
-    if (aRes.error) throw new ApiError(500, `delete_assignments: ${aRes.error.message}`)
+    await tryDeleteIn(sb, 'assignments', 'worker_id', ids, out)
 
     out.step = 'delete_job_workers'
-    const jwRes = await sb.from('job_workers').delete().in('worker_id', ids)
-    if (jwRes.error) {
-      if (isMissingTableMsg(jwRes.error.message)) {
-        out.warnings.push(`job_workers missing: ${jwRes.error.message}`)
-      } else {
-        throw new ApiError(500, `delete_job_workers: ${jwRes.error.message}`)
-      }
-    }
+    await tryDeleteIn(sb, 'job_workers', 'worker_id', ids, out)
 
+    // на всякий — если где-то в jobs есть worker_id
     out.step = 'unlink_jobs'
-    const jRes = await sb.from('jobs').update({ worker_id: null }).in('worker_id', ids)
-    if (jRes.error) throw new ApiError(500, `unlink_jobs: ${jRes.error.message}`)
+    await tryUpdateIn(sb, 'jobs', { worker_id: null }, 'worker_id', ids, out)
 
     out.step = 'delete_profiles'
     const pRes = await sb.from('profiles').delete().in('id', ids)
-    if (pRes.error) throw new ApiError(500, `delete_profiles: ${pRes.error.message}`)
+    if (pRes.error) throw new ApiError(500, `profiles delete: ${pRes.error.message}`)
 
     out.step = 'delete_auth_users'
     let deletedAuth = 0
