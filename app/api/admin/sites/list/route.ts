@@ -3,7 +3,16 @@ import { requireAdmin, ApiError, toErrorResponse } from '@/lib/supabase-server'
 
 type SitePhoto = { path: string; url?: string; created_at?: string | null }
 
-const BUCKET = process.env.SITE_PHOTOS_BUCKET || 'site-photos'
+function parseBucketRef(raw: string | undefined | null, fallbackBucket: string) {
+  const s = String(raw || '').trim().replace(/^\/+|\/+$/g, '')
+  if (!s) return { bucket: fallbackBucket }
+  const parts = s.split('/').filter(Boolean)
+  const bucket = (parts[0] || '').trim() || fallbackBucket
+  return { bucket }
+}
+
+const RAW_BUCKET = process.env.SITE_PHOTOS_BUCKET || 'site-photos'
+const { bucket: BUCKET } = parseBucketRef(RAW_BUCKET, 'site-photos')
 
 function getSignedTtlSeconds() {
   const raw = process.env.SITE_PHOTOS_SIGNED_URL_TTL
@@ -42,7 +51,6 @@ export async function GET(req: NextRequest) {
 
     const sites = (data ?? []).map((s: any) => ({ ...s, photos: normalizePhotos(s.photos) }))
 
-    // Подменяем url на signed URL (не сохраняем signed URL в БД)
     const allPaths = Array.from(
       new Set(
         sites
