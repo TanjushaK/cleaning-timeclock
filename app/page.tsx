@@ -32,6 +32,7 @@ type JobItem = {
   worker_id: string | null;
   started_at: string | null;
   stopped_at: string | null;
+  can_accept?: boolean | null;
 };
 
 type MeJobsResponse = { items: JobItem[] };
@@ -92,6 +93,8 @@ function getGps(): Promise<Gps> {
 
 export default function AppPage() {
   const [booting, setBooting] = useState(true);
+  const [token, setToken] = useState<string | null>(null);
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
@@ -101,7 +104,7 @@ export default function AppPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const authed = useMemo(() => !!getAccessToken(), [booting]);
+  const authed = !!token;
 
   const loadAll = useCallback(async () => {
     setError(null);
@@ -115,13 +118,16 @@ export default function AppPage() {
   useEffect(() => {
     (async () => {
       try {
-        if (getAccessToken()) {
-          await loadAll();
-        }
+        const t = getAccessToken();
+        setToken(t);
+        if (t) await loadAll();
       } catch (e: any) {
         const msg = String(e?.message || e || "Ошибка");
-        if (msg.includes("401") || /сессия|токен|unauthorized/i.test(msg)) {
+        if (msg.includes("401") || /токен|unauthorized/i.test(msg)) {
           clearAuthTokens();
+          setToken(null);
+          setMe(null);
+          setJobs([]);
         } else {
           setError(msg);
         }
@@ -144,6 +150,8 @@ export default function AppPage() {
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(payload?.error || `HTTP ${res.status}`);
       setAuthTokens(payload.access_token, payload.refresh_token || null);
+      const t = getAccessToken();
+      setToken(t);
       await loadAll();
       setNotice("Вход выполнен.");
     } catch (e: any) {
@@ -156,10 +164,33 @@ export default function AppPage() {
 
   const doLogout = useCallback(() => {
     clearAuthTokens();
+    setToken(null);
     setMe(null);
     setJobs([]);
     setNotice("Вы вышли.");
   }, []);
+
+  const acceptJob = useCallback(
+    async (jobId: string) => {
+      setBusy(true);
+      setError(null);
+      setNotice(null);
+      try {
+        await authFetchJson("/api/me/jobs/accept", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jobId }),
+        });
+        setNotice("Смена принята.");
+        await loadAll();
+      } catch (e: any) {
+        setError(String(e?.message || e || "Ошибка принятия"));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [loadAll]
+  );
 
   const startJob = useCallback(
     async (jobId: string) => {
@@ -240,6 +271,8 @@ export default function AppPage() {
 
           <div className="mt-4 space-y-3">
             <input
+              id="email"
+              name="email"
               className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
               placeholder="Email"
               value={email}
@@ -247,6 +280,8 @@ export default function AppPage() {
               autoComplete="email"
             />
             <input
+              id="password"
+              name="password"
               className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
               placeholder="Пароль"
               type="password"
@@ -333,18 +368,31 @@ export default function AppPage() {
             subtitle={`${planned.length}`}
             items={planned}
             busy={busy}
-            actionLabel="Старт"
-            onAction={startJob}
+            meUserId={me.user.id}
+            onAccept={acceptJob}
+            onStart={startJob}
+            onStop={stopJob}
           />
           <Section
             title="В процессе"
             subtitle={`${inprog.length}`}
             items={inprog}
             busy={busy}
-            actionLabel="Стоп"
-            onAction={stopJob}
+            meUserId={me.user.id}
+            onAccept={acceptJob}
+            onStart={startJob}
+            onStop={stopJob}
           />
-          <Section title="Завершено" subtitle={`${done.length}`} items={done} busy={busy} />
+          <Section
+            title="Завершено"
+            subtitle={`${done.length}`}
+            items={done}
+            busy={busy}
+            meUserId={me.user.id}
+            onAccept={acceptJob}
+            onStart={startJob}
+            onStop={stopJob}
+          />
         </div>
 
         <div className="mt-6 text-xs opacity-70">
@@ -360,15 +408,19 @@ function Section({
   subtitle,
   items,
   busy,
-  actionLabel,
-  onAction,
+  meUserId,
+  onAccept,
+  onStart,
+  onStop,
 }: {
   title: string;
   subtitle: string;
   items: JobItem[];
   busy: boolean;
-  actionLabel?: string;
-  onAction?: (jobId: string) => void;
+  meUserId: string;
+  onAccept: (jobId: string) => void;
+  onStart: (jobId: string) => void;
+  onStop: (jobId: string) => void;
 }) {
   return (
     <div className="rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-4 shadow-xl">
@@ -381,24 +433,53 @@ function Section({
         {items.length === 0 ? (
           <div className="text-sm opacity-70">—</div>
         ) : (
-          items.map((j) => (
-            <div key={j.id} className="rounded-xl border border-amber-500/15 bg-zinc-900/30 p-3">
-              <div className="text-sm font-semibold">{j.site_name || "Объект"}</div>
-              <div className="mt-1 text-xs opacity-80">
-                {fmtD(j.job_date)} • {timeHHMM(j.scheduled_time)} • {statusRu(j.status)}
-              </div>
+          items.map((j) => {
+            const canAccept = !!j.can_accept || (!j.worker_id && j.status === "planned");
+            const isMine = !j.worker_id || j.worker_id === meUserId ? true : false;
 
-              {actionLabel && onAction ? (
-                <button
-                  className="mt-3 w-full rounded-xl bg-amber-500 text-zinc-950 px-3 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
-                  disabled={busy}
-                  onClick={() => onAction(j.id)}
-                >
-                  {actionLabel}
-                </button>
-              ) : null}
-            </div>
-          ))
+            const showAccept = j.status === "planned" && canAccept;
+            const showStart = j.status === "planned" && !showAccept && isMine;
+            const showStop = j.status === "in_progress" && isMine;
+
+            return (
+              <div key={j.id} className="rounded-xl border border-amber-500/15 bg-zinc-900/30 p-3">
+                <div className="text-sm font-semibold">{j.site_name || "Объект"}</div>
+                <div className="mt-1 text-xs opacity-80">
+                  {fmtD(j.job_date)} • {timeHHMM(j.scheduled_time)} • {statusRu(j.status)}
+                </div>
+
+                {showAccept ? (
+                  <button
+                    className="mt-3 w-full rounded-xl bg-amber-500 text-zinc-950 px-3 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
+                    disabled={busy}
+                    onClick={() => onAccept(j.id)}
+                  >
+                    Принять смену
+                  </button>
+                ) : null}
+
+                {showStart ? (
+                  <button
+                    className="mt-3 w-full rounded-xl bg-amber-500 text-zinc-950 px-3 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
+                    disabled={busy}
+                    onClick={() => onStart(j.id)}
+                  >
+                    Старт
+                  </button>
+                ) : null}
+
+                {showStop ? (
+                  <button
+                    className="mt-3 w-full rounded-xl bg-amber-500 text-zinc-950 px-3 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
+                    disabled={busy}
+                    onClick={() => onStop(j.id)}
+                  >
+                    Стоп
+                  </button>
+                ) : null}
+              </div>
+            );
+          })
         )}
       </div>
     </div>
