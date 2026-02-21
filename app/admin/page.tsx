@@ -1170,8 +1170,15 @@ const [editOpen, setEditOpen] = useState(false)
       `&date_to=${encodeURIComponent(dateTo)}` +
       (filterSite ? `&site_id=${encodeURIComponent(filterSite)}` : '') +
       (filterWorker ? `&worker_id=${encodeURIComponent(filterWorker)}` : '')
+
     const sch = await authFetchJson<{ items: ScheduleItem[] }>(url)
-    setSchedule(Array.isArray(sch?.items) ? sch.items : [])
+    const items = Array.isArray(sch?.items) ? sch.items : []
+
+    // Подтягиваем мини‑аватары работников, которые реально участвуют в графике/таблице.
+    const ids = Array.from(new Set(items.map((x) => x.worker_id).filter(Boolean))) as string[]
+    if (ids.length) enqueueWorkerPhotoMeta(ids)
+
+    setSchedule(items)
   }
 
   async function refreshAll() {
@@ -2031,7 +2038,18 @@ const [editOpen, setEditOpen] = useState(false)
                   <img src={thumb} alt="" className="h-6 w-6 rounded-full border border-yellow-400/15 object-cover" loading="lazy" />
                 )
               })()}
+              <div className="flex min-w-0 items-center gap-2">
+              {planMode === 'sites' && j.worker_id && workerPhotoMeta[j.worker_id]?.thumb ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={workerPhotoMeta[j.worker_id]?.thumb || ''}
+                  alt=""
+                  className="h-5 w-5 flex-none rounded-full border border-yellow-400/20 object-cover"
+                  loading="lazy"
+                />
+              ) : null}
               <div className="truncate font-semibold text-yellow-100">{left}</div>
+            </div>
             </div>
             <div className="mt-0.5 text-zinc-300">{right}</div>
           </div>
@@ -2198,7 +2216,18 @@ const [editOpen, setEditOpen] = useState(false)
                 <div className="border-b border-yellow-400/10 bg-black/10 px-4 py-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
+                      <div className="flex min-w-0 items-center gap-2">
+                      {planMode === 'workers' && workerPhotoMeta[ent.id]?.thumb ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={workerPhotoMeta[ent.id]?.thumb || ''}
+                          alt=""
+                          className="h-6 w-6 flex-none rounded-full border border-yellow-400/20 object-cover"
+                          loading="lazy"
+                        />
+                      ) : null}
                       <div className="truncate text-sm font-semibold text-yellow-100">{ent.name}</div>
+                    </div>
                       <div className="mt-1 text-[11px] text-zinc-400">
                         {planMode === 'workers'
                           ? `Объекты: ${(workerSites.get(ent.id) || []).length}`
@@ -2264,7 +2293,18 @@ const [editOpen, setEditOpen] = useState(false)
               <div key={ent.id} className="sticky top-0 z-10 border-b border-yellow-400/10 bg-zinc-950/90 px-3 py-3">
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
+                    <div className="flex min-w-0 items-center gap-2">
+                    {planMode === 'workers' && workerPhotoMeta[ent.id]?.thumb ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={workerPhotoMeta[ent.id]?.thumb || ''}
+                        alt=""
+                        className="h-5 w-5 flex-none rounded-full border border-yellow-400/20 object-cover"
+                        loading="lazy"
+                      />
+                    ) : null}
                     <div className="truncate text-xs font-semibold text-yellow-100">{ent.name}</div>
+                  </div>
                     <div className="text-[10px] text-zinc-400">{fmtD(dayISO)}</div>
                   </div>
 
@@ -3532,8 +3572,24 @@ const [editOpen, setEditOpen] = useState(false)
                               </td>
                               <td className="px-4 py-3">
                                 {j.worker_id ? (
-                                  <button onClick={() => openWorkerCard(j.worker_id!)} className="text-yellow-100 hover:text-yellow-50">
-                                    {j.worker_name || '—'}
+                                  <button
+                                    onClick={() => openWorkerCard(j.worker_id!)}
+                                    className="flex items-center gap-2 text-yellow-100 hover:text-yellow-50"
+                                  >
+                                    {workerPhotoMeta[j.worker_id!]?.thumb ? (
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img
+                                        src={workerPhotoMeta[j.worker_id!]?.thumb || ''}
+                                        alt=""
+                                        className="h-6 w-6 rounded-full border border-yellow-400/20 object-cover"
+                                        loading="lazy"
+                                      />
+                                    ) : (
+                                      <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-yellow-400/15 bg-black/30 text-[10px] font-semibold text-yellow-100/80">
+                                        {initials(j.worker_name)}
+                                      </span>
+                                    )}
+                                    <span className="truncate">{j.worker_name || '—'}</span>
                                   </button>
                                 ) : (
                                   '—'
@@ -4059,4 +4115,5 @@ const [editOpen, setEditOpen] = useState(false)
     </main>
   )
 }
+
 
