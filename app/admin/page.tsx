@@ -937,6 +937,9 @@ export default function AdminPage() {
 
   const [photoBusy, setPhotoBusy] = useState(false)
 
+  const [photoUiError, setPhotoUiError] = useState<string | null>(null)
+  const [photoUiNotice, setPhotoUiNotice] = useState<string | null>(null)
+
   const [workerPhotoBusy, setWorkerPhotoBusy] = useState(false)
 
   const [siteCreateOpen, setSiteCreateOpen] = useState(false)
@@ -1343,6 +1346,8 @@ const [editOpen, setEditOpen] = useState(false)
     setSiteCardLng(s.lng == null ? '' : String(s.lng))
     setSiteCardNotes(String(s.notes || ''))
     setSiteCardPhotos(Array.isArray(s.photos) ? (s.photos as any) : [])
+    setPhotoUiError(null)
+    setPhotoUiNotice(null)
   }
 
   function applySiteUpdate(next: Site) {
@@ -1482,25 +1487,22 @@ const [editOpen, setEditOpen] = useState(false)
 
     setPhotoBusy(true)
     setError(null)
+    setPhotoUiError(null)
+    setPhotoUiNotice(null)
 
     try {
       const current = (siteCardId === siteId ? siteCardPhotos.length : (sitesById.get(siteId)?.photos || []).length) || 0
       const left = Math.max(0, 5 - current)
-
-      if (left <= 0) {
-        setError('Лимит: 5 фото на объект. Удалите одно фото и повторите загрузку.')
-        return
-      }
-
       const toUpload = Array.from(files).slice(0, left)
 
-      if (toUpload.length === 0) {
-        setError('Нечего загрузить. Проверьте лимит (5 фото) и выбранные файлы.')
+
+      if (left <= 0) {
+        setPhotoUiError('Лимит 5 фото. Удалите одно и повторите.')
         return
       }
 
-      if (files.length > left) {
-        setError(`Выбрано ${files.length} фото, но можно загрузить ещё только ${left}. Загружаю первые ${toUpload.length}.`)
+      if (toUpload.length < files.length) {
+        setPhotoUiNotice(`Загружу ${toUpload.length} из ${files.length} (лимит 5)`)
       }
 
       for (const f of toUpload) {
@@ -1513,8 +1515,10 @@ const [editOpen, setEditOpen] = useState(false)
         if (res?.site) applySiteUpdate(res.site)
       }
 
+      setPhotoUiNotice(toUpload.length > 1 ? 'Фото загружены.' : 'Фото загружено.')
       await refreshCore()
     } catch (e: any) {
+      setPhotoUiError(e?.message || 'Не удалось загрузить фото')
       setError(e?.message || 'Не удалось загрузить фото')
     } finally {
       setPhotoBusy(false)
@@ -1524,6 +1528,8 @@ const [editOpen, setEditOpen] = useState(false)
   async function makePrimaryPhoto(siteId: string, path: string) {
     setPhotoBusy(true)
     setError(null)
+    setPhotoUiError(null)
+    setPhotoUiNotice(null)
     try {
       const res = await authFetchJson<{ site: Site }>(`/api/admin/sites/${encodeURIComponent(siteId)}/photos`, {
         method: 'PATCH',
@@ -1531,8 +1537,10 @@ const [editOpen, setEditOpen] = useState(false)
         body: JSON.stringify({ action: 'make_primary', path }),
       })
       if (res?.site) applySiteUpdate(res.site)
+      setPhotoUiNotice('Фото удалено.')
       await refreshCore()
     } catch (e: any) {
+      setPhotoUiError(e?.message || 'Не удалось сделать фото главным')
       setError(e?.message || 'Не удалось сделать фото главным')
     } finally {
       setPhotoBusy(false)
@@ -1542,6 +1550,8 @@ const [editOpen, setEditOpen] = useState(false)
   async function removeSitePhoto(siteId: string, path: string) {
     setPhotoBusy(true)
     setError(null)
+    setPhotoUiError(null)
+    setPhotoUiNotice(null)
     try {
       const res = await authFetchJson<{ site: Site }>(`/api/admin/sites/${encodeURIComponent(siteId)}/photos`, {
         method: 'DELETE',
@@ -1551,6 +1561,7 @@ const [editOpen, setEditOpen] = useState(false)
       if (res?.site) applySiteUpdate(res.site)
       await refreshCore()
     } catch (e: any) {
+      setPhotoUiError(e?.message || 'Не удалось удалить фото')
       setError(e?.message || 'Не удалось удалить фото')
     } finally {
       setPhotoBusy(false)
@@ -2981,7 +2992,10 @@ const [editOpen, setEditOpen] = useState(false)
                                           const input = e.target as HTMLInputElement
                                           const files = input.files ? Array.from(input.files) : []
                                           input.value = ''
-                                          if (!siteCardId) return
+                                          if (!siteCardId) {
+                                            setPhotoUiError('ID объекта не найден. Закрой и открой карточку объекта заново.')
+                                            return
+                                          }
                                           await uploadSitePhotos(siteCardId, files)
                                         }}
                                       />
@@ -3004,13 +3018,29 @@ const [editOpen, setEditOpen] = useState(false)
                                           const input = e.target as HTMLInputElement
                                           const files = input.files ? Array.from(input.files) : []
                                           input.value = ''
-                                          if (!siteCardId) return
+                                          if (!siteCardId) {
+                                            setPhotoUiError('ID объекта не найден. Закрой и открой карточку объекта заново.')
+                                            return
+                                          }
                                           await uploadSitePhotos(siteCardId, files)
                                         }}
                                       />
                                     </label>
                                   </div>
                                 </div>
+
+
+                                {photoUiError ? (
+                                  <div className="rounded-2xl border border-red-500/25 bg-red-500/10 px-3 py-3 text-xs text-red-100/85">
+                                    {photoUiError}
+                                  </div>
+                                ) : null}
+
+                                {photoUiNotice ? (
+                                  <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-3 text-xs text-emerald-100/85">
+                                    {photoUiNotice}
+                                  </div>
+                                ) : null}
 
                                 {siteCardPhotos.length === 0 ? (
                                   <div className="rounded-2xl border border-yellow-400/10 bg-black/20 px-3 py-3 text-xs text-yellow-100/55">Фото нет</div>
@@ -4029,3 +4059,4 @@ const [editOpen, setEditOpen] = useState(false)
     </main>
   )
 }
+
