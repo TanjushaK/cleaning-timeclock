@@ -70,6 +70,30 @@ async function getJobWorkerJobIds(supabase: any, workerId: string): Promise<stri
   }
 }
 
+let JOBS_END_TIME_COL: string | null | undefined = undefined
+
+async function resolveJobsEndTimeColumn(supabase: any) {
+  if (JOBS_END_TIME_COL !== undefined) return JOBS_END_TIME_COL
+
+  const candidates = ['scheduled_time_to', 'scheduled_end_time', 'scheduled_time_end', 'end_time', 'time_to', 'scheduled_to']
+  for (const c of candidates) {
+    const { error } = await supabase.from('jobs').select(c).limit(1)
+    if (!error) {
+      JOBS_END_TIME_COL = c
+      return c
+    }
+    const msg = String(error?.message || '')
+    const missing = msg.includes('does not exist') || msg.includes('Could not find') || msg.includes('column') || msg.includes('unknown')
+    if (!missing) {
+      JOBS_END_TIME_COL = c
+      return c
+    }
+  }
+
+  JOBS_END_TIME_COL = null
+  return null
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { supabase, user } = await requireUser(req)
@@ -82,14 +106,15 @@ export async function GET(req: NextRequest) {
     const dateFrom = rawFrom && isISODate(rawFrom) ? rawFrom : addDaysISO(todayISO(), -180)
     const dateTo = rawTo && isISODate(rawTo) ? rawTo : addDaysISO(todayISO(), 365)
 
-    const [siteIds, jobIdsViaLink] = await Promise.all([
-      getAssignedSiteIds(supabase, uid),
-      getJobWorkerJobIds(supabase, uid),
-    ])
+    const endCol = await resolveJobsEndTimeColumn(supabase)
+    const baseSelect = 'id,status,job_date,scheduled_time,site_id,worker_id'
+    const selectCols = endCol ? `${baseSelect},${endCol}` : baseSelect
+
+    const [siteIds, jobIdsViaLink] = await Promise.all([getAssignedSiteIds(supabase, uid), getJobWorkerJobIds(supabase, uid)])
 
     const { data: jobsA, error: errA } = await supabase
       .from('jobs')
-      .select('id,status,job_date,scheduled_time,site_id,worker_id')
+      .select(selectCols)
       .eq('worker_id', uid)
       .gte('job_date', dateFrom)
       .lte('job_date', dateTo)
@@ -99,7 +124,7 @@ export async function GET(req: NextRequest) {
     if (jobIdsViaLink.length) {
       const { data, error } = await supabase
         .from('jobs')
-        .select('id,status,job_date,scheduled_time,site_id,worker_id')
+        .select(selectCols)
         .in('id', jobIdsViaLink)
         .gte('job_date', dateFrom)
         .lte('job_date', dateTo)
@@ -111,7 +136,7 @@ export async function GET(req: NextRequest) {
     if (siteIds.length) {
       const { data, error } = await supabase
         .from('jobs')
-        .select('id,status,job_date,scheduled_time,site_id,worker_id')
+        .select(selectCols)
         .is('worker_id', null)
         .in('site_id', siteIds)
         .gte('job_date', dateFrom)
@@ -170,12 +195,15 @@ export async function GET(req: NextRequest) {
 
     const items = jobs.map((j: any) => {
       const agg = logAgg.get(String(j.id)) || { started_at: null, stopped_at: null }
-      const can_accept = j.status === 'planned' && (j.worker_id == null) && (siteIds.includes(String(j.site_id || '')))
+      const can_accept = j.status === 'planned' && (j.worker_id == null) && siteIds.includes(String(j.site_id || ''))
+      const scheduled_end_time = endCol ? (j[endCol] ?? null) : null
+
       return {
         id: String(j.id),
         status: j.status,
         job_date: j.job_date,
         scheduled_time: j.scheduled_time,
+        scheduled_end_time,
         site_id: j.site_id,
         site_name: j.site_id ? siteName.get(String(j.site_id)) || null : null,
         worker_id: j.worker_id,
