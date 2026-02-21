@@ -1,4 +1,3 @@
-
 import { NextResponse } from 'next/server'
 import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
 
@@ -24,7 +23,6 @@ export async function POST(req: Request) {
     const jobId = String(body?.job_id || body?.jobId || '').trim()
     if (!jobId) throw new ApiError(400, 'job_id обязателен')
 
-    // minutes можно слать числом, или строкой "H:MM"
     let minutes: number | null = null
     if (body?.minutes != null) minutes = Math.max(0, Math.floor(Number(body.minutes) || 0))
     if (minutes === null && body?.hm != null) {
