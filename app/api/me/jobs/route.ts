@@ -40,7 +40,6 @@ async function resolveAssignmentsTable(supabase: any): Promise<string | null> {
     const msg = String(error?.message || '')
     const missing = msg.includes('Could not find the table') || msg.includes('does not exist') || msg.includes('relation')
     if (!missing) {
-      // таблица есть, но другая проблема — всё равно запомним
       ASSIGN_TABLE = t
       return t
     }
@@ -49,7 +48,7 @@ async function resolveAssignmentsTable(supabase: any): Promise<string | null> {
   return null
 }
 
-async function safeGetAssignedSiteIds(supabase: any, workerId: string): Promise<string[]> {
+async function getAssignedSiteIds(supabase: any, workerId: string): Promise<string[]> {
   try {
     const t = await resolveAssignmentsTable(supabase)
     if (!t) return []
@@ -61,7 +60,7 @@ async function safeGetAssignedSiteIds(supabase: any, workerId: string): Promise<
   }
 }
 
-async function safeGetJobWorkerJobIds(supabase: any, workerId: string): Promise<string[]> {
+async function getJobWorkerJobIds(supabase: any, workerId: string): Promise<string[]> {
   try {
     const { data, error } = await supabase.from('job_workers').select('job_id').eq('worker_id', workerId)
     if (error) return []
@@ -80,16 +79,14 @@ export async function GET(req: NextRequest) {
     const rawFrom = (sp.get('date_from') || sp.get('from') || '').trim()
     const rawTo = (sp.get('date_to') || sp.get('to') || '').trim()
 
-    // по умолчанию шире, чтобы “не пусто”
-    const dateFrom = rawFrom && isISODate(rawFrom) ? rawFrom : addDaysISO(todayISO(), -90)
-    const dateTo = rawTo && isISODate(rawTo) ? rawTo : addDaysISO(todayISO(), 180)
+    const dateFrom = rawFrom && isISODate(rawFrom) ? rawFrom : addDaysISO(todayISO(), -180)
+    const dateTo = rawTo && isISODate(rawTo) ? rawTo : addDaysISO(todayISO(), 365)
 
     const [siteIds, jobIdsViaLink] = await Promise.all([
-      safeGetAssignedSiteIds(supabase, uid),
-      safeGetJobWorkerJobIds(supabase, uid),
+      getAssignedSiteIds(supabase, uid),
+      getJobWorkerJobIds(supabase, uid),
     ])
 
-    // 1) прямые смены (worker_id = uid)
     const { data: jobsA, error: errA } = await supabase
       .from('jobs')
       .select('id,status,job_date,scheduled_time,site_id,worker_id')
@@ -98,7 +95,6 @@ export async function GET(req: NextRequest) {
       .lte('job_date', dateTo)
     if (errA) return NextResponse.json({ error: errA.message }, { status: 400 })
 
-    // 2) смены через job_workers
     const jobsB: any[] = []
     if (jobIdsViaLink.length) {
       const { data, error } = await supabase
@@ -111,7 +107,6 @@ export async function GET(req: NextRequest) {
       jobsB.push(...(data || []))
     }
 
-    // 3) смены по объектам, где работник назначен (только если worker_id NULL)
     const jobsC: any[] = []
     if (siteIds.length) {
       const { data, error } = await supabase
@@ -127,7 +122,6 @@ export async function GET(req: NextRequest) {
 
     const all = [...(jobsA || []), ...jobsB, ...jobsC]
 
-    // uniq by id
     const byId = new Map<string, any>()
     for (const j of all) {
       if (!j?.id) continue
@@ -149,9 +143,7 @@ export async function GET(req: NextRequest) {
     const jobIds2 = jobs.map((j: any) => j.id)
 
     const [sitesRes, logsRes] = await Promise.all([
-      siteIds2.length
-        ? supabase.from('sites').select('id,name').in('id', siteIds2)
-        : Promise.resolve({ data: [], error: null } as any),
+      siteIds2.length ? supabase.from('sites').select('id,name').in('id', siteIds2) : Promise.resolve({ data: [], error: null } as any),
       jobIds2.length
         ? supabase.from('time_logs').select('job_id,started_at,stopped_at').in('job_id', jobIds2)
         : Promise.resolve({ data: [], error: null } as any),
@@ -178,6 +170,7 @@ export async function GET(req: NextRequest) {
 
     const items = jobs.map((j: any) => {
       const agg = logAgg.get(String(j.id)) || { started_at: null, stopped_at: null }
+      const can_accept = j.status === 'planned' && (j.worker_id == null) && (siteIds.includes(String(j.site_id || '')))
       return {
         id: String(j.id),
         status: j.status,
@@ -188,6 +181,7 @@ export async function GET(req: NextRequest) {
         worker_id: j.worker_id,
         started_at: agg.started_at,
         stopped_at: agg.stopped_at,
+        can_accept,
       }
     })
 
