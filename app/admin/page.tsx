@@ -1486,7 +1486,22 @@ const [editOpen, setEditOpen] = useState(false)
     try {
       const current = (siteCardId === siteId ? siteCardPhotos.length : (sitesById.get(siteId)?.photos || []).length) || 0
       const left = Math.max(0, 5 - current)
+
+      if (left <= 0) {
+        setError('Лимит: 5 фото на объект. Удалите одно фото и повторите загрузку.')
+        return
+      }
+
       const toUpload = Array.from(files).slice(0, left)
+
+      if (toUpload.length === 0) {
+        setError('Нечего загрузить. Проверьте лимит (5 фото) и выбранные файлы.')
+        return
+      }
+
+      if (files.length > left) {
+        setError(`Выбрано ${files.length} фото, но можно загрузить ещё только ${left}. Загружаю первые ${toUpload.length}.`)
+      }
 
       for (const f of toUpload) {
         const fd = new FormData()
