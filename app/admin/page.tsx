@@ -649,6 +649,13 @@ function ReportsPanel() {
           >
             Выбрать период
           </button>
+
+          <a
+            href="/admin/fact"
+            className="rounded-2xl border border-yellow-400/25 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/50"
+          >
+            Правка факта
+          </a>
   
           <div className="flex items-center gap-2 rounded-2xl border border-yellow-400/10 bg-black/25 p-1">
             <button
@@ -964,6 +971,7 @@ const [editOpen, setEditOpen] = useState(false)
   const [editWorkerId, setEditWorkerId] = useState<string>('')
   const [editDate, setEditDate] = useState<string>(toISODate(new Date()))
   const [editTime, setEditTime] = useState<string>('09:00')
+  const [editTimeTo, setEditTimeTo] = useState<string>('')
   const [editStatus, setEditStatus] = useState<JobStatus>('planned')
 
   const [workerCardOpen, setWorkerCardOpen] = useState(false)
@@ -1605,7 +1613,13 @@ const [editOpen, setEditOpen] = useState(false)
     setEditSiteId(j.site_id || '')
     setEditWorkerId(j.worker_id || '')
     setEditDate(j.job_date || toISODate(new Date()))
-    setEditTime(timeHHMM(j.scheduled_time))
+
+    const tFrom = timeHHMM(j.scheduled_time)
+    setEditTime(tFrom === '—' ? '' : tFrom)
+
+    const tTo = timeHHMM(j.scheduled_end_time || null)
+    setEditTimeTo(tTo === '—' ? '' : tTo)
+
     setEditStatus((j.status || 'planned') as JobStatus)
     setEditOpen(true)
   }
@@ -1623,6 +1637,7 @@ const [editOpen, setEditOpen] = useState(false)
           job_id: editJobId,
           job_date: editDate,
           scheduled_time: editTime,
+          scheduled_end_time: editTimeTo || null,
           worker_id: editWorkerId || null,
           site_id: editSiteId || null,
           status: editStatus || null,
@@ -3470,7 +3485,7 @@ const [editOpen, setEditOpen] = useState(false)
             </select>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-3">
             <label className="grid gap-1">
               <span className="text-[11px] text-zinc-300">Дата</span>
               <input
@@ -3486,6 +3501,15 @@ const [editOpen, setEditOpen] = useState(false)
                 type="time"
                 value={editTime}
                 onChange={(e) => setEditTime(e.target.value)}
+                className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
+              />
+            </label>
+            <label className="grid gap-1">
+              <span className="text-[11px] text-zinc-300">Конец</span>
+              <input
+                type="time"
+                value={editTimeTo}
+                onChange={(e) => setEditTimeTo(e.target.value)}
                 className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
               />
             </label>
@@ -3868,3 +3892,4 @@ const [editOpen, setEditOpen] = useState(false)
     </main>
   )
 }
+
