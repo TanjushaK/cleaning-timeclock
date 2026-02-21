@@ -35,14 +35,15 @@ function isUrl(s: string) {
   return /^https?:\/\//i.test(s)
 }
 
+type AvatarKey = 'avatar_path' | 'avatar_url' | 'photo_path' | null
+
 async function fetchProfiles(sb: any, workerIds: string[]) {
-  // пробуем разные схемы, чтобы не падать, если колонки нет
-  const tries = [
-    { sel: 'id, full_name, avatar_path', key: 'avatar_path' as const },
-    { sel: 'id, full_name, avatar_url', key: 'avatar_url' as const },
-    { sel: 'id, full_name, photo_path', key: 'photo_path' as const },
-    { sel: 'id, full_name', key: null as const },
-  ] as const
+  const tries: ReadonlyArray<{ sel: string; key: AvatarKey }> = [
+    { sel: 'id, full_name, avatar_path', key: 'avatar_path' },
+    { sel: 'id, full_name, avatar_url', key: 'avatar_url' },
+    { sel: 'id, full_name, photo_path', key: 'photo_path' },
+    { sel: 'id, full_name', key: null },
+  ]
 
   for (const t of tries) {
     const res = await sb.from('profiles').select(t.sel).in('id', workerIds)
@@ -52,7 +53,7 @@ async function fetchProfiles(sb: any, workerIds: string[]) {
     if (!missingCol) return { rows: res.data || [], avatarKey: t.key }
   }
 
-  return { rows: [], avatarKey: null as const }
+  return { rows: [], avatarKey: null as AvatarKey }
 }
 
 export async function GET(req: Request) {
@@ -168,7 +169,6 @@ export async function GET(req: Request) {
 
     if (sitesRes.error) return NextResponse.json({ error: sitesRes.error.message }, { status: 500 })
 
-    // --- build avatar urls (signed) ---
     const RAW_WORKER_BUCKET = process.env.WORKER_PHOTOS_BUCKET || 'site-photos/workers'
     const { bucket: WORKER_BUCKET } = parseBucketRef(RAW_WORKER_BUCKET, 'site-photos')
     const ttl = Number(process.env.WORKER_PHOTOS_SIGNED_URL_TTL || '3600') || 3600
@@ -219,7 +219,7 @@ export async function GET(req: Request) {
         return {
           worker_id: id,
           worker_name: p?.full_name ?? null,
-          avatar_url, // <-- UI "Отчёты по работникам" ждёт это поле
+          avatar_url,
           minutes: a.minutes,
           jobs_count: a.jobs_count,
           logged_jobs: a.logged_jobs,
