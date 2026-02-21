@@ -1,7 +1,13 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { authFetchJson, clearAuthTokens, getAccessToken, setAuthTokens } from "@/lib/auth-fetch";
+import { supabase } from "@/lib/supabase";
+import {
+  authFetchJson,
+  clearAuthTokens,
+  getAccessToken,
+  setAuthTokens,
+} from "@/lib/auth-fetch";
 
 type Profile = {
   id: string;
@@ -33,6 +39,7 @@ type JobItem = {
 };
 
 type MeJobsResponse = { items: JobItem[] };
+
 type Gps = { lat: number; lng: number; accuracy: number };
 
 function pad2(n: number) {
@@ -105,10 +112,10 @@ function getGps(): Promise<Gps> {
       (err) => {
         const msg =
           err.code === err.PERMISSION_DENIED
-            ? "Доступ к геолокации запрещён. Разреши GPS для сайта."
+            ? "Доступ к геолокации запрещён.\nРазреши GPS для сайта."
             : err.code === err.POSITION_UNAVAILABLE
               ? "GPS недоступен. Попробуй выйти на улицу/включить геолокацию."
-              : "Таймаут GPS. Повтори ещё раз.";
+              : "Таймаут GPS.\nПовтори ещё раз.";
         reject(new Error(msg));
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
@@ -120,8 +127,14 @@ export default function AppPage() {
   const [booting, setBooting] = useState(true);
   const [token, setToken] = useState<string | null>(null);
 
+  const [loginMode, setLoginMode] = useState<"email" | "phone">("email");
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
+  const [phone, setPhone] = useState("");
+  const [otp, setOtp] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
 
   const [me, setMe] = useState<MeProfileResponse | null>(null);
   const [jobs, setJobs] = useState<JobItem[]>([]);
@@ -150,6 +163,7 @@ export default function AppPage() {
         const msg = String(e?.message || e || "Ошибка");
         if (msg.includes("401") || /токен|unauthorized/i.test(msg)) {
           clearAuthTokens();
+          try { await supabase.auth.signOut(); } catch {}
           setToken(null);
           setMe(null);
           setJobs([]);
@@ -162,7 +176,7 @@ export default function AppPage() {
     })();
   }, [loadAll]);
 
-  const doLogin = useCallback(async () => {
+  const doLoginEmail = useCallback(async () => {
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -187,8 +201,64 @@ export default function AppPage() {
     }
   }, [email, password, loadAll]);
 
+  const doPhoneSend = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const p = phone.trim();
+      if (!p || !p.startsWith("+")) throw new Error("Телефон нужен в формате E.164, например +31612345678");
+      const { error: e1 } = await supabase.auth.signInWithOtp({
+        phone: p,
+        options: { channel: "sms" },
+      });
+      if (e1) throw new Error(e1.message);
+      setOtpSent(true);
+      setNotice("Код отправлен по SMS.");
+    } catch (e: any) {
+      setError(String(e?.message || e || "Ошибка отправки кода"));
+    } finally {
+      setBusy(false);
+    }
+  }, [phone]);
+
+  const doPhoneVerify = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const p = phone.trim();
+      const code = otp.trim();
+      if (!p || !p.startsWith("+")) throw new Error("Телефон нужен в формате E.164, например +31612345678");
+      if (!code) throw new Error("Введи код из SMS");
+
+      const { data, error: e2 } = await supabase.auth.verifyOtp({
+        phone: p,
+        token: code,
+        type: "sms",
+      });
+      if (e2) throw new Error(e2.message);
+
+      const session = data?.session;
+      if (!session?.access_token) throw new Error("Не удалось получить сессию (session отсутствует)");
+
+      setAuthTokens(session.access_token, session.refresh_token || null);
+      const t = getAccessToken();
+      setToken(t);
+
+      await loadAll();
+      setNotice("Вход выполнен.");
+    } catch (e: any) {
+      setError(String(e?.message || e || "Ошибка подтверждения кода"));
+    } finally {
+      setBusy(false);
+      setBooting(false);
+    }
+  }, [phone, otp, loadAll]);
+
   const doLogout = useCallback(() => {
     clearAuthTokens();
+    try { supabase.auth.signOut(); } catch {}
     setToken(null);
     setMe(null);
     setJobs([]);
@@ -280,7 +350,44 @@ export default function AppPage() {
       <div className="min-h-screen bg-zinc-950 text-amber-100 flex items-center justify-center p-6">
         <div className="w-full max-w-md rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-6 shadow-xl">
           <div className="text-xl font-semibold">Tanija • Worker</div>
-          <div className="text-sm opacity-80 mt-1">Вход по email/паролю</div>
+          <div className="text-sm opacity-80 mt-1">Вход</div>
+
+          <div className="mt-4 flex gap-2">
+            <button
+              className={`flex-1 rounded-xl px-3 py-2 text-sm border ${
+                loginMode === "email"
+                  ? "bg-amber-500 text-zinc-950 border-amber-500"
+                  : "border-amber-500/30 hover:bg-amber-500/10"
+              }`}
+              onClick={() => {
+                setLoginMode("email");
+                setOtpSent(false);
+                setOtp("");
+                setError(null);
+                setNotice(null);
+              }}
+              disabled={busy}
+            >
+              Email
+            </button>
+            <button
+              className={`flex-1 rounded-xl px-3 py-2 text-sm border ${
+                loginMode === "phone"
+                  ? "bg-amber-500 text-zinc-950 border-amber-500"
+                  : "border-amber-500/30 hover:bg-amber-500/10"
+              }`}
+              onClick={() => {
+                setLoginMode("phone");
+                setOtpSent(false);
+                setOtp("");
+                setError(null);
+                setNotice(null);
+              }}
+              disabled={busy}
+            >
+              Телефон
+            </button>
+          </div>
 
           {error ? (
             <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
@@ -294,34 +401,75 @@ export default function AppPage() {
             </div>
           ) : null}
 
-          <div className="mt-4 space-y-3">
-            <input
-              id="email"
-              name="email"
-              className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-              placeholder="Email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
-            />
-            <input
-              id="password"
-              name="password"
-              className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-              placeholder="Пароль"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
-            />
-            <button
-              className="w-full rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
-              onClick={doLogin}
-              disabled={busy || !email.trim() || !password.trim()}
-            >
-              {busy ? "Вхожу…" : "Войти"}
-            </button>
-          </div>
+          {loginMode === "email" ? (
+            <div className="mt-4 space-y-3">
+              <input
+                className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
+                placeholder="Email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+              />
+              <input
+                className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
+                placeholder="Пароль"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+              />
+              <button
+                className="w-full rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
+                onClick={doLoginEmail}
+                disabled={busy || !email.trim() || !password.trim()}
+              >
+                {busy ? "Вхожу…" : "Войти"}
+              </button>
+            </div>
+          ) : (
+            <div className="mt-4 space-y-3">
+              <input
+                className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
+                placeholder="Телефон, например +31612345678"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                autoComplete="tel"
+              />
+              {!otpSent ? (
+                <button
+                  className="w-full rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
+                  onClick={doPhoneSend}
+                  disabled={busy || !phone.trim()}
+                >
+                  {busy ? "Отправляю…" : "Отправить код"}
+                </button>
+              ) : (
+                <>
+                  <input
+                    className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
+                    placeholder="Код из SMS"
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value)}
+                    inputMode="numeric"
+                  />
+                  <button
+                    className="w-full rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
+                    onClick={doPhoneVerify}
+                    disabled={busy || !otp.trim()}
+                  >
+                    {busy ? "Проверяю…" : "Войти"}
+                  </button>
+                  <button
+                    className="w-full rounded-xl border border-amber-500/30 px-4 py-2 text-sm hover:bg-amber-500/10 disabled:opacity-60"
+                    onClick={doPhoneSend}
+                    disabled={busy}
+                  >
+                    Отправить ещё раз
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
     );
