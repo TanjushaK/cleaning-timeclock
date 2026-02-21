@@ -2,12 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import {
-  authFetchJson,
-  clearAuthTokens,
-  getAccessToken,
-  setAuthTokens,
-} from "@/lib/auth-fetch";
+import { authFetchJson, clearAuthTokens, getAccessToken, setAuthTokens } from "@/lib/auth-fetch";
 
 type Profile = {
   id: string;
@@ -39,7 +34,6 @@ type JobItem = {
 };
 
 type MeJobsResponse = { items: JobItem[] };
-
 type Gps = { lat: number; lng: number; accuracy: number };
 
 function pad2(n: number) {
@@ -112,10 +106,10 @@ function getGps(): Promise<Gps> {
       (err) => {
         const msg =
           err.code === err.PERMISSION_DENIED
-            ? "Доступ к геолокации запрещён.\nРазреши GPS для сайта."
+            ? "Доступ к геолокации запрещён. Разреши GPS для сайта."
             : err.code === err.POSITION_UNAVAILABLE
               ? "GPS недоступен. Попробуй выйти на улицу/включить геолокацию."
-              : "Таймаут GPS.\nПовтори ещё раз.";
+              : "Таймаут GPS. Повтори ещё раз.";
         reject(new Error(msg));
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
@@ -208,11 +202,14 @@ export default function AppPage() {
     try {
       const p = phone.trim();
       if (!p || !p.startsWith("+")) throw new Error("Телефон нужен в формате E.164, например +31612345678");
+
       const { error: e1 } = await supabase.auth.signInWithOtp({
         phone: p,
         options: { channel: "sms" },
       });
+
       if (e1) throw new Error(e1.message);
+
       setOtpSent(true);
       setNotice("Код отправлен по SMS.");
     } catch (e: any) {
@@ -237,10 +234,11 @@ export default function AppPage() {
         token: code,
         type: "sms",
       });
+
       if (e2) throw new Error(e2.message);
 
       const session = data?.session;
-      if (!session?.access_token) throw new Error("Не удалось получить сессию (session отсутствует)");
+      if (!session?.access_token) throw new Error("Не удалось получить сессию");
 
       setAuthTokens(session.access_token, session.refresh_token || null);
       const t = getAccessToken();
@@ -265,73 +263,64 @@ export default function AppPage() {
     setNotice("Вы вышли.");
   }, []);
 
-  const acceptJob = useCallback(
-    async (jobId: string) => {
-      setBusy(true);
-      setError(null);
-      setNotice(null);
-      try {
-        await authFetchJson("/api/me/jobs/accept", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ jobId }),
-        });
-        setNotice("Смена принята.");
-        await loadAll();
-      } catch (e: any) {
-        setError(String(e?.message || e || "Ошибка принятия"));
-      } finally {
-        setBusy(false);
-      }
-    },
-    [loadAll]
-  );
+  const acceptJob = useCallback(async (jobId: string) => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await authFetchJson("/api/me/jobs/accept", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId }),
+      });
+      setNotice("Смена принята.");
+      await loadAll();
+    } catch (e: any) {
+      setError(String(e?.message || e || "Ошибка принятия"));
+    } finally {
+      setBusy(false);
+    }
+  }, [loadAll]);
 
-  const startJob = useCallback(
-    async (jobId: string) => {
-      setBusy(true);
-      setError(null);
-      setNotice(null);
-      try {
-        const gps = await getGps();
-        await authFetchJson("/api/me/jobs/start", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ jobId, ...gps }),
-        });
-        setNotice("Старт зафиксирован.");
-        await loadAll();
-      } catch (e: any) {
-        setError(String(e?.message || e || "Ошибка старта"));
-      } finally {
-        setBusy(false);
-      }
-    },
-    [loadAll]
-  );
+  const startJob = useCallback(async (jobId: string) => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const gps = await getGps();
+      await authFetchJson("/api/me/jobs/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId, ...gps }),
+      });
+      setNotice("Старт зафиксирован.");
+      await loadAll();
+    } catch (e: any) {
+      setError(String(e?.message || e || "Ошибка старта"));
+    } finally {
+      setBusy(false);
+    }
+  }, [loadAll]);
 
-  const stopJob = useCallback(
-    async (jobId: string) => {
-      setBusy(true);
-      setError(null);
-      setNotice(null);
-      try {
-        const gps = await getGps();
-        await authFetchJson("/api/me/jobs/stop", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ jobId, ...gps }),
-        });
-        setNotice("Стоп зафиксирован.");
-        await loadAll();
-      } catch (e: any) {
-        setError(String(e?.message || e || "Ошибка стопа"));
-      } finally {
-        setBusy(false);
-      }
-    },
-    [loadAll]
-  );
+  const stopJob = useCallback(async (jobId: string) => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const gps = await getGps();
+      await authFetchJson("/api/me/jobs/stop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId, ...gps }),
+      });
+      setNotice("Стоп зафиксирован.");
+      await loadAll();
+    } catch (e: any) {
+      setError(String(e?.message || e || "Ошибка стопа"));
+    } finally {
+      setBusy(false);
+    }
+  }, [loadAll]);
 
   const planned = useMemo(() => jobs.filter((j) => j.status === "planned"), [jobs]);
   const inprog = useMemo(() => jobs.filter((j) => j.status === "in_progress"), [jobs]);
@@ -488,10 +477,7 @@ export default function AppPage() {
 
           <div className="flex gap-2">
             {me.profile?.role === "admin" ? (
-              <a
-                className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10"
-                href="/admin"
-              >
+              <a className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10" href="/admin">
                 Админка
               </a>
             ) : null}
@@ -514,25 +500,18 @@ export default function AppPage() {
             >
               {busy ? "Обновляю…" : "Обновить"}
             </button>
-            <button
-              className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10"
-              onClick={doLogout}
-            >
+            <button className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10" onClick={doLogout}>
               Выйти
             </button>
           </div>
         </div>
 
         {error ? (
-          <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">
-            {error}
-          </div>
+          <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">{error}</div>
         ) : null}
 
         {notice ? (
-          <div className="mt-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">
-            {notice}
-          </div>
+          <div className="mt-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">{notice}</div>
         ) : null}
 
         <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -541,9 +520,7 @@ export default function AppPage() {
           <Section title="Завершено" items={done} busy={busy} meUserId={me.user.id} onAccept={acceptJob} onStart={startJob} onStop={stopJob} />
         </div>
 
-        <div className="mt-6 text-xs opacity-70">
-          Правило: старт/стоп только рядом с объектом, GPS точность ≤ 80м.
-        </div>
+        <div className="mt-6 text-xs opacity-70">Правило: старт/стоп только рядом с объектом, GPS точность ≤ 80м.</div>
       </div>
     </div>
   );
@@ -603,31 +580,19 @@ function Section({
                 <div className="mt-1 text-xs opacity-80">{line}</div>
 
                 {showAccept ? (
-                  <button
-                    className="mt-3 w-full rounded-xl bg-amber-500 text-zinc-950 px-3 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
-                    disabled={busy}
-                    onClick={() => onAccept(j.id)}
-                  >
+                  <button className="mt-3 w-full rounded-xl bg-amber-500 text-zinc-950 px-3 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60" disabled={busy} onClick={() => onAccept(j.id)}>
                     Принять смену
                   </button>
                 ) : null}
 
                 {showStart ? (
-                  <button
-                    className="mt-3 w-full rounded-xl bg-amber-500 text-zinc-950 px-3 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
-                    disabled={busy}
-                    onClick={() => onStart(j.id)}
-                  >
+                  <button className="mt-3 w-full rounded-xl bg-amber-500 text-zinc-950 px-3 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60" disabled={busy} onClick={() => onStart(j.id)}>
                     Старт
                   </button>
                 ) : null}
 
                 {showStop ? (
-                  <button
-                    className="mt-3 w-full rounded-xl bg-amber-500 text-zinc-950 px-3 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
-                    disabled={busy}
-                    onClick={() => onStop(j.id)}
-                  >
+                  <button className="mt-3 w-full rounded-xl bg-amber-500 text-zinc-950 px-3 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60" disabled={busy} onClick={() => onStop(j.id)}>
                     Стоп
                   </button>
                 ) : null}
