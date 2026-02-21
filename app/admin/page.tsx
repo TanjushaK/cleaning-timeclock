@@ -675,7 +675,14 @@ function ReportsPanel() {
           >
             Правка факта
           </a>
-  
+
+<a
+  className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10"
+  href="/admin/approvals"
+>
+  Активации
+</a>
+			
           <div className="flex items-center gap-2 rounded-2xl border border-yellow-400/10 bg-black/25 p-1">
             <button
               type="button"
