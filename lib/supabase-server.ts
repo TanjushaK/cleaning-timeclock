@@ -44,7 +44,6 @@ function mustEnv(name: string): string {
 
 let _service: SupabaseClient | null = null
 
-// ВАЖНО: export именно с этим именем — его импортят другие роуты
 export function supabaseService(): SupabaseClient {
   if (_service) return _service
   const url = mustEnv('NEXT_PUBLIC_SUPABASE_URL')
@@ -55,11 +54,18 @@ export function supabaseService(): SupabaseClient {
   return _service
 }
 
+// JWT должен быть ASCII (ByteString). Иногда BOM/мусор ломает заголовки.
+function sanitizeToken(raw: string | null | undefined): string | null {
+  if (!raw) return null
+  let t = String(raw).replace(/^\uFEFF/, '').trim()
+  t = t.replace(/[^A-Za-z0-9._-]/g, '')
+  return t.length ? t : null
+}
+
 function getBearer(headers: Headers): string | null {
   const auth = headers.get('authorization') || headers.get('Authorization') || ''
   const m = auth.match(/^Bearer\s+(.+)$/i)
-  const token = m?.[1]?.trim()
-  return token || null
+  return sanitizeToken(m?.[1]?.trim() || null)
 }
 
 export async function requireUser(reqOrHeaders: Request | Headers): Promise<UserGuard> {
