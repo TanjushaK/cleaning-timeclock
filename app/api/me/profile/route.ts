@@ -16,7 +16,6 @@ export async function GET(req: NextRequest) {
 
     if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
-    // если вход по телефону/новый user — профиля может не быть
     if (!profile) {
       const phone = (user as any).phone ? String((user as any).phone) : null
       const { data: created, error: cErr } = await supabase
@@ -24,7 +23,7 @@ export async function GET(req: NextRequest) {
         .insert({
           id: user.id,
           role: 'worker',
-          active: true,
+          active: false, // ✅ теперь только после подтверждения админом
           full_name: null,
           phone,
           notes: '',
@@ -40,7 +39,6 @@ export async function GET(req: NextRequest) {
       })
     }
 
-    // если профиль есть, но phone пустой — докинем из auth.user
     const uPhone = (user as any).phone ? String((user as any).phone) : null
     if (uPhone && !profile.phone) {
       await supabase.from('profiles').update({ phone: uPhone }).eq('id', user.id)
