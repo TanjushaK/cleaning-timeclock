@@ -1,7 +1,5 @@
 import { NextResponse } from 'next/server'
-import { supabaseService, toErrorResponse } from '@/lib/supabase-server'
-
-type SitePhoto = { path: string; url?: string; created_at?: string | null }
+import { requireAdmin, toErrorResponse } from '@/lib/supabase-server'
 
 function asDateISO(d: Date) {
   const y = d.getFullYear()
@@ -25,41 +23,43 @@ function minutesBetween(startISO: string, stopISO: string): number {
   return Math.round(diff / 60000)
 }
 
-function normalizePhotos(v: any): SitePhoto[] {
-  if (!Array.isArray(v)) return []
-  return v
-    .filter((p) => p && typeof p === 'object' && typeof (p as any).path === 'string')
-    .map((p) => ({
-      path: String((p as any).path),
-      url: (p as any).url ? String((p as any).url) : undefined,
-      created_at: (p as any).created_at ? String((p as any).created_at) : undefined,
-    }))
+function parseBucketRef(raw: string | undefined | null, fallbackBucket: string) {
+  const s = String(raw || '').trim().replace(/^\/+|\/+$/g, '')
+  if (!s) return { bucket: fallbackBucket }
+  const parts = s.split('/').filter(Boolean)
+  const bucket = (parts[0] || '').trim() || fallbackBucket
+  return { bucket }
 }
 
-async function requireAdmin(req: Request): Promise<{ ok: true; userId: string } | { ok: false; status: number; error: string } > {
-  const h = req.headers.get('authorization') || ''
-  const m = h.match(/^Bearer\s+(.+)$/i)
-  const token = m?.[1]?.trim()
-  if (!token) return { ok: false, status: 401, error: 'Нет токена (Authorization: Bearer ...)' }
+function isUrl(s: string) {
+  return /^https?:\/\//i.test(s)
+}
 
-  const sb = supabaseService()
+async function fetchProfiles(sb: any, workerIds: string[]) {
+  // пробуем разные схемы, чтобы не падать, если колонки нет
+  const tries = [
+    { sel: 'id, full_name, avatar_path', key: 'avatar_path' as const },
+    { sel: 'id, full_name, avatar_url', key: 'avatar_url' as const },
+    { sel: 'id, full_name, photo_path', key: 'photo_path' as const },
+    { sel: 'id, full_name', key: null as const },
+  ] as const
 
-  const u = await sb.auth.getUser(token)
-  const userId = u.data?.user?.id
-  if (u.error || !userId) return { ok: false, status: 401, error: 'Токен недействителен' }
+  for (const t of tries) {
+    const res = await sb.from('profiles').select(t.sel).in('id', workerIds)
+    if (!res.error) return { rows: res.data || [], avatarKey: t.key }
+    const msg = String(res.error.message || '')
+    const missingCol = msg.includes('column') && msg.includes('does not exist')
+    if (!missingCol) return { rows: res.data || [], avatarKey: t.key }
+  }
 
-  const prof = await sb.from('profiles').select('role').eq('id', userId).maybeSingle()
-  if (prof.error) return { ok: false, status: 500, error: prof.error.message }
-  if (!prof.data || prof.data.role !== 'admin') return { ok: false, status: 403, error: 'Требуется роль admin' }
-
-  return { ok: true, userId }
+  return { rows: [], avatarKey: null as const }
 }
 
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url)
-    const from = url.searchParams.get('from') || ''
-    const to = url.searchParams.get('to') || ''
+    const from = (url.searchParams.get('from') || url.searchParams.get('date_from') || '').trim()
+    const to = (url.searchParams.get('to') || url.searchParams.get('date_to') || '').trim()
 
     const fromD = parseDateISO(from)
     const toD = parseDateISO(to)
@@ -70,10 +70,8 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Период неверный: to < from' }, { status: 400 })
     }
 
-    const adminCheck = await requireAdmin(req)
-    if (!adminCheck.ok) return NextResponse.json({ error: adminCheck.error }, { status: adminCheck.status })
-
-    const sb = supabaseService()
+    const admin = await requireAdmin(req)
+    const sb = admin.supabase
 
     const fromISO = asDateISO(fromD)
     const toISO = asDateISO(toD)
@@ -163,37 +161,65 @@ export async function GET(req: Request) {
     const workerIds = Array.from(workerAgg.keys())
     const siteIds = Array.from(siteAgg.keys())
 
-    const [profilesRes, sitesRes] = await Promise.all([
-      sb.from('profiles').select('id, full_name, avatar_url').in('id', workerIds),
-      sb.from('sites').select('id, name, photos').in('id', siteIds),
+    const [profilesPack, sitesRes] = await Promise.all([
+      fetchProfiles(sb, workerIds),
+      sb.from('sites').select('id, name').in('id', siteIds),
     ])
 
-    if (profilesRes.error) return NextResponse.json({ error: profilesRes.error.message }, { status: 500 })
     if (sitesRes.error) return NextResponse.json({ error: sitesRes.error.message }, { status: 500 })
 
-    const profById = new Map<string, { full_name: string | null; avatar_url: string | null }>()
-    for (const p of profilesRes.data || []) {
-      profById.set(String((p as any).id), {
-        full_name: (p as any).full_name ?? null,
-        avatar_url: (p as any).avatar_url ?? null,
-      })
+    // --- build avatar urls (signed) ---
+    const RAW_WORKER_BUCKET = process.env.WORKER_PHOTOS_BUCKET || 'site-photos/workers'
+    const { bucket: WORKER_BUCKET } = parseBucketRef(RAW_WORKER_BUCKET, 'site-photos')
+    const ttl = Number(process.env.WORKER_PHOTOS_SIGNED_URL_TTL || '3600') || 3600
+
+    const profById = new Map<string, { full_name: string | null; avatar_ref: string | null }>()
+    const needSign: string[] = []
+
+    for (const p of profilesPack.rows as any[]) {
+      const id = String(p.id)
+      const full_name = (p as any).full_name ?? null
+
+      let ref: string | null = null
+      if (profilesPack.avatarKey) {
+        const v = (p as any)[profilesPack.avatarKey]
+        ref = v ? String(v) : null
+      }
+
+      profById.set(id, { full_name, avatar_ref: ref })
+
+      if (ref && !isUrl(ref)) needSign.push(ref)
     }
 
-    const siteById = new Map<string, { name: string | null; avatar_url: string | null }>()
+    const signedByPath = new Map<string, string>()
+    const uniqPaths = Array.from(new Set(needSign.filter(Boolean)))
+    if (uniqPaths.length) {
+      const { data: signed, error: signErr } = await sb.storage.from(WORKER_BUCKET).createSignedUrls(uniqPaths, ttl)
+      if (!signErr && Array.isArray(signed)) {
+        for (const s of signed as any[]) {
+          const p = s?.path ? String(s.path) : ''
+          const u = s?.signedUrl ? String(s.signedUrl) : ''
+          if (p && u) signedByPath.set(p, u)
+        }
+      }
+    }
+
+    const siteById = new Map<string, { name: string | null }>()
     for (const s of sitesRes.data || []) {
-      const photos = normalizePhotos((s as any).photos)
-      const avatar_url = photos?.[0]?.url ? String(photos[0].url) : null
-      siteById.set(String((s as any).id), { name: (s as any).name ?? null, avatar_url })
+      siteById.set(String((s as any).id), { name: (s as any).name ?? null })
     }
 
     const by_worker = workerIds
       .map((id) => {
         const a = workerAgg.get(id)!
         const p = profById.get(id)
+        const ref = p?.avatar_ref ?? null
+        const avatar_url = ref ? (isUrl(ref) ? ref : signedByPath.get(ref) || null) : null
+
         return {
           worker_id: id,
           worker_name: p?.full_name ?? null,
-          avatar_url: p?.avatar_url ?? null,
+          avatar_url, // <-- UI "Отчёты по работникам" ждёт это поле
           minutes: a.minutes,
           jobs_count: a.jobs_count,
           logged_jobs: a.logged_jobs,
@@ -208,7 +234,6 @@ export async function GET(req: Request) {
         return {
           site_id: id,
           site_name: s?.name ?? null,
-          avatar_url: s?.avatar_url ?? null,
           minutes: a.minutes,
           jobs_count: a.jobs_count,
           logged_jobs: a.logged_jobs,
