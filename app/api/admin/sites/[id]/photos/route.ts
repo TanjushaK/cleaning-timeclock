@@ -5,7 +5,25 @@ export const runtime = 'nodejs'
 
 type SitePhoto = { path: string; url?: string; created_at?: string | null }
 
-const BUCKET = process.env.SITE_PHOTOS_BUCKET || 'site-photos'
+function parseBucketRef(raw: string | undefined | null, fallbackBucket: string) {
+  const s = String(raw || '').trim().replace(/^\/+|\/+$/g, '')
+  if (!s) return { bucket: fallbackBucket, prefix: '' }
+  const parts = s.split('/').filter(Boolean)
+  const bucket = (parts[0] || '').trim() || fallbackBucket
+  const prefix = parts.slice(1).join('/')
+  return { bucket, prefix }
+}
+
+const RAW_BUCKET = process.env.SITE_PHOTOS_BUCKET || 'site-photos'
+const { bucket: BUCKET, prefix: PREFIX } = parseBucketRef(RAW_BUCKET, 'site-photos')
+
+function joinPath(...parts: string[]) {
+  return parts
+    .map((p) => String(p || '').trim())
+    .filter(Boolean)
+    .join('/')
+    .replace(/\/{2,}/g, '/')
+}
 
 function getSignedTtlSeconds() {
   const raw = process.env.SITE_PHOTOS_SIGNED_URL_TTL
@@ -76,7 +94,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
     const safeBase = sanitizeFilename(file.name.replace(/\.[^.]+$/, '')) || 'photo'
     const filename = `${Date.now()}_${safeBase}.${ext}`
-    const path = `${id}/${filename}`
+
+    // ✅ если SITE_PHOTOS_BUCKET задан как "site-photos/sites", prefix="sites"
+    const path = PREFIX ? joinPath(PREFIX, id, filename) : joinPath(id, filename)
 
     const arrayBuffer = await file.arrayBuffer()
     const bytes = new Uint8Array(arrayBuffer)
@@ -88,9 +108,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     if (upErr) throw new ApiError(500, upErr.message || 'upload_failed')
 
-    // Храним в БД устойчивый public URL (или оставляем пустым), а в ответе возвращаем signed URL.
     const publicUrl = supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl
-
     const nextPhotos = [...currentPhotos, { path, url: publicUrl, created_at: new Date().toISOString() }]
 
     const { data: updated, error: updErr } = await supabase
