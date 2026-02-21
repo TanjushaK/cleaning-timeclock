@@ -27,6 +27,7 @@ type JobItem = {
   status: "planned" | "in_progress" | "done" | string;
   job_date: string | null;
   scheduled_time: string | null;
+  scheduled_end_time?: string | null;
   site_id: string | null;
   site_name: string | null;
   worker_id: string | null;
@@ -53,9 +54,40 @@ function fmtD(iso?: string | null) {
 }
 
 function timeHHMM(t?: string | null) {
-  if (!t) return "—";
+  if (!t) return null;
   const x = String(t);
   return x.length >= 5 ? x.slice(0, 5) : x;
+}
+
+function minutesFromHHMM(t: string) {
+  const m = /^(\d{2}):(\d{2})$/.exec(t);
+  if (!m) return null;
+  const hh = parseInt(m[1], 10);
+  const mm = parseInt(m[2], 10);
+  if (Number.isNaN(hh) || Number.isNaN(mm)) return null;
+  return hh * 60 + mm;
+}
+
+function fmtDur(mins: number) {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h <= 0) return `${m}м`;
+  return `${h}ч ${pad2(m)}м`;
+}
+
+function timeRangeAndDur(from?: string | null, to?: string | null) {
+  const f = timeHHMM(from);
+  const t = timeHHMM(to);
+  if (!f) return { range: "—", dur: null as string | null };
+  if (!t) return { range: `${f}`, dur: null };
+  const a = minutesFromHHMM(f);
+  const b = minutesFromHHMM(t);
+  let durM: number | null = null;
+  if (a != null && b != null) {
+    durM = b - a;
+    if (durM < 0) durM += 24 * 60;
+  }
+  return { range: `${f}–${t}`, dur: durM != null ? fmtDur(durM) : null };
 }
 
 function statusRu(s: string) {
@@ -441,11 +473,14 @@ function Section({
             const showStart = j.status === "planned" && !showAccept && isMine;
             const showStop = j.status === "in_progress" && isMine;
 
+            const tr = timeRangeAndDur(j.scheduled_time, j.scheduled_end_time ?? null);
+            const right = `${tr.range}${tr.dur ? ` • ${tr.dur}` : ""} • ${statusRu(String(j.status || ""))}`;
+
             return (
               <div key={j.id} className="rounded-xl border border-amber-500/15 bg-zinc-900/30 p-3">
                 <div className="text-sm font-semibold">{j.site_name || "Объект"}</div>
                 <div className="mt-1 text-xs opacity-80">
-                  {fmtD(j.job_date)} • {timeHHMM(j.scheduled_time)} • {statusRu(j.status)}
+                  {fmtD(j.job_date)} • {right}
                 </div>
 
                 {showAccept ? (
