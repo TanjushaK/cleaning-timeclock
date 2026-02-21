@@ -26,37 +26,134 @@ function addDaysISO(iso: string, deltaDays: number) {
   return `${yy}-${mm}-${dd}`
 }
 
+let ASSIGN_TABLE: string | null | undefined = undefined
+
+async function resolveAssignmentsTable(supabase: any): Promise<string | null> {
+  if (ASSIGN_TABLE !== undefined) return ASSIGN_TABLE
+  const candidates = ['assignments', 'site_assignments', 'site_workers', 'worker_sites']
+  for (const t of candidates) {
+    const { error } = await supabase.from(t).select('site_id,worker_id').limit(1)
+    if (!error) {
+      ASSIGN_TABLE = t
+      return t
+    }
+    const msg = String(error?.message || '')
+    const missing = msg.includes('Could not find the table') || msg.includes('does not exist') || msg.includes('relation')
+    if (!missing) {
+      // таблица есть, но другая проблема — всё равно запомним
+      ASSIGN_TABLE = t
+      return t
+    }
+  }
+  ASSIGN_TABLE = null
+  return null
+}
+
+async function safeGetAssignedSiteIds(supabase: any, workerId: string): Promise<string[]> {
+  try {
+    const t = await resolveAssignmentsTable(supabase)
+    if (!t) return []
+    const { data, error } = await supabase.from(t).select('site_id').eq('worker_id', workerId)
+    if (error) return []
+    return Array.from(new Set((data || []).map((x: any) => String(x.site_id)).filter(Boolean)))
+  } catch {
+    return []
+  }
+}
+
+async function safeGetJobWorkerJobIds(supabase: any, workerId: string): Promise<string[]> {
+  try {
+    const { data, error } = await supabase.from('job_workers').select('job_id').eq('worker_id', workerId)
+    if (error) return []
+    return Array.from(new Set((data || []).map((x: any) => String(x.job_id)).filter(Boolean)))
+  } catch {
+    return []
+  }
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { supabase, user } = await requireUser(req)
+    const uid = user.id
 
     const sp = req.nextUrl.searchParams
     const rawFrom = (sp.get('date_from') || sp.get('from') || '').trim()
     const rawTo = (sp.get('date_to') || sp.get('to') || '').trim()
 
-    const dateFrom = rawFrom && isISODate(rawFrom) ? rawFrom : addDaysISO(todayISO(), -30)
-    const dateTo = rawTo && isISODate(rawTo) ? rawTo : addDaysISO(todayISO(), 30)
+    // по умолчанию шире, чтобы “не пусто”
+    const dateFrom = rawFrom && isISODate(rawFrom) ? rawFrom : addDaysISO(todayISO(), -90)
+    const dateTo = rawTo && isISODate(rawTo) ? rawTo : addDaysISO(todayISO(), 180)
 
-    const { data: jobs, error: jobsErr } = await supabase
+    const [siteIds, jobIdsViaLink] = await Promise.all([
+      safeGetAssignedSiteIds(supabase, uid),
+      safeGetJobWorkerJobIds(supabase, uid),
+    ])
+
+    // 1) прямые смены (worker_id = uid)
+    const { data: jobsA, error: errA } = await supabase
       .from('jobs')
       .select('id,status,job_date,scheduled_time,site_id,worker_id')
-      .eq('worker_id', user.id)
+      .eq('worker_id', uid)
       .gte('job_date', dateFrom)
       .lte('job_date', dateTo)
-      .order('job_date', { ascending: true })
-      .order('scheduled_time', { ascending: true })
+    if (errA) return NextResponse.json({ error: errA.message }, { status: 400 })
 
-    if (jobsErr) return NextResponse.json({ error: jobsErr.message }, { status: 400 })
+    // 2) смены через job_workers
+    const jobsB: any[] = []
+    if (jobIdsViaLink.length) {
+      const { data, error } = await supabase
+        .from('jobs')
+        .select('id,status,job_date,scheduled_time,site_id,worker_id')
+        .in('id', jobIdsViaLink)
+        .gte('job_date', dateFrom)
+        .lte('job_date', dateTo)
+      if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+      jobsB.push(...(data || []))
+    }
 
-    const siteIds = Array.from(new Set((jobs || []).map((j: any) => j.site_id).filter(Boolean)))
+    // 3) смены по объектам, где работник назначен (только если worker_id NULL)
+    const jobsC: any[] = []
+    if (siteIds.length) {
+      const { data, error } = await supabase
+        .from('jobs')
+        .select('id,status,job_date,scheduled_time,site_id,worker_id')
+        .is('worker_id', null)
+        .in('site_id', siteIds)
+        .gte('job_date', dateFrom)
+        .lte('job_date', dateTo)
+      if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+      jobsC.push(...(data || []))
+    }
+
+    const all = [...(jobsA || []), ...jobsB, ...jobsC]
+
+    // uniq by id
+    const byId = new Map<string, any>()
+    for (const j of all) {
+      if (!j?.id) continue
+      byId.set(String(j.id), j)
+    }
+    const jobs = Array.from(byId.values())
+
+    jobs.sort((a: any, b: any) => {
+      const da = String(a.job_date || '')
+      const db = String(b.job_date || '')
+      if (da !== db) return da < db ? -1 : 1
+      const ta = String(a.scheduled_time || '')
+      const tb = String(b.scheduled_time || '')
+      if (ta !== tb) return ta < tb ? -1 : 1
+      return String(a.id).localeCompare(String(b.id))
+    })
+
+    const siteIds2 = Array.from(new Set(jobs.map((j: any) => j.site_id).filter(Boolean)))
+    const jobIds2 = jobs.map((j: any) => j.id)
 
     const [sitesRes, logsRes] = await Promise.all([
-      siteIds.length ? supabase.from('sites').select('id,name').in('id', siteIds) : Promise.resolve({ data: [], error: null } as any),
-      (jobs || []).length
-        ? supabase.from('time_logs').select('job_id,started_at,stopped_at').in(
-            'job_id',
-            (jobs || []).map((j: any) => j.id)
-          )
+      siteIds2.length
+        ? supabase.from('sites').select('id,name').in('id', siteIds2)
+        : Promise.resolve({ data: [], error: null } as any),
+      jobIds2.length
+        ? supabase.from('time_logs').select('job_id,started_at,stopped_at').in('job_id', jobIds2)
         : Promise.resolve({ data: [], error: null } as any),
     ])
 
@@ -79,7 +176,7 @@ export async function GET(req: NextRequest) {
       logAgg.set(id, cur)
     }
 
-    const items = (jobs || []).map((j: any) => {
+    const items = jobs.map((j: any) => {
       const agg = logAgg.get(String(j.id)) || { started_at: null, stopped_at: null }
       return {
         id: String(j.id),
