@@ -320,6 +320,25 @@ function googleNavUrl(lat: number, lng: number) {
   return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}`
 }
 
+function googleNavUrlAddress(address: string) {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
+}
+
+function openNavForSite(site: { lat?: number | null; lng?: number | null; address?: string | null }) {
+  if (typeof window === 'undefined') return
+  const lat = site?.lat
+  const lng = site?.lng
+  const addr = site?.address
+  if (lat != null && lng != null) {
+    window.open(googleNavUrl(lat, lng), '_blank', 'noopener,noreferrer')
+    return
+  }
+  if (addr) {
+    window.open(googleNavUrlAddress(String(addr)), '_blank', 'noopener,noreferrer')
+    return
+  }
+}
+
 function appleNavUrl(lat: number, lng: number) {
   const dest = `${lat},${lng}`
   return `https://maps.apple.com/?daddr=${encodeURIComponent(dest)}`
@@ -585,7 +604,7 @@ function ReportsPanel() {
         to: string
         total_minutes: number
         by_worker: Array<{ worker_id: string; worker_name: string | null; avatar_url: string | null; minutes: number }>
-        by_site: Array<{ site_id: string; site_name: string | null; minutes: number }>
+        by_site: Array<{ site_id: string; site_name: string | null; avatar_url: string | null; minutes: number }>
       }
   >(null)
 
@@ -614,7 +633,7 @@ function ReportsPanel() {
         to: string
         total_minutes: number
         by_worker: Array<{ worker_id: string; worker_name: string | null; avatar_url: string | null; minutes: number }>
-        by_site: Array<{ site_id: string; site_name: string | null; minutes: number }>
+        by_site: Array<{ site_id: string; site_name: string | null; avatar_url: string | null; minutes: number }>
       }>(`/api/admin/reports?from=${encodeURIComponent(fromISO)}&to=${encodeURIComponent(toISO)}`)
 
       setReportData(data)
@@ -719,7 +738,7 @@ function ReportsPanel() {
           .map((x: any) => {
             const id = reportsView === 'workers' ? x.worker_id : x.site_id
             const title = (reportsView === 'workers' ? x.worker_name : x.site_name) ?? '—'
-            const avatarUrl = reportsView === 'workers' ? x.avatar_url : null
+            const avatarUrl = x.avatar_url || null
   
             return (
               <div
@@ -1957,7 +1976,37 @@ const [editOpen, setEditOpen] = useState(false)
       >
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <div className="truncate font-semibold text-yellow-100">{left}</div>
+            <div className="flex items-center gap-2 min-w-0">
+              {(() => {
+                if (planMode === 'workers') {
+                  const ss = j.site_id ? sitesById.get(j.site_id) : null
+                  const photos = ss && Array.isArray((ss as any).photos) ? ((ss as any).photos as any[]) : []
+                  const url = photos?.[0]?.url || null
+                  if (!url) {
+                    return (
+                      <div className="flex h-6 w-6 items-center justify-center rounded-full border border-yellow-400/15 bg-black/30 text-[10px] font-semibold text-yellow-100/70">🏠</div>
+                    )
+                  }
+                  return (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={url} alt="" className="h-6 w-6 rounded-full border border-yellow-400/15 object-cover" loading="lazy" />
+                  )
+                }
+
+                const wid = j.worker_id || ''
+                const thumb = wid ? workerPhotoMeta[wid]?.thumb || null : null
+                if (!thumb) {
+                  return (
+                    <div className="flex h-6 w-6 items-center justify-center rounded-full border border-yellow-400/15 bg-black/30 text-[10px] font-semibold text-yellow-100/70">{initials(left)}</div>
+                  )
+                }
+                return (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={thumb} alt="" className="h-6 w-6 rounded-full border border-yellow-400/15 object-cover" loading="lazy" />
+                )
+              })()}
+              <div className="truncate font-semibold text-yellow-100">{left}</div>
+            </div>
             <div className="mt-0.5 text-zinc-300">{right}</div>
           </div>
 
@@ -2561,18 +2610,23 @@ const [editOpen, setEditOpen] = useState(false)
                                           {/* eslint-disable-next-line @next/next/no-img-element */}
                                           <img src={primaryUrl} alt="site" className="h-full w-full object-cover" loading="lazy" />
                                           <button
+                                            type="button"
                                             onClick={() => {
                                               if (s.lat != null && s.lng != null) {
-                                                window.open(googleNavUrl(s.lat, s.lng), '_blank', 'noopener,noreferrer')
-                                              } else {
-                                                openSiteCard(s)
+                                                openNavForSite({ lat: s.lat, lng: s.lng, address: s.address || null })
+                                                return
                                               }
+                                              if (s.address) {
+                                                openNavForSite({ lat: null, lng: null, address: s.address || null })
+                                                return
+                                              }
+                                              openSiteCard(s)
                                             }}
                                             className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-black/0"
-                                            title={s.lat != null && s.lng != null ? 'Открыть навигацию' : 'Открыть карточку'}
+                                            title={(s.lat != null && s.lng != null) || !!s.address ? 'Открыть навигацию' : 'Открыть карточку'}
                                           />
                                           <div className="absolute bottom-1 left-2 text-[10px] font-semibold text-yellow-100/90">
-                                            {s.lat != null && s.lng != null ? 'Навигация' : 'Карточка'}
+                                            {(s.lat != null && s.lng != null) || !!s.address ? 'Навигация' : 'Карточка'}
                                           </div>
                                         </div>
                                       ) : (
@@ -3395,7 +3449,42 @@ const [editOpen, setEditOpen] = useState(false)
                             <tr key={j.id} className="border-t border-yellow-400/5 hover:bg-yellow-400/5">
                               <td className="px-4 py-3">{fmtD(j.job_date)}</td>
                               <td className="px-4 py-3">{timeRangeHHMM(j.scheduled_time, j.scheduled_end_time)}</td>
-                              <td className="px-4 py-3">{j.site_name || '—'}</td>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-2">
+                                  {(() => {
+                                    const ss = j.site_id ? sitesById.get(j.site_id) : null
+                                    const photos = ss && Array.isArray((ss as any).photos) ? ((ss as any).photos as any[]) : []
+                                    const url = photos?.[0]?.url || null
+                                    const canNav = !!ss && (((ss as any).lat != null && (ss as any).lng != null) || !!(ss as any).address)
+                                    if (!url) return null
+                                    return (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          if (!ss) return
+                                          if ((ss as any).lat != null && (ss as any).lng != null) {
+                                            openNavForSite({ lat: (ss as any).lat, lng: (ss as any).lng, address: (ss as any).address || null })
+                                            return
+                                          }
+                                          if ((ss as any).address) {
+                                            openNavForSite({ lat: null, lng: null, address: (ss as any).address || null })
+                                          }
+                                        }}
+                                        className={cn(
+                                          'relative h-7 w-10 overflow-hidden rounded-xl border border-yellow-400/15 bg-black/30',
+                                          canNav ? 'hover:border-yellow-300/40' : ''
+                                        )}
+                                        title={canNav ? 'Открыть навигацию' : 'Фото объекта'}
+                                      >
+                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        <img src={url} alt="" className="h-full w-full object-cover" loading="lazy" />
+                                      </button>
+                                    )
+                                  })()}
+                                  <span>{j.site_name || '—'}</span>
+                                </div>
+                              </td>
                               <td className="px-4 py-3">
                                 {j.worker_id ? (
                                   <button onClick={() => openWorkerCard(j.worker_id!)} className="text-yellow-100 hover:text-yellow-50">
@@ -3754,7 +3843,40 @@ const [editOpen, setEditOpen] = useState(false)
                     <div key={j.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-yellow-400/10 bg-black/30 px-3 py-2">
                       <div className="text-xs text-zinc-200">
                         <span className="text-zinc-100">{fmtD(j.job_date)}</span> • <span className="text-zinc-100">{timeRangeHHMM(j.scheduled_time, j.scheduled_end_time)}</span> •{' '}
-                        <span className="text-zinc-100">{j.site_name || '—'}</span> • <span className="text-zinc-500">{statusRu(String(j.status || ''))}</span>
+                        <span className="inline-flex items-center gap-2 text-zinc-100">
+                          {(() => {
+                            const ss = j.site_id ? sitesById.get(j.site_id) : null
+                            const photos = ss && Array.isArray((ss as any).photos) ? ((ss as any).photos as any[]) : []
+                            const url = photos?.[0]?.url || null
+                            const canNav = !!ss && (((ss as any).lat != null && (ss as any).lng != null) || !!(ss as any).address)
+                            if (!url) return null
+                            return (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  if (!ss) return
+                                  if ((ss as any).lat != null && (ss as any).lng != null) {
+                                    openNavForSite({ lat: (ss as any).lat, lng: (ss as any).lng, address: (ss as any).address || null })
+                                    return
+                                  }
+                                  if ((ss as any).address) {
+                                    openNavForSite({ lat: null, lng: null, address: (ss as any).address || null })
+                                  }
+                                }}
+                                className={cn(
+                                  'relative h-5 w-7 overflow-hidden rounded-lg border border-yellow-400/15 bg-black/30',
+                                  canNav ? 'hover:border-yellow-300/40' : ''
+                                )}
+                                title={canNav ? 'Открыть навигацию' : 'Фото объекта'}
+                              >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={url} alt="" className="h-full w-full object-cover" loading="lazy" />
+                              </button>
+                            )
+                          })()}
+                          <span>{j.site_name || '—'}</span>
+                        </span> • <span className="text-zinc-500">{statusRu(String(j.status || ''))}</span>
                         <div className="mt-1 text-[11px] text-zinc-400">Начал: {fmtDT(j.started_at)} • Закончил: {fmtDT(j.stopped_at)}</div>
                       </div>
                       <button
@@ -3892,4 +4014,3 @@ const [editOpen, setEditOpen] = useState(false)
     </main>
   )
 }
-
