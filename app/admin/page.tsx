@@ -3481,7 +3481,7 @@ const [editOpen, setEditOpen] = useState(false)
               />
             </label>
             <label className="grid gap-1">
-              <span className="text-[11px] text-zinc-300">Время</span>
+              <span className="text-[11px] text-zinc-300">Начало</span>
               <input
                 type="time"
                 value={editTime}
