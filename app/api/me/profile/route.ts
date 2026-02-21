@@ -16,14 +16,16 @@ export async function GET(req: NextRequest) {
 
     if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
+    // Автосоздание профиля для нового phone-user / нового auth.user
     if (!profile) {
       const phone = (user as any).phone ? String((user as any).phone) : null
+
       const { data: created, error: cErr } = await supabase
         .from('profiles')
         .insert({
           id: user.id,
           role: 'worker',
-          active: false, // ✅ теперь только после подтверждения админом
+          active: false, // ✅ важно: новые phone-users неактивны
           full_name: null,
           phone,
           notes: '',
@@ -39,6 +41,7 @@ export async function GET(req: NextRequest) {
       })
     }
 
+    // Если профиль есть, но phone пуст — дольём из auth.user.phone
     const uPhone = (user as any).phone ? String((user as any).phone) : null
     if (uPhone && !profile.phone) {
       await supabase.from('profiles').update({ phone: uPhone }).eq('id', user.id)
