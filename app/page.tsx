@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { authFetchJson, clearAuthTokens, getAccessToken, setAuthTokens } from "@/lib/auth-fetch";
 
@@ -10,11 +10,13 @@ type Profile = {
   active?: boolean | null;
   full_name?: string | null;
   phone?: string | null;
-  notes?: string | null;
+  email?: string | null;
+  avatar_path?: string | null;
+  onboarding_submitted_at?: string | null;
 };
 
 type MeProfileResponse = {
-  user: { id: string; email?: string | null };
+  user: { id: string; email?: string | null; phone?: string | null; email_confirmed_at?: string | null };
   profile: Profile;
 };
 
@@ -35,6 +37,8 @@ type JobItem = {
 
 type MeJobsResponse = { items: JobItem[] };
 type Gps = { lat: number; lng: number; accuracy: number };
+
+type MyPhotosResponse = { photos: Array<{ path: string; url?: string | null }>; avatar_path: string | null };
 
 function pad2(n: number) {
   return String(n).padStart(2, "0");
@@ -104,11 +108,16 @@ function getGps(): Promise<Gps> {
   });
 }
 
+function bearer() {
+  const t = localStorage.getItem("ct_access_token") || "";
+  return t ? { Authorization: `Bearer ${t}` } : {};
+}
+
 export default function AppPage() {
   const [booting, setBooting] = useState(true);
   const [token, setToken] = useState<string | null>(null);
 
-  const [loginMode, setLoginMode] = useState<"email" | "phone">("email");
+  const [loginMode, setLoginMode] = useState<"email" | "phone">("phone");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
@@ -122,7 +131,22 @@ export default function AppPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  // onboarding
+  const [fullName, setFullName] = useState("");
+  const [profileEmail, setProfileEmail] = useState("");
+  const [photos, setPhotos] = useState<Array<{ path: string; url?: string | null }>>([]);
+  const [avatarPath, setAvatarPath] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
   const authed = !!token;
+
+  const loadPhotos = useCallback(async () => {
+    const r = await fetch("/api/me/photos", { headers: { ...bearer() }, cache: "no-store" as any });
+    const data = (await r.json()) as MyPhotosResponse | any;
+    if (!r.ok) throw new Error(String(data?.error || `HTTP ${r.status}`));
+    setPhotos(Array.isArray(data.photos) ? data.photos : []);
+    setAvatarPath(data.avatar_path || null);
+  }, []);
 
   const loadAll = useCallback(async () => {
     setError(null);
@@ -131,15 +155,18 @@ export default function AppPage() {
     const profile = await authFetchJson<MeProfileResponse>("/api/me/profile", { cache: "no-store" });
     setMe(profile);
 
-    // ✅ если не активирован — смены не грузим вообще
+    setFullName(String(profile?.profile?.full_name || ""));
+    setProfileEmail(String(profile?.profile?.email || profile?.user?.email || ""));
+
     if (profile?.profile?.active !== true) {
       setJobs([]);
+      await loadPhotos().catch(() => {});
       return;
     }
 
     const jobsRes = await authFetchJson<MeJobsResponse>("/api/me/jobs", { cache: "no-store" });
     setJobs(jobsRes.items || []);
-  }, []);
+  }, [loadPhotos]);
 
   useEffect(() => {
     (async () => {
@@ -250,6 +277,119 @@ export default function AppPage() {
     setNotice("Вы вышли.");
   }, []);
 
+  // onboarding actions
+  const saveProfile = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const name = fullName.trim();
+      if (!name) throw new Error("Укажи имя")
+
+      const em = profileEmail.trim();
+
+      // email в auth — только если есть активная supabase-сессия (phone-login)
+      if (em) {
+        try {
+          const { error: uErr } = await supabase.auth.updateUser({ email: em });
+          if (uErr) throw uErr;
+        } catch {}
+      }
+
+      await authFetchJson("/api/me/profile/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ full_name: name, email: em || null }),
+      });
+
+      await loadAll();
+      setNotice("Сохранено.");
+    } catch (e: any) {
+      setError(String(e?.message || e || "Ошибка"))
+    } finally {
+      setBusy(false);
+    }
+  }, [fullName, profileEmail, loadAll]);
+
+  const uploadPhoto = useCallback(async (file: File) => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const r = await fetch("/api/me/photos", { method: "POST", headers: { ...bearer() }, body: fd });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(String(data?.error || `HTTP ${r.status}`));
+      await loadPhotos();
+      setNotice("Фото загружено.");
+    } catch (e: any) {
+      setError(String(e?.message || e || "Ошибка загрузки"));
+    } finally {
+      setBusy(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }, [loadPhotos]);
+
+  const delPhoto = useCallback(async (path: string) => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const r = await fetch("/api/me/photos", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", ...bearer() },
+        body: JSON.stringify({ path }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(String(data?.error || `HTTP ${r.status}`));
+      await loadPhotos();
+      setNotice("Удалено.");
+    } catch (e: any) {
+      setError(String(e?.message || e || "Ошибка удаления"));
+    } finally {
+      setBusy(false);
+    }
+  }, [loadPhotos]);
+
+  const makeAvatar = useCallback(async (path: string) => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const r = await fetch("/api/me/photos", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...bearer() },
+        body: JSON.stringify({ action: "make_primary", path }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(String(data?.error || `HTTP ${r.status}`));
+      await loadPhotos();
+      await loadAll();
+      setNotice("Аватар установлен.");
+    } catch (e: any) {
+      setError(String(e?.message || e || "Ошибка"));
+    } finally {
+      setBusy(false);
+    }
+  }, [loadPhotos, loadAll]);
+
+  const submitForApproval = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await authFetchJson("/api/me/profile/submit", { method: "POST" });
+      await loadAll();
+      setNotice("Отправлено на активацию.");
+    } catch (e: any) {
+      setError(String(e?.message || e || "Ошибка"));
+    } finally {
+      setBusy(false);
+    }
+  }, [loadAll]);
+
+  // worker job actions
   const acceptJob = useCallback(async (jobId: string) => {
     setBusy(true);
     setError(null);
@@ -331,21 +471,21 @@ export default function AppPage() {
           <div className="mt-4 flex gap-2">
             <button
               className={`flex-1 rounded-xl px-3 py-2 text-sm border ${
-                loginMode === "email" ? "bg-amber-500 text-zinc-950 border-amber-500" : "border-amber-500/30 hover:bg-amber-500/10"
-              }`}
-              onClick={() => { setLoginMode("email"); setOtpSent(false); setOtp(""); setError(null); setNotice(null); }}
-              disabled={busy}
-            >
-              Email
-            </button>
-            <button
-              className={`flex-1 rounded-xl px-3 py-2 text-sm border ${
                 loginMode === "phone" ? "bg-amber-500 text-zinc-950 border-amber-500" : "border-amber-500/30 hover:bg-amber-500/10"
               }`}
               onClick={() => { setLoginMode("phone"); setOtpSent(false); setOtp(""); setError(null); setNotice(null); }}
               disabled={busy}
             >
               Телефон
+            </button>
+            <button
+              className={`flex-1 rounded-xl px-3 py-2 text-sm border ${
+                loginMode === "email" ? "bg-amber-500 text-zinc-950 border-amber-500" : "border-amber-500/30 hover:bg-amber-500/10"
+              }`}
+              onClick={() => { setLoginMode("email"); setOtpSent(false); setOtp(""); setError(null); setNotice(null); }}
+              disabled={busy}
+            >
+              Email
             </button>
           </div>
 
@@ -385,47 +525,146 @@ export default function AppPage() {
     );
   }
 
-  // ✅ Экран ожидания активации
+  // onboarding / inactive
   if (me.profile?.active !== true) {
+    const submitted = !!me.profile?.onboarding_submitted_at
+
     return (
-      <div className="min-h-screen bg-zinc-950 text-amber-100 flex items-center justify-center p-6">
-        <div className="w-full max-w-md rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-6 shadow-xl">
-          <div className="text-xl font-semibold">Аккаунт ожидает активации</div>
-          <div className="text-sm opacity-80 mt-2">
-            Админ должен включить тебя в разделе <span className="font-semibold">Работники</span>.
-          </div>
-          <div className="mt-3 text-xs opacity-70">
-            ID: {me.user.id}
-            <br />
-            {me.profile.phone ? `Телефон: ${me.profile.phone}` : null}
+      <div className="min-h-screen bg-zinc-950 text-amber-100 p-6">
+        <div className="mx-auto max-w-3xl">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-2xl font-semibold">Профиль работника</div>
+              <div className="text-sm opacity-80 mt-1">Заполни данные, поставь аватар и отправь на активацию</div>
+            </div>
+            <div className="flex gap-2">
+              <a className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10" href="/admin/approvals">
+                Админу: /admin/approvals
+              </a>
+              <button className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10" onClick={doLogout}>
+                Выйти
+              </button>
+            </div>
           </div>
 
-          {error ? <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{error}</div> : null}
-          {notice ? <div className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">{notice}</div> : null}
+          {error ? <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">{error}</div> : null}
+          {notice ? <div className="mt-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">{notice}</div> : null}
 
-          <div className="mt-5 flex gap-2">
-            <button
-              className="flex-1 rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10 disabled:opacity-60"
-              disabled={busy}
-              onClick={async () => {
-                setBusy(true);
-                setError(null);
-                setNotice(null);
-                try {
-                  await loadAll();
-                  setNotice("Проверила статус.");
-                } catch (e: any) {
-                  setError(String(e?.message || e || "Ошибка"));
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            >
-              {busy ? "Проверяю…" : "Проверить статус"}
-            </button>
-            <button className="flex-1 rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10" onClick={doLogout}>
-              Выйти
-            </button>
+          <div className="mt-6 rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-5">
+            <div className="text-lg font-semibold">Данные</div>
+
+            <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+              <input
+                className="rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
+                placeholder="Имя и фамилия"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+              />
+              <input
+                className="rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
+                placeholder="Email (по желанию)"
+                value={profileEmail}
+                onChange={(e) => setProfileEmail(e.target.value)}
+              />
+            </div>
+
+            <div className="mt-3 text-xs opacity-70">
+              Телефон: {me.user.phone || me.profile.phone || '—'} • Email подтверждён: {me.user.email ? (me.user.email_confirmed_at ? 'да' : 'нет') : '—'}
+            </div>
+
+            <div className="mt-4 flex gap-2">
+              <button
+                className="rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
+                disabled={busy}
+                onClick={saveProfile}
+              >
+                {busy ? 'Сохраняю…' : 'Сохранить'}
+              </button>
+
+              <button
+                className="rounded-xl border border-amber-500/30 px-4 py-2 text-sm hover:bg-amber-500/10 disabled:opacity-60"
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true); setError(null); setNotice(null);
+                  try { await loadAll(); setNotice('Обновлено.'); }
+                  catch (e: any) { setError(String(e?.message || e || 'Ошибка')); }
+                  finally { setBusy(false); }
+                }}
+              >
+                {busy ? '…' : 'Обновить'}
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-5">
+            <div className="flex items-baseline justify-between">
+              <div className="text-lg font-semibold">Фото (до 5)</div>
+              <div className="text-sm opacity-70">{photos.length}/5</div>
+            </div>
+
+            <div className="mt-3 flex gap-2">
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                className="block w-full text-sm"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) uploadPhoto(f);
+                }}
+                disabled={busy}
+              />
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-3">
+              {photos.map((p) => {
+                const isAvatar = avatarPath && p.path === avatarPath;
+                return (
+                  <div key={p.path} className="rounded-xl border border-amber-500/15 bg-zinc-900/30 overflow-hidden">
+                    <div className="aspect-square bg-black/30 flex items-center justify-center">
+                      {p.url ? <img src={p.url} className="h-full w-full object-cover" /> : <div className="text-xs opacity-60">—</div>}
+                    </div>
+                    <div className="p-2 space-y-2">
+                      <button
+                        className="w-full rounded-lg bg-amber-500 text-zinc-950 px-2 py-1 text-xs font-semibold hover:bg-amber-400 disabled:opacity-60"
+                        disabled={busy}
+                        onClick={() => makeAvatar(p.path)}
+                      >
+                        {isAvatar ? 'Аватар' : 'Сделать аватаром'}
+                      </button>
+                      <button
+                        className="w-full rounded-lg border border-amber-500/30 px-2 py-1 text-xs hover:bg-amber-500/10 disabled:opacity-60"
+                        disabled={busy}
+                        onClick={() => delPhoto(p.path)}
+                      >
+                        Удалить
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {photos.length === 0 ? <div className="mt-3 text-sm opacity-70">Загрузи фото и выбери аватар.</div> : null}
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-5">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-lg font-semibold">Активация</div>
+                <div className="text-sm opacity-80 mt-1">
+                  {submitted ? 'Заявка отправлена. Ждём подтверждения админом.' : 'Когда всё готово — отправь на активацию.'}
+                </div>
+              </div>
+
+              <button
+                className="rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
+                disabled={busy}
+                onClick={submitForApproval}
+              >
+                {busy ? 'Отправляю…' : 'Отправить на активацию'}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -439,7 +678,7 @@ export default function AppPage() {
           <div>
             <div className="text-2xl font-semibold">Tanija • Worker</div>
             <div className="text-sm opacity-80 mt-1">
-              {me.profile?.full_name || "—"} • {me.user?.email || "—"} • {me.profile?.role || "worker"}
+              {me.profile?.full_name || "—"} • {me.user?.email || me.profile?.email || "—"} • {me.profile?.role || "worker"}
             </div>
           </div>
 
