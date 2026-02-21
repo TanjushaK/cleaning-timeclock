@@ -1,12 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  authFetchJson,
-  clearAuthTokens,
-  getAccessToken,
-  setAuthTokens,
-} from "@/lib/auth-fetch";
+import { authFetchJson, clearAuthTokens, getAccessToken, setAuthTokens } from "@/lib/auth-fetch";
 
 type Profile = {
   id: string;
@@ -33,11 +28,11 @@ type JobItem = {
   worker_id: string | null;
   started_at: string | null;
   stopped_at: string | null;
+  actual_minutes?: number | null;
   can_accept?: boolean | null;
 };
 
 type MeJobsResponse = { items: JobItem[] };
-
 type Gps = { lat: number; lng: number; accuracy: number };
 
 function pad2(n: number) {
@@ -69,25 +64,23 @@ function minutesFromHHMM(t: string) {
 }
 
 function fmtDur(mins: number) {
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  if (h <= 0) return `${m}м`;
-  return `${h}ч ${pad2(m)}м`;
+  const m = Math.max(0, Math.floor(mins || 0));
+  const h = Math.floor(m / 60);
+  const r = m % 60;
+  if (h <= 0) return `${r}м`;
+  return `${h}ч ${pad2(r)}м`;
 }
 
-function timeRangeAndDur(from?: string | null, to?: string | null) {
+function plannedMinutes(from?: string | null, to?: string | null) {
   const f = timeHHMM(from);
   const t = timeHHMM(to);
-  if (!f) return { range: "—", dur: null as string | null };
-  if (!t) return { range: `${f}`, dur: null };
+  if (!f || !t) return null;
   const a = minutesFromHHMM(f);
   const b = minutesFromHHMM(t);
-  let durM: number | null = null;
-  if (a != null && b != null) {
-    durM = b - a;
-    if (durM < 0) durM += 24 * 60;
-  }
-  return { range: `${f}–${t}`, dur: durM != null ? fmtDur(durM) : null };
+  if (a == null || b == null) return null;
+  let d = b - a;
+  if (d < 0) d += 24 * 60;
+  return d;
 }
 
 function statusRu(s: string) {
@@ -395,36 +388,9 @@ export default function AppPage() {
         ) : null}
 
         <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <Section
-            title="Запланировано"
-            subtitle={`${planned.length}`}
-            items={planned}
-            busy={busy}
-            meUserId={me.user.id}
-            onAccept={acceptJob}
-            onStart={startJob}
-            onStop={stopJob}
-          />
-          <Section
-            title="В процессе"
-            subtitle={`${inprog.length}`}
-            items={inprog}
-            busy={busy}
-            meUserId={me.user.id}
-            onAccept={acceptJob}
-            onStart={startJob}
-            onStop={stopJob}
-          />
-          <Section
-            title="Завершено"
-            subtitle={`${done.length}`}
-            items={done}
-            busy={busy}
-            meUserId={me.user.id}
-            onAccept={acceptJob}
-            onStart={startJob}
-            onStop={stopJob}
-          />
+          <Section title="Запланировано" items={planned} busy={busy} meUserId={me.user.id} onAccept={acceptJob} onStart={startJob} onStop={stopJob} />
+          <Section title="В процессе" items={inprog} busy={busy} meUserId={me.user.id} onAccept={acceptJob} onStart={startJob} onStop={stopJob} />
+          <Section title="Завершено" items={done} busy={busy} meUserId={me.user.id} onAccept={acceptJob} onStart={startJob} onStop={stopJob} />
         </div>
 
         <div className="mt-6 text-xs opacity-70">
@@ -437,7 +403,6 @@ export default function AppPage() {
 
 function Section({
   title,
-  subtitle,
   items,
   busy,
   meUserId,
@@ -446,7 +411,6 @@ function Section({
   onStop,
 }: {
   title: string;
-  subtitle: string;
   items: JobItem[];
   busy: boolean;
   meUserId: string;
@@ -458,7 +422,7 @@ function Section({
     <div className="rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-4 shadow-xl">
       <div className="flex items-baseline justify-between">
         <div className="text-lg font-semibold">{title}</div>
-        <div className="text-sm opacity-70">{subtitle}</div>
+        <div className="text-sm opacity-70">{items.length}</div>
       </div>
 
       <div className="mt-3 space-y-3">
@@ -467,21 +431,28 @@ function Section({
         ) : (
           items.map((j) => {
             const canAccept = !!j.can_accept || (!j.worker_id && j.status === "planned");
-            const isMine = !j.worker_id || j.worker_id === meUserId ? true : false;
+            const isMine = !j.worker_id || j.worker_id === meUserId;
 
             const showAccept = j.status === "planned" && canAccept;
             const showStart = j.status === "planned" && !showAccept && isMine;
             const showStop = j.status === "in_progress" && isMine;
 
-            const tr = timeRangeAndDur(j.scheduled_time, j.scheduled_end_time ?? null);
-            const right = `${tr.range}${tr.dur ? ` • ${tr.dur}` : ""} • ${statusRu(String(j.status || ""))}`;
+            const from = timeHHMM(j.scheduled_time);
+            const to = timeHHMM(j.scheduled_end_time ?? null);
+            const planM = plannedMinutes(from, to);
+
+            const factM = Math.max(0, Math.floor(Number(j.actual_minutes || 0) || 0));
+            const showFact = j.status === "done" && factM > 0;
+
+            const line =
+              j.status === "done"
+                ? `${fmtD(j.job_date)} • ${from && to ? `${from}–${to}` : from || "—"} • ${showFact ? `факт ${fmtDur(factM)}` : planM != null ? `${fmtDur(planM)}` : "—"} • ${statusRu(String(j.status || ""))}`
+                : `${fmtD(j.job_date)} • ${from && to ? `${from}–${to}` : from || "—"}${planM != null ? ` • ${fmtDur(planM)}` : ""} • ${statusRu(String(j.status || ""))}`;
 
             return (
               <div key={j.id} className="rounded-xl border border-amber-500/15 bg-zinc-900/30 p-3">
                 <div className="text-sm font-semibold">{j.site_name || "Объект"}</div>
-                <div className="mt-1 text-xs opacity-80">
-                  {fmtD(j.job_date)} • {right}
-                </div>
+                <div className="mt-1 text-xs opacity-80">{line}</div>
 
                 {showAccept ? (
                   <button
