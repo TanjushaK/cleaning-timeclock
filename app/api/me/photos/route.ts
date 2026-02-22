@@ -7,6 +7,16 @@ export const dynamic = 'force-dynamic'
 type Photo = { path: string; url?: string; created_at?: string | null }
 type AvatarKey = 'avatar_path' | 'avatar_url' | 'photo_path'
 
+const MAX_UPLOAD_BYTES = (() => {
+  const raw = process.env.WORKER_PHOTOS_MAX_BYTES || process.env.MAX_UPLOAD_BYTES || '5242880' // 5MB
+  const n = Number.parseInt(String(raw), 10)
+  if (!Number.isFinite(n) || n <= 0) return 5 * 1024 * 1024
+  return Math.min(Math.max(n, 256 * 1024), 25 * 1024 * 1024) // clamp 256KB..25MB
+})()
+
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
+const ALLOWED_EXT = new Set(['jpg', 'jpeg', 'png', 'webp'])
+
 function parseBucketRef(raw: string | undefined | null, fallbackBucket: string) {
   const s = String(raw || '').trim().replace(/^\/+|\/+$/g, '')
   if (!s) return { bucket: fallbackBucket, prefix: '' }
@@ -39,6 +49,25 @@ function getTtl() {
 function pref(userId: string) {
   const root = BUCKET_PREFIX ? BUCKET_PREFIX : 'workers'
   return joinPath(root, userId)
+}
+
+function fileExt(file: File) {
+  const ext = (file.name.split('.').pop() || '').toLowerCase()
+  return ext || 'jpg'
+}
+
+function validateImageFile(file: File) {
+  if (!(file instanceof File)) throw new ApiError(400, 'file_required')
+  if (file.size <= 0) throw new ApiError(400, 'file_empty')
+  if (file.size > MAX_UPLOAD_BYTES) throw new ApiError(400, 'file_too_large')
+
+  const ext = fileExt(file)
+  const mime = String(file.type || '').toLowerCase()
+
+  const okByMime = mime ? ALLOWED_IMAGE_TYPES.has(mime) : false
+  const okByExt = ALLOWED_EXT.has(ext)
+
+  if (!okByMime && !okByExt) throw new ApiError(400, 'file_type_not_allowed')
 }
 
 async function resolveAvatarKey(sb: any): Promise<AvatarKey> {
@@ -108,19 +137,26 @@ export async function POST(req: NextRequest) {
     const form = await req.formData()
     const file = form.get('file')
     if (!(file instanceof File)) throw new ApiError(400, 'file_required')
-    if (file.size <= 0) throw new ApiError(400, 'file_empty')
-    if (file.size > MAX_UPLOAD_BYTES) throw new ApiError(400, 'file_too_large')
-    if (!ALLOWED_IMAGE_TYPES.has(file.type)) throw new ApiError(400, 'file_type_not_allowed')
 
-    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
+    validateImageFile(file)
+
+    const ext = fileExt(file)
     const base = safeName(file.name.replace(/\.[^.]+$/, '')) || 'photo'
     const filename = `${Date.now()}_${base}.${ext}`
 
     const path = `${pref(userId)}/${filename}`
     const bytes = new Uint8Array(await file.arrayBuffer())
 
+    const contentType = ALLOWED_IMAGE_TYPES.has(String(file.type || '').toLowerCase())
+      ? String(file.type)
+      : ext === 'png'
+        ? 'image/png'
+        : ext === 'webp'
+          ? 'image/webp'
+          : 'image/jpeg'
+
     const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, bytes, {
-      contentType: file.type || 'image/jpeg',
+      contentType,
       upsert: false,
     })
     if (upErr) throw new ApiError(500, upErr.message)
@@ -193,4 +229,3 @@ export async function DELETE(req: NextRequest) {
     return toErrorResponse(e)
   }
 }
-
