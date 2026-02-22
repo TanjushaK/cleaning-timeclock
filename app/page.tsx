@@ -174,9 +174,10 @@ export default function AppPage() {
     setFullName(String(profile?.profile?.full_name || ""));
     setProfileEmail(String(profile?.profile?.email || profile?.user?.email || ""));
 
+    await loadPhotos().catch(() => {});
+
     if (profile?.profile?.active !== true) {
       setJobs([]);
-      await loadPhotos().catch(() => {});
       return;
     }
 
@@ -629,7 +630,7 @@ export default function AppPage() {
                   const f = e.target.files?.[0];
                   if (f) uploadPhoto(f);
                 }}
-                disabled={busy}
+                disabled={busy || photos.length >= 5}
               />
             </div>
 
@@ -696,12 +697,12 @@ export default function AppPage() {
             ) : null}
 
             <a
-  className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10"
-  href="/me/profile"
->
-  Профиль
-</a>
-            
+              className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10"
+              href="/me/profile"
+            >
+              Профиль
+            </a>
+
             <button
               className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10 disabled:opacity-60"
               onClick={async () => {
@@ -729,6 +730,58 @@ export default function AppPage() {
 
         {error ? <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">{error}</div> : null}
         {notice ? <div className="mt-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">{notice}</div> : null}
+
+        <div className="mt-6 rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-4 shadow-xl">
+          <div className="flex items-baseline justify-between">
+            <div className="text-lg font-semibold">Фото (до 5)</div>
+            <div className="text-sm opacity-70">{photos.length}/5</div>
+          </div>
+
+          <div className="mt-3">
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="block w-full text-sm"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) uploadPhoto(f);
+              }}
+              disabled={busy || photos.length >= 5}
+            />
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-3">
+            {photos.map((p) => {
+              const isAvatar = avatarPath && p.path === avatarPath;
+              return (
+                <div key={p.path} className="rounded-xl border border-amber-500/15 bg-zinc-900/30 overflow-hidden">
+                  <div className="aspect-square bg-black/30 flex items-center justify-center">
+                    {p.url ? <img src={p.url} className="h-full w-full object-cover" /> : <div className="text-xs opacity-60">—</div>}
+                  </div>
+                  <div className="p-2 space-y-2">
+                    <button
+                      className="w-full rounded-lg bg-amber-500 text-zinc-950 px-2 py-1 text-xs font-semibold hover:bg-amber-400 disabled:opacity-60"
+                      disabled={busy}
+                      onClick={() => makeAvatar(p.path)}
+                    >
+                      {isAvatar ? "Аватар" : "Сделать аватаром"}
+                    </button>
+                    <button
+                      className="w-full rounded-lg border border-amber-500/30 px-2 py-1 text-xs hover:bg-amber-500/10 disabled:opacity-60"
+                      disabled={busy}
+                      onClick={() => delPhoto(p.path)}
+                    >
+                      Удалить
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {photos.length === 0 ? <div className="mt-3 text-sm opacity-70">Загрузи фото и выбери аватар.</div> : null}
+        </div>
 
         <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
           <Section title="Запланировано" items={planned} busy={busy} meUserId={me.user.id} onAccept={() => {}} onStart={() => {}} onStop={() => {}} />
