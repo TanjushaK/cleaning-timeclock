@@ -223,93 +223,6 @@ export default function AppPage() {
 
   const doPhoneSend = useCallback(async () => {
     setBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const p = phone.trim();
-      if (!p || !p.startsWith("+")) throw new Error("Телефон нужен в формате E.164, например +31612345678");
-      const { error: e1 } = await supabase.auth.signInWithOtp({ phone: p, options: { channel: "sms" } });
-      if (e1) throw new Error(e1.message);
-      setOtpSent(true);
-      setNotice("Код отправлен по SMS.");
-    } catch (e: any) {
-      setError(String(e?.message || e || "Ошибка отправки кода"));
-    } finally {
-      setBusy(false);
-    }
-  }, [phone]);
-
-  const doPhoneVerify = useCallback(async () => {
-    setBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const p = phone.trim();
-      const code = otp.trim();
-      const newPw = recoverNewPassword.trim();
-
-      if (!p || !p.startsWith("+")) throw new Error("Телефон нужен в формате E.164, например +31612345678");
-      if (!code) throw new Error("Введи код из SMS");
-      if (!newPw || newPw.length < 8) throw new Error("Новый пароль: минимум 8 символов");
-
-      const { data, error: e2 } = await supabase.auth.verifyOtp({ phone: p, token: code, type: "sms" });
-      if (e2) throw new Error(e2.message);
-
-      const session = data?.session;
-      if (!session?.access_token) throw new Error("Не удалось получить сессию");
-
-      // Устанавливаем новый пароль и снимаем флаг temp_password (если он был)
-      const { error: uErr } = await supabase.auth.updateUser({ password: newPw, data: { temp_password: false } });
-      if (uErr) throw new Error(uErr.message);
-
-      // Берём актуальную сессию после updateUser
-      const { data: s2, error: sErr } = await supabase.auth.getSession();
-      if (sErr) throw new Error(sErr.message);
-      const s = s2?.session || session;
-
-      setAuthTokens(String(s.access_token), s.refresh_token ? String(s.refresh_token) : null);
-      const t = getAccessToken();
-      setToken(t);
-
-      await loadAll();
-      setNotice("Пароль обновлён. Вход выполнен.");
-      setOtp("");
-      setOtpSent(false);
-      setRecoverNewPassword("");
-    } catch (e: any) {
-      setError(String(e?.message || e || "Ошибка восстановления"));
-    } finally {
-      setBusy(false);
-      setBooting(false);
-    }
-  }, [phone, otp, recoverNewPassword, loadAll]);
-    setError(null);
-    setNotice(null);
-    try {
-      const em = email.trim();
-      if (!em) throw new Error("Введи email или телефон");
-      if (!em.includes("@") && !em.startsWith("+")) throw new Error("Телефон нужен в формате E.164, например +31612345678");
-
-      const redirectTo = `${window.location.origin}/auth/callback`;
-
-      const { error: e1 } = await supabase.auth.signInWithOtp({
-        email: em,
-        options: {
-          emailRedirectTo: redirectTo,
-          shouldCreateUser: true,
-        },
-      });
-
-      if (e1) throw new Error(e1.message);
-
-      setEmailLinkSent(true);
-      setNotice("Ссылка отправлена. Открой почту и нажми на magic link.");
-    } catch (e: any) {
-      setError(String(e?.message || e || "Ошибка отправки ссылки"));
-    } finally {
-      setBusy(false);
-    }
-  }, [email]);
 
   const doEmailPasswordLogin = useCallback(async () => {
     setBusy(true);
@@ -671,29 +584,46 @@ export default function AppPage() {
                   autoComplete="username"
                 />
 
-                <>
-                    <input
-                      className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-                      placeholder="Пароль"
-                      type="password"
-                      value={emailPassword}
-                      onChange={(e) => setEmailPassword(e.target.value)}
-                      autoComplete="current-password"
-                    />
-                    <button
-                      className="w-full rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
-                      onClick={doEmailPasswordLogin}
-                      disabled={busy || !email.trim() || !emailPassword.trim()}
-                    >
-                      {busy ? "Вхожу…" : "Войти"}
-                    </button>
-                    <div className="text-xs opacity-70">Основной вход: логин + пароль. Если пароль временный — сразу попросим сменить.</div>
-                  </>                    >
-                      {busy ? "Отправляю…" : emailLinkSent ? "Отправить ещё раз" : "Отправить magic link"}
-                    </button>
-                    <div className="text-xs opacity-70">Открой письмо и нажми на ссылку — вход выполнится автоматически. Затем можно задать пароль в «Профиле» и входить быстрее.</div>
-                  </>
-                )}
+                <input
+                  className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
+                  placeholder="Пароль"
+                  type="password"
+                  value={emailPassword}
+                  onChange={(e) => setEmailPassword(e.target.value)}
+                  autoComplete="current-password"
+                />
+
+                <button
+                  className="w-full rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
+                  onClick={doEmailPasswordLogin}
+                  disabled={busy || !email.trim() || !emailPassword.trim()}
+                >
+                  {busy ? "Вхожу…" : "Войти"}
+                </button>
+
+                <div className="flex items-center justify-between text-xs opacity-80">
+                  <a className="underline hover:opacity-100" href="/forgot-password">
+                    Забыл пароль по email
+                  </a>
+                  <button
+                    type="button"
+                    className="underline hover:opacity-100"
+                    onClick={() => {
+                      setLoginMode("phone");
+                      setOtpSent(false);
+                      setOtp("");
+                      setError(null);
+                      setNotice(null);
+                    }}
+                    disabled={busy}
+                  >
+                    По SMS
+                  </button>
+                </div>
+
+                <div className="text-xs opacity-70">
+                  Основной вход: логин + пароль. Если пароль временный — сразу попросим сменить.
+                </div>
               </div>
             )}
 
