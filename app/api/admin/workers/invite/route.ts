@@ -24,7 +24,6 @@ async function findUserIdByEmail(supabase: any, email: string): Promise<string |
     if (users.length < perPage) break
     page += 1
   }
-
   return null
 }
 
@@ -35,17 +34,23 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({} as any))
     const email = String(body?.email ?? '').trim().toLowerCase()
     const role = String(body?.role ?? 'worker').trim().toLowerCase()
-    const active = body?.active === false ? false : true
 
     if (!email) throw new ApiError(400, 'Нужен email')
     if (!isEmail(email)) throw new ApiError(400, 'Неверный email')
     if (role !== 'worker' && role !== 'admin') throw new ApiError(400, 'role должен быть worker или admin')
 
-    // 1) invite
+    // ✅ ВАЖНО: по умолчанию worker должен быть inactive, admin можно active
+    let activeDefault = role === 'admin'
+    if (Object.prototype.hasOwnProperty.call(body, 'active')) {
+      activeDefault = Boolean(body.active)
+    }
+    const active = activeDefault
+
+    // 1) invite (письмо)
     const { data: inv, error: invErr } = await supabase.auth.admin.inviteUserByEmail(email)
     let targetUserId: string | null = inv?.user?.id ?? null
 
-    // 2) если invite не дал id — ищем существующего юзера через listUsers
+    // 2) если invite не дал id — ищем существующего юзера
     if (!targetUserId) {
       targetUserId = await findUserIdByEmail(supabase, email)
     }
@@ -62,7 +67,10 @@ export async function POST(req: Request) {
 
     if (pErr) throw new ApiError(500, `Не смог создать/обновить profile: ${pErr.message}`)
 
-    return NextResponse.json({ ok: true, invited_user_id: targetUserId, invited_by: userId }, { status: 200 })
+    return NextResponse.json(
+      { ok: true, invited_user_id: targetUserId, invited_by: userId, role, active },
+      { status: 200 }
+    )
   } catch (e) {
     return toErrorResponse(e)
   }
