@@ -42,6 +42,9 @@ export default function WorkerProfilePage() {
   const [email, setEmail] = useState('')
   const [notes, setNotes] = useState('')
 
+  const [newPassword, setNewPassword] = useState('')
+  const [newPassword2, setNewPassword2] = useState('')
+
   const [photos, setPhotos] = useState<Array<{ path: string; url?: string | null }>>([])
   const [avatarPath, setAvatarPath] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
@@ -135,6 +138,27 @@ export default function WorkerProfilePage() {
       setBusy(false)
     }
   }, [email, fullName, loadMe, notes, phone])
+
+  const setPassword = useCallback(async () => {
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const p1 = newPassword.trim()
+      const p2 = newPassword2.trim()
+      if (p1.length < 8) throw new Error('Пароль должен быть минимум 8 символов')
+      if (p1 !== p2) throw new Error('Пароли не совпадают')
+      await supabase.auth.updateUser({ password: p1 })
+      setNewPassword('')
+      setNewPassword2('')
+      await loadMe().catch(() => {})
+      setNotice('Пароль установлен. Теперь можно входить по Email + пароль.')
+    } catch (e: any) {
+      setError(String(e?.message || e || 'Ошибка установки пароля'))
+    } finally {
+      setBusy(false)
+    }
+  }, [loadMe, newPassword, newPassword2])
 
   const uploadPhoto = useCallback(
     async (file: File) => {
@@ -317,6 +341,44 @@ export default function WorkerProfilePage() {
           </div>
         </div>
 
+        
+        <div className="mt-4 rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-5 shadow-xl">
+          <div className="text-lg font-semibold">Пароль</div>
+          <div className="mt-2 text-sm opacity-80">
+            Основной вход: <span className="font-semibold">Email + пароль</span>. Телефон (SMS) остаётся резервным вариантом.
+          </div>
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+            <input
+              className="rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
+              placeholder="Новый пароль (мин. 8 символов)"
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              autoComplete="new-password"
+            />
+            <input
+              className="rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
+              placeholder="Повторить пароль"
+              type="password"
+              value={newPassword2}
+              onChange={(e) => setNewPassword2(e.target.value)}
+              autoComplete="new-password"
+            />
+          </div>
+          <div className="mt-3 flex gap-2">
+            <button
+              className="rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
+              disabled={busy || !newPassword.trim() || !newPassword2.trim()}
+              onClick={setPassword}
+            >
+              {busy ? "Сохраняю…" : "Установить пароль"}
+            </button>
+            <div className="text-xs opacity-70 self-center">
+              Email подтверждён: {me?.user?.email ? (me?.user?.email_confirmed_at ? "да" : "нет") : "—"}
+            </div>
+          </div>
+        </div>
+
         <div className="mt-4 rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-5 shadow-xl">
           <div className="flex items-baseline justify-between">
             <div className="text-lg font-semibold">Аватары (до 5)</div>
@@ -374,3 +436,4 @@ export default function WorkerProfilePage() {
     </div>
   )
 }
+
