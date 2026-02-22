@@ -16,12 +16,7 @@ type Profile = {
 };
 
 type MeProfileResponse = {
-  user: {
-    id: string;
-    email?: string | null;
-    phone?: string | null;
-    email_confirmed_at?: string | null;
-  };
+  user: { id: string; email?: string | null; phone?: string | null; email_confirmed_at?: string | null };
   profile: Profile;
 };
 
@@ -134,9 +129,10 @@ export default function AppPage() {
   const [booting, setBooting] = useState(true);
   const [token, setToken] = useState<string | null>(null);
 
-  const [loginMode, setLoginMode] = useState<"email" | "phone">("phone");
+  const [loginMode, setLoginMode] = useState<"phone" | "email">("phone");
+
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [emailLinkSent, setEmailLinkSent] = useState(false);
 
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
@@ -211,33 +207,6 @@ export default function AppPage() {
     })();
   }, [loadAll]);
 
-  const doLoginEmail = useCallback(async () => {
-    setBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim(), password: password.trim() }),
-      });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(payload?.error || `HTTP ${res.status}`);
-
-      setAuthTokens(payload.access_token, payload.refresh_token || null);
-      const t = getAccessToken();
-      setToken(t);
-
-      await loadAll();
-      setNotice("Вход выполнен.");
-    } catch (e: any) {
-      setError(String(e?.message || e || "Ошибка входа"));
-    } finally {
-      setBusy(false);
-      setBooting(false);
-    }
-  }, [email, password, loadAll]);
-
   const doPhoneSend = useCallback(async () => {
     setBusy(true);
     setError(null);
@@ -286,6 +255,35 @@ export default function AppPage() {
     }
   }, [phone, otp, loadAll]);
 
+  const doEmailSend = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const em = email.trim();
+      if (!em || !em.includes("@")) throw new Error("Введи корректный email");
+
+      const redirectTo = `${window.location.origin}/auth/callback`;
+
+      const { error: e1 } = await supabase.auth.signInWithOtp({
+        email: em,
+        options: {
+          emailRedirectTo: redirectTo,
+          shouldCreateUser: true,
+        },
+      });
+
+      if (e1) throw new Error(e1.message);
+
+      setEmailLinkSent(true);
+      setNotice("Ссылка отправлена. Открой почту и нажми на magic link.");
+    } catch (e: any) {
+      setError(String(e?.message || e || "Ошибка отправки ссылки"));
+    } finally {
+      setBusy(false);
+    }
+  }, [email]);
+
   const doLogout = useCallback(() => {
     clearAuthTokens();
     try { supabase.auth.signOut(); } catch {}
@@ -333,11 +331,7 @@ export default function AppPage() {
     try {
       const fd = new FormData();
       fd.append("file", file);
-      const r = await fetch("/api/me/photos", {
-        method: "POST",
-        headers: bearerHeaders(),
-        body: fd,
-      });
+      const r = await fetch("/api/me/photos", { method: "POST", headers: bearerHeaders(), body: fd });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(String(data?.error || `HTTP ${r.status}`));
       await loadPhotos();
@@ -479,19 +473,18 @@ export default function AppPage() {
     );
   }
 
+  // LOGIN
   if (!authed || !me) {
     return (
       <div className="min-h-screen bg-zinc-950 text-amber-100 flex items-center justify-center p-6">
         <div className="w-full max-w-md rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-6 shadow-xl">
           <div className="text-xl font-semibold">Tanija • Worker</div>
-          <div className="text-sm opacity-80 mt-1">Вход</div>
+          <div className="text-sm opacity-80 mt-1">Вход / Регистрация</div>
 
           <div className="mt-4 flex gap-2">
             <button
               className={`flex-1 rounded-xl px-3 py-2 text-sm border ${
-                loginMode === "phone"
-                  ? "bg-amber-500 text-zinc-950 border-amber-500"
-                  : "border-amber-500/30 hover:bg-amber-500/10"
+                loginMode === "phone" ? "bg-amber-500 text-zinc-950 border-amber-500" : "border-amber-500/30 hover:bg-amber-500/10"
               }`}
               onClick={() => {
                 setLoginMode("phone");
@@ -506,109 +499,63 @@ export default function AppPage() {
             </button>
             <button
               className={`flex-1 rounded-xl px-3 py-2 text-sm border ${
-                loginMode === "email"
-                  ? "bg-amber-500 text-zinc-950 border-amber-500"
-                  : "border-amber-500/30 hover:bg-amber-500/10"
+                loginMode === "email" ? "bg-amber-500 text-zinc-950 border-amber-500" : "border-amber-500/30 hover:bg-amber-500/10"
               }`}
               onClick={() => {
                 setLoginMode("email");
-                setOtpSent(false);
-                setOtp("");
+                setEmailLinkSent(false);
                 setError(null);
                 setNotice(null);
               }}
               disabled={busy}
             >
-              Email
+              Email (magic link)
             </button>
           </div>
 
-          {error ? (
-            <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
-              {error}
-            </div>
-          ) : null}
+          {error ? <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{error}</div> : null}
+          {notice ? <div className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">{notice}</div> : null}
 
-          {notice ? (
-            <div className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">
-              {notice}
-            </div>
-          ) : null}
-
-          {loginMode === "email" ? (
+          {loginMode === "phone" ? (
             <div className="mt-4 space-y-3">
-              <input
-                className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-                placeholder="Email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                autoComplete="email"
-              />
-              <input
-                className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-                placeholder="Пароль"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
-              />
-              <button
-                className="w-full rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
-                onClick={doLoginEmail}
-                disabled={busy || !email.trim() || !password.trim()}
-              >
-                {busy ? "Вхожу…" : "Войти"}
-              </button>
-            </div>
-          ) : (
-            <div className="mt-4 space-y-3">
-              <input
-                className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-                placeholder="Телефон, например +31612345678"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                autoComplete="tel"
-              />
+              <input className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50" placeholder="Телефон, например +31612345678" value={phone} onChange={(e) => setPhone(e.target.value)} autoComplete="tel" />
               {!otpSent ? (
-                <button
-                  className="w-full rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
-                  onClick={doPhoneSend}
-                  disabled={busy || !phone.trim()}
-                >
+                <button className="w-full rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60" onClick={doPhoneSend} disabled={busy || !phone.trim()}>
                   {busy ? "Отправляю…" : "Отправить код"}
                 </button>
               ) : (
                 <>
-                  <input
-                    className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-                    placeholder="Код из SMS"
-                    value={otp}
-                    onChange={(e) => setOtp(e.target.value)}
-                    inputMode="numeric"
-                  />
-                  <button
-                    className="w-full rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
-                    onClick={doPhoneVerify}
-                    disabled={busy || !otp.trim()}
-                  >
+                  <input className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50" placeholder="Код из SMS" value={otp} onChange={(e) => setOtp(e.target.value)} inputMode="numeric" />
+                  <button className="w-full rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60" onClick={doPhoneVerify} disabled={busy || !otp.trim()}>
                     {busy ? "Проверяю…" : "Войти"}
                   </button>
-                  <button
-                    className="w-full rounded-xl border border-amber-500/30 px-4 py-2 text-sm hover:bg-amber-500/10 disabled:opacity-60"
-                    onClick={doPhoneSend}
-                    disabled={busy}
-                  >
+                  <button className="w-full rounded-xl border border-amber-500/30 px-4 py-2 text-sm hover:bg-amber-500/10 disabled:opacity-60" onClick={doPhoneSend} disabled={busy}>
                     Отправить ещё раз
                   </button>
                 </>
               )}
             </div>
+          ) : (
+            <div className="mt-4 space-y-3">
+              <input className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
+              <button className="w-full rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60" onClick={doEmailSend} disabled={busy || !email.trim()}>
+                {busy ? "Отправляю…" : (emailLinkSent ? "Отправить ещё раз" : "Отправить magic link")}
+              </button>
+              <div className="text-xs opacity-70">
+                После клика по ссылке из письма ты вернёшься на сайт и войдёшь автоматически.
+              </div>
+            </div>
           )}
+
+          <div className="mt-4 text-xs opacity-70">
+            Для админа: <a className="underline" href="/admin/approvals">/admin/approvals</a>
+          </div>
         </div>
       </div>
     );
   }
 
+  // INACTIVE / ONBOARDING
   if (me.profile?.active !== true) {
     const submitted = !!me.profile?.onboarding_submitted_at;
 
@@ -621,65 +568,34 @@ export default function AppPage() {
               <div className="text-sm opacity-80 mt-1">Заполни данные, поставь аватар и отправь на активацию</div>
             </div>
             <div className="flex gap-2">
-              <a
-                className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10"
-                href="/admin/approvals"
-              >
+              <a className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10" href="/admin/approvals">
                 Админу: /admin/approvals
               </a>
-              <button
-                className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10"
-                onClick={doLogout}
-              >
+              <button className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10" onClick={doLogout}>
                 Выйти
               </button>
             </div>
           </div>
 
-          {error ? (
-            <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">
-              {error}
-            </div>
-          ) : null}
-
-          {notice ? (
-            <div className="mt-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">
-              {notice}
-            </div>
-          ) : null}
+          {error ? <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">{error}</div> : null}
+          {notice ? <div className="mt-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">{notice}</div> : null}
 
           <div className="mt-6 rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-5">
             <div className="text-lg font-semibold">Данные</div>
 
             <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-              <input
-                className="rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-                placeholder="Имя и фамилия"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-              />
-              <input
-                className="rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-                placeholder="Email (по желанию)"
-                value={profileEmail}
-                onChange={(e) => setProfileEmail(e.target.value)}
-              />
+              <input className="rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50" placeholder="Имя и фамилия" value={fullName} onChange={(e) => setFullName(e.target.value)} />
+              <input className="rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50" placeholder="Email (по желанию)" value={profileEmail} onChange={(e) => setProfileEmail(e.target.value)} />
             </div>
 
             <div className="mt-3 text-xs opacity-70">
-              Телефон: {me.user.phone || me.profile.phone || "—"} • Email подтверждён:{" "}
-              {me.user.email ? (me.user.email_confirmed_at ? "да" : "нет") : "—"}
+              Телефон: {me.user.phone || me.profile.phone || "—"} • Email подтверждён: {me.user.email ? (me.user.email_confirmed_at ? "да" : "нет") : "—"}
             </div>
 
             <div className="mt-4 flex gap-2">
-              <button
-                className="rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
-                disabled={busy}
-                onClick={saveProfile}
-              >
+              <button className="rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60" disabled={busy} onClick={saveProfile}>
                 {busy ? "Сохраняю…" : "Сохранить"}
               </button>
-
               <button
                 className="rounded-xl border border-amber-500/30 px-4 py-2 text-sm hover:bg-amber-500/10 disabled:opacity-60"
                 disabled={busy}
@@ -687,14 +603,9 @@ export default function AppPage() {
                   setBusy(true);
                   setError(null);
                   setNotice(null);
-                  try {
-                    await loadAll();
-                    setNotice("Обновлено.");
-                  } catch (e: any) {
-                    setError(String(e?.message || e || "Ошибка"));
-                  } finally {
-                    setBusy(false);
-                  }
+                  try { await loadAll(); setNotice("Обновлено."); }
+                  catch (e: any) { setError(String(e?.message || e || "Ошибка")); }
+                  finally { setBusy(false); }
                 }}
               >
                 {busy ? "…" : "Обновить"}
@@ -705,9 +616,7 @@ export default function AppPage() {
           <div className="mt-4 rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-5">
             <div className="flex items-baseline justify-between">
               <div className="text-lg font-semibold">Фото (до 5)</div>
-              <div className="text-sm opacity-70">
-                {photos.length}/5
-              </div>
+              <div className="text-sm opacity-70">{photos.length}/5</div>
             </div>
 
             <div className="mt-3 flex gap-2">
@@ -733,18 +642,10 @@ export default function AppPage() {
                       {p.url ? <img src={p.url} className="h-full w-full object-cover" /> : <div className="text-xs opacity-60">—</div>}
                     </div>
                     <div className="p-2 space-y-2">
-                      <button
-                        className="w-full rounded-lg bg-amber-500 text-zinc-950 px-2 py-1 text-xs font-semibold hover:bg-amber-400 disabled:opacity-60"
-                        disabled={busy}
-                        onClick={() => makeAvatar(p.path)}
-                      >
+                      <button className="w-full rounded-lg bg-amber-500 text-zinc-950 px-2 py-1 text-xs font-semibold hover:bg-amber-400 disabled:opacity-60" disabled={busy} onClick={() => makeAvatar(p.path)}>
                         {isAvatar ? "Аватар" : "Сделать аватаром"}
                       </button>
-                      <button
-                        className="w-full rounded-lg border border-amber-500/30 px-2 py-1 text-xs hover:bg-amber-500/10 disabled:opacity-60"
-                        disabled={busy}
-                        onClick={() => delPhoto(p.path)}
-                      >
+                      <button className="w-full rounded-lg border border-amber-500/30 px-2 py-1 text-xs hover:bg-amber-500/10 disabled:opacity-60" disabled={busy} onClick={() => delPhoto(p.path)}>
                         Удалить
                       </button>
                     </div>
@@ -765,11 +666,7 @@ export default function AppPage() {
                 </div>
               </div>
 
-              <button
-                className="rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
-                disabled={busy}
-                onClick={submitForApproval}
-              >
+              <button className="rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60" disabled={busy} onClick={submitForApproval}>
                 {busy ? "Отправляю…" : "Отправить на активацию"}
               </button>
             </div>
@@ -779,6 +676,7 @@ export default function AppPage() {
     );
   }
 
+  // ACTIVE WORKER SCREEN
   return (
     <div className="min-h-screen bg-zinc-950 text-amber-100 p-6">
       <div className="mx-auto max-w-5xl">
@@ -821,117 +719,68 @@ export default function AppPage() {
           </div>
         </div>
 
-        {error ? (
-          <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">
-            {error}
-          </div>
-        ) : null}
-
-        {notice ? (
-          <div className="mt-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">
-            {notice}
-          </div>
-        ) : null}
+        {error ? <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">{error}</div> : null}
+        {notice ? <div className="mt-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">{notice}</div> : null}
 
         <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <Section title="Запланировано" items={planned} busy={busy} meUserId={me.user.id} onAccept={acceptJob} onStart={startJob} onStop={stopJob} />
-          <Section title="В процессе" items={inprog} busy={busy} meUserId={me.user.id} onAccept={acceptJob} onStart={startJob} onStop={stopJob} />
-          <Section title="Завершено" items={done} busy={busy} meUserId={me.user.id} onAccept={acceptJob} onStart={startJob} onStop={stopJob} />
+          <Section title="Запланировано" items={planned} busy={busy} meUserId={me.user.id} onAccept={() => {}} onStart={() => {}} onStop={() => {}} />
+          <Section title="В процессе" items={inprog} busy={busy} meUserId={me.user.id} onAccept={() => {}} onStart={() => {}} onStop={() => {}} />
+          <Section title="Завершено" items={done} busy={busy} meUserId={me.user.id} onAccept={() => {}} onStart={() => {}} onStop={() => {}} />
         </div>
 
         <div className="mt-6 text-xs opacity-70">Правило: старт/стоп только рядом с объектом, GPS точность ≤ 80м.</div>
       </div>
     </div>
   );
-}
 
-function Section({
-  title,
-  items,
-  busy,
-  meUserId,
-  onAccept,
-  onStart,
-  onStop,
-}: {
-  title: string;
-  items: JobItem[];
-  busy: boolean;
-  meUserId: string;
-  onAccept: (jobId: string) => void;
-  onStart: (jobId: string) => void;
-  onStop: (jobId: string) => void;
-}) {
-  return (
-    <div className="rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-4 shadow-xl">
-      <div className="flex items-baseline justify-between">
-        <div className="text-lg font-semibold">{title}</div>
-        <div className="text-sm opacity-70">{items.length}</div>
+  function Section({
+    title,
+    items,
+    busy,
+    meUserId,
+  }: {
+    title: string;
+    items: JobItem[];
+    busy: boolean;
+    meUserId: string;
+    onAccept: (jobId: string) => void;
+    onStart: (jobId: string) => void;
+    onStop: (jobId: string) => void;
+  }) {
+    return (
+      <div className="rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-4 shadow-xl">
+        <div className="flex items-baseline justify-between">
+          <div className="text-lg font-semibold">{title}</div>
+          <div className="text-sm opacity-70">{items.length}</div>
+        </div>
+
+        <div className="mt-3 space-y-3">
+          {items.length === 0 ? (
+            <div className="text-sm opacity-70">—</div>
+          ) : (
+            items.map((j) => {
+              const from = timeHHMM(j.scheduled_time);
+              const to = timeHHMM(j.scheduled_end_time ?? null);
+              const planM = plannedMinutes(from, to);
+
+              const factM = Math.max(0, Math.floor(Number(j.actual_minutes || 0) || 0));
+              const showFact = j.status === "done" && factM > 0;
+
+              const line =
+                j.status === "done"
+                  ? `${fmtD(j.job_date)} • ${from && to ? `${from}–${to}` : from || "—"} • ${showFact ? `факт ${fmtDur(factM)}` : planM != null ? `${fmtDur(planM)}` : "—"} • ${statusRu(String(j.status || ""))}`
+                  : `${fmtD(j.job_date)} • ${from && to ? `${from}–${to}` : from || "—"}${planM != null ? ` • ${fmtDur(planM)}` : ""} • ${statusRu(String(j.status || ""))}`;
+
+              return (
+                <div key={j.id} className="rounded-xl border border-amber-500/15 bg-zinc-900/30 p-3">
+                  <div className="text-sm font-semibold">{j.site_name || "Объект"}</div>
+                  <div className="mt-1 text-xs opacity-80">{line}</div>
+                </div>
+              );
+            })
+          )}
+        </div>
       </div>
-
-      <div className="mt-3 space-y-3">
-        {items.length === 0 ? (
-          <div className="text-sm opacity-70">—</div>
-        ) : (
-          items.map((j) => {
-            const canAccept = !!j.can_accept || (!j.worker_id && j.status === "planned");
-            const isMine = !j.worker_id || j.worker_id === meUserId;
-
-            const showAccept = j.status === "planned" && canAccept;
-            const showStart = j.status === "planned" && !showAccept && isMine;
-            const showStop = j.status === "in_progress" && isMine;
-
-            const from = timeHHMM(j.scheduled_time);
-            const to = timeHHMM(j.scheduled_end_time ?? null);
-            const planM = plannedMinutes(from, to);
-
-            const factM = Math.max(0, Math.floor(Number(j.actual_minutes || 0) || 0));
-            const showFact = j.status === "done" && factM > 0;
-
-            const line =
-              j.status === "done"
-                ? `${fmtD(j.job_date)} • ${from && to ? `${from}–${to}` : from || "—"} • ${showFact ? `факт ${fmtDur(factM)}` : planM != null ? `${fmtDur(planM)}` : "—"} • ${statusRu(String(j.status || ""))}`
-                : `${fmtD(j.job_date)} • ${from && to ? `${from}–${to}` : from || "—"}${planM != null ? ` • ${fmtDur(planM)}` : ""} • ${statusRu(String(j.status || ""))}`;
-
-            return (
-              <div key={j.id} className="rounded-xl border border-amber-500/15 bg-zinc-900/30 p-3">
-                <div className="text-sm font-semibold">{j.site_name || "Объект"}</div>
-                <div className="mt-1 text-xs opacity-80">{line}</div>
-
-                {showAccept ? (
-                  <button
-                    className="mt-3 w-full rounded-xl bg-amber-500 text-zinc-950 px-3 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
-                    disabled={busy}
-                    onClick={() => onAccept(j.id)}
-                  >
-                    Принять смену
-                  </button>
-                ) : null}
-
-                {showStart ? (
-                  <button
-                    className="mt-3 w-full rounded-xl bg-amber-500 text-zinc-950 px-3 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
-                    disabled={busy}
-                    onClick={() => onStart(j.id)}
-                  >
-                    Старт
-                  </button>
-                ) : null}
-
-                {showStop ? (
-                  <button
-                    className="mt-3 w-full rounded-xl bg-amber-500 text-zinc-950 px-3 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
-                    disabled={busy}
-                    onClick={() => onStop(j.id)}
-                  >
-                    Стоп
-                  </button>
-                ) : null}
-              </div>
-            );
-          })
-        )}
-      </div>
-    </div>
-  );
+    );
+  }
 }
