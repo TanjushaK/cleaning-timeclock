@@ -67,7 +67,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     const notesKey = await resolveNotesKey(supabase)
     const avatarKey = await resolveAvatarKey(supabase)
 
-    const selectCols = ['id', 'full_name', 'role', 'active']
+    const selectCols = ['id', 'full_name', 'role', 'active', 'phone', 'email']
     if (notesKey) selectCols.push(notesKey)
     if (avatarKey) selectCols.push(avatarKey)
 
@@ -81,12 +81,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     if (!prof) return errJson('Профиль не найден', 404)
 
     // email/phone — из Auth (если доступно)
-    let email: string | null = null
-    let phone: string | null = null
+    let authEmail: string | null = null
+    let authPhone: string | null = null
     try {
       const { data: u } = await supabase.auth.admin.getUserById(workerId)
-      email = u?.user?.email ?? null
-      phone = (u?.user as any)?.phone ?? null
+      authEmail = u?.user?.email ?? null
+      authPhone = (u?.user as any)?.phone ?? null
     } catch {
       // ignore
     }
@@ -96,8 +96,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       full_name: prof.full_name ?? null,
       role: prof.role ?? null,
       active: prof.active ?? null,
-      email,
-      phone,
+      email: prof.email ?? authEmail ?? null,
+      phone: prof.phone ?? authPhone ?? null,
       notes: notesKey ? pick(prof, notesKey) ?? null : null,
       avatar_path: avatarKey ? pick(prof, avatarKey) ?? null : null,
     }
@@ -127,31 +127,39 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
     // profiles
     if (Object.prototype.hasOwnProperty.call(body, 'full_name')) {
-      profilePatch.full_name = body.full_name == null ? null : String(body.full_name)
+      const v = body.full_name
+      profilePatch.full_name = v == null ? null : String(v)
     }
+
     if (notesKey && Object.prototype.hasOwnProperty.call(body, 'notes')) {
       profilePatch[notesKey] = body.notes == null ? null : String(body.notes)
     }
+
     if (avatarKey && Object.prototype.hasOwnProperty.call(body, 'avatar_path')) {
       profilePatch[avatarKey] = body.avatar_path == null ? null : String(body.avatar_path)
     }
+
     if (Object.prototype.hasOwnProperty.call(body, 'phone')) {
-      profilePatch.phone = normMaybeString(body.phone)
-      authPatch.phone = normMaybeString(body.phone)
+      const phone = normMaybeString(body.phone)
+      profilePatch.phone = phone
+      authPatch.phone = phone
     }
+
     if (Object.prototype.hasOwnProperty.call(body, 'email')) {
-      profilePatch.email = normMaybeString(body.email)
-      authPatch.email = normMaybeString(body.email)
+      const email = normMaybeString(body.email)
+      profilePatch.email = email
+      authPatch.email = email
     }
 
-    let did = false
+    if (Object.keys(profilePatch).length === 0 && Object.keys(authPatch).length === 0) {
+      return errJson('Нечего обновлять', 400)
+    }
 
-    // Update Auth user (email/phone)
+    // Update Auth user first (email/phone)
     if (Object.keys(authPatch).length > 0) {
       try {
         const { error: uErr } = await supabase.auth.admin.updateUserById(workerId, authPatch)
         if (uErr) return errJson(uErr.message, 400)
-        did = true
       } catch (e: any) {
         return errJson(String(e?.message || 'Не удалось обновить Auth пользователя'), 400)
       }
@@ -168,40 +176,38 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
       if (updErr) return errJson(updErr.message, 500)
       if (!updated) return errJson('Профиль не найден', 404)
-      did = true
     }
 
-    if (!did) return errJson('Нечего обновлять', 400)
-
-    // вернём worker как в GET
-    let email: string | null = null
-    let phone: string | null = null
+    // Return worker like GET
+    let authEmail: string | null = null
+    let authPhone: string | null = null
     try {
       const { data: u } = await supabase.auth.admin.getUserById(workerId)
-      email = u?.user?.email ?? null
-      phone = (u?.user as any)?.phone ?? null
+      authEmail = u?.user?.email ?? null
+      authPhone = (u?.user as any)?.phone ?? null
     } catch {
       // ignore
     }
 
-    const selectCols = ['id', 'full_name', 'role', 'active']
+    const selectCols = ['id', 'full_name', 'role', 'active', 'phone', 'email']
     if (notesKey) selectCols.push(notesKey)
     if (avatarKey) selectCols.push(avatarKey)
-    selectCols.push('phone', 'email')
 
-    const { data: prof2 } = await supabase
+    const { data: prof2, error: profErr } = await supabase
       .from('profiles')
       .select(selectCols.filter(Boolean).join(','))
       .eq('id', workerId)
       .maybeSingle()
+
+    if (profErr) return errJson(profErr.message, 500)
 
     const out: any = {
       id: prof2?.id || workerId,
       full_name: (prof2 as any)?.full_name ?? null,
       role: (prof2 as any)?.role ?? null,
       active: (prof2 as any)?.active ?? null,
-      email,
-      phone,
+      email: (prof2 as any)?.email ?? authEmail ?? null,
+      phone: (prof2 as any)?.phone ?? authPhone ?? null,
       notes: notesKey ? pick(prof2 || {}, notesKey) ?? null : null,
       avatar_path: avatarKey ? pick(prof2 || {}, avatarKey) ?? null : null,
     }
@@ -211,3 +217,4 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     return errJson(e?.message || 'Unexpected error', 500)
   }
 }
+
