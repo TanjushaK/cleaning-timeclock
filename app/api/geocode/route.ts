@@ -1,16 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireAdmin, toErrorResponse } from '@/lib/supabase-server'
 
 export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+type NominatimItem = { lat: string; lon: string; display_name?: string }
 
 export async function GET(req: NextRequest) {
   try {
+    // Закрываем публичный геокодер: только админ (иначе это бесплатный рычаг для абьюза/досов).
+    await requireAdmin(req)
+
     const q = req.nextUrl.searchParams.get('q')?.trim() || ''
     if (!q) return NextResponse.json({ error: 'q_required' }, { status: 400 })
 
-    // Nominatim policy: identify your application with a proper User-Agent. :contentReference[oaicite:2]{index=2}
     const ua =
       process.env.NOMINATIM_USER_AGENT ||
-      'Tanija Cleaning Timeclock (geocode); contact=admin@tanjusha.nl'
+      'Tanija Cleaning Timeclock (admin geocode); contact=admin@tanjusha.nl'
 
     const url =
       `https://nominatim.openstreetmap.org/search` +
@@ -21,7 +27,6 @@ export async function GET(req: NextRequest) {
         'User-Agent': ua,
         'Accept-Language': 'en,ru;q=0.8',
       },
-      // no-store: не кешируем на edge, координаты всё равно сохраняем в БД
       cache: 'no-store',
     })
 
@@ -29,7 +34,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: `geocode_http_${r.status}` }, { status: 502 })
     }
 
-    const data = (await r.json()) as any[]
+    const data = (await r.json()) as NominatimItem[]
     if (!Array.isArray(data) || data.length === 0) {
       return NextResponse.json({ error: 'not_found' }, { status: 404 })
     }
@@ -47,7 +52,8 @@ export async function GET(req: NextRequest) {
       lng,
       display_name: item?.display_name || null,
     })
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'error' }, { status: 500 })
+  } catch (e) {
+    return toErrorResponse(e)
   }
 }
+
