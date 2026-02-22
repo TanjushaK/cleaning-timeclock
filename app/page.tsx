@@ -694,6 +694,14 @@ export default function AppPage() {
                 Админка
               </a>
             ) : null}
+
+            <a
+  className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10"
+  href="/me/profile"
+>
+  Профиль
+</a>
+            
             <button
               className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10 disabled:opacity-60"
               onClick={async () => {
