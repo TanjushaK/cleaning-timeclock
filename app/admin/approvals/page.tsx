@@ -162,7 +162,7 @@ export default function AdminApprovalsPage() {
       })
 
       setInviteEmail('')
-      setNotice('Приглашение отправлено. Сотрудник задаст пароль по ссылке и сможет войти по Email → Пароль.')
+      setNotice('Приглашение отправлено. Работник откроет письмо и сможет войти по Email (код/ссылка).')
       await refresh().catch(() => null)
     } catch (e: any) {
       setError(String(e?.message || e || 'Ошибка приглашения'))
@@ -288,7 +288,7 @@ export default function AdminApprovalsPage() {
           <div className={`mt-6 rounded-2xl ${SOFT} p-4`}>
             <div className="text-sm font-semibold">Создать работника</div>
             <div className="mt-1 text-xs text-amber-200/70">
-              Введи email — отправим приглашение. Сотрудник по ссылке задаст пароль и сможет входить по Email → Пароль (без SMS).
+              Введи email — отправим приглашение. Дальше сотрудник сможет войти по Email (код/ссылка) — без SMS.
             </div>
 
             <div className="mt-3 flex flex-col gap-2 sm:flex-row">
@@ -405,5 +405,8 @@ export default function AdminApprovalsPage() {
     </div>
   )
 }
+
+
+
 
 
