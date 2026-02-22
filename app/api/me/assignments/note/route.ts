@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
-import { ApiError, requireUser } from '@/lib/supabase-server';
+import { ApiError, requireActiveWorker } from '@/lib/supabase-server';
 
 export async function POST(req: Request) {
   try {
-    const { supabase, userId } = await requireUser(req);
+    const { supabase, userId } = await requireActiveWorker(req);
     const body = await req.json();
 
     const site_id = String(body?.site_id || '');
@@ -35,3 +35,4 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: e?.message ?? 'Ошибка' }, { status });
   }
 }
+
