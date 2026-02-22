@@ -543,8 +543,8 @@ export default function AppPage() {
     return (
       <div className="min-h-screen bg-zinc-950 text-amber-100 flex items-center justify-center p-4 sm:p-6">
         <div className="relative w-full max-w-md">
-          <div className="pointer-events-none absolute -inset-2 rounded-[28px] bg-gradient-to-r from-amber-500/35 via-amber-500/10 to-amber-500/35 blur-2xl" />
-          <div className="relative w-full rounded-2xl border border-amber-500/25 bg-zinc-950/70 p-6 shadow-[0_0_0_1px_rgba(245,158,11,0.12),0_0_70px_rgba(245,158,11,0.10),0_25px_90px_rgba(0,0,0,0.75)]">
+          <div className="pointer-events-none absolute -inset-2 rounded-[28px] bg-gradient-to-r from-amber-500/55 via-amber-500/18 to-amber-500/55 blur-2xl" />
+          <div className="relative w-full rounded-2xl border border-amber-500/40 bg-zinc-950/70 p-6 shadow-[0_0_0_1px_rgba(245,158,11,0.18),0_0_95px_rgba(245,158,11,0.14),0_25px_90px_rgba(0,0,0,0.75)]">
             <div className="text-xl font-semibold">Tanija • Worker</div>
             <div className="text-sm opacity-80 mt-1">Вход / Регистрация</div>
 
@@ -640,7 +640,7 @@ export default function AppPage() {
                     onClick={() => setEmailMode("password")}
                     disabled={busy}
                   >
-                    Пароль (админ)
+                    Пароль
                   </button>
                   <button
                     className={`flex-1 rounded-xl px-3 py-2 text-xs border ${
@@ -678,7 +678,7 @@ export default function AppPage() {
                     >
                       {busy ? "Вхожу…" : "Войти"}
                     </button>
-                    <div className="text-xs opacity-70">Быстрый вход для администратора: без кодов и без ожидания письма.</div>
+                    <div className="text-xs opacity-70">Быстрый вход по паролю: быстро и без лишних шагов.</div>
                   </>
                 ) : (
                   <>
@@ -1025,4 +1025,5 @@ export default function AppPage() {
     );
   }
 }
+
 
