@@ -1311,10 +1311,10 @@ const [editOpen, setEditOpen] = useState(false)
       await authFetchJson('/api/admin/workers/invite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: em, role: 'worker' }),
+        body: JSON.stringify({ email: em, role: 'worker', active: false }),
       })
       setInviteEmail('')
-      setNotice('Приглашение отправлено. Работник откроет письмо и сможет войти по Email (код/ссылка). SMS будет работать только если телефону уже привязан этот же пользователь.')
+      setNotice('Приглашение отправлено. Работник появится в /admin/approvals.')
       await refreshCore()
     } catch (e: any) {
       setError(e?.message || 'Ошибка приглашения')
@@ -4188,6 +4188,12 @@ const [editOpen, setEditOpen] = useState(false)
     </main>
   )
 }
+
+
+
+
+
+
 
 
 
