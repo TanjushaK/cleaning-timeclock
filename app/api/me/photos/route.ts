@@ -1,3 +1,4 @@
+// app/api/me/photos/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { ApiError, requireUser, toErrorResponse } from '@/lib/supabase-server'
 
@@ -195,36 +196,6 @@ export async function PATCH(req: NextRequest) {
 
     const photos = await listPhotos(supabase, userId)
     return NextResponse.json({ photos, avatar_path: path })
-  } catch (e) {
-    return toErrorResponse(e)
-  }
-}
-
-export async function DELETE(req: NextRequest) {
-  try {
-    const { supabase, userId } = await requireUser(req)
-    const body = await req.json().catch(() => ({} as any))
-
-    const path = String(body?.path || '').trim()
-    if (!path) throw new ApiError(400, 'path_required')
-    if (!path.startsWith(`${pref(userId)}/`)) throw new ApiError(403, 'forbidden')
-
-    const { error: delErr } = await supabase.storage.from(BUCKET).remove([path])
-    if (delErr) throw new ApiError(500, delErr.message)
-
-    const photos = await listPhotos(supabase, userId)
-
-    const avatarKey = await resolveAvatarKey(supabase)
-    const { data: prof } = await supabase.from('profiles').select(avatarKey).eq('id', userId).maybeSingle()
-    const cur = prof ? String((prof as any)[avatarKey] || '') : ''
-
-    if (cur === path) {
-      const nextAvatar = photos[0]?.path || null
-      await supabase.from('profiles').update({ [avatarKey]: nextAvatar }).eq('id', userId)
-      return NextResponse.json({ photos, avatar_path: nextAvatar })
-    }
-
-    return NextResponse.json({ photos, avatar_path: cur || null })
   } catch (e) {
     return toErrorResponse(e)
   }
