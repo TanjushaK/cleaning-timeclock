@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { ApiError, requireUser, toErrorResponse } from '@/lib/supabase-server'
+import { ApiError, requireActiveWorker, toErrorResponse } from '@/lib/supabase-server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -28,7 +28,7 @@ async function resolveAssignmentsTable(supabase: any): Promise<string | null> {
 
 export async function POST(req: Request) {
   try {
-    const { supabase, userId } = await requireUser(req)
+    const { supabase, userId } = await requireActiveWorker(req)
     const body = await req.json().catch(() => ({} as any))
     const jobId = String(body?.jobId || body?.job_id || body?.id || '').trim()
     if (!jobId) throw new ApiError(400, 'Нужен jobId')
@@ -79,3 +79,4 @@ export async function POST(req: Request) {
     return toErrorResponse(e)
   }
 }
+
