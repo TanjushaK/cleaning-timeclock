@@ -10,25 +10,29 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({} as any))
 
     const full_name = String(body?.full_name || '').trim()
-    const email = String(body?.email || '').trim()
+    const phone = body?.phone === null ? null : String(body?.phone || '').trim()
+    const email = body?.email === null ? null : String(body?.email || '').trim()
+    const notes = String(body?.notes ?? '').slice(0, 5000)
 
     if (!full_name) throw new ApiError(400, 'Укажи имя')
 
-    const patch: any = { full_name }
-    if (email) patch.email = email
-
-    // пробуем обновить, если email-колонки нет — всё равно обновим full_name
-    const r = await supabase.from('profiles').update(patch).eq('id', userId).select('id, role, active, full_name, phone, email, avatar_path, notes, onboarding_submitted_at').single()
-    if (!r.error) return NextResponse.json({ ok: true, profile: r.data })
-
-    const msg = String(r.error.message || '')
-    if (email && msg.includes('column') && msg.includes('email')) {
-      const r2 = await supabase.from('profiles').update({ full_name }).eq('id', userId).select('id, role, active, full_name, phone, email, avatar_path, notes, onboarding_submitted_at').single()
-      if (r2.error) throw new ApiError(400, r2.error.message)
-      return NextResponse.json({ ok: true, profile: r2.data, warning: 'email_column_missing' })
+    const patch: any = {
+      full_name,
+      notes,
+      phone: phone ? phone : null,
+      email: email ? email : null,
     }
 
-    throw new ApiError(400, r.error.message)
+    const { data, error } = await supabase
+      .from('profiles')
+      .update(patch)
+      .eq('id', userId)
+      .select('id, role, active, full_name, phone, email, notes, onboarding_submitted_at, avatar_path')
+      .single()
+
+    if (error) throw new ApiError(400, error.message)
+
+    return NextResponse.json({ ok: true, profile: data })
   } catch (e) {
     return toErrorResponse(e)
   }
