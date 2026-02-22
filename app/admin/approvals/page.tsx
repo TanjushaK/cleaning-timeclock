@@ -151,18 +151,24 @@ export default function AdminApprovalsPage() {
     setError(null)
     setNotice(null)
     try {
-      const em = inviteEmail.trim().toLowerCase()
-      if (!em) throw new Error('Нужен email')
-      if (!isEmail(em)) throw new Error('Неверный email')
+      const em = inviteEmail.trim()
+      if (!em) throw new Error('Нужен email или телефон')
+      if (em.includes('@')) {
+        if (!isEmail(em)) throw new Error('Неверный email')
+      } else {
+        if (!isE164(em)) throw new Error('Телефон должен быть E.164, например +31612345678')
+      }
 
-      await authFetchJson('/api/admin/workers/invite', {
+      const out = await authFetchJson('/api/admin/workers/invite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: em, role: 'worker', active: false }),
+        body: JSON.stringify({ identifier: em, role: 'worker', active: false }),
       })
 
       setInviteEmail('')
-      setNotice('Приглашение отправлено. Работник откроет письмо и сможет войти по Email (код/ссылка).')
+      const login = String((out as any)?.login || em)
+      const pw = String((out as any)?.password || '')
+      setNotice(`Создано. Логин: ${login}. Временный пароль: ${pw} (при первом входе попросим сменить).`)
       await refresh().catch(() => null)
     } catch (e: any) {
       setError(String(e?.message || e || 'Ошибка приглашения'))
@@ -232,7 +238,7 @@ export default function AdminApprovalsPage() {
               placeholder="Email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
+              autoComplete="username"
             />
             <input
               className="w-full rounded-2xl bg-black/30 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
@@ -294,10 +300,10 @@ export default function AdminApprovalsPage() {
             <div className="mt-3 flex flex-col gap-2 sm:flex-row">
               <input
                 className="flex-1 rounded-2xl bg-black/30 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-                placeholder="name@domain.com"
+                placeholder="name@domain.com или +31612345678"
                 value={inviteEmail}
                 onChange={(e) => setInviteEmail(e.target.value)}
-                autoComplete="email"
+                autoComplete="username"
                 disabled={busy}
               />
               <button className={BTN_PRI} onClick={inviteWorker} disabled={busy || !inviteEmail.trim()}>
@@ -364,10 +370,10 @@ export default function AdminApprovalsPage() {
                       </label>
 
                       <label className="grid gap-1">
-                        <span className="text-[11px] text-amber-200/70">Email</span>
+                        <span className="text-[11px] text-amber-200/70">Логин (email или телефон)</span>
                         <input
                           className="w-full rounded-2xl bg-black/30 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-                          placeholder="name@domain.com"
+                          placeholder="name@domain.com или +31612345678"
                           value={edit.email}
                           onChange={(e) =>
                             setEditById((p) => ({

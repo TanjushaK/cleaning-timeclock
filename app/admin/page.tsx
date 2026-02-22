@@ -1306,15 +1306,17 @@ const [editOpen, setEditOpen] = useState(false)
     setError(null)
     setNotice(null)
     try {
-      const em = inviteEmail.trim().toLowerCase()
-      if (!em) throw new Error('Нужен email')
-      await authFetchJson('/api/admin/workers/invite', {
+      const em = inviteEmail.trim()
+      if (!em) throw new Error('Нужен email или телефон')
+      const out = await authFetchJson('/api/admin/workers/invite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: em, role: 'worker', active: false }),
+        body: JSON.stringify({ identifier: em, role: 'worker', active: false }),
       })
       setInviteEmail('')
-      setNotice('Приглашение отправлено. Работник появится в /admin/approvals.')
+      const login = String((out as any)?.login || em)
+      const pw = String((out as any)?.password || '')
+      setNotice(`Создано. Логин: ${login}. Временный пароль: ${pw} (при первом входе попросим сменить).`)
       await refreshCore()
     } catch (e: any) {
       setError(e?.message || 'Ошибка приглашения')
@@ -2501,12 +2503,12 @@ const [editOpen, setEditOpen] = useState(false)
 
             <form onSubmit={onLogin} className="mt-5 grid gap-3">
               <label className="grid gap-1">
-                <span className="text-xs text-zinc-300">Email</span>
+                <span className="text-xs text-zinc-300">Логин (email или телефон)</span>
                 <input
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  type="email"
-                  autoComplete="email"
+                  type="text"
+                  autoComplete="username"
                   className="rounded-2xl border border-yellow-400/20 bg-black/40 px-4 py-3 text-sm outline-none transition focus:border-yellow-300/60"
                   placeholder="you@domain.com"
                   required
@@ -3185,19 +3187,19 @@ const [editOpen, setEditOpen] = useState(false)
                 <div className="flex flex-wrap items-end justify-between gap-3">
                   <div>
                     <div className="text-sm font-semibold text-yellow-100">Создать работника</div>
-                    <div className="mt-1 text-xs text-zinc-300">Приглашение уйдёт на email. Работник задаст пароль и войдёт без SMS.</div>
+                    <div className="mt-1 text-xs text-zinc-300">Создаёт работника и показывает временный пароль. Логин может быть email или телефон (+...).</div>
                   </div>
 
                   <div className="flex flex-wrap items-end gap-2">
                     <label className="grid gap-1">
-                      <span className="text-[11px] text-zinc-300">Email</span>
+                      <span className="text-[11px] text-zinc-300">Логин (email или телефон)</span>
                       <input
                         value={inviteEmail}
                         onChange={(e) => setInviteEmail(e.target.value)}
-                        type="email"
-                        autoComplete="email"
+                        type="text"
+                        autoComplete="username"
                         className="w-[260px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
-                        placeholder="name@domain.com"
+                        placeholder="name@domain.com или +31612345678"
                       />
                     </label>
 
@@ -3207,7 +3209,7 @@ const [editOpen, setEditOpen] = useState(false)
                       disabled={busy || !inviteEmail.trim()}
                       className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
                     >
-                      Пригласить
+                      Создать
                     </button>
                   </div>
                 </div>

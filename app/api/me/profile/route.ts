@@ -16,10 +16,12 @@ export async function GET(req: NextRequest) {
 
     if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
-    if (!profile) {
-      const phone = (user as any).phone ? String((user as any).phone) : null
-      const email = user.email ? String(user.email) : null
+    const uPhone = (user as any).phone ? String((user as any).phone) : null
+    const uEmail = user.email ? String(user.email) : null
 
+    const tempPassword = Boolean((user as any)?.user_metadata?.temp_password)
+
+    if (!profile) {
       const { data: created, error: cErr } = await supabase
         .from('profiles')
         .insert({
@@ -27,8 +29,8 @@ export async function GET(req: NextRequest) {
           role: 'worker',
           active: false,
           full_name: null,
-          phone,
-          email,
+          phone: uPhone,
+          email: uEmail,
           avatar_path: null,
           notes: '',
           onboarding_submitted_at: null,
@@ -44,13 +46,11 @@ export async function GET(req: NextRequest) {
           email: user.email ?? null,
           phone: (user as any).phone ?? null,
           email_confirmed_at: (user as any).email_confirmed_at ?? null,
+          temp_password: tempPassword,
         },
         profile: created,
       })
     }
-
-    const uPhone = (user as any).phone ? String((user as any).phone) : null
-    const uEmail = user.email ? String(user.email) : null
 
     const patch: any = {}
     if (uPhone && !profile.phone) patch.phone = uPhone
@@ -67,6 +67,7 @@ export async function GET(req: NextRequest) {
         email: user.email ?? null,
         phone: (user as any).phone ?? null,
         email_confirmed_at: (user as any).email_confirmed_at ?? null,
+        temp_password: tempPassword,
       },
       profile,
     })
