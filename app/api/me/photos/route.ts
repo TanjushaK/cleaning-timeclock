@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { ApiError, requireUser, toErrorResponse } from '@/lib/supabase-server'
 
 export const runtime = 'nodejs'
+
+const MAX_UPLOAD_BYTES = 5242880;
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg','image/png','image/webp']);
+
 export const dynamic = 'force-dynamic'
 
 type Photo = { path: string; url?: string; created_at?: string | null }
@@ -108,6 +112,8 @@ export async function POST(req: NextRequest) {
     const form = await req.formData()
     const file = form.get('file')
     if (!(file instanceof File)) throw new ApiError(400, 'file_required')
+      if (!ALLOWED_IMAGE_TYPES.has(file.type || '')) throw new ApiError(400, 'Разрешены только JPG/PNG/WEBP');
+      if (file.size > MAX_UPLOAD_BYTES) throw new ApiError(400, `Файл слишком большой (макс. ${Math.floor(MAX_UPLOAD_BYTES/1024/1024)}MB)`);
     if (file.size <= 0) throw new ApiError(400, 'file_empty')
 
     const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
