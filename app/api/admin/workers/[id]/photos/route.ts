@@ -1,3 +1,4 @@
+// app/api/admin/workers/[id]/photos/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
 
@@ -5,6 +6,17 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 type WorkerPhoto = { path: string; url?: string; created_at?: string | null }
+type AvatarKey = 'avatar_path' | 'avatar_url' | 'photo_path'
+
+const MAX_UPLOAD_BYTES = (() => {
+  const raw = process.env.WORKER_PHOTOS_MAX_BYTES || process.env.MAX_UPLOAD_BYTES || '5242880' // 5MB
+  const n = Number.parseInt(String(raw), 10)
+  if (!Number.isFinite(n) || n <= 0) return 5 * 1024 * 1024
+  return Math.min(Math.max(n, 256 * 1024), 25 * 1024 * 1024)
+})()
+
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
+const ALLOWED_EXT = new Set(['jpg', 'jpeg', 'png', 'webp'])
 
 function parseBucketRef(raw: string | undefined | null, fallbackBucket: string) {
   const s = String(raw || '').trim().replace(/^\/+|\/+$/g, '')
@@ -15,7 +27,6 @@ function parseBucketRef(raw: string | undefined | null, fallbackBucket: string) 
   return { bucket, prefix }
 }
 
-// Можно задать как "site-photos" или "site-photos/workers" — код сам разрулит bucket/prefix.
 const RAW = process.env.WORKER_PHOTOS_BUCKET || 'site-photos/workers'
 const { bucket: BUCKET, prefix: BUCKET_PREFIX } = parseBucketRef(RAW, 'site-photos')
 
@@ -37,7 +48,7 @@ function withCookieBearer(req: NextRequest): Headers {
 }
 
 function safeName(s: string): string {
-  return s.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 160)
+  return String(s || '').replace(/\s+/g, '_').replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 160)
 }
 
 function joinPath(...parts: string[]) {
@@ -49,17 +60,49 @@ function joinPath(...parts: string[]) {
 }
 
 function workerPrefix(workerId: string): string {
-  // Если prefix задан (например "workers") — используем его как root.
-  // Если prefix пуст — root = "workers".
   const root = BUCKET_PREFIX ? BUCKET_PREFIX : 'workers'
   return joinPath(root, workerId)
 }
 
-let AVATAR_KEY: 'avatar_path' | 'avatar_url' | 'photo_path' | null = null
+function fileExt(file: File) {
+  const ext = (file.name.split('.').pop() || '').toLowerCase()
+  return ext || 'jpg'
+}
 
-async function resolveAvatarKey(supabase: any) {
+function canonicalExt(file: File): string {
+  const ext = fileExt(file)
+  if (ALLOWED_EXT.has(ext)) return ext
+  const mime = String(file.type || '').toLowerCase()
+  if (mime === 'image/png') return 'png'
+  if (mime === 'image/webp') return 'webp'
+  return 'jpg'
+}
+
+function contentTypeFor(ext: string): string {
+  if (ext === 'png') return 'image/png'
+  if (ext === 'webp') return 'image/webp'
+  return 'image/jpeg'
+}
+
+function validateImageFile(file: File) {
+  if (!(file instanceof File)) throw new ApiError(400, 'file_required')
+  if (file.size <= 0) throw new ApiError(400, 'file_empty')
+  if (file.size > MAX_UPLOAD_BYTES) throw new ApiError(400, 'file_too_large')
+
+  const ext = fileExt(file)
+  const mime = String(file.type || '').toLowerCase()
+
+  const okByMime = mime ? ALLOWED_IMAGE_TYPES.has(mime) : false
+  const okByExt = ALLOWED_EXT.has(ext)
+
+  if (!okByMime && !okByExt) throw new ApiError(400, 'file_type_not_allowed')
+}
+
+let AVATAR_KEY: AvatarKey | null = null
+
+async function resolveAvatarKey(supabase: any): Promise<AvatarKey> {
   if (AVATAR_KEY) return AVATAR_KEY
-  const candidates: Array<'avatar_path' | 'avatar_url' | 'photo_path'> = ['avatar_path', 'avatar_url', 'photo_path']
+  const candidates: AvatarKey[] = ['avatar_path', 'avatar_url', 'photo_path']
   for (const k of candidates) {
     const { error } = await supabase.from('profiles').select(k).limit(1)
     if (!error) {
@@ -88,7 +131,6 @@ async function listPhotos(supabase: any, workerId: string): Promise<WorkerPhoto[
   const paths = itemsRaw.map((it: any) => `${pref}/${it.name}`)
   if (paths.length === 0) return []
 
-  // bulk signed urls
   const urlByPath = new Map<string, string>()
   const { data: signed, error: signErr } = await supabase.storage.from(BUCKET).createSignedUrls(paths, ttl)
 
@@ -99,7 +141,6 @@ async function listPhotos(supabase: any, workerId: string): Promise<WorkerPhoto[
       if (p && u) urlByPath.set(p, u)
     }
   } else {
-    // fallback per-item
     for (const p of paths) {
       const { data: one } = await supabase.storage.from(BUCKET).createSignedUrl(p, ttl)
       if (one?.signedUrl) urlByPath.set(p, String(one.signedUrl))
@@ -146,35 +187,32 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
     const form = await req.formData()
     const file = form.get('file')
-    if (!(file instanceof File)) throw new ApiError(400, 'Нет файла (formData file)')
-    if (file.size <= 0) throw new ApiError(400, 'Файл пустой')
+    if (!(file instanceof File)) throw new ApiError(400, 'file_required')
 
-    const maxBytes = Number(process.env.WORKER_PHOTOS_MAX_BYTES || String(8 * 1024 * 1024))
-    if (Number.isFinite(maxBytes) && file.size > maxBytes) throw new ApiError(413, `Файл слишком большой (> ${maxBytes} bytes)`)
+    validateImageFile(file)
 
-    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
+    const ext = canonicalExt(file)
     const base = safeName(file.name.replace(/\.[^.]+$/, '')) || 'photo'
     const filename = `${Date.now()}_${base}.${ext}`
 
     const pref = workerPrefix(workerId)
     const path = `${pref}/${filename}`
 
-    const buf = Buffer.from(await file.arrayBuffer())
+    const bytes = new Uint8Array(await file.arrayBuffer())
+    const mime = String(file.type || '').toLowerCase()
+    const contentType = ALLOWED_IMAGE_TYPES.has(mime) ? String(file.type) : contentTypeFor(ext)
 
-    const { error: upErr } = await sb.storage.from(BUCKET).upload(path, buf, {
-      contentType: file.type || 'image/jpeg',
+    const { error: upErr } = await sb.storage.from(BUCKET).upload(path, bytes, {
+      contentType,
       upsert: false,
     })
     if (upErr) throw new ApiError(500, upErr.message)
 
-    // если аватар не выбран — назначим первый загруженный автоматически
     const avatarKey = await resolveAvatarKey(sb)
-    if (avatarKey) {
-      const { data: prof } = await sb.from('profiles').select(avatarKey).eq('id', workerId).maybeSingle()
-      const cur = prof ? (prof as any)[avatarKey] : null
-      if (!cur) {
-        await sb.from('profiles').update({ [avatarKey]: path }).eq('id', workerId)
-      }
+    const { data: prof } = await sb.from('profiles').select(avatarKey).eq('id', workerId).maybeSingle()
+    const cur = prof ? (prof as any)[avatarKey] : null
+    if (!cur) {
+      await sb.from('profiles').update({ [avatarKey]: path }).eq('id', workerId)
     }
 
     const photos = await listPhotos(sb, workerId)
@@ -205,15 +243,12 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
 
     const photos = await listPhotos(sb, workerId)
 
-    // если удалили текущий аватар — перекинем на первый оставшийся (или null)
     const avatarKey = await resolveAvatarKey(sb)
-    if (avatarKey) {
-      const { data: prof } = await sb.from('profiles').select(avatarKey).eq('id', workerId).maybeSingle()
-      const cur = prof ? (prof as any)[avatarKey] : null
-      if (cur && String(cur) === path) {
-        const nextAvatar = photos[0]?.path || null
-        await sb.from('profiles').update({ [avatarKey]: nextAvatar }).eq('id', workerId)
-      }
+    const { data: prof } = await sb.from('profiles').select(avatarKey).eq('id', workerId).maybeSingle()
+    const cur = prof ? (prof as any)[avatarKey] : null
+    if (cur && String(cur) === path) {
+      const nextAvatar = photos[0]?.path || null
+      await sb.from('profiles').update({ [avatarKey]: nextAvatar }).eq('id', workerId)
     }
 
     return NextResponse.json({ photos }, { status: 200 })
