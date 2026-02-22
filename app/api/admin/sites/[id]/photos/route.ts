@@ -1,3 +1,4 @@
+// app/api/admin/sites/[id]/photos/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
 
@@ -125,7 +126,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const safeBase = sanitizeFilename(file.name.replace(/\.[^.]+$/, '')) || 'photo'
     const filename = `${Date.now()}_${safeBase}.${ext}`
 
-    // ✅ если SITE_PHOTOS_BUCKET задан как "site-photos/sites", prefix="sites"
     const path = PREFIX ? joinPath(PREFIX, id, filename) : joinPath(id, filename)
 
     const bytes = new Uint8Array(await file.arrayBuffer())
