@@ -1,6 +1,6 @@
 // app/api/me/jobs/start/route.ts
 import { NextResponse } from 'next/server';
-import { requireUser, toErrorResponse } from '@/lib/supabase-server';
+import { requireActiveWorker, toErrorResponse } from '@/lib/supabase-server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -44,7 +44,7 @@ function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number)
 
 export async function POST(req: Request) {
   try {
-    const guard = await requireUser(req);
+    const guard = await requireActiveWorker(req);
     const supabase = guard.supabase;
     const uid = guard.userId;
 
@@ -140,3 +140,4 @@ export async function POST(req: Request) {
     return toErrorResponse(err);
   }
 }
+
