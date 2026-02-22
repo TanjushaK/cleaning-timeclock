@@ -1,3 +1,4 @@
+// app/api/admin/workers/invite/route.ts
 import { NextResponse } from 'next/server'
 import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
 
@@ -39,18 +40,16 @@ export async function POST(req: Request) {
     if (!isEmail(email)) throw new ApiError(400, 'Неверный email')
     if (role !== 'worker' && role !== 'admin') throw new ApiError(400, 'role должен быть worker или admin')
 
-    // ✅ ВАЖНО: по умолчанию worker должен быть inactive, admin можно active
-    let activeDefault = role === 'admin'
-    if (Object.prototype.hasOwnProperty.call(body, 'active')) {
-      activeDefault = Boolean(body.active)
-    }
-    const active = activeDefault
+    const active =
+      role === 'worker'
+        ? false
+        : Object.prototype.hasOwnProperty.call(body, 'active')
+          ? Boolean(body.active)
+          : true
 
-    // 1) invite (письмо)
     const { data: inv, error: invErr } = await supabase.auth.admin.inviteUserByEmail(email)
     let targetUserId: string | null = inv?.user?.id ?? null
 
-    // 2) если invite не дал id — ищем существующего юзера
     if (!targetUserId) {
       targetUserId = await findUserIdByEmail(supabase, email)
     }
@@ -60,7 +59,6 @@ export async function POST(req: Request) {
       throw new ApiError(400, `Не смог пригласить/найти пользователя${msg}`)
     }
 
-    // 3) upsert profile
     const { error: pErr } = await supabase
       .from('profiles')
       .upsert({ id: targetUserId, role, active }, { onConflict: 'id' })
