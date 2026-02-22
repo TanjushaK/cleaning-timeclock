@@ -27,6 +27,14 @@ type AdminGuard = UserGuard & {
   profile: ProfileRow
 }
 
+type WorkerGuard = {
+  supabase: SupabaseClient
+  token: string
+  user: User
+  userId: string
+  profile: ProfileRow
+}
+
 function cleanEnv(v: string): string {
   const s = String(v || '').replace(/\uFEFF/g, '').trim()
   if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
@@ -101,6 +109,22 @@ export async function requireAdmin(reqOrHeaders: Request | Headers): Promise<Adm
   return { ...guard, profile: prof as ProfileRow }
 }
 
+export async function requireActiveWorker(reqOrHeaders: Request | Headers): Promise<WorkerGuard> {
+  const guard = await requireUser(reqOrHeaders)
+
+  const { data: prof, error: profErr } = await guard.supabase
+    .from('profiles')
+    .select('id, role, active')
+    .eq('id', guard.userId)
+    .maybeSingle()
+
+  if (profErr || !prof) throw new ApiError(403, 'Нет профиля (profiles) или нет доступа')
+  if (prof.role !== 'worker') throw new ApiError(403, 'Нужна роль worker')
+  if (prof.active !== true) throw new ApiError(403, 'Аккаунт ещё не активирован')
+
+  return { ...guard, profile: prof as ProfileRow }
+}
+
 export function toErrorResponse(err: unknown): NextResponse {
   if (err instanceof ApiError) {
     return NextResponse.json({ error: err.message }, { status: err.status })
@@ -110,3 +134,4 @@ export function toErrorResponse(err: unknown): NextResponse {
   }
   return NextResponse.json({ error: 'Unknown error' }, { status: 500 })
 }
+
