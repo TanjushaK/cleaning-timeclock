@@ -130,7 +130,7 @@ export default function AppPage() {
   const [booting, setBooting] = useState(true);
   const [token, setToken] = useState<string | null>(null);
 
-  const [loginMode, setLoginMode] = useState<"phone" | "email">("phone");
+  const [loginMode, setLoginMode] = useState<"phone" | "email">("email");
   const [emailMode, setEmailMode] = useState<"password" | "magic">("password");
 
   const [email, setEmail] = useState("");
@@ -596,6 +596,7 @@ export default function AppPage() {
                   onChange={(e) => setPhone(e.target.value)}
                   autoComplete="tel"
                 />
+                <div className="text-xs opacity-70">Резервный вход: работает, если номер телефона привязан к вашему аккаунту.</div>
                 {!otpSent ? (
                   <button
                     className="w-full rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
@@ -678,7 +679,7 @@ export default function AppPage() {
                     >
                       {busy ? "Вхожу…" : "Войти"}
                     </button>
-                    <div className="text-xs opacity-70">Быстрый вход по паролю: быстро и без лишних шагов.</div>
+                    <div className="text-xs opacity-70">Основной вход: email + пароль. Если пароля ещё нет — войдите по magic link один раз и задайте пароль в «Профиле».</div>
                   </>
                 ) : (
                   <>
@@ -689,7 +690,7 @@ export default function AppPage() {
                     >
                       {busy ? "Отправляю…" : emailLinkSent ? "Отправить ещё раз" : "Отправить magic link"}
                     </button>
-                    <div className="text-xs opacity-70">После клика по ссылке из письма ты вернёшься на сайт и войдёшь автоматически.</div>
+                    <div className="text-xs opacity-70">Открой письмо и нажми на ссылку — вход выполнится автоматически. Затем можно задать пароль в «Профиле» и входить быстрее.</div>
                   </>
                 )}
               </div>
@@ -1025,5 +1026,8 @@ export default function AppPage() {
     );
   }
 }
+
+
+
 
 
