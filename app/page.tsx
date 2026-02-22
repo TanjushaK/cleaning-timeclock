@@ -16,7 +16,13 @@ type Profile = {
 };
 
 type MeProfileResponse = {
-  user: { id: string; email?: string | null; phone?: string | null; email_confirmed_at?: string | null };
+  user: {
+    id: string;
+    email?: string | null;
+    phone?: string | null;
+    email_confirmed_at?: string | null;
+    temp_password?: boolean | null;
+  };
   profile: Profile;
 };
 
@@ -131,15 +137,16 @@ export default function AppPage() {
   const [token, setToken] = useState<string | null>(null);
 
   const [loginMode, setLoginMode] = useState<"phone" | "email">("email");
-  const [emailMode, setEmailMode] = useState<"password" | "magic">("password");
-
+  
   const [email, setEmail] = useState("");
   const [emailPassword, setEmailPassword] = useState("");
-  const [emailLinkSent, setEmailLinkSent] = useState(false);
-
+  
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
+  const [recoverNewPassword, setRecoverNewPassword] = useState("");
+  const [forceNewPassword, setForceNewPassword] = useState("");
+  const [forceNewPassword2, setForceNewPassword2] = useState("");
 
   const [me, setMe] = useState<MeProfileResponse | null>(null);
   const [jobs, setJobs] = useState<JobItem[]>([]);
@@ -239,8 +246,11 @@ export default function AppPage() {
     try {
       const p = phone.trim();
       const code = otp.trim();
+      const newPw = recoverNewPassword.trim();
+
       if (!p || !p.startsWith("+")) throw new Error("Телефон нужен в формате E.164, например +31612345678");
       if (!code) throw new Error("Введи код из SMS");
+      if (!newPw || newPw.length < 8) throw new Error("Новый пароль: минимум 8 символов");
 
       const { data, error: e2 } = await supabase.auth.verifyOtp({ phone: p, token: code, type: "sms" });
       if (e2) throw new Error(e2.message);
@@ -248,27 +258,37 @@ export default function AppPage() {
       const session = data?.session;
       if (!session?.access_token) throw new Error("Не удалось получить сессию");
 
-      setAuthTokens(session.access_token, session.refresh_token || null);
+      // Устанавливаем новый пароль и снимаем флаг temp_password (если он был)
+      const { error: uErr } = await supabase.auth.updateUser({ password: newPw, data: { temp_password: false } });
+      if (uErr) throw new Error(uErr.message);
+
+      // Берём актуальную сессию после updateUser
+      const { data: s2, error: sErr } = await supabase.auth.getSession();
+      if (sErr) throw new Error(sErr.message);
+      const s = s2?.session || session;
+
+      setAuthTokens(String(s.access_token), s.refresh_token ? String(s.refresh_token) : null);
       const t = getAccessToken();
       setToken(t);
 
       await loadAll();
-      setNotice("Вход выполнен.");
+      setNotice("Пароль обновлён. Вход выполнен.");
+      setOtp("");
+      setOtpSent(false);
+      setRecoverNewPassword("");
     } catch (e: any) {
-      setError(String(e?.message || e || "Ошибка подтверждения кода"));
+      setError(String(e?.message || e || "Ошибка восстановления"));
     } finally {
       setBusy(false);
       setBooting(false);
     }
-  }, [phone, otp, loadAll]);
-
-  const doEmailSend = useCallback(async () => {
-    setBusy(true);
+  }, [phone, otp, recoverNewPassword, loadAll]);
     setError(null);
     setNotice(null);
     try {
       const em = email.trim();
-      if (!em || !em.includes("@")) throw new Error("Введи корректный email");
+      if (!em) throw new Error("Введи email или телефон");
+      if (!em.includes("@") && !em.startsWith("+")) throw new Error("Телефон нужен в формате E.164, например +31612345678");
 
       const redirectTo = `${window.location.origin}/auth/callback`;
 
@@ -298,13 +318,14 @@ export default function AppPage() {
     try {
       const em = email.trim();
       const pw = emailPassword;
-      if (!em || !em.includes("@")) throw new Error("Введи корректный email");
+      if (!em) throw new Error("Введи email или телефон");
+      if (!em.includes("@") && !em.startsWith("+")) throw new Error("Телефон нужен в формате E.164, например +31612345678");
       if (!pw || !pw.trim()) throw new Error("Пароль обязателен");
 
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: em, password: pw }),
+        body: JSON.stringify({ identifier: em, password: pw }),
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(payload?.error || `HTTP ${res.status}`);
@@ -546,7 +567,7 @@ export default function AppPage() {
           <div className="pointer-events-none absolute -inset-2 rounded-[28px] bg-gradient-to-r from-amber-500/55 via-amber-500/18 to-amber-500/55 blur-2xl" />
           <div className="relative w-full rounded-2xl border border-amber-500/40 bg-zinc-950/70 p-6 shadow-[0_0_0_1px_rgba(245,158,11,0.18),0_0_95px_rgba(245,158,11,0.14),0_25px_90px_rgba(0,0,0,0.75)]">
             <div className="text-xl font-semibold">Tanija • Worker</div>
-            <div className="text-sm opacity-80 mt-1">Вход / Регистрация</div>
+            <div className="text-sm opacity-80 mt-1">Вход</div>
 
             <div className="mt-4 flex gap-2">
               <button
@@ -562,7 +583,7 @@ export default function AppPage() {
                 }}
                 disabled={busy}
               >
-                Телефон
+                Восстановить
               </button>
               <button
                 className={`flex-1 rounded-xl px-3 py-2 text-sm border ${
@@ -570,13 +591,13 @@ export default function AppPage() {
                 }`}
                 onClick={() => {
                   setLoginMode("email");
-                  setEmailLinkSent(false);
+                  
                   setError(null);
                   setNotice(null);
                 }}
                 disabled={busy}
               >
-                Email
+                Пароль
               </button>
             </div>
 
@@ -596,7 +617,7 @@ export default function AppPage() {
                   onChange={(e) => setPhone(e.target.value)}
                   autoComplete="tel"
                 />
-                <div className="text-xs opacity-70">Резервный вход: работает, если номер телефона привязан к вашему аккаунту.</div>
+                <div className="text-xs opacity-70">Восстановление пароля по SMS: работает, если телефон привязан к вашему аккаунту.</div>
                 {!otpSent ? (
                   <button
                     className="w-full rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
@@ -614,12 +635,20 @@ export default function AppPage() {
                       onChange={(e) => setOtp(e.target.value)}
                       inputMode="numeric"
                     />
+                    <input
+                      className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
+                      placeholder="Новый пароль (мин. 8)"
+                      type="password"
+                      value={recoverNewPassword}
+                      onChange={(e) => setRecoverNewPassword(e.target.value)}
+                      autoComplete="new-password"
+                    />
                     <button
                       className="w-full rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
                       onClick={doPhoneVerify}
-                      disabled={busy || !otp.trim()}
+                      disabled={busy || !otp.trim() || recoverNewPassword.trim().length < 8}
                     >
-                      {busy ? "Проверяю…" : "Войти"}
+                      {busy ? "Проверяю…" : "Установить пароль"}
                     </button>
                     <button
                       className="w-full rounded-xl border border-amber-500/30 px-4 py-2 text-sm hover:bg-amber-500/10 disabled:opacity-60"
@@ -633,37 +662,16 @@ export default function AppPage() {
               </div>
             ) : (
               <div className="mt-4 space-y-3">
-                <div className="flex gap-2">
-                  <button
-                    className={`flex-1 rounded-xl px-3 py-2 text-xs border ${
-                      emailMode === "password" ? "bg-amber-500/15 border-amber-500/40" : "border-amber-500/20 hover:bg-amber-500/10"
-                    }`}
-                    onClick={() => setEmailMode("password")}
-                    disabled={busy}
-                  >
-                    Пароль
-                  </button>
-                  <button
-                    className={`flex-1 rounded-xl px-3 py-2 text-xs border ${
-                      emailMode === "magic" ? "bg-amber-500/15 border-amber-500/40" : "border-amber-500/20 hover:bg-amber-500/10"
-                    }`}
-                    onClick={() => setEmailMode("magic")}
-                    disabled={busy}
-                  >
-                    Magic link
-                  </button>
-                </div>
 
                 <input
                   className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-                  placeholder="Email"
+                  placeholder="Email или телефон (+316...)"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  autoComplete="email"
+                  autoComplete="username"
                 />
 
-                {emailMode === "password" ? (
-                  <>
+                <>
                     <input
                       className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
                       placeholder="Пароль"
@@ -679,15 +687,8 @@ export default function AppPage() {
                     >
                       {busy ? "Вхожу…" : "Войти"}
                     </button>
-                    <div className="text-xs opacity-70">Основной вход: email + пароль. Если пароля ещё нет — войдите по magic link один раз и задайте пароль в «Профиле».</div>
-                  </>
-                ) : (
-                  <>
-                    <button
-                      className="w-full rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
-                      onClick={doEmailSend}
-                      disabled={busy || !email.trim()}
-                    >
+                    <div className="text-xs opacity-70">Основной вход: логин + пароль. Если пароль временный — сразу попросим сменить.</div>
+                  </>                    >
                       {busy ? "Отправляю…" : emailLinkSent ? "Отправить ещё раз" : "Отправить magic link"}
                     </button>
                     <div className="text-xs opacity-70">Открой письмо и нажми на ссылку — вход выполнится автоматически. Затем можно задать пароль в «Профиле» и входить быстрее.</div>
@@ -698,6 +699,79 @@ export default function AppPage() {
 
             <div className="mt-4 text-xs opacity-70">
               Для админа: <a className="underline" href="/admin">/admin</a> • заявки: <a className="underline" href="/admin/approvals">/admin/approvals</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+
+  // FORCE CHANGE PASSWORD (temp password)
+  if (authed && me?.user?.temp_password) {
+    return (
+      <div className="min-h-screen bg-zinc-950 text-amber-100 flex items-center justify-center p-4 sm:p-6">
+        <div className="relative w-full max-w-md">
+          <div className="pointer-events-none absolute -inset-2 rounded-[28px] bg-gradient-to-r from-amber-500/55 via-amber-500/18 to-amber-500/55 blur-2xl" />
+          <div className="relative w-full rounded-2xl border border-amber-500/40 bg-zinc-950/70 p-6 shadow-[0_0_0_1px_rgba(245,158,11,0.18),0_0_95px_rgba(245,158,11,0.14),0_25px_90px_rgba(0,0,0,0.75)]">
+            <div className="text-xl font-semibold">Смена пароля</div>
+            <div className="text-sm opacity-80 mt-1">У вас временный пароль. Поставьте новый и поехали работать.</div>
+
+            {error ? (
+              <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{error}</div>
+            ) : null}
+            {notice ? (
+              <div className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">{notice}</div>
+            ) : null}
+
+            <div className="mt-4 space-y-3">
+              <input
+                className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
+                placeholder="Новый пароль (мин. 8)"
+                type="password"
+                value={forceNewPassword}
+                onChange={(e) => setForceNewPassword(e.target.value)}
+                autoComplete="new-password"
+              />
+              <input
+                className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
+                placeholder="Повтори новый пароль"
+                type="password"
+                value={forceNewPassword2}
+                onChange={(e) => setForceNewPassword2(e.target.value)}
+                autoComplete="new-password"
+              />
+              <button
+                className="w-full rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
+                disabled={busy || forceNewPassword.trim().length < 8 || forceNewPassword !== forceNewPassword2}
+                onClick={async () => {
+                  setBusy(true);
+                  setError(null);
+                  setNotice(null);
+                  try {
+                    const pw1 = forceNewPassword.trim();
+                    const pw2 = forceNewPassword2.trim();
+                    if (pw1.length < 8) throw new Error("Пароль: минимум 8 символов");
+                    if (pw1 !== pw2) throw new Error("Пароли не совпадают");
+                    const { error: uErr } = await supabase.auth.updateUser({ password: pw1, data: { temp_password: false } });
+                    if (uErr) throw new Error(uErr.message);
+                    setForceNewPassword("");
+                    setForceNewPassword2("");
+                    await loadAll();
+                    setNotice("Пароль обновлён.");
+                  } catch (e: any) {
+                    setError(String(e?.message || e || "Ошибка смены пароля"));
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >
+                {busy ? "Сохраняю…" : "Сменить пароль"}
+              </button>
+
+              <button className="w-full rounded-xl border border-amber-500/30 px-4 py-2 text-sm hover:bg-amber-500/10" onClick={doLogout} disabled={busy}>
+                Выйти
+              </button>
             </div>
           </div>
         </div>
