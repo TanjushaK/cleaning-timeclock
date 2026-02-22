@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireUser } from '@/lib/supabase-server'
+import { requireActiveWorker } from '@/lib/supabase-server'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -83,7 +83,7 @@ async function getJobWorkerJobIds(supabase: any, workerId: string): Promise<stri
 
 export async function GET(req: NextRequest) {
   try {
-    const { supabase, userId } = await requireUser(req)
+    const { supabase, userId } = await requireActiveWorker(req)
 
     const sp = req.nextUrl.searchParams
     const rawFrom = (sp.get('date_from') || sp.get('from') || '').trim()
@@ -263,3 +263,4 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: msg }, { status })
   }
 }
+
