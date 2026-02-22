@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireAdmin, toErrorResponse } from '@/lib/supabase-server'
+import { requireAdmin, toErrorResponse, ApiError } from '@/lib/supabase-server'
 
 export const runtime = 'nodejs'
-export const dynamic = 'force-dynamic'
 
-type NominatimItem = { lat: string; lon: string; display_name?: string }
+type NominatimItem = {
+  lat: string
+  lon: string
+  display_name?: string
+}
 
 export async function GET(req: NextRequest) {
   try {
-    // Закрываем публичный геокодер: только админ (иначе это бесплатный рычаг для абьюза/досов).
+    // Закрываем публичный прокси: только admin
     await requireAdmin(req)
 
     const q = req.nextUrl.searchParams.get('q')?.trim() || ''
@@ -16,7 +19,7 @@ export async function GET(req: NextRequest) {
 
     const ua =
       process.env.NOMINATIM_USER_AGENT ||
-      'Tanija Cleaning Timeclock (admin geocode); contact=admin@tanjusha.nl'
+      'Tanija Cleaning Timeclock (geocode); contact=admin@tanjusha.nl'
 
     const url =
       `https://nominatim.openstreetmap.org/search` +
@@ -43,17 +46,18 @@ export async function GET(req: NextRequest) {
     const lat = Number(item?.lat)
     const lng = Number(item?.lon)
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-      return NextResponse.json({ error: 'bad_geocode_result' }, { status: 502 })
+      throw new ApiError(502, 'bad_geocode_result')
     }
 
     return NextResponse.json({
       ok: true,
       lat,
       lng,
-      display_name: item?.display_name || null,
+      display_name: item.display_name || null,
     })
   } catch (e) {
     return toErrorResponse(e)
   }
 }
+
 
