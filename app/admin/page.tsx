@@ -921,11 +921,14 @@ export default function AdminPage() {
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [inviteEmail, setInviteEmail] = useState('')
+
 
   const [busy, setBusy] = useState(false)
   const [busySeq, setBusySeq] = useState(0)
   const refreshSeqRef = useRef(0)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
   // Safety-net: если UI залип на "Обновляю…" — отпускаем кнопку и показываем ошибку
   // Важно: учитываем "поколение" обновления, чтобы не стрелять в ногу при параллельных refresh.
@@ -1293,6 +1296,28 @@ const [editOpen, setEditOpen] = useState(false)
       setWorkers([])
       setAssignments([])
       setSchedule([])
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function inviteWorker() {
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const em = inviteEmail.trim().toLowerCase()
+      if (!em) throw new Error('Нужен email')
+      await authFetchJson('/api/admin/workers/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: em, role: 'worker', active: true }),
+      })
+      setInviteEmail('')
+      setNotice('Приглашение отправлено.')
+      await refreshCore()
+    } catch (e: any) {
+      setError(e?.message || 'Ошибка приглашения')
     } finally {
       setBusy(false)
     }
@@ -2470,6 +2495,10 @@ const [editOpen, setEditOpen] = useState(false)
               <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-950/30 px-4 py-3 text-sm text-red-100">{error}</div>
             ) : null}
 
+            {notice ? (
+              <div className="mt-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">{notice}</div>
+            ) : null}
+
             <form onSubmit={onLogin} className="mt-5 grid gap-3">
               <label className="grid gap-1">
                 <span className="text-xs text-zinc-300">Email</span>
@@ -2590,6 +2619,10 @@ const [editOpen, setEditOpen] = useState(false)
 
           {error ? (
             <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-950/30 px-4 py-3 text-sm text-red-100">{error}</div>
+          ) : null}
+
+          {notice ? (
+            <div className="mt-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">{notice}</div>
           ) : null}
 
 
@@ -3148,7 +3181,40 @@ const [editOpen, setEditOpen] = useState(false)
           {/* РАБОТНИКИ */}
           {tab === 'workers' ? (
             <div className="mt-6 grid gap-3">
+              <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
+                <div className="flex flex-wrap items-end justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-yellow-100">Создать работника</div>
+                    <div className="mt-1 text-xs text-zinc-300">Приглашение уйдёт на email. Работник задаст пароль и войдёт без SMS.</div>
+                  </div>
+
+                  <div className="flex flex-wrap items-end gap-2">
+                    <label className="grid gap-1">
+                      <span className="text-[11px] text-zinc-300">Email</span>
+                      <input
+                        value={inviteEmail}
+                        onChange={(e) => setInviteEmail(e.target.value)}
+                        type="email"
+                        autoComplete="email"
+                        className="w-[260px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+                        placeholder="name@domain.com"
+                      />
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={() => void inviteWorker()}
+                      disabled={busy || !inviteEmail.trim()}
+                      className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
+                    >
+                      Пригласить
+                    </button>
+                  </div>
+                </div>
+              </div>
+
               {workers
+
                 .slice()
                 .sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''))
                 .map((w) => {
@@ -4122,5 +4188,8 @@ const [editOpen, setEditOpen] = useState(false)
     </main>
   )
 }
+
+
+
 
 
