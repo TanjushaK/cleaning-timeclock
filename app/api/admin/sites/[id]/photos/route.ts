@@ -3,6 +3,10 @@ import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
 
 export const runtime = 'nodejs'
 
+const MAX_UPLOAD_BYTES = 5242880;
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg','image/png','image/webp']);
+
+
 type SitePhoto = { path: string; url?: string; created_at?: string | null }
 
 function parseBucketRef(raw: string | undefined | null, fallbackBucket: string) {
@@ -84,6 +88,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const form = await req.formData()
     const file = form.get('file')
     if (!file || !(file instanceof File)) throw new ApiError(400, 'file_required')
+    // validate upload
+    if (!ALLOWED_IMAGE_TYPES.has((file as any).type || '')) throw new ApiError(400, 'Разрешены только JPG/PNG/WEBP');
+    if ((file as any).size > MAX_UPLOAD_BYTES) throw new ApiError(400, `Файл слишком большой (макс. ${Math.floor(MAX_UPLOAD_BYTES/1024/1024)}MB)`);
 
     const { data: siteData, error: siteErr } = await supabase.from('sites').select('id,photos').eq('id', id).single()
     if (siteErr) throw new ApiError(400, siteErr.message || 'site_not_found')
