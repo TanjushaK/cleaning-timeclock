@@ -5,6 +5,16 @@ export const runtime = 'nodejs'
 
 type SitePhoto = { path: string; url?: string; created_at?: string | null }
 
+const MAX_UPLOAD_BYTES = (() => {
+  const raw = process.env.SITE_PHOTOS_MAX_BYTES || process.env.MAX_UPLOAD_BYTES || '5242880' // 5MB
+  const n = Number.parseInt(String(raw), 10)
+  if (!Number.isFinite(n) || n <= 0) return 5 * 1024 * 1024
+  return Math.min(Math.max(n, 256 * 1024), 25 * 1024 * 1024)
+})()
+
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
+const ALLOWED_EXT = new Set(['jpg', 'jpeg', 'png', 'webp'])
+
 function parseBucketRef(raw: string | undefined | null, fallbackBucket: string) {
   const s = String(raw || '').trim().replace(/^\/+|\/+$/g, '')
   if (!s) return { bucket: fallbackBucket, prefix: '' }
@@ -36,6 +46,24 @@ function sanitizeFilename(name: string) {
     .replace(/\s+/g, '_')
     .replace(/[^a-zA-Z0-9_\-.а-яА-ЯёЁ]/g, '')
     .slice(0, 120)
+}
+
+function fileExt(file: File) {
+  const ext = (file.name.split('.').pop() || '').toLowerCase()
+  return ext || 'jpg'
+}
+
+function validateImageFile(file: File) {
+  if (!(file instanceof File)) throw new ApiError(400, 'file_required')
+  if (file.size <= 0) throw new ApiError(400, 'file_empty')
+  if (file.size > MAX_UPLOAD_BYTES) throw new ApiError(400, 'file_too_large')
+
+  const ext = fileExt(file)
+  const mime = String(file.type || '').toLowerCase()
+
+  const okByMime = mime ? ALLOWED_IMAGE_TYPES.has(mime) : false
+  const okByExt = ALLOWED_EXT.has(ext)
+  if (!okByMime && !okByExt) throw new ApiError(400, 'file_type_not_allowed')
 }
 
 function normalizePhotos(v: any): SitePhoto[] {
@@ -83,10 +111,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const form = await req.formData()
     const file = form.get('file')
-    if (!file || !(file instanceof File)) throw new ApiError(400, 'file_required')
-    if (file.size <= 0) throw new ApiError(400, 'file_empty')
-    if (file.size > MAX_UPLOAD_BYTES) throw new ApiError(400, 'file_too_large')
-    if (!ALLOWED_IMAGE_TYPES.has(file.type)) throw new ApiError(400, 'file_type_not_allowed')
+    if (!(file instanceof File)) throw new ApiError(400, 'file_required')
+
+    validateImageFile(file)
 
     const { data: siteData, error: siteErr } = await supabase.from('sites').select('id,photos').eq('id', id).single()
     if (siteErr) throw new ApiError(400, siteErr.message || 'site_not_found')
@@ -94,22 +121,27 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const currentPhotos = normalizePhotos(siteData?.photos)
     if (currentPhotos.length >= 5) throw new ApiError(400, 'photo_limit')
 
-    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
-    if (!ALLOWED_IMAGE_EXT.has(ext)) throw new ApiError(400, 'ext_not_allowed')
+    const ext = fileExt(file)
     const safeBase = sanitizeFilename(file.name.replace(/\.[^.]+$/, '')) || 'photo'
     const filename = `${Date.now()}_${safeBase}.${ext}`
 
     // ✅ если SITE_PHOTOS_BUCKET задан как "site-photos/sites", prefix="sites"
     const path = PREFIX ? joinPath(PREFIX, id, filename) : joinPath(id, filename)
 
-    const arrayBuffer = await file.arrayBuffer()
-    const bytes = new Uint8Array(arrayBuffer)
+    const bytes = new Uint8Array(await file.arrayBuffer())
+
+    const contentType = ALLOWED_IMAGE_TYPES.has(String(file.type || '').toLowerCase())
+      ? String(file.type)
+      : ext === 'png'
+        ? 'image/png'
+        : ext === 'webp'
+          ? 'image/webp'
+          : 'image/jpeg'
 
     const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, bytes, {
-      contentType: file.type || 'image/jpeg',
+      contentType,
       upsert: false,
     })
-
     if (upErr) throw new ApiError(500, upErr.message || 'upload_failed')
 
     const publicUrl = supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl
@@ -204,4 +236,3 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return toErrorResponse(e)
   }
 }
-
