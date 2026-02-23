@@ -143,14 +143,17 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       const phone = normMaybeString(body.phone)
       profilePatch.phone = phone
       authPatch.phone = phone
+      if (phone) authPatch.phone_confirm = true
     }
 
     if (Object.prototype.hasOwnProperty.call(body, 'email')) {
       const email = normMaybeString(body.email)
       profilePatch.email = email
       authPatch.email = email
+      if (email) authPatch.email_confirm = true
     }
 
+    if (Object.prototype.hasOwnProperty.call(body, 'password')) { const pw = String(body.password ?? '').trim(); if (pw) authPatch.password = pw }
     if (Object.keys(profilePatch).length === 0 && Object.keys(authPatch).length === 0) {
       return errJson('Нечего обновлять', 400)
     }
