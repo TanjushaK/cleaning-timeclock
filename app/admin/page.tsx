@@ -2585,7 +2585,7 @@ const [editOpen, setEditOpen] = useState(false)
 
         <div className="rounded-3xl border border-yellow-400/20 bg-zinc-950/50 p-6 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="adminTabRow flex items-center gap-2">
+            <div className="adminTabRow">
               {(['sites', 'workers', 'jobs', 'plan', 'reports'] as TabKey[]).map((k) => (
                 <button
                   key={k}

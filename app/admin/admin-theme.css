@@ -63,43 +63,29 @@
 .adminFooterYear {
   color: rgba(254, 243, 199, 0.72);
 }
-
-/* Mobile ergonomics */
-.adminTheme{overflow-x:hidden;}
-
+/* Mobile: make top tabs horizontally scrollable instead of overflowing page */
 @media (hover: none) and (pointer: coarse) {
-  /* Tabs row scrolls horizontally instead of forcing the whole page wider */
-  .adminTheme .adminTabRow {
+  .adminTheme {
+    overflow-x: hidden;
+  }
+
+  .adminTabRow {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 10px;
     max-width: 100%;
     overflow-x: auto;
     overflow-y: hidden;
+    padding: 2px 2px 6px;
     -webkit-overflow-scrolling: touch;
-    padding-bottom: 8px;
-    margin-bottom: -8px;
+    scrollbar-width: none; /* Firefox */
   }
-  .adminTheme .adminTabRow > * {
+
+  .adminTabRow::-webkit-scrollbar {
+    display: none; /* Chrome/Safari */
+  }
+
+  .adminTabRow > button {
     flex: 0 0 auto;
-  }
-  /* Bigger hit targets */
-  .adminTheme :where(button, a, [role='button']) {
-    min-height: 44px;
-    min-width: 44px;
-    touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent;
-  }
-  .adminTheme :where(input, select, textarea) {
-    min-height: 44px;
-    font-size: 16px;
-  }
-  /* Never let containers exceed viewport */
-  .adminTheme :where(.max-w-5xl, .max-w-6xl, .max-w-7xl) {
-    max-width: 100% !important;
-  }
-  /* Tables: allow inner scroll instead of page-wide scroll */
-  .adminTheme table {
-    display: block;
-    max-width: 100%;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
   }
 }
