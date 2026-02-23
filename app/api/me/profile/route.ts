@@ -72,9 +72,10 @@ export async function GET(req: NextRequest) {
       profile,
     })
   } catch (e: any) {
-    const msg = e?.message || 'РћС€РёР±РєР°'
-    const status = /РќРµС‚ С‚РѕРєРµРЅР°/i.test(msg) ? 401 : 400
+    const msg = e?.message || 'Ошибка'
+    const status = /Нет токена/i.test(msg) ? 401 : 400
     return NextResponse.json({ error: msg }, { status })
   }
 }
+
 

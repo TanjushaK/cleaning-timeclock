@@ -82,18 +82,18 @@ function pad2(n: number) {
 }
 
 function fmtDT(v?: string | null) {
-  if (!v) return 'вЂ”'
+  if (!v) return '—'
   const d = new Date(v)
-  if (Number.isNaN(d.getTime())) return 'вЂ”'
+  if (Number.isNaN(d.getTime())) return '—'
   return `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}-${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
 }
 
 function fmtD(v?: string | null) {
-  if (!v) return 'вЂ”'
+  if (!v) return '—'
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v)
   if (m) return `${m[3]}-${m[2]}-${m[1]}`
   const d = new Date(v)
-  if (Number.isNaN(d.getTime())) return 'вЂ”'
+  if (Number.isNaN(d.getTime())) return '—'
   return `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}-${d.getFullYear()}`
 }
 
@@ -120,7 +120,7 @@ function endOfWeek(d: Date) {
 }
 
 function buildPayrollPeriods(count: number) {
-  // 4-РЅРµРґРµР»СЊРЅС‹Рµ РїРµСЂРёРѕРґС‹ (28 РґРЅРµР№), СЏРєРѕСЂСЊ вЂ” РїРѕРЅРµРґРµР»СЊРЅРёРє С‚РµРєСѓС‰РµР№ РЅРµРґРµР»Рё
+  // 4-недельные периоды (28 дней), якорь — понедельник текущей недели
   const today = new Date()
   const currentStart = startOfWeek(today) // Monday
   const periods: { from: string; to: string; label: string }[] = []
@@ -131,7 +131,7 @@ function buildPayrollPeriods(count: number) {
     e.setDate(e.getDate() + 27)
     const from = toISODate(s)
     const to = toISODate(e)
-    periods.push({ from, to, label: `${fmtD(from)} вЂ” ${fmtD(to)}` })
+    periods.push({ from, to, label: `${fmtD(from)} — ${fmtD(to)}` })
   }
   return periods
 }
@@ -156,7 +156,7 @@ function enumerateDates(fromISO: string, toISO: string) {
   if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return []
   const out: { iso: string; label: string; dow: string }[] = []
   let cur = new Date(from)
-  const dows = ['Р’СЃ', 'РџРЅ', 'Р’С‚', 'РЎСЂ', 'Р§С‚', 'РџС‚', 'РЎР±']
+  const dows = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб']
   while (cur.getTime() <= to.getTime()) {
     out.push({
       iso: toISODate(cur),
@@ -169,7 +169,7 @@ function enumerateDates(fromISO: string, toISO: string) {
 }
 
 function timeHHMM(t?: string | null) {
-  if (!t) return 'вЂ”'
+  if (!t) return '—'
   const x = String(t)
   return x.length >= 5 ? x.slice(0, 5) : x
 }
@@ -177,8 +177,8 @@ function timeHHMM(t?: string | null) {
 function timeRangeHHMM(from?: string | null, to?: string | null) {
   const a = timeHHMM(from)
   const b = timeHHMM(to)
-  if (a === 'вЂ”') return a
-  if (b && b !== 'вЂ”') return `${a}вЂ“${b}`
+  if (a === '—') return a
+  if (b && b !== '—') return `${a}–${b}`
   return a
 }
 
@@ -191,11 +191,11 @@ function fmtMinutesHM(totalMinutes: number) {
 }
 
 function statusRu(s: string) {
-  if (s === 'planned') return 'Р—Р°РїР»Р°РЅРёСЂРѕРІР°РЅРѕ'
-  if (s === 'in_progress') return 'Р’ РїСЂРѕС†РµСЃСЃРµ'
-  if (s === 'done') return 'Р—Р°РІРµСЂС€РµРЅРѕ'
-  if (s === 'cancelled') return 'РћС‚РјРµРЅРµРЅРѕ'
-  return s || 'вЂ”'
+  if (s === 'planned') return 'Запланировано'
+  if (s === 'in_progress') return 'В процессе'
+  if (s === 'done') return 'Завершено'
+  if (s === 'cancelled') return 'Отменено'
+  return s || '—'
 }
 
 function cn(...xs: Array<string | false | null | undefined>) {
@@ -204,12 +204,12 @@ function cn(...xs: Array<string | false | null | undefined>) {
 
 function initials(name?: string | null) {
   const raw = String(name || '').trim()
-  if (!raw) return 'вЂ”'
+  if (!raw) return '—'
   const parts = raw.split(/\s+/).filter(Boolean)
   const a = parts[0]?.[0] || ''
   const b = parts.length > 1 ? (parts[parts.length - 1]?.[0] || '') : ''
   const out = (a + b).toUpperCase()
-  return out || 'вЂ”'
+  return out || '—'
 }
 
 async function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
@@ -224,7 +224,7 @@ async function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T
 
 async function authFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const token = getAccessTokenOrNull()
-  if (!token) throw new Error('РќРµС‚ С‚РѕРєРµРЅР° (Authorization: Bearer ...)')
+  if (!token) throw new Error('Нет токена (Authorization: Bearer ...)')
 
   const ctrl = new AbortController()
   const ms = 15000
@@ -245,13 +245,13 @@ async function authFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 
     if (res.status === 401) {
       clearAuthTokens()
-      throw new Error('РЎРµСЃСЃРёСЏ РёСЃС‚РµРєР»Р°. Р’РѕР№РґРёС‚Рµ СЃРЅРѕРІР°.')
+      throw new Error('Сессия истекла. Войдите снова.')
     }
     if (!res.ok) throw new Error(payload?.error || `HTTP ${res.status}`)
     return payload as T
   } catch (e: any) {
     if (e?.name === 'AbortError') {
-      throw new Error('РўР°Р№РјР°СѓС‚ Р·Р°РїСЂРѕСЃР° (15СЃ). РќР°Р¶РјРё вЂњРћР±РЅРѕРІРёС‚СЊ РґР°РЅРЅС‹РµвЂќ РµС‰С‘ СЂР°Р·.')
+      throw new Error('Таймаут запроса (15с). Нажми “Обновить данные” ещё раз.')
     }
     throw e
   } finally {
@@ -272,7 +272,7 @@ function Modal(props: { open: boolean; title: string; onClose: () => void; child
             onClick={props.onClose}
             className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40"
           >
-            Р—Р°РєСЂС‹С‚СЊ
+            Закрыть
           </button>
         </div>
         <div className="mt-4 flex-1 overflow-y-auto pr-1">{props.children}</div>
@@ -293,26 +293,26 @@ function Pill({ children }: { children: any }) {
 type SiteCategory = { id: number; label: string; dotClass: string }
 
 const SITE_CATEGORIES: SiteCategory[] = [
-  { id: 1, label: 'РљР°С‚РµРіРѕСЂРёСЏ 1', dotClass: 'bg-emerald-400' },
-  { id: 2, label: 'РљР°С‚РµРіРѕСЂРёСЏ 2', dotClass: 'bg-sky-400' },
-  { id: 3, label: 'РљР°С‚РµРіРѕСЂРёСЏ 3', dotClass: 'bg-violet-400' },
-  { id: 4, label: 'РљР°С‚РµРіРѕСЂРёСЏ 4', dotClass: 'bg-fuchsia-400' },
-  { id: 5, label: 'РљР°С‚РµРіРѕСЂРёСЏ 5', dotClass: 'bg-rose-400' },
-  { id: 6, label: 'РљР°С‚РµРіРѕСЂРёСЏ 6', dotClass: 'bg-amber-400' },
-  { id: 7, label: 'РљР°С‚РµРіРѕСЂРёСЏ 7', dotClass: 'bg-lime-400' },
-  { id: 8, label: 'РљР°С‚РµРіРѕСЂРёСЏ 8', dotClass: 'bg-cyan-400' },
-  { id: 9, label: 'РљР°С‚РµРіРѕСЂРёСЏ 9', dotClass: 'bg-indigo-400' },
-  { id: 10, label: 'РљР°С‚РµРіРѕСЂРёСЏ 10', dotClass: 'bg-orange-400' },
-  { id: 11, label: 'РљР°С‚РµРіРѕСЂРёСЏ 11', dotClass: 'bg-teal-400' },
-  { id: 12, label: 'РљР°С‚РµРіРѕСЂРёСЏ 12', dotClass: 'bg-pink-400' },
-  { id: 13, label: 'РљР°С‚РµРіРѕСЂРёСЏ 13', dotClass: 'bg-red-400' },
-  { id: 14, label: 'РљР°С‚РµРіРѕСЂРёСЏ 14', dotClass: 'bg-purple-400' },
-  { id: 15, label: 'РљР°С‚РµРіРѕСЂРёСЏ 15', dotClass: 'bg-green-400' },
+  { id: 1, label: 'Категория 1', dotClass: 'bg-emerald-400' },
+  { id: 2, label: 'Категория 2', dotClass: 'bg-sky-400' },
+  { id: 3, label: 'Категория 3', dotClass: 'bg-violet-400' },
+  { id: 4, label: 'Категория 4', dotClass: 'bg-fuchsia-400' },
+  { id: 5, label: 'Категория 5', dotClass: 'bg-rose-400' },
+  { id: 6, label: 'Категория 6', dotClass: 'bg-amber-400' },
+  { id: 7, label: 'Категория 7', dotClass: 'bg-lime-400' },
+  { id: 8, label: 'Категория 8', dotClass: 'bg-cyan-400' },
+  { id: 9, label: 'Категория 9', dotClass: 'bg-indigo-400' },
+  { id: 10, label: 'Категория 10', dotClass: 'bg-orange-400' },
+  { id: 11, label: 'Категория 11', dotClass: 'bg-teal-400' },
+  { id: 12, label: 'Категория 12', dotClass: 'bg-pink-400' },
+  { id: 13, label: 'Категория 13', dotClass: 'bg-red-400' },
+  { id: 14, label: 'Категория 14', dotClass: 'bg-purple-400' },
+  { id: 15, label: 'Категория 15', dotClass: 'bg-green-400' },
 ]
 
 function siteCategoryMeta(category: number | null | undefined) {
   const c = SITE_CATEGORIES.find((x) => x.id === category)
-  return c || ({ id: 0, label: 'Р‘РµР· РєР°С‚РµРіРѕСЂРёРё', dotClass: 'bg-zinc-500' } as SiteCategory)
+  return c || ({ id: 0, label: 'Без категории', dotClass: 'bg-zinc-500' } as SiteCategory)
 }
 
 function googleNavUrl(lat: number, lng: number) {
@@ -381,9 +381,9 @@ function CategoryPicker(props: { value: number | null; onChange: (v: number | nu
         )}
       >
         <span className={cn('h-3 w-3 rounded-full ring-2 ring-black/40 shadow', meta.dotClass)} />
-        <span className="font-semibold">{props.value ? `#${props.value}` : 'вЂ”'}</span>
+        <span className="font-semibold">{props.value ? `#${props.value}` : '—'}</span>
         <span className="hidden sm:inline text-yellow-100/55">{meta.label}</span>
-        <span className="ml-1 text-yellow-100/35">в–ѕ</span>
+        <span className="ml-1 text-yellow-100/35">▾</span>
       </button>
 
       {open ? (
@@ -396,8 +396,8 @@ function CategoryPicker(props: { value: number | null; onChange: (v: number | nu
             className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-yellow-100/70 hover:bg-yellow-400/5"
           >
             <span className={cn('h-3 w-3 rounded-full ring-2 ring-black/40 shadow', 'bg-zinc-500')} />
-            <span className="font-semibold">вЂ”</span>
-            <span>Р‘РµР· РєР°С‚РµРіРѕСЂРёРё</span>
+            <span className="font-semibold">—</span>
+            <span>Без категории</span>
           </button>
           <div className="h-px bg-yellow-400/10" />
           {SITE_CATEGORIES.map((c) => (
@@ -425,7 +425,7 @@ function MapMini(props: { lat: number | null; lng: number | null; onClick: () =>
   if (lat == null || lng == null) {
     return (
       <div className="flex h-[92px] w-[150px] items-center justify-center rounded-2xl border border-yellow-400/10 bg-black/20 text-[11px] text-yellow-100/40">
-        РќРµС‚ РєРѕРѕСЂРґРёРЅР°С‚
+        Нет координат
       </div>
     )
   }
@@ -433,8 +433,8 @@ function MapMini(props: { lat: number | null; lng: number | null; onClick: () =>
   return (
     <div className="relative h-[92px] w-[150px] overflow-hidden rounded-2xl border border-yellow-400/20 bg-black/20">
       <iframe src={osmEmbedUrl(lat, lng, 0.004)} className="h-full w-full" loading="lazy" />
-      <button onClick={props.onClick} className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/0 to-black/0" title="РћС‚РєСЂС‹С‚СЊ РЅР°РІРёРіР°С†РёСЋ" />
-      <div className="absolute bottom-1 left-2 text-[10px] font-semibold text-yellow-100/90">РќР°РІРёРіР°С†РёСЏ</div>
+      <button onClick={props.onClick} className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/0 to-black/0" title="Открыть навигацию" />
+      <div className="absolute bottom-1 left-2 text-[10px] font-semibold text-yellow-100/90">Навигация</div>
     </div>
   )
 }
@@ -447,9 +447,9 @@ function MapLarge(props: { lat: number; lng: number }) {
       <button
         onClick={() => window.open(googleNavUrl(lat, lng), '_blank', 'noopener,noreferrer')}
         className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/0 to-black/0"
-        title="РћС‚РєСЂС‹С‚СЊ РЅР°РІРёРіР°С†РёСЋ"
+        title="Открыть навигацию"
       />
-      <div className="absolute bottom-2 left-3 text-xs font-semibold text-yellow-100/90">РћС‚РєСЂС‹С‚СЊ РЅР°РІРёРіР°С†РёСЋ</div>
+      <div className="absolute bottom-2 left-3 text-xs font-semibold text-yellow-100/90">Открыть навигацию</div>
     </div>
   )
 }
@@ -504,11 +504,11 @@ function MultiWorkerPicker(props: {
         )}
       >
         {selectedNames.length === 0 ? (
-          <span className="text-zinc-400">Р’С‹Р±РµСЂРё СЂР°Р±РѕС‚РЅРёРєРѕРІвЂ¦</span>
+          <span className="text-zinc-400">Выбери работников…</span>
         ) : (
           <span className="text-zinc-100">
             {selectedNames.slice(0, 3).join(', ')}
-            {selectedNames.length > 3 ? ` Рё РµС‰С‘ ${selectedNames.length - 3}` : ''}
+            {selectedNames.length > 3 ? ` и ещё ${selectedNames.length - 3}` : ''}
           </span>
         )}
       </button>
@@ -518,12 +518,12 @@ function MultiWorkerPicker(props: {
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="РџРѕРёСЃРє СЂР°Р±РѕС‚РЅРёРєР°вЂ¦"
+            placeholder="Поиск работника…"
             className="mb-2 w-full rounded-2xl border border-yellow-400/15 bg-black/40 px-3 py-2 text-xs text-zinc-200 outline-none focus:border-yellow-300/50"
           />
 
           <div className="max-h-[240px] overflow-auto rounded-2xl border border-yellow-400/10 bg-black/20">
-            {filtered.length === 0 ? <div className="px-3 py-3 text-xs text-zinc-500">РќРёС‡РµРіРѕ РЅРµ РЅР°Р№РґРµРЅРѕ</div> : null}
+            {filtered.length === 0 ? <div className="px-3 py-3 text-xs text-zinc-500">Ничего не найдено</div> : null}
 
             {filtered.map((w) => {
               const on = props.value.includes(w.id)
@@ -544,7 +544,7 @@ function MultiWorkerPicker(props: {
                       on ? 'border-yellow-300/60 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-300'
                     )}
                   >
-                    {on ? 'РІС‹Р±СЂР°РЅ' : ' '}
+                    {on ? 'выбран' : ' '}
                   </span>
                 </button>
               )
@@ -552,13 +552,13 @@ function MultiWorkerPicker(props: {
           </div>
 
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-            <div className="text-[11px] text-zinc-300">РџРѕРєР°Р·Р°РЅРѕ: {filtered.length} вЂў Р’С‹Р±СЂР°РЅРѕ: {props.value.length}</div>
+            <div className="text-[11px] text-zinc-300">Показано: {filtered.length} • Выбрано: {props.value.length}</div>
             <button
               type="button"
               onClick={() => props.onChange([])}
               className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40"
             >
-              РћС‡РёСЃС‚РёС‚СЊ
+              Очистить
             </button>
           </div>
         </div>
@@ -572,7 +572,7 @@ type DragPayload = {
 }
 
 
-// Reports panel (time totals) вЂ” isolated component to keep AdminPage hooks stable
+// Reports panel (time totals) — isolated component to keep AdminPage hooks stable
 function payrollForReports(d: Date) {
   const day = d.getDate()
   const y = d.getFullYear()
@@ -618,7 +618,7 @@ function ReportsPanel() {
       const p = payrollForReports(d)
       const fromD = fmtD(p.from)
       const toD = fmtD(p.to)
-      const label = `${fromD} вЂ” ${toD}`
+      const label = `${fromD} — ${toD}`
       opts.push({ from: p.from, to: p.to, label, year: new Date(p.from).getFullYear() })
     }
     return opts
@@ -638,7 +638,7 @@ function ReportsPanel() {
 
       setReportData(data)
     } catch (e: any) {
-      setReportError(String(e?.message || 'РћС€РёР±РєР° РѕС‚С‡С‘С‚Р°'))
+      setReportError(String(e?.message || 'Ошибка отчёта'))
       setReportData(null)
     } finally {
       setReportLoading(false)
@@ -654,9 +654,9 @@ function ReportsPanel() {
     <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="text-sm font-semibold text-yellow-100">РљРѕРЅС‚СЂРѕР»СЊ СЂР°Р±РѕС‡РµРіРѕ РІСЂРµРјРµРЅРё</div>
+          <div className="text-sm font-semibold text-yellow-100">Контроль рабочего времени</div>
           <div className="mt-1 text-xs text-zinc-300">
-            РџРµСЂРёРѕРґ: {fmtD(reportFrom)} вЂ” {fmtD(reportTo)}
+            Период: {fmtD(reportFrom)} — {fmtD(reportTo)}
           </div>
         </div>
   
@@ -666,21 +666,21 @@ function ReportsPanel() {
             onClick={() => setReportPickerOpen(true)}
             className="rounded-2xl border border-yellow-400/25 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/50"
           >
-            Р’С‹Р±СЂР°С‚СЊ РїРµСЂРёРѕРґ
+            Выбрать период
           </button>
 
           <a
             href="/admin/fact"
             className="rounded-2xl border border-yellow-400/25 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/50"
           >
-            РџСЂР°РІРєР° С„Р°РєС‚Р°
+            Правка факта
           </a>
 
 <a
   className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10"
   href="/admin/approvals"
 >
-  РђРєС‚РёРІР°С†РёРё
+  Активации
 </a>
 			
           <div className="flex items-center gap-2 rounded-2xl border border-yellow-400/10 bg-black/25 p-1">
@@ -692,7 +692,7 @@ function ReportsPanel() {
                 reportsView === 'workers' ? 'bg-yellow-400/10 text-yellow-100' : 'text-zinc-200 hover:text-yellow-100'
               )}
             >
-              РџРѕ СЂР°Р±РѕС‚РЅРёРєР°Рј
+              По работникам
             </button>
             <button
               type="button"
@@ -702,7 +702,7 @@ function ReportsPanel() {
                 reportsView === 'sites' ? 'bg-yellow-400/10 text-yellow-100' : 'text-zinc-200 hover:text-yellow-100'
               )}
             >
-              РџРѕ РѕР±СЉРµРєС‚Р°Рј
+              По объектам
             </button>
           </div>
         </div>
@@ -710,22 +710,22 @@ function ReportsPanel() {
   
       <div className="mt-4 grid gap-3 md:grid-cols-3">
         <div className="rounded-3xl border border-yellow-400/10 bg-black/30 p-4">
-          <div className="text-[11px] text-zinc-300">РС‚РѕРі РїРµСЂРёРѕРґР°</div>
+          <div className="text-[11px] text-zinc-300">Итог периода</div>
           <div className="mt-1 text-2xl font-semibold tracking-tight text-yellow-100">
             {fmtMinutesHM(reportData?.total_minutes ?? 0)}
           </div>
-          <div className="mt-1 text-[11px] text-zinc-400">С‡Р°СЃС‹:РјРёРЅСѓС‚С‹</div>
+          <div className="mt-1 text-[11px] text-zinc-400">часы:минуты</div>
         </div>
   
         <div className="rounded-3xl border border-yellow-400/10 bg-black/30 p-4 md:col-span-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-[11px] text-zinc-300">РџРѕРёСЃРє</div>
-            <div className="text-[11px] text-zinc-400">{reportLoading ? 'РЎС‡РёС‚Р°СЋвЂ¦' : reportData ? 'Р“РѕС‚РѕРІРѕ' : 'вЂ”'}</div>
+            <div className="text-[11px] text-zinc-300">Поиск</div>
+            <div className="text-[11px] text-zinc-400">{reportLoading ? 'Считаю…' : reportData ? 'Готово' : '—'}</div>
           </div>
           <input
             value={reportSearch}
             onChange={(e) => setReportSearch(e.target.value)}
-            placeholder="РРјСЏ СЂР°Р±РѕС‚РЅРёРєР° / РѕР±СЉРµРєС‚"
+            placeholder="Имя работника / объект"
             className="mt-2 w-full rounded-2xl border border-yellow-400/15 bg-black/35 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 outline-none focus:border-yellow-300/40"
           />
           {reportError ? (
@@ -744,7 +744,7 @@ function ReportsPanel() {
           })
           .map((x: any) => {
             const id = reportsView === 'workers' ? x.worker_id : x.site_id
-            const title = (reportsView === 'workers' ? x.worker_name : x.site_name) ?? 'вЂ”'
+            const title = (reportsView === 'workers' ? x.worker_name : x.site_name) ?? '—'
             const avatarUrl = x.avatar_url || null
   
             return (
@@ -759,13 +759,13 @@ function ReportsPanel() {
                       <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-zinc-200">
-                        {reportsView === 'workers' ? initials(title) : 'рџЏ '}
+                        {reportsView === 'workers' ? initials(title) : '🏠'}
                       </div>
                     )}
                   </div>
                   <div className="min-w-0">
                     <div className="truncate text-sm font-semibold text-zinc-100">{title}</div>
-                    <div className="mt-0.5 text-[11px] text-zinc-400">{reportsView === 'workers' ? 'Р Р°Р±РѕС‚РЅРёРє' : 'РћР±СЉРµРєС‚'}</div>
+                    <div className="mt-0.5 text-[11px] text-zinc-400">{reportsView === 'workers' ? 'Работник' : 'Объект'}</div>
                   </div>
                 </div>
   
@@ -778,7 +778,7 @@ function ReportsPanel() {
   
         {!reportLoading &&
         (reportsView === 'workers' ? (reportData?.by_worker?.length ?? 0) : (reportData?.by_site?.length ?? 0)) === 0 ? (
-          <div className="px-4 py-6 text-center text-sm text-zinc-400">РќРµС‚ РґР°РЅРЅС‹С… Р·Р° РІС‹Р±СЂР°РЅРЅС‹Р№ РїРµСЂРёРѕРґ</div>
+          <div className="px-4 py-6 text-center text-sm text-zinc-400">Нет данных за выбранный период</div>
         ) : null}
       </div>
     </div>
@@ -788,13 +788,13 @@ function ReportsPanel() {
       <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4">
         <div className="w-full max-w-xl overflow-hidden rounded-3xl border border-yellow-400/15 bg-zinc-950/95 shadow-[0_20px_80px_rgba(0,0,0,0.75)] backdrop-blur">
           <div className="flex items-center justify-between gap-2 border-b border-yellow-400/10 px-5 py-4">
-            <div className="text-sm font-semibold text-yellow-100">РџРµСЂРёРѕРґ РѕС‚С‡С‘С‚Р°</div>
+            <div className="text-sm font-semibold text-yellow-100">Период отчёта</div>
             <button
               type="button"
               onClick={() => setReportPickerOpen(false)}
               className="rounded-2xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-xs text-zinc-200 hover:border-yellow-300/40"
             >
-              Р—Р°РєСЂС‹С‚СЊ
+              Закрыть
             </button>
           </div>
   
@@ -808,7 +808,7 @@ function ReportsPanel() {
                   reportPickerTab === 'payroll' ? 'bg-yellow-400/10 text-yellow-100' : 'text-zinc-200 hover:text-yellow-100'
                 )}
               >
-                РџР»Р°С‚С‘Р¶РЅС‹Р№ РїРµСЂРёРѕРґ
+                Платёжный период
               </button>
               <button
                 type="button"
@@ -818,7 +818,7 @@ function ReportsPanel() {
                   reportPickerTab === 'custom' ? 'bg-yellow-400/10 text-yellow-100' : 'text-zinc-200 hover:text-yellow-100'
                 )}
               >
-                РџРѕР»СЊР·РѕРІР°С‚РµР»СЊСЃРєРёРµ РґР°С‚С‹
+                Пользовательские даты
               </button>
             </div>
   
@@ -826,7 +826,7 @@ function ReportsPanel() {
               <div className="mt-4 grid gap-3">
                 <div className="grid gap-3 md:grid-cols-2">
                   <label className="grid gap-1 text-xs text-zinc-300">
-                    РЎ
+                    С
                     <input
                       type="date"
                       value={reportFrom}
@@ -835,7 +835,7 @@ function ReportsPanel() {
                     />
                   </label>
                   <label className="grid gap-1 text-xs text-zinc-300">
-                    Р”Рѕ
+                    До
                     <input
                       type="date"
                       value={reportTo}
@@ -846,7 +846,7 @@ function ReportsPanel() {
                 </div>
   
                 <div className="text-[11px] text-zinc-400">
-                  РњРѕР¶РЅРѕ РІС‹СЃС‚Р°РІРёС‚СЊ С…РѕС‚СЊ РѕРґРёРЅ РґРµРЅСЊ, С…РѕС‚СЊ В«СЃС‚Рѕ Р»РµС‚В» вЂ” СЃРµСЂРІРµСЂСѓ РІСЃС‘ СЂР°РІРЅРѕ, РµСЃР»Рё Р±Р°Р·Р° РІС‹РґРµСЂР¶РёС‚.
+                  Можно выставить хоть один день, хоть «сто лет» — серверу всё равно, если база выдержит.
                 </div>
               </div>
             ) : (
@@ -875,7 +875,7 @@ function ReportsPanel() {
                           checked ? 'border-yellow-300/60 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-300'
                         )}
                       >
-                        {checked ? 'РІС‹Р±СЂР°РЅ' : ' '}
+                        {checked ? 'выбран' : ' '}
                       </span>
                     </button>
                   )
@@ -889,7 +889,7 @@ function ReportsPanel() {
               onClick={() => setReportPickerOpen(false)}
               className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-sm text-zinc-200 hover:border-yellow-300/40"
             >
-              РћС‚РјРµРЅР°
+              Отмена
             </button>
             <button
               type="button"
@@ -902,7 +902,7 @@ function ReportsPanel() {
               }}
               className="rounded-2xl border border-yellow-400/40 bg-yellow-400/15 px-5 py-2 text-sm font-semibold text-yellow-100 hover:border-yellow-300/70"
             >
-              РџСЂРёРјРµРЅРёС‚СЊ
+              Применить
             </button>
           </div>
         </div>
@@ -930,15 +930,15 @@ export default function AdminPage() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
-  // Safety-net: РµСЃР»Рё UI Р·Р°Р»РёРї РЅР° "РћР±РЅРѕРІР»СЏСЋвЂ¦" вЂ” РѕС‚РїСѓСЃРєР°РµРј РєРЅРѕРїРєСѓ Рё РїРѕРєР°Р·С‹РІР°РµРј РѕС€РёР±РєСѓ
-  // Р’Р°Р¶РЅРѕ: СѓС‡РёС‚С‹РІР°РµРј "РїРѕРєРѕР»РµРЅРёРµ" РѕР±РЅРѕРІР»РµРЅРёСЏ, С‡С‚РѕР±С‹ РЅРµ СЃС‚СЂРµР»СЏС‚СЊ РІ РЅРѕРіСѓ РїСЂРё РїР°СЂР°Р»Р»РµР»СЊРЅС‹С… refresh.
+  // Safety-net: если UI залип на "Обновляю…" — отпускаем кнопку и показываем ошибку
+  // Важно: учитываем "поколение" обновления, чтобы не стрелять в ногу при параллельных refresh.
   useEffect(() => {
     if (!busy) return
     const seq = busySeq
     const t = window.setTimeout(() => {
       if (refreshSeqRef.current !== seq) return
       setBusy(false)
-      setError('РћР±РЅРѕРІР»РµРЅРёРµ Р·Р°РІРёСЃР»Рѕ. РћР±С‹С‡РЅРѕ СЌС‚Рѕ СЃРµС‚СЊ/С‚Р°Р№РјР°СѓС‚. РќР°Р¶РјРё вЂњРћР±РЅРѕРІРёС‚СЊ РґР°РЅРЅС‹РµвЂќ РµС‰С‘ СЂР°Р·.')
+      setError('Обновление зависло. Обычно это сеть/таймаут. Нажми “Обновить данные” ещё раз.')
     }, 25000)
     return () => window.clearTimeout(t)
   }, [busy, busySeq])
@@ -1093,7 +1093,7 @@ const [editOpen, setEditOpen] = useState(false)
       .sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''))
   }, [workers])
 
-  const workersForPicker = useMemo(() => workersForSelect.map((w) => ({ id: w.id, name: w.full_name || 'Р Р°Р±РѕС‚РЅРёРє' })), [workersForSelect])
+  const workersForPicker = useMemo(() => workersForSelect.map((w) => ({ id: w.id, name: w.full_name || 'Работник' })), [workersForSelect])
 
   const siteWorkers = useMemo(() => {
     const m = new Map<string, Worker[]>()
@@ -1136,9 +1136,9 @@ const [editOpen, setEditOpen] = useState(false)
 
   const planEntities = useMemo(() => {
     if (planMode === 'workers') {
-      return workersForSelect.map((w) => ({ id: w.id, name: w.full_name || 'Р Р°Р±РѕС‚РЅРёРє' }))
+      return workersForSelect.map((w) => ({ id: w.id, name: w.full_name || 'Работник' }))
     }
-    return activeSites.map((s) => ({ id: s.id, name: s.name || 'РћР±СЉРµРєС‚' }))
+    return activeSites.map((s) => ({ id: s.id, name: s.name || 'Объект' }))
   }, [planMode, workersForSelect, activeSites])
 
   const hours = useMemo(() => Array.from({ length: 24 }, (_, i) => pad2(i) + ':00'), [])
@@ -1186,7 +1186,7 @@ const [editOpen, setEditOpen] = useState(false)
     const sch = await authFetchJson<{ items: ScheduleItem[] }>(url)
     const items = Array.isArray(sch?.items) ? sch.items : []
 
-    // РџРѕРґС‚СЏРіРёРІР°РµРј РјРёРЅРёвЂ‘Р°РІР°С‚Р°СЂС‹ СЂР°Р±РѕС‚РЅРёРєРѕРІ, РєРѕС‚РѕСЂС‹Рµ СЂРµР°Р»СЊРЅРѕ СѓС‡Р°СЃС‚РІСѓСЋС‚ РІ РіСЂР°С„РёРєРµ/С‚Р°Р±Р»РёС†Рµ.
+    // Подтягиваем мини‑аватары работников, которые реально участвуют в графике/таблице.
     const ids = Array.from(new Set(items.map((x) => x.worker_id).filter(Boolean))) as string[]
     if (ids.length) enqueueWorkerPhotoMeta(ids)
 
@@ -1199,11 +1199,11 @@ const [editOpen, setEditOpen] = useState(false)
     setBusy(true)
     setError(null)
     try {
-      // Р Р°РЅСЊС€Рµ Р±С‹Р»Рѕ РїРѕСЃР»РµРґРѕРІР°С‚РµР»СЊРЅРѕ (core -> schedule) Рё РІ СЃСѓРјРјРµ РјРѕРіР»Рѕ РїРµСЂРµРІР°Р»РёРІР°С‚СЊ Р·Р° safety-net.
-      // РџР°СЂР°Р»Р»РµР»РёРј: РјР°РєСЃРёРјСѓРј = РѕРґРёРЅ С‚Р°Р№РјР°СѓС‚ fetch, Р° РЅРµ РґРІР° РїРѕРґСЂСЏРґ.
+      // Раньше было последовательно (core -> schedule) и в сумме могло переваливать за safety-net.
+      // Параллелим: максимум = один таймаут fetch, а не два подряд.
       await Promise.all([refreshCore(), refreshSchedule()])
     } catch (e: any) {
-      setError(e?.message || 'РћС€РёР±РєР° Р·Р°РіСЂСѓР·РєРё')
+      setError(e?.message || 'Ошибка загрузки')
     } finally {
       if (seq === refreshSeqRef.current) setBusy(false)
     }
@@ -1221,10 +1221,10 @@ const [editOpen, setEditOpen] = useState(false)
       return
     }
     setSessionToken(token)
-    // meId РЅРµ РєСЂРёС‚РёС‡РµРЅ: Р°РґРјРёРЅСЃРєРёРµ API СЃР°РјРё РїСЂРѕРІРµСЂСЏСЋС‚ СЂРѕР»СЊ
+    // meId не критичен: админские API сами проверяют роль
     setMeId(null)
   } catch (e: any) {
-    setError(e?.message || 'РћС€РёР±РєР° СЃРµСЃСЃРёРё')
+    setError(e?.message || 'Ошибка сессии')
     clearAuthTokens()
     setSessionToken(null)
     setMeId(null)
@@ -1257,7 +1257,7 @@ const [editOpen, setEditOpen] = useState(false)
   useEffect(() => {
     if (!sessionToken) return
     if (tab !== 'workers') return
-    // РїРѕРґРіСЂСѓР¶Р°РµРј СЃС‡С‘С‚С‡РёРє + РјРёРЅРё-Р°РІР°С‚Р°СЂ РІ С„РѕРЅРµ (РѕРіСЂР°РЅРёС‡РёРІР°РµРј РїР°СЂР°Р»Р»РµР»РёР·Рј, С‡С‚РѕР±С‹ РЅРµ РґСѓС€РёС‚СЊ API)
+    // подгружаем счётчик + мини-аватар в фоне (ограничиваем параллелизм, чтобы не душить API)
     enqueueWorkerPhotoMeta(workers.map((w) => w.id))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, workers, sessionToken])
@@ -1274,14 +1274,14 @@ const [editOpen, setEditOpen] = useState(false)
       })
       const j = await res.json().catch(() => null)
       if (!res.ok) throw new Error(j?.error || `HTTP ${res.status}`)
-      if (!j?.access_token) throw new Error('РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕР»СѓС‡РёС‚СЊ С‚РѕРєРµРЅ')
+      if (!j?.access_token) throw new Error('Не удалось получить токен')
 
       setAuthTokens(String(j.access_token), j.refresh_token ? String(j.refresh_token) : null)
       setSessionToken(String(j.access_token))
       setMeId(j?.user?.id || null)
       await refreshAll()
     } catch (e: any) {
-      setError(e?.message || 'РћС€РёР±РєР° РІС…РѕРґР°')
+      setError(e?.message || 'Ошибка входа')
     } finally {
       setBusy(false)
     }
@@ -1309,7 +1309,7 @@ const [editOpen, setEditOpen] = useState(false)
     setNotice(null)
     try {
       const em = inviteEmail.trim()
-      if (!em) throw new Error('РќСѓР¶РµРЅ email РёР»Рё С‚РµР»РµС„РѕРЅ')
+      if (!em) throw new Error('Нужен email или телефон')
       const out = await authFetchJson('/api/admin/workers/invite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1318,10 +1318,10 @@ const [editOpen, setEditOpen] = useState(false)
       setInviteEmail('')
       const login = String((out as any)?.login || em)
       const pw = String((out as any)?.password || '')
-      setNotice(`РЎРѕР·РґР°РЅРѕ. Р›РѕРіРёРЅ: ${login}. Р’СЂРµРјРµРЅРЅС‹Р№ РїР°СЂРѕР»СЊ: ${pw} (РїСЂРё РїРµСЂРІРѕРј РІС…РѕРґРµ РїРѕРїСЂРѕСЃРёРј СЃРјРµРЅРёС‚СЊ).`)
+      setNotice(`Создано. Логин: ${login}. Временный пароль: ${pw} (при первом входе попросим сменить).`)
       await refreshCore()
     } catch (e: any) {
-      setError(e?.message || 'РћС€РёР±РєР° РїСЂРёРіР»Р°С€РµРЅРёСЏ')
+      setError(e?.message || 'Ошибка приглашения')
     } finally {
       setBusy(false)
     }
@@ -1338,7 +1338,7 @@ const [editOpen, setEditOpen] = useState(false)
       })
       await refreshCore()
     } catch (e: any) {
-      setError(e?.message || 'РћС€РёР±РєР° РЅР°Р·РЅР°С‡РµРЅРёСЏ')
+      setError(e?.message || 'Ошибка назначения')
     } finally {
       setBusy(false)
     }
@@ -1355,7 +1355,7 @@ const [editOpen, setEditOpen] = useState(false)
       })
       await refreshCore()
     } catch (e: any) {
-      setError(e?.message || 'РћС€РёР±РєР° СЃРЅСЏС‚РёСЏ РЅР°Р·РЅР°С‡РµРЅРёСЏ')
+      setError(e?.message || 'Ошибка снятия назначения')
     } finally {
       setBusy(false)
     }
@@ -1372,7 +1372,7 @@ const [editOpen, setEditOpen] = useState(false)
       })
       await refreshCore()
     } catch (e: any) {
-      setError(e?.message || 'РќРµ СѓРґР°Р»РѕСЃСЊ РѕР±РЅРѕРІРёС‚СЊ Р°СЂС…РёРІ')
+      setError(e?.message || 'Не удалось обновить архив')
     } finally {
       setBusy(false)
     }
@@ -1444,7 +1444,7 @@ const [editOpen, setEditOpen] = useState(false)
 
       await refreshCore()
     } catch (e: any) {
-      setError(e?.message || 'РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ РѕР±СЉРµРєС‚')
+      setError(e?.message || 'Не удалось создать объект')
     } finally {
       setBusy(false)
     }
@@ -1485,14 +1485,14 @@ const [editOpen, setEditOpen] = useState(false)
       setSiteCardOpen(false)
       await refreshCore()
     } catch (e: any) {
-      setError(e?.message || 'РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ РѕР±СЉРµРєС‚')
+      setError(e?.message || 'Не удалось сохранить объект')
     } finally {
       setBusy(false)
     }
   }
 
   async function deleteObjectSite(siteId: string) {
-    const ok = window.confirm('РЈРґР°Р»РёС‚СЊ РѕР±СЉРµРєС‚? Р­С‚Рѕ РґРµР№СЃС‚РІРёРµ РЅРµР»СЊР·СЏ РѕС‚РјРµРЅРёС‚СЊ.')
+    const ok = window.confirm('Удалить объект? Это действие нельзя отменить.')
     if (!ok) return
 
     setBusy(true)
@@ -1502,7 +1502,7 @@ const [editOpen, setEditOpen] = useState(false)
       if (siteCardId === siteId) setSiteCardOpen(false)
       await refreshCore()
     } catch (e: any) {
-      setError(e?.message || 'РќРµ СѓРґР°Р»РѕСЃСЊ СѓРґР°Р»РёС‚СЊ РѕР±СЉРµРєС‚')
+      setError(e?.message || 'Не удалось удалить объект')
     } finally {
       setBusy(false)
     }
@@ -1519,7 +1519,7 @@ const [editOpen, setEditOpen] = useState(false)
       })
       if (res?.site) applySiteUpdate(res.site)
     } catch (e: any) {
-      setError(e?.message || 'РќРµ СѓРґР°Р»РѕСЃСЊ РѕР±РЅРѕРІРёС‚СЊ РєР°С‚РµРіРѕСЂРёСЋ')
+      setError(e?.message || 'Не удалось обновить категорию')
     } finally {
       setBusy(false)
     }
@@ -1540,12 +1540,12 @@ const [editOpen, setEditOpen] = useState(false)
 
 
       if (left <= 0) {
-        setPhotoUiError('Р›РёРјРёС‚ 5 С„РѕС‚Рѕ. РЈРґР°Р»РёС‚Рµ РѕРґРЅРѕ Рё РїРѕРІС‚РѕСЂРёС‚Рµ.')
+        setPhotoUiError('Лимит 5 фото. Удалите одно и повторите.')
         return
       }
 
       if (toUpload.length < files.length) {
-        setPhotoUiNotice(`Р—Р°РіСЂСѓР¶Сѓ ${toUpload.length} РёР· ${files.length} (Р»РёРјРёС‚ 5)`)
+        setPhotoUiNotice(`Загружу ${toUpload.length} из ${files.length} (лимит 5)`)
       }
 
       for (const f of toUpload) {
@@ -1558,11 +1558,11 @@ const [editOpen, setEditOpen] = useState(false)
         if (res?.site) applySiteUpdate(res.site)
       }
 
-      setPhotoUiNotice(toUpload.length > 1 ? 'Р¤РѕС‚Рѕ Р·Р°РіСЂСѓР¶РµРЅС‹.' : 'Р¤РѕС‚Рѕ Р·Р°РіСЂСѓР¶РµРЅРѕ.')
+      setPhotoUiNotice(toUpload.length > 1 ? 'Фото загружены.' : 'Фото загружено.')
       await refreshCore()
     } catch (e: any) {
-      setPhotoUiError(e?.message || 'РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ С„РѕС‚Рѕ')
-      setError(e?.message || 'РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ С„РѕС‚Рѕ')
+      setPhotoUiError(e?.message || 'Не удалось загрузить фото')
+      setError(e?.message || 'Не удалось загрузить фото')
     } finally {
       setPhotoBusy(false)
     }
@@ -1580,11 +1580,11 @@ const [editOpen, setEditOpen] = useState(false)
         body: JSON.stringify({ action: 'make_primary', path }),
       })
       if (res?.site) applySiteUpdate(res.site)
-      setPhotoUiNotice('Р¤РѕС‚Рѕ СѓРґР°Р»РµРЅРѕ.')
+      setPhotoUiNotice('Фото удалено.')
       await refreshCore()
     } catch (e: any) {
-      setPhotoUiError(e?.message || 'РќРµ СѓРґР°Р»РѕСЃСЊ СЃРґРµР»Р°С‚СЊ С„РѕС‚Рѕ РіР»Р°РІРЅС‹Рј')
-      setError(e?.message || 'РќРµ СѓРґР°Р»РѕСЃСЊ СЃРґРµР»Р°С‚СЊ С„РѕС‚Рѕ РіР»Р°РІРЅС‹Рј')
+      setPhotoUiError(e?.message || 'Не удалось сделать фото главным')
+      setError(e?.message || 'Не удалось сделать фото главным')
     } finally {
       setPhotoBusy(false)
     }
@@ -1604,8 +1604,8 @@ const [editOpen, setEditOpen] = useState(false)
       if (res?.site) applySiteUpdate(res.site)
       await refreshCore()
     } catch (e: any) {
-      setPhotoUiError(e?.message || 'РќРµ СѓРґР°Р»РѕСЃСЊ СѓРґР°Р»РёС‚СЊ С„РѕС‚Рѕ')
-      setError(e?.message || 'РќРµ СѓРґР°Р»РѕСЃСЊ СѓРґР°Р»РёС‚СЊ С„РѕС‚Рѕ')
+      setPhotoUiError(e?.message || 'Не удалось удалить фото')
+      setError(e?.message || 'Не удалось удалить фото')
     } finally {
       setPhotoBusy(false)
     }
@@ -1613,10 +1613,10 @@ const [editOpen, setEditOpen] = useState(false)
 
   async function setRole(workerId: string, role: 'admin' | 'worker') {
     if (role === 'worker' && meId && workerId === meId) {
-      setError('РќРµР»СЊР·СЏ СЂР°Р·Р¶Р°Р»РѕРІР°С‚СЊ СЃР°РјРѕРіРѕ СЃРµР±СЏ.')
+      setError('Нельзя разжаловать самого себя.')
       return
     }
-    const ok = window.confirm(role === 'admin' ? 'РЎРґРµР»Р°С‚СЊ СЌС‚РѕРіРѕ СЂР°Р±РѕС‚РЅРёРєР° Р°РґРјРёРЅРѕРј?' : 'РЎРґРµР»Р°С‚СЊ СЌС‚РѕРіРѕ Р°РґРјРёРЅР° РѕР±С‹С‡РЅС‹Рј СЂР°Р±РѕС‚РЅРёРєРѕРј?')
+    const ok = window.confirm(role === 'admin' ? 'Сделать этого работника админом?' : 'Сделать этого админа обычным работником?')
     if (!ok) return
 
     setBusy(true)
@@ -1629,7 +1629,7 @@ const [editOpen, setEditOpen] = useState(false)
       })
       await refreshCore()
     } catch (e: any) {
-      setError(e?.message || 'РќРµ СѓРґР°Р»РѕСЃСЊ РёР·РјРµРЅРёС‚СЊ СЂРѕР»СЊ')
+      setError(e?.message || 'Не удалось изменить роль')
     } finally {
       setBusy(false)
     }
@@ -1637,14 +1637,14 @@ const [editOpen, setEditOpen] = useState(false)
 
   async function setWorkerArchived(workerId: string, archive: boolean) {
     if (meId && workerId === meId) {
-      setError('РќРµР»СЊР·СЏ Р°СЂС…РёРІРёСЂРѕРІР°С‚СЊ СЃР°РјРѕРіРѕ СЃРµР±СЏ.')
+      setError('Нельзя архивировать самого себя.')
       return
     }
 
     const ok = window.confirm(
       archive
-        ? 'Р—Р°Р°СЂС…РёРІРёСЂРѕРІР°С‚СЊ СЂР°Р±РѕС‚РЅРёРєР°? РћРЅ РЅРµ СЃРјРѕР¶РµС‚ СЂР°Р±РѕС‚Р°С‚СЊ РІ РїСЂРёР»РѕР¶РµРЅРёРё.'
-        : 'Р’РµСЂРЅСѓС‚СЊ СЂР°Р±РѕС‚РЅРёРєР° РёР· Р°СЂС…РёРІР°?'
+        ? 'Заархивировать работника? Он не сможет работать в приложении.'
+        : 'Вернуть работника из архива?'
     )
     if (!ok) return
 
@@ -1658,7 +1658,7 @@ const [editOpen, setEditOpen] = useState(false)
       })
       await refreshCore()
     } catch (e: any) {
-      setError(e?.message || 'РќРµ СѓРґР°Р»РѕСЃСЊ РѕР±РЅРѕРІРёС‚СЊ СЃС‚Р°С‚СѓСЃ СЂР°Р±РѕС‚РЅРёРєР°')
+      setError(e?.message || 'Не удалось обновить статус работника')
     } finally {
       setBusy(false)
     }
@@ -1666,12 +1666,12 @@ const [editOpen, setEditOpen] = useState(false)
 
   async function deleteWorker(workerId: string) {
     if (meId && workerId === meId) {
-      setError('РќРµР»СЊР·СЏ СѓРґР°Р»РёС‚СЊ СЃР°РјРѕРіРѕ СЃРµР±СЏ.')
+      setError('Нельзя удалить самого себя.')
       return
     }
 
     const ok = window.confirm(
-      'РЈРґР°Р»РёС‚СЊ СЂР°Р±РѕС‚РЅРёРєР° РќРђР’РЎР•Р“Р”Рђ?\n\nР’Р°Р¶РЅРѕ: РµСЃР»Рё Сѓ РЅРµРіРѕ РµСЃС‚СЊ С‚Р°Р№РјР»РѕРіРё/СЃРјРµРЅС‹, СЃРµСЂРІРµСЂ Р·Р°РїСЂРµС‚РёС‚ СѓРґР°Р»РµРЅРёРµ (Рё СЌС‚Рѕ РЅРѕСЂРјР°Р»СЊРЅРѕ).'
+      'Удалить работника НАВСЕГДА?\n\nВажно: если у него есть таймлоги/смены, сервер запретит удаление (и это нормально).'
     )
     if (!ok) return
 
@@ -1685,7 +1685,7 @@ const [editOpen, setEditOpen] = useState(false)
       })
       await refreshCore()
     } catch (e: any) {
-      setError(e?.message || 'РќРµ СѓРґР°Р»РѕСЃСЊ СѓРґР°Р»РёС‚СЊ СЂР°Р±РѕС‚РЅРёРєР°')
+      setError(e?.message || 'Не удалось удалить работника')
     } finally {
       setBusy(false)
     }
@@ -1703,10 +1703,10 @@ const [editOpen, setEditOpen] = useState(false)
     setEditDate(j.job_date || toISODate(new Date()))
 
     const tFrom = timeHHMM(j.scheduled_time)
-    setEditTime(tFrom === 'вЂ”' ? '' : tFrom)
+    setEditTime(tFrom === '—' ? '' : tFrom)
 
     const tTo = timeHHMM(j.scheduled_end_time || null)
-    setEditTimeTo(tTo === 'вЂ”' ? '' : tTo)
+    setEditTimeTo(tTo === '—' ? '' : tTo)
 
     setEditStatus((j.status || 'planned') as JobStatus)
     setEditOpen(true)
@@ -1734,7 +1734,7 @@ const [editOpen, setEditOpen] = useState(false)
       setEditOpen(false)
       await refreshSchedule()
     } catch (e: any) {
-      setError(e?.message || 'РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ')
+      setError(e?.message || 'Не удалось сохранить')
     } finally {
       setBusy(false)
     }
@@ -1748,7 +1748,7 @@ const [editOpen, setEditOpen] = useState(false)
 
   async function loadWorkerPhotoMeta(workerId: string) {
     try {
-      // 1) РїСЂРѕС„РёР»СЊ: СѓР·РЅР°С‘Рј РІС‹Р±СЂР°РЅРЅС‹Р№ Р°РІР°С‚Р°СЂ (РµСЃР»Рё РµСЃС‚СЊ)
+      // 1) профиль: узнаём выбранный аватар (если есть)
       let avatarPath = workerProfileById?.[workerId]?.avatar_path ?? null
       if (!avatarPath) {
         const prof = await authFetchJson<{ worker: WorkerProfile }>(`/api/admin/workers/${encodeURIComponent(workerId)}/profile`).catch(() => null as any)
@@ -1759,7 +1759,7 @@ const [editOpen, setEditOpen] = useState(false)
         }
       }
 
-      // 2) С„РѕС‚Рѕ
+      // 2) фото
       const res = await authFetchJson<{ photos: WorkerPhoto[] }>(`/api/admin/workers/${encodeURIComponent(workerId)}/photos`)
       const photos = Array.isArray(res?.photos) ? res.photos : []
       const thumb = avatarPath ? photos.find((p) => p.path === avatarPath)?.url || photos[0]?.url : photos[0]?.url
@@ -1815,13 +1815,13 @@ const [editOpen, setEditOpen] = useState(false)
       const w = res?.worker
       if (w?.id) {
         setWorkerProfileById((prev) => ({ ...prev, [workerId]: w }))
-        // РѕР±РЅРѕРІРёРј core workers (РёРјСЏ) Р»РѕРєР°Р»СЊРЅРѕ, С‡С‚РѕР±С‹ СЃРїРёСЃРѕРє РЅРµ РјРёРіР°Р»
+        // обновим core workers (имя) локально, чтобы список не мигал
         setWorkers((prev) => prev.map((x) => (x.id === workerId ? { ...x, full_name: w.full_name ?? x.full_name } : x)))
       }
-      // РѕР±РЅРѕРІРёРј thumb РґР»СЏ СЃРїРёСЃРєР°
+      // обновим thumb для списка
       await loadWorkerPhotoMeta(workerId)
     } catch (e: any) {
-      setError(e?.message || 'РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ РїСЂРѕС„РёР»СЊ')
+      setError(e?.message || 'Не удалось сохранить профиль')
     } finally {
       setWorkerProfileSaving(false)
     }
@@ -1842,7 +1842,7 @@ const [editOpen, setEditOpen] = useState(false)
       }
       await loadWorkerPhotoMeta(workerId)
     } catch (e: any) {
-      setError(e?.message || 'РќРµ СѓРґР°Р»РѕСЃСЊ РІС‹Р±СЂР°С‚СЊ Р°РІР°С‚Р°СЂ')
+      setError(e?.message || 'Не удалось выбрать аватар')
     }
   }
 
@@ -1867,7 +1867,7 @@ const [editOpen, setEditOpen] = useState(false)
         setWorkerCardPhotos(Array.isArray(res?.photos) ? res.photos : [])
       }
     } catch (e: any) {
-      setError(e?.message || 'РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ С„РѕС‚Рѕ')
+      setError(e?.message || 'Не удалось загрузить фото')
     } finally {
       setWorkerPhotoBusy(false)
     }
@@ -1884,7 +1884,7 @@ const [editOpen, setEditOpen] = useState(false)
       })
       setWorkerCardPhotos(Array.isArray(res?.photos) ? res.photos : [])
     } catch (e: any) {
-      setError(e?.message || 'РќРµ СѓРґР°Р»РѕСЃСЊ СѓРґР°Р»РёС‚СЊ С„РѕС‚Рѕ')
+      setError(e?.message || 'Не удалось удалить фото')
     } finally {
       setWorkerPhotoBusy(false)
     }
@@ -1908,7 +1908,7 @@ const [editOpen, setEditOpen] = useState(false)
     try {
       await Promise.all([loadWorkerCard(workerId), loadWorkerPhotos(workerId), loadWorkerProfile(workerId)])
     } catch (e: any) {
-      setError(e?.message || 'РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РєР°СЂС‚РѕС‡РєСѓ СЂР°Р±РѕС‚РЅРёРєР°')
+      setError(e?.message || 'Не удалось загрузить карточку работника')
     }
   }
 
@@ -1926,7 +1926,7 @@ const [editOpen, setEditOpen] = useState(false)
       setJobsView('table')
       await refreshSchedule()
     } catch (e: any) {
-      setError(e?.message || 'РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ СЃРјРµРЅСѓ')
+      setError(e?.message || 'Не удалось создать смену')
     } finally {
       setBusy(false)
     }
@@ -1965,7 +1965,7 @@ const [editOpen, setEditOpen] = useState(false)
       await refreshSchedule()
       await refreshCore()
     } catch (e: any) {
-      setError(e?.message || 'РќРµ СѓРґР°Р»РѕСЃСЊ РїРµСЂРµРЅРµСЃС‚Рё')
+      setError(e?.message || 'Не удалось перенести')
     } finally {
       setBusy(false)
     }
@@ -1983,7 +1983,7 @@ const [editOpen, setEditOpen] = useState(false)
       setCancelOpen(false)
       await refreshSchedule()
     } catch (e: any) {
-      setError(e?.message || 'РќРµ СѓРґР°Р»РѕСЃСЊ РѕС‚РјРµРЅРёС‚СЊ')
+      setError(e?.message || 'Не удалось отменить')
     } finally {
       setBusy(false)
     }
@@ -2008,7 +2008,7 @@ const [editOpen, setEditOpen] = useState(false)
       await refreshSchedule()
       await refreshCore()
     } catch (e: any) {
-      setError(e?.message || 'РќРµ СѓРґР°Р»РѕСЃСЊ РїРµСЂРµРЅРµСЃС‚Рё РґРµРЅСЊ')
+      setError(e?.message || 'Не удалось перенести день')
     } finally {
       setBusy(false)
     }
@@ -2026,7 +2026,7 @@ const [editOpen, setEditOpen] = useState(false)
         }
         if (hour) {
           const hh = timeHHMM(j.scheduled_time)
-          if (hh === 'вЂ”') return false
+          if (hh === '—') return false
           if (hh.slice(0, 2) !== hour.slice(0, 2)) return false
         }
         return true
@@ -2035,8 +2035,8 @@ const [editOpen, setEditOpen] = useState(false)
   }
 
   function jobCard(j: ScheduleItem, compact: boolean) {
-    const left = planMode === 'workers' ? (j.site_name || 'РћР±СЉРµРєС‚') : (j.worker_name || 'Р Р°Р±РѕС‚РЅРёРє')
-    const right = `${timeRangeHHMM(j.scheduled_time, j.scheduled_end_time)} вЂў ${statusRu(String(j.status || ''))}`
+    const left = planMode === 'workers' ? (j.site_name || 'Объект') : (j.worker_name || 'Работник')
+    const right = `${timeRangeHHMM(j.scheduled_time, j.scheduled_end_time)} • ${statusRu(String(j.status || ''))}`
     return (
       <div
         key={j.id}
@@ -2059,7 +2059,7 @@ const [editOpen, setEditOpen] = useState(false)
                   const url = photos?.[0]?.url || null
                   if (!url) {
                     return (
-                      <div className="flex h-6 w-6 items-center justify-center rounded-full border border-yellow-400/15 bg-black/30 text-[10px] font-semibold text-yellow-100/70">рџЏ </div>
+                      <div className="flex h-6 w-6 items-center justify-center rounded-full border border-yellow-400/15 bg-black/30 text-[10px] font-semibold text-yellow-100/70">🏠</div>
                     )
                   }
                   return (
@@ -2105,7 +2105,7 @@ const [editOpen, setEditOpen] = useState(false)
               }}
               className="rounded-xl border border-yellow-400/10 bg-black/25 px-2 py-1 text-[10px] text-zinc-200 hover:border-yellow-300/30"
             >
-              РѕС‚РјРµРЅРёС‚СЊ
+              отменить
             </button>
 
             {planMode === 'workers' ? (
@@ -2118,7 +2118,7 @@ const [editOpen, setEditOpen] = useState(false)
                 }}
                 className="rounded-xl border border-yellow-400/10 bg-black/25 px-2 py-1 text-[10px] text-zinc-200 hover:border-yellow-300/30"
               >
-                РїРµСЂРµРЅРµСЃС‚Рё
+                перенести
               </button>
             ) : null}
           </div>
@@ -2141,7 +2141,7 @@ const [editOpen, setEditOpen] = useState(false)
               planView === 'day' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
             )}
           >
-            Р”РµРЅСЊ
+            День
           </button>
           <button
             onClick={() => {
@@ -2153,7 +2153,7 @@ const [editOpen, setEditOpen] = useState(false)
               planView === 'week' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
             )}
           >
-            РќРµРґРµР»СЏ
+            Неделя
           </button>
           <button
             onClick={() => {
@@ -2165,7 +2165,7 @@ const [editOpen, setEditOpen] = useState(false)
               planView === 'month' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
             )}
           >
-            РњРµСЃСЏС†
+            Месяц
           </button>
 
           <div className="mx-2 h-7 w-px bg-yellow-400/10" />
@@ -2177,7 +2177,7 @@ const [editOpen, setEditOpen] = useState(false)
               planMode === 'workers' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
             )}
           >
-            РџРѕ СЂР°Р±РѕС‚РЅРёРєР°Рј
+            По работникам
           </button>
           <button
             onClick={() => setPlanMode('sites')}
@@ -2186,13 +2186,13 @@ const [editOpen, setEditOpen] = useState(false)
               planMode === 'sites' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
             )}
           >
-            РџРѕ РѕР±СЉРµРєС‚Р°Рј
+            По объектам
           </button>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <label className="grid gap-1">
-            <span className="text-[11px] text-zinc-300">Р”Р°С‚Р°</span>
+            <span className="text-[11px] text-zinc-300">Дата</span>
             <input
               type="date"
               value={anchorDate}
@@ -2213,7 +2213,7 @@ const [editOpen, setEditOpen] = useState(false)
             }}
             className="mt-5 rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/40"
           >
-            РЎРµРіРѕРґРЅСЏ
+            Сегодня
           </button>
 
           <button
@@ -2226,7 +2226,7 @@ const [editOpen, setEditOpen] = useState(false)
             }}
             className="mt-5 rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 hover:border-yellow-200/70"
           >
-            РџРµСЂРµРЅРµСЃС‚Рё РґРµРЅСЊ
+            Перенести день
           </button>
         </div>
       </div>
@@ -2239,14 +2239,14 @@ const [editOpen, setEditOpen] = useState(false)
         <div className="min-w-[980px]">
           <div className="grid" style={{ gridTemplateColumns: `320px repeat(${planDates.length}, minmax(220px, 1fr))` }}>
             <div className="sticky top-0 z-10 border-b border-yellow-400/10 bg-zinc-950/90 px-4 py-3 text-xs font-semibold text-zinc-200">
-              {planMode === 'workers' ? 'Р Р°Р±РѕС‚РЅРёРє' : 'РћР±СЉРµРєС‚'}
+              {planMode === 'workers' ? 'Работник' : 'Объект'}
             </div>
 
             {planDates.map((d) => (
               <div key={d.iso} className="sticky top-0 z-10 border-b border-yellow-400/10 bg-zinc-950/90 px-4 py-3 text-xs font-semibold text-zinc-200">
                 <div className="flex items-center justify-between">
                   <span>
-                    {d.dow} вЂў {d.label}
+                    {d.dow} • {d.label}
                   </span>
                   <span className="text-[11px] text-zinc-400">{fmtD(d.iso)}</span>
                 </div>
@@ -2272,8 +2272,8 @@ const [editOpen, setEditOpen] = useState(false)
                     </div>
                       <div className="mt-1 text-[11px] text-zinc-400">
                         {planMode === 'workers'
-                          ? `РћР±СЉРµРєС‚С‹: ${(workerSites.get(ent.id) || []).length}`
-                          : `РќР°Р·РЅР°С‡РµРЅС‹: ${(siteWorkers.get(ent.id) || []).filter((w) => (w.role || '') !== 'admin').length}`}
+                          ? `Объекты: ${(workerSites.get(ent.id) || []).length}`
+                          : `Назначены: ${(siteWorkers.get(ent.id) || []).filter((w) => (w.role || '') !== 'admin').length}`}
                       </div>
                     </div>
 
@@ -2282,7 +2282,7 @@ const [editOpen, setEditOpen] = useState(false)
                         onClick={() => openWorkerCard(ent.id)}
                         className="rounded-2xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-[11px] text-zinc-200 hover:border-yellow-300/40"
                       >
-                        РєР°СЂС‚РѕС‡РєР°
+                        карточка
                       </button>
                     ) : null}
                   </div>
@@ -2308,7 +2308,7 @@ const [editOpen, setEditOpen] = useState(false)
                     <div className="grid gap-2">
                       {jobsInCell({ entityId: ent.id, dateISO: d.iso }).map((j) => jobCard(j, true))}
                       <div className="rounded-2xl border border-dashed border-yellow-400/10 bg-black/10 px-3 py-2 text-[11px] text-zinc-500">
-                        РїРµСЂРµС‚Р°С‰Рё СЃСЋРґР°
+                        перетащи сюда
                       </div>
                     </div>
                   </div>
@@ -2328,7 +2328,7 @@ const [editOpen, setEditOpen] = useState(false)
         <div className="min-w-[980px]">
           <div className="grid" style={{ gridTemplateColumns: `100px repeat(${planEntities.length}, minmax(220px, 1fr))` }}>
             <div className="sticky top-0 z-10 border-b border-yellow-400/10 bg-zinc-950/90 px-3 py-3 text-xs font-semibold text-zinc-200">
-              Р’СЂРµРјСЏ
+              Время
             </div>
 
             {planEntities.map((ent) => (
@@ -2355,7 +2355,7 @@ const [editOpen, setEditOpen] = useState(false)
                       onClick={() => openWorkerCard(ent.id)}
                       className="rounded-xl border border-yellow-400/10 bg-black/25 px-2 py-1 text-[10px] text-zinc-200 hover:border-yellow-300/30"
                     >
-                      РєР°СЂС‚РѕС‡РєР°
+                      карточка
                     </button>
                   ) : null}
                 </div>
@@ -2388,7 +2388,7 @@ const [editOpen, setEditOpen] = useState(false)
                     <div className="grid gap-2">
                       {jobsInCell({ entityId: ent.id, dateISO: dayISO, hour: h }).map((j) => jobCard(j, true))}
                       <div className="rounded-2xl border border-dashed border-yellow-400/10 bg-black/10 px-3 py-2 text-[11px] text-zinc-500">
-                        РїРµСЂРµС‚Р°С‰Рё СЃСЋРґР°
+                        перетащи сюда
                       </div>
                     </div>
                   </div>
@@ -2416,7 +2416,7 @@ const [editOpen, setEditOpen] = useState(false)
       <div className="mt-4 overflow-auto rounded-3xl border border-yellow-400/15 bg-black/15">
         <div className="min-w-[980px] p-4">
           <div className="grid grid-cols-7 gap-3">
-            {['РџРЅ', 'Р’С‚', 'РЎСЂ', 'Р§С‚', 'РџС‚', 'РЎР±', 'Р’СЃ'].map((d) => (
+            {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((d) => (
               <div key={d} className="text-xs font-semibold text-zinc-300">
                 {d}
               </div>
@@ -2455,12 +2455,12 @@ const [editOpen, setEditOpen] = useState(false)
 
                     {schedule.filter((j) => (j.job_date || '') === d.iso).length > 3 ? (
                       <div className="rounded-2xl border border-yellow-400/10 bg-black/15 px-3 py-2 text-[11px] text-zinc-400">
-                        РµС‰С‘ {schedule.filter((j) => (j.job_date || '') === d.iso).length - 3}
+                        ещё {schedule.filter((j) => (j.job_date || '') === d.iso).length - 3}
                       </div>
                     ) : null}
 
                     <div className="rounded-2xl border border-dashed border-yellow-400/10 bg-black/10 px-3 py-2 text-[11px] text-zinc-500">
-                      РїРµСЂРµС‚Р°С‰Рё СЃСЋРґР°
+                      перетащи сюда
                     </div>
                   </div>
                 </div>
@@ -2477,7 +2477,7 @@ const [editOpen, setEditOpen] = useState(false)
       <main className="min-h-screen bg-gradient-to-b from-zinc-950 via-black to-zinc-950 text-zinc-100">
         <div className="mx-auto max-w-6xl px-4 py-10">
           <div className="rounded-3xl border border-yellow-400/20 bg-zinc-950/50 p-6 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur">
-            <div className="text-sm text-zinc-300">РџСЂРѕРІРµСЂСЏСЋ РІС…РѕРґвЂ¦</div>
+            <div className="text-sm text-zinc-300">Проверяю вход…</div>
           </div>
         </div>
       </main>
@@ -2493,13 +2493,13 @@ const [editOpen, setEditOpen] = useState(false)
               <Image src="/tanija-logo.png" alt="Tanija" fill className="object-contain p-2" priority />
             </div>
             <div>
-              <div className="text-lg font-semibold tracking-wide">РђРґРјРёРЅ-РїР°РЅРµР»СЊ</div>
-              <div className="text-xs text-yellow-200/70">Tanija вЂў РѕР±СЉРµРєС‚С‹ вЂў СЂР°Р±РѕС‚РЅРёРєРё вЂў СЃРјРµРЅС‹</div>
+              <div className="text-lg font-semibold tracking-wide">Админ-панель</div>
+              <div className="text-xs text-yellow-200/70">Tanija • объекты • работники • смены</div>
             </div>
           </div>
 
           <div className="rounded-3xl border border-yellow-400/20 bg-zinc-950/50 p-6 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur">
-            <h1 className="text-xl font-semibold text-yellow-100">Р’С…РѕРґ</h1>
+            <h1 className="text-xl font-semibold text-yellow-100">Вход</h1>
 
             {error ? (
               <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-950/30 px-4 py-3 text-sm text-red-100">{error}</div>
@@ -2511,7 +2511,7 @@ const [editOpen, setEditOpen] = useState(false)
 
             <form onSubmit={onLogin} className="mt-5 grid gap-3">
               <label className="grid gap-1">
-                <span className="text-xs text-zinc-300">Р›РѕРіРёРЅ (email РёР»Рё С‚РµР»РµС„РѕРЅ)</span>
+                <span className="text-xs text-zinc-300">Логин (email или телефон)</span>
                 <input
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -2524,14 +2524,14 @@ const [editOpen, setEditOpen] = useState(false)
               </label>
 
               <label className="grid gap-1">
-                <span className="text-xs text-zinc-300">РџР°СЂРѕР»СЊ</span>
+                <span className="text-xs text-zinc-300">Пароль</span>
                 <input
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   type="password"
                   autoComplete="current-password"
                   className="rounded-2xl border border-yellow-400/20 bg-black/40 px-4 py-3 text-sm outline-none transition focus:border-yellow-300/60"
-                  placeholder="вЂўвЂўвЂўвЂўвЂўвЂўвЂўвЂў"
+                  placeholder="••••••••"
                   required
                 />
               </label>
@@ -2541,7 +2541,7 @@ const [editOpen, setEditOpen] = useState(false)
                 disabled={busy}
                 className="mt-2 rounded-2xl border border-yellow-300/40 bg-gradient-to-r from-yellow-500/10 via-yellow-400/10 to-yellow-300/10 px-4 py-3 text-sm font-semibold text-yellow-100 shadow-[0_0_0_1px_rgba(255,215,0,0.18)] transition hover:border-yellow-200/70 hover:bg-yellow-400/10 disabled:opacity-60"
               >
-                {busy ? 'Р’С…РѕР¶СѓвЂ¦' : 'Р’РѕР№С‚Рё'}
+                {busy ? 'Вхожу…' : 'Войти'}
               </button>
             </form>
           </div>
@@ -2567,8 +2567,8 @@ const [editOpen, setEditOpen] = useState(false)
               <Image src="/tanija-logo.png" alt="Tanija" fill className="object-contain p-2" priority />
             </div>
             <div>
-              <div className="text-lg font-semibold tracking-wide">РђРґРјРёРЅ-РїР°РЅРµР»СЊ</div>
-              <div className="text-xs text-yellow-200/70">Tanija вЂў РѕР±СЉРµРєС‚С‹ вЂў СЂР°Р±РѕС‚РЅРёРєРё вЂў СЃРјРµРЅС‹</div>
+              <div className="text-lg font-semibold tracking-wide">Админ-панель</div>
+              <div className="text-xs text-yellow-200/70">Tanija • объекты • работники • смены</div>
             </div>
           </div>
 
@@ -2578,7 +2578,7 @@ const [editOpen, setEditOpen] = useState(false)
               disabled={busy}
               className="rounded-xl border border-yellow-400/40 bg-black/40 px-4 py-2 text-sm text-yellow-100 transition hover:border-yellow-300/70 hover:bg-black/60 disabled:opacity-60"
             >
-              {busy ? 'РћР±РЅРѕРІР»СЏСЋвЂ¦' : 'РћР±РЅРѕРІРёС‚СЊ РґР°РЅРЅС‹Рµ'}
+              {busy ? 'Обновляю…' : 'Обновить данные'}
             </button>
 
             <button
@@ -2586,7 +2586,7 @@ const [editOpen, setEditOpen] = useState(false)
               disabled={busy}
               className="rounded-xl border border-yellow-400/25 bg-black/30 px-4 py-2 text-sm text-yellow-100/90 transition hover:border-yellow-300/60 hover:bg-black/50 disabled:opacity-60"
             >
-              Р’С‹Р№С‚Рё
+              Выйти
             </button>
           </div>
         </div>
@@ -2603,7 +2603,7 @@ const [editOpen, setEditOpen] = useState(false)
                     tab === k ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
                   )}
                 >
-                  {k === 'sites' ? 'РћР±СЉРµРєС‚С‹' : k === 'workers' ? 'Р Р°Р±РѕС‚РЅРёРєРё' : k === 'jobs' ? 'РЎРјРµРЅС‹' : k === 'plan' ? 'Р“СЂР°С„РёРє' : 'РћС‚С‡С‘С‚С‹'}
+                  {k === 'sites' ? 'Объекты' : k === 'workers' ? 'Работники' : k === 'jobs' ? 'Смены' : k === 'plan' ? 'График' : 'Отчёты'}
                 </button>
               ))}
             </div>
@@ -2617,12 +2617,12 @@ const [editOpen, setEditOpen] = useState(false)
                     onChange={(e) => setShowArchivedSites(e.target.checked)}
                     className="h-4 w-4 accent-yellow-400"
                   />
-                  РџРѕРєР°Р·Р°С‚СЊ Р°СЂС…РёРІ
+                  Показать архив
                 </label>
               ) : null}
 
               <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-[11px] text-zinc-200">
-                РћР±СЉРµРєС‚С‹: {sites.length} вЂў Р Р°Р±РѕС‚РЅРёРєРё: {workers.length} вЂў РЎРјРµРЅС‹: {schedule.length}
+                Объекты: {sites.length} • Работники: {workers.length} • Смены: {schedule.length}
               </div>
             </div>
           </div>
@@ -2636,22 +2636,22 @@ const [editOpen, setEditOpen] = useState(false)
           ) : null}
 
 
-          {/* РћРўР§РЃРўР« */}
-          {/* РћРўР§РЃРўР« */}
+          {/* ОТЧЁТЫ */}
+          {/* ОТЧЁТЫ */}
           {tab === 'reports' ? (
             <ReportsPanel />
           ) : null}
 
 
 
-          {/* РћР‘РЄР•РљРўР« */}
+          {/* ОБЪЕКТЫ */}
                     {tab === 'sites' ? (
                       <div className="mt-6 grid gap-4">
                         <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div>
-                              <div className="text-sm font-semibold text-yellow-100">РћР±СЉРµРєС‚С‹</div>
-                              <div className="mt-1 text-xs text-zinc-300">РќР°Р·РЅР°С‡РµРЅРёРµ = РґРѕСЃС‚СѓРї Рє РѕР±СЉРµРєС‚Сѓ. Р Р°СЃРїРёСЃР°РЅРёРµ РґРµР»Р°РµС‚СЃСЏ РІ вЂњРЎРјРµРЅС‹вЂќ Рё вЂњР“СЂР°С„РёРєвЂќ.</div>
+                              <div className="text-sm font-semibold text-yellow-100">Объекты</div>
+                              <div className="mt-1 text-xs text-zinc-300">Назначение = доступ к объекту. Расписание делается в “Смены” и “График”.</div>
                             </div>
 
                             <button
@@ -2659,19 +2659,19 @@ const [editOpen, setEditOpen] = useState(false)
                               disabled={busy}
                               className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
                             >
-                              + Р”РѕР±Р°РІРёС‚СЊ РѕР±СЉРµРєС‚
+                              + Добавить объект
                             </button>
                           </div>
 
                           <div className="mt-4 flex flex-wrap items-end gap-2">
                             <label className="grid gap-1">
-                              <span className="text-[11px] text-zinc-300">Р‘С‹СЃС‚СЂРѕРµ РЅР°Р·РЅР°С‡РµРЅРёРµ: РѕР±СЉРµРєС‚</span>
+                              <span className="text-[11px] text-zinc-300">Быстрое назначение: объект</span>
                               <select
                                 value={qaSite}
                                 onChange={(e) => setQaSite(e.target.value)}
                                 className="w-[260px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                               >
-                                <option value="">Р’С‹Р±РµСЂРё РѕР±СЉРµРєС‚вЂ¦</option>
+                                <option value="">Выбери объект…</option>
                                 {activeSites.map((s) => (
                                   <option key={s.id} value={s.id}>
                                     {s.name || s.id}
@@ -2681,16 +2681,16 @@ const [editOpen, setEditOpen] = useState(false)
                             </label>
 
                             <label className="grid gap-1">
-                              <span className="text-[11px] text-zinc-300">Р‘С‹СЃС‚СЂРѕРµ РЅР°Р·РЅР°С‡РµРЅРёРµ: СЂР°Р±РѕС‚РЅРёРє</span>
+                              <span className="text-[11px] text-zinc-300">Быстрое назначение: работник</span>
                               <select
                                 value={qaWorker}
                                 onChange={(e) => setQaWorker(e.target.value)}
                                 className="w-[260px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                               >
-                                <option value="">Р’С‹Р±РµСЂРё СЂР°Р±РѕС‚РЅРёРєР°вЂ¦</option>
+                                <option value="">Выбери работника…</option>
                                 {workersForSelect.map((w) => (
                                   <option key={w.id} value={w.id}>
-                                    {w.full_name || 'Р Р°Р±РѕС‚РЅРёРє'}
+                                    {w.full_name || 'Работник'}
                                   </option>
                                 ))}
                               </select>
@@ -2701,7 +2701,7 @@ const [editOpen, setEditOpen] = useState(false)
                               disabled={busy || !qaSite || !qaWorker}
                               className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
                             >
-                              РќР°Р·РЅР°С‡РёС‚СЊ
+                              Назначить
                             </button>
                           </div>
                         </div>
@@ -2739,10 +2739,10 @@ const [editOpen, setEditOpen] = useState(false)
                                               openSiteCard(s)
                                             }}
                                             className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-black/0"
-                                            title={(s.lat != null && s.lng != null) || !!s.address ? 'РћС‚РєСЂС‹С‚СЊ РЅР°РІРёРіР°С†РёСЋ' : 'РћС‚РєСЂС‹С‚СЊ РєР°СЂС‚РѕС‡РєСѓ'}
+                                            title={(s.lat != null && s.lng != null) || !!s.address ? 'Открыть навигацию' : 'Открыть карточку'}
                                           />
                                           <div className="absolute bottom-1 left-2 text-[10px] font-semibold text-yellow-100/90">
-                                            {(s.lat != null && s.lng != null) || !!s.address ? 'РќР°РІРёРіР°С†РёСЏ' : 'РљР°СЂС‚РѕС‡РєР°'}
+                                            {(s.lat != null && s.lng != null) || !!s.address ? 'Навигация' : 'Карточка'}
                                           </div>
                                         </div>
                                       ) : (
@@ -2762,32 +2762,32 @@ const [editOpen, setEditOpen] = useState(false)
                                         <button
                                           onClick={() => openSiteCard(s)}
                                           className="truncate text-left text-base font-semibold text-yellow-100 hover:underline"
-                                          title="РћС‚РєСЂС‹С‚СЊ РєР°СЂС‚РѕС‡РєСѓ РѕР±СЉРµРєС‚Р°"
+                                          title="Открыть карточку объекта"
                                         >
-                                          {s.name || 'РћР±СЉРµРєС‚'}
+                                          {s.name || 'Объект'}
                                         </button>
 
                                         {archived ? (
-                                          <span className="rounded-xl border border-yellow-400/20 bg-black/30 px-2 py-1 text-[11px] text-zinc-200">РІ Р°СЂС…РёРІРµ</span>
+                                          <span className="rounded-xl border border-yellow-400/20 bg-black/30 px-2 py-1 text-[11px] text-zinc-200">в архиве</span>
                                         ) : (
-                                          <span className="rounded-xl border border-yellow-300/40 bg-yellow-400/10 px-2 py-1 text-[11px] text-yellow-100">Р°РєС‚РёРІРµРЅ</span>
+                                          <span className="rounded-xl border border-yellow-300/40 bg-yellow-400/10 px-2 py-1 text-[11px] text-yellow-100">активен</span>
                                         )}
 
                                         <span className="inline-flex items-center gap-2 rounded-xl border border-yellow-400/15 bg-black/30 px-2 py-1 text-[11px] text-yellow-100/70">
                                           <span className={cn('h-2.5 w-2.5 rounded-full', meta.dotClass)} />
-                                          {s.category ? `#${s.category}` : 'Р±РµР· РєР°С‚РµРіРѕСЂРёРё'}
+                                          {s.category ? `#${s.category}` : 'без категории'}
                                         </span>
                                       </div>
 
-                                      {s.address ? <div className="mt-2 text-xs text-zinc-300">РђРґСЂРµСЃ: {s.address}</div> : null}
+                                      {s.address ? <div className="mt-2 text-xs text-zinc-300">Адрес: {s.address}</div> : null}
 
                                       <div className="mt-2 flex flex-wrap gap-2">
-                                        <Pill>СЂР°РґРёСѓСЃ: {s.radius ?? 150} Рј</Pill>
-                                        <Pill>GPS: {s.lat != null && s.lng != null ? `${s.lat}, ${s.lng}` : 'РЅРµС‚'}</Pill>
-                                        <Pill>С„РѕС‚Рѕ: {photos.length}/5</Pill>
+                                        <Pill>радиус: {s.radius ?? 150} м</Pill>
+                                        <Pill>GPS: {s.lat != null && s.lng != null ? `${s.lat}, ${s.lng}` : 'нет'}</Pill>
+                                        <Pill>фото: {photos.length}/5</Pill>
                                       </div>
 
-                                      {s.notes ? <div className="mt-2 text-xs text-zinc-300">Р—Р°РјРµС‚РєРё: {String(s.notes).slice(0, 160)}</div> : null}
+                                      {s.notes ? <div className="mt-2 text-xs text-zinc-300">Заметки: {String(s.notes).slice(0, 160)}</div> : null}
 
                                       <div className="mt-3 flex flex-wrap items-center gap-2">
                                         <CategoryPicker
@@ -2803,7 +2803,7 @@ const [editOpen, setEditOpen] = useState(false)
                                           disabled={busy}
                                           className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 transition hover:border-yellow-300/40 disabled:opacity-60"
                                         >
-                                          РљР°СЂС‚РѕС‡РєР°
+                                          Карточка
                                         </button>
 
                                         <button
@@ -2811,7 +2811,7 @@ const [editOpen, setEditOpen] = useState(false)
                                           disabled={busy}
                                           className="rounded-2xl border border-red-500/25 bg-red-500/15 px-4 py-2 text-xs font-semibold text-red-100/85 transition hover:border-red-400/45 disabled:opacity-60"
                                         >
-                                          РЈРґР°Р»РёС‚СЊ
+                                          Удалить
                                         </button>
 
                                         <button
@@ -2819,24 +2819,24 @@ const [editOpen, setEditOpen] = useState(false)
                                           disabled={busy}
                                           className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 transition hover:border-yellow-300/40 disabled:opacity-60"
                                         >
-                                          {archived ? 'Р’РµСЂРЅСѓС‚СЊ РёР· Р°СЂС…РёРІР°' : 'Р’ Р°СЂС…РёРІ'}
+                                          {archived ? 'Вернуть из архива' : 'В архив'}
                                         </button>
                                       </div>
 
-                                      <div className="mt-3 text-xs text-zinc-300">РќР°Р·РЅР°С‡РµРЅС‹:</div>
+                                      <div className="mt-3 text-xs text-zinc-300">Назначены:</div>
                                       {assigned.length === 0 ? (
-                                        <div className="mt-1 text-xs text-zinc-500">вЂ”</div>
+                                        <div className="mt-1 text-xs text-zinc-500">—</div>
                                       ) : (
                                         <div className="mt-2 flex flex-wrap gap-2">
                                           {assigned.map((w) => (
                                             <div key={w.id} className="flex items-center gap-2 rounded-2xl border border-yellow-400/10 bg-black/35 px-3 py-2 text-xs">
-                                              <span className="text-zinc-100">{w.full_name || 'Р Р°Р±РѕС‚РЅРёРє'}</span>
+                                              <span className="text-zinc-100">{w.full_name || 'Работник'}</span>
                                               <button
                                                 onClick={() => unassign(s.id, w.id)}
                                                 disabled={busy}
                                                 className="rounded-xl border border-yellow-400/20 bg-black/30 px-2 py-1 text-[11px] text-yellow-100/80 transition hover:border-yellow-300/50 disabled:opacity-60"
                                               >
-                                                СЃРЅСЏС‚СЊ
+                                                снять
                                               </button>
                                             </div>
                                           ))}
@@ -2849,16 +2849,16 @@ const [editOpen, setEditOpen] = useState(false)
                                     {!archived ? (
                                       <div className="flex flex-wrap items-end gap-2">
                                         <label className="grid gap-1">
-                                          <span className="text-[11px] text-zinc-300">Р”РѕР±Р°РІРёС‚СЊ СЂР°Р±РѕС‚РЅРёРєР°</span>
+                                          <span className="text-[11px] text-zinc-300">Добавить работника</span>
                                           <select
                                             value={workerPickSite[s.id] || ''}
                                             onChange={(e) => setWorkerPickSite((p) => ({ ...p, [s.id]: e.target.value }))}
                                             className="w-[240px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                                           >
-                                            <option value="">Р’С‹Р±РµСЂРё СЂР°Р±РѕС‚РЅРёРєР°вЂ¦</option>
+                                            <option value="">Выбери работника…</option>
                                             {workersForSelect.map((w) => (
                                               <option key={w.id} value={w.id}>
-                                                {w.full_name || 'Р Р°Р±РѕС‚РЅРёРє'}
+                                                {w.full_name || 'Работник'}
                                               </option>
                                             ))}
                                           </select>
@@ -2873,11 +2873,11 @@ const [editOpen, setEditOpen] = useState(false)
                                           disabled={busy || !workerPickSite[s.id]}
                                           className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
                                         >
-                                          РќР°Р·РЅР°С‡РёС‚СЊ
+                                          Назначить
                                         </button>
                                       </div>
                                     ) : (
-                                      <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-xs text-zinc-300">РђСЂС…РёРІРЅС‹Р№ РѕР±СЉРµРєС‚</div>
+                                      <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-xs text-zinc-300">Архивный объект</div>
                                     )}
                                   </div>
                                 </div>
@@ -2885,31 +2885,31 @@ const [editOpen, setEditOpen] = useState(false)
                             )
                           })}
 
-                        <Modal open={siteCreateOpen} title="РќРѕРІС‹Р№ РѕР±СЉРµРєС‚" onClose={() => setSiteCreateOpen(false)}>
+                        <Modal open={siteCreateOpen} title="Новый объект" onClose={() => setSiteCreateOpen(false)}>
                           <div className="grid gap-3">
                             <label className="grid gap-1">
-                              <span className="text-[11px] text-zinc-300">РќР°Р·РІР°РЅРёРµ</span>
+                              <span className="text-[11px] text-zinc-300">Название</span>
                               <input
                                 value={newObjName}
                                 onChange={(e) => setNewObjName(e.target.value)}
                                 className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
-                                placeholder="РќР°РїСЂРёРјРµСЂ: Р”РѕРј, РѕС„РёСЃ, РѕР±СЉРµРєС‚ в„–1"
+                                placeholder="Например: Дом, офис, объект №1"
                               />
                             </label>
 
                             <label className="grid gap-1">
-                              <span className="text-[11px] text-zinc-300">РђРґСЂРµСЃ</span>
+                              <span className="text-[11px] text-zinc-300">Адрес</span>
                               <input
                                 value={newObjAddress}
                                 onChange={(e) => setNewObjAddress(e.target.value)}
                                 className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
-                                placeholder="(РЅРµРѕР±СЏР·Р°С‚РµР»СЊРЅРѕ)"
+                                placeholder="(необязательно)"
                               />
                             </label>
 
                             <div className="grid gap-3 sm:grid-cols-2">
                               <label className="grid gap-1">
-                                <span className="text-[11px] text-zinc-300">Р Р°РґРёСѓСЃ (Рј)</span>
+                                <span className="text-[11px] text-zinc-300">Радиус (м)</span>
                                 <input
                                   value={newObjRadius}
                                   onChange={(e) => setNewObjRadius(e.target.value)}
@@ -2919,18 +2919,18 @@ const [editOpen, setEditOpen] = useState(false)
                               </label>
 
                               <div className="grid gap-1">
-                                <span className="text-[11px] text-zinc-300">РљР°С‚РµРіРѕСЂРёСЏ</span>
+                                <span className="text-[11px] text-zinc-300">Категория</span>
                                 <CategoryPicker value={newObjCategory} onChange={setNewObjCategory} disabled={busy} />
                               </div>
                             </div>
 
                             <label className="grid gap-1">
-                              <span className="text-[11px] text-zinc-300">Р—Р°РјРµС‚РєРё</span>
+                              <span className="text-[11px] text-zinc-300">Заметки</span>
                               <textarea
                                 value={newObjNotes}
                                 onChange={(e) => setNewObjNotes(e.target.value)}
                                 className="min-h-[100px] rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
-                                placeholder="(РЅРµРѕР±СЏР·Р°С‚РµР»СЊРЅРѕ)"
+                                placeholder="(необязательно)"
                               />
                             </label>
 
@@ -2940,27 +2940,27 @@ const [editOpen, setEditOpen] = useState(false)
                                 disabled={busy || !newObjName.trim()}
                                 className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-yellow-100 transition hover:border-yellow-200/70 disabled:opacity-60"
                               >
-                                РЎРѕР·РґР°С‚СЊ
+                                Создать
                               </button>
                               <button
                                 onClick={() => setSiteCreateOpen(false)}
                                 disabled={busy}
                                 className="rounded-2xl border border-yellow-400/15 bg-black/30 px-5 py-3 text-sm text-zinc-200 transition hover:border-yellow-300/40 disabled:opacity-60"
                               >
-                                РћС‚РјРµРЅР°
+                                Отмена
                               </button>
                             </div>
                           </div>
                         </Modal>
 
-                        <Modal open={siteCardOpen} title={siteCardName || 'РљР°СЂС‚РѕС‡РєР° РѕР±СЉРµРєС‚Р°'} onClose={() => setSiteCardOpen(false)}>
+                        <Modal open={siteCardOpen} title={siteCardName || 'Карточка объекта'} onClose={() => setSiteCardOpen(false)}>
                           {!siteCardId ? (
-                            <div className="text-sm text-zinc-300">РќРµС‚ РѕР±СЉРµРєС‚Р°</div>
+                            <div className="text-sm text-zinc-300">Нет объекта</div>
                           ) : (
                             <div className="grid gap-4">
                               <div className="grid gap-3 sm:grid-cols-2">
                                 <label className="grid gap-1 sm:col-span-2">
-                                  <span className="text-[11px] text-zinc-300">РќР°Р·РІР°РЅРёРµ</span>
+                                  <span className="text-[11px] text-zinc-300">Название</span>
                                   <input
                                     value={siteCardName}
                                     onChange={(e) => setSiteCardName(e.target.value)}
@@ -2969,7 +2969,7 @@ const [editOpen, setEditOpen] = useState(false)
                                 </label>
 
                                 <label className="grid gap-1 sm:col-span-2">
-                                  <span className="text-[11px] text-zinc-300">РђРґСЂРµСЃ</span>
+                                  <span className="text-[11px] text-zinc-300">Адрес</span>
                                   <input
                                     value={siteCardAddress}
                                     onChange={(e) => setSiteCardAddress(e.target.value)}
@@ -2978,7 +2978,7 @@ const [editOpen, setEditOpen] = useState(false)
                                 </label>
 
                                 <label className="grid gap-1">
-                                  <span className="text-[11px] text-zinc-300">Р Р°РґРёСѓСЃ (Рј)</span>
+                                  <span className="text-[11px] text-zinc-300">Радиус (м)</span>
                                   <input
                                     value={siteCardRadius}
                                     onChange={(e) => setSiteCardRadius(e.target.value)}
@@ -2987,7 +2987,7 @@ const [editOpen, setEditOpen] = useState(false)
                                 </label>
 
                                 <div className="grid gap-1">
-                                  <span className="text-[11px] text-zinc-300">РљР°С‚РµРіРѕСЂРёСЏ</span>
+                                  <span className="text-[11px] text-zinc-300">Категория</span>
                                   <CategoryPicker value={siteCardCategory} onChange={setSiteCardCategory} disabled={busy} />
                                 </div>
 
@@ -2997,7 +2997,7 @@ const [editOpen, setEditOpen] = useState(false)
                                     value={siteCardLat}
                                     onChange={(e) => setSiteCardLat(e.target.value)}
                                     className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
-                                    placeholder="РЅР°РїСЂРёРјРµСЂ 41.40338"
+                                    placeholder="например 41.40338"
                                   />
                                 </label>
 
@@ -3007,12 +3007,12 @@ const [editOpen, setEditOpen] = useState(false)
                                     value={siteCardLng}
                                     onChange={(e) => setSiteCardLng(e.target.value)}
                                     className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
-                                    placeholder="РЅР°РїСЂРёРјРµСЂ 2.17403"
+                                    placeholder="например 2.17403"
                                   />
                                 </label>
 
                                 <label className="grid gap-1 sm:col-span-2">
-                                  <span className="text-[11px] text-zinc-300">Р—Р°РјРµС‚РєРё</span>
+                                  <span className="text-[11px] text-zinc-300">Заметки</span>
                                   <textarea
                                     value={siteCardNotes}
                                     onChange={(e) => setSiteCardNotes(e.target.value)}
@@ -3026,14 +3026,14 @@ const [editOpen, setEditOpen] = useState(false)
                                     disabled={busy || !siteCardName.trim()}
                                     className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-yellow-100 transition hover:border-yellow-200/70 disabled:opacity-60"
                                   >
-                                    РЎРѕС…СЂР°РЅРёС‚СЊ
+                                    Сохранить
                                   </button>
                                   <button
                                     onClick={() => deleteObjectSite(siteCardId)}
                                     disabled={busy}
                                     className="rounded-2xl border border-red-500/25 bg-red-500/15 px-5 py-3 text-sm font-semibold text-red-100/85 transition hover:border-red-400/45 disabled:opacity-60"
                                   >
-                                    РЈРґР°Р»РёС‚СЊ РѕР±СЉРµРєС‚
+                                    Удалить объект
                                   </button>
                                 </div>
                               </div>
@@ -3044,14 +3044,14 @@ const [editOpen, setEditOpen] = useState(false)
                                 if (lat == null || lng == null || Number.isNaN(lat) || Number.isNaN(lng)) return null
                                 return (
                                   <div className="grid gap-2">
-                                    <div className="text-sm font-semibold text-yellow-100">РљР°СЂС‚Р°</div>
+                                    <div className="text-sm font-semibold text-yellow-100">Карта</div>
                                     <MapLarge lat={lat} lng={lng} />
                                     <div className="flex flex-wrap items-center gap-3 text-xs text-yellow-100/70">
                                       <a className="underline decoration-yellow-400/20 hover:decoration-yellow-300/50" href={googleNavUrl(lat, lng)} target="_blank" rel="noreferrer">
-                                        Google РЅР°РІРёРіР°С†РёСЏ
+                                        Google навигация
                                       </a>
                                       <a className="underline decoration-yellow-400/20 hover:decoration-yellow-300/50" href={appleNavUrl(lat, lng)} target="_blank" rel="noreferrer">
-                                        Apple РЅР°РІРёРіР°С†РёСЏ
+                                        Apple навигация
                                       </a>
                                     </div>
                                   </div>
@@ -3059,10 +3059,10 @@ const [editOpen, setEditOpen] = useState(false)
                               })()}
 
                               <div className="grid gap-2">
-                                <div className="text-sm font-semibold text-yellow-100">Р¤РѕС‚Рѕ (РґРѕ 5)</div>
+                                <div className="text-sm font-semibold text-yellow-100">Фото (до 5)</div>
 
                                 <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <div className="text-xs text-yellow-100/55">РЎРµР№С‡Р°СЃ: {siteCardPhotos.length}/5</div>
+                                  <div className="text-xs text-yellow-100/55">Сейчас: {siteCardPhotos.length}/5</div>
 
                                   <div className="flex flex-wrap gap-2">
                                     <label
@@ -3071,7 +3071,7 @@ const [editOpen, setEditOpen] = useState(false)
                                         photoBusy || !siteCardId || siteCardPhotos.length >= 5 ? 'opacity-70' : ''
                                       )}
                                     >
-                                      Р—Р°РіСЂСѓР·РёС‚СЊ С„РѕС‚Рѕ
+                                      Загрузить фото
                                       <input
                                         type="file"
                                         accept="image/*"
@@ -3083,7 +3083,7 @@ const [editOpen, setEditOpen] = useState(false)
                                           const files = input.files ? Array.from(input.files) : []
                                           input.value = ''
                                           if (!siteCardId) {
-                                            setPhotoUiError('ID РѕР±СЉРµРєС‚Р° РЅРµ РЅР°Р№РґРµРЅ. Р—Р°РєСЂРѕР№ Рё РѕС‚РєСЂРѕР№ РєР°СЂС‚РѕС‡РєСѓ РѕР±СЉРµРєС‚Р° Р·Р°РЅРѕРІРѕ.')
+                                            setPhotoUiError('ID объекта не найден. Закрой и открой карточку объекта заново.')
                                             return
                                           }
                                           await uploadSitePhotos(siteCardId, files)
@@ -3097,7 +3097,7 @@ const [editOpen, setEditOpen] = useState(false)
                                         photoBusy || !siteCardId || siteCardPhotos.length >= 5 ? 'opacity-70' : ''
                                       )}
                                     >
-                                      РЎРґРµР»Р°С‚СЊ С„РѕС‚Рѕ
+                                      Сделать фото
                                       <input
                                         type="file"
                                         accept="image/*"
@@ -3109,7 +3109,7 @@ const [editOpen, setEditOpen] = useState(false)
                                           const files = input.files ? Array.from(input.files) : []
                                           input.value = ''
                                           if (!siteCardId) {
-                                            setPhotoUiError('ID РѕР±СЉРµРєС‚Р° РЅРµ РЅР°Р№РґРµРЅ. Р—Р°РєСЂРѕР№ Рё РѕС‚РєСЂРѕР№ РєР°СЂС‚РѕС‡РєСѓ РѕР±СЉРµРєС‚Р° Р·Р°РЅРѕРІРѕ.')
+                                            setPhotoUiError('ID объекта не найден. Закрой и открой карточку объекта заново.')
                                             return
                                           }
                                           await uploadSitePhotos(siteCardId, files)
@@ -3133,7 +3133,7 @@ const [editOpen, setEditOpen] = useState(false)
                                 ) : null}
 
                                 {siteCardPhotos.length === 0 ? (
-                                  <div className="rounded-2xl border border-yellow-400/10 bg-black/20 px-3 py-3 text-xs text-yellow-100/55">Р¤РѕС‚Рѕ РЅРµС‚</div>
+                                  <div className="rounded-2xl border border-yellow-400/10 bg-black/20 px-3 py-3 text-xs text-yellow-100/55">Фото нет</div>
                                 ) : (
                                   <div className="grid grid-cols-2 gap-2">
                                     {siteCardPhotos.map((p, idx) => (
@@ -3141,7 +3141,7 @@ const [editOpen, setEditOpen] = useState(false)
                                         {/* eslint-disable-next-line @next/next/no-img-element */}
                                         <img src={p.url || ""} alt="site" className="h-36 w-full object-cover" loading="lazy" />
 
-                                        <div className="absolute left-2 top-2 rounded-xl border border-yellow-400/15 bg-black/50 px-2 py-1 text-[11px] text-yellow-100/80">{idx === 0 ? 'РіР»Р°РІРЅРѕРµ' : ''}</div>
+                                        <div className="absolute left-2 top-2 rounded-xl border border-yellow-400/15 bg-black/50 px-2 py-1 text-[11px] text-yellow-100/80">{idx === 0 ? 'главное' : ''}</div>
 
                                         <div className="absolute right-2 top-2 flex gap-2">
                                           {idx !== 0 ? (
@@ -3156,7 +3156,7 @@ const [editOpen, setEditOpen] = useState(false)
                                                 photoBusy ? 'opacity-70' : 'hover:border-yellow-200/70'
                                               )}
                                             >
-                                              Р“Р»Р°РІРЅРѕРµ
+                                              Главное
                                             </button>
                                           ) : null}
 
@@ -3171,7 +3171,7 @@ const [editOpen, setEditOpen] = useState(false)
                                               photoBusy ? 'opacity-70' : 'hover:border-red-400/45'
                                             )}
                                           >
-                                            РЈРґР°Р»РёС‚СЊ
+                                            Удалить
                                           </button>
                                         </div>
                                       </div>
@@ -3179,7 +3179,7 @@ const [editOpen, setEditOpen] = useState(false)
                                   </div>
                                 )}
 
-                                {photoBusy ? <div className="text-xs text-yellow-100/45">РћР±СЂР°Р±РѕС‚РєР°вЂ¦</div> : null}
+                                {photoBusy ? <div className="text-xs text-yellow-100/45">Обработка…</div> : null}
                               </div>
                             </div>
                           )}
@@ -3188,26 +3188,26 @@ const [editOpen, setEditOpen] = useState(false)
 	                    ) : null}
 
 
-          {/* Р РђР‘РћРўРќРРљР */}
+          {/* РАБОТНИКИ */}
           {tab === 'workers' ? (
             <div className="mt-6 grid gap-3">
               <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
                 <div className="flex flex-wrap items-end justify-between gap-3">
                   <div>
-                    <div className="text-sm font-semibold text-yellow-100">РЎРѕР·РґР°С‚СЊ СЂР°Р±РѕС‚РЅРёРєР°</div>
-                    <div className="mt-1 text-xs text-zinc-300">РЎРѕР·РґР°С‘С‚ СЂР°Р±РѕС‚РЅРёРєР° Рё РїРѕРєР°Р·С‹РІР°РµС‚ РІСЂРµРјРµРЅРЅС‹Р№ РїР°СЂРѕР»СЊ. Р›РѕРіРёРЅ РјРѕР¶РµС‚ Р±С‹С‚СЊ email РёР»Рё С‚РµР»РµС„РѕРЅ (+...).</div>
+                    <div className="text-sm font-semibold text-yellow-100">Создать работника</div>
+                    <div className="mt-1 text-xs text-zinc-300">Создаёт работника и показывает временный пароль. Логин может быть email или телефон (+...).</div>
                   </div>
 
                   <div className="flex flex-wrap items-end gap-2">
                     <label className="grid gap-1">
-                      <span className="text-[11px] text-zinc-300">Р›РѕРіРёРЅ (email РёР»Рё С‚РµР»РµС„РѕРЅ)</span>
+                      <span className="text-[11px] text-zinc-300">Логин (email или телефон)</span>
                       <input
                         value={inviteEmail}
                         onChange={(e) => setInviteEmail(e.target.value)}
                         type="text"
                         autoComplete="username"
                         className="w-[260px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
-                        placeholder="name@domain.com РёР»Рё +31612345678"
+                        placeholder="name@domain.com или +31612345678"
                       />
                     </label>
 
@@ -3217,7 +3217,7 @@ const [editOpen, setEditOpen] = useState(false)
                       disabled={busy || !inviteEmail.trim()}
                       className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
                     >
-                      РЎРѕР·РґР°С‚СЊ
+                      Создать
                     </button>
                   </div>
                 </div>
@@ -3256,30 +3256,30 @@ const [editOpen, setEditOpen] = useState(false)
                           <div className="min-w-[220px]">
                             <div className="text-base font-semibold text-yellow-100">
                               <button onClick={() => openWorkerCard(w.id)} className="hover:text-yellow-100">
-                                {w.full_name || 'Р‘РµР· РёРјРµРЅРё'}
+                                {w.full_name || 'Без имени'}
                               </button>{' '}
                             {isAdmin ? (
                               <span className="ml-2 rounded-xl border border-yellow-400/30 bg-yellow-400/10 px-2 py-1 text-[11px] text-yellow-100">
-                                Р°РґРјРёРЅ
+                                админ
                               </span>
                             ) : (
                               <span className="ml-2 rounded-xl border border-yellow-400/15 bg-black/30 px-2 py-1 text-[11px] text-zinc-200">
-                                СЂР°Р±РѕС‚РЅРёРє
+                                работник
                               </span>
                             )}
                             {w.active === false ? (
                               <span className="ml-2 rounded-xl border border-red-400/20 bg-red-500/10 px-2 py-1 text-[11px] text-red-100">
-                                РѕС‚РєР»СЋС‡С‘РЅ
+                                отключён
                               </span>
                             ) : null}
                             <span className="ml-2 rounded-xl border border-yellow-400/15 bg-black/30 px-2 py-1 text-[11px] text-zinc-200">
-                              С„РѕС‚Рѕ: {workerPhotoMeta[w.id]?.count ?? 'вЂ¦'}/5
+                              фото: {workerPhotoMeta[w.id]?.count ?? '…'}/5
                             </span>
                           </div>
 
-                          <div className="mt-3 text-xs text-zinc-300">РћР±СЉРµРєС‚С‹:</div>
+                          <div className="mt-3 text-xs text-zinc-300">Объекты:</div>
                           {sitesList.length === 0 ? (
-                            <div className="mt-1 text-xs text-zinc-500">вЂ”</div>
+                            <div className="mt-1 text-xs text-zinc-500">—</div>
                           ) : (
                             <div className="mt-2 flex flex-wrap gap-2">
                               {sitesList.map((s) => (
@@ -3290,7 +3290,7 @@ const [editOpen, setEditOpen] = useState(false)
                                     disabled={busy}
                                     className="rounded-xl border border-yellow-400/20 bg-black/30 px-2 py-1 text-[11px] text-yellow-100/80 transition hover:border-yellow-300/50 disabled:opacity-60"
                                   >
-                                    СЃРЅСЏС‚СЊ
+                                    снять
                                   </button>
                                 </div>
                               ))}
@@ -3307,7 +3307,7 @@ const [editOpen, setEditOpen] = useState(false)
                                 disabled={busy}
                                 className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
                               >
-                                РЎРґРµР»Р°С‚СЊ Р°РґРјРёРЅРѕРј
+                                Сделать админом
                               </button>
                             ) : (
                               <button
@@ -3315,7 +3315,7 @@ const [editOpen, setEditOpen] = useState(false)
                                 disabled={busy || isMe}
                                 className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 transition hover:border-yellow-300/40 disabled:opacity-60"
                               >
-                                РЎРґРµР»Р°С‚СЊ СЂР°Р±РѕС‚РЅРёРєРѕРј
+                                Сделать работником
                               </button>
                             )}
                           </div>
@@ -3332,7 +3332,7 @@ const [editOpen, setEditOpen] = useState(false)
                                     : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
                                 )}
                               >
-                                {w.active === false ? 'Р’РµСЂРЅСѓС‚СЊ РёР· Р°СЂС…РёРІР°' : 'РђСЂС…РёРІРёСЂРѕРІР°С‚СЊ'}
+                                {w.active === false ? 'Вернуть из архива' : 'Архивировать'}
                               </button>
 
                               <button
@@ -3340,7 +3340,7 @@ const [editOpen, setEditOpen] = useState(false)
                                 disabled={busy}
                                 className="rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-2 text-xs font-semibold text-red-100 transition hover:border-red-300/40 hover:bg-red-500/15 disabled:opacity-60"
                               >
-                                РЈРґР°Р»РёС‚СЊ
+                                Удалить
                               </button>
                             </div>
                           ) : null}
@@ -3348,13 +3348,13 @@ const [editOpen, setEditOpen] = useState(false)
                           {!isAdmin ? (
                             <div className="flex flex-wrap items-end gap-2">
                               <label className="grid gap-1">
-                                <span className="text-[11px] text-zinc-300">Р”РѕР±Р°РІРёС‚СЊ РѕР±СЉРµРєС‚</span>
+                                <span className="text-[11px] text-zinc-300">Добавить объект</span>
                                 <select
                                   value={pick}
                                   onChange={(e) => setWorkerPickSite((p) => ({ ...p, [w.id]: e.target.value }))}
                                   className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                                 >
-                                  <option value="">Р’С‹Р±РµСЂРё РѕР±СЉРµРєС‚вЂ¦</option>
+                                  <option value="">Выбери объект…</option>
                                   {activeSites.map((s) => (
                                     <option key={s.id} value={s.id}>
                                       {s.name || s.id}
@@ -3368,12 +3368,12 @@ const [editOpen, setEditOpen] = useState(false)
                                 disabled={busy || !pick}
                                 className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
                               >
-                                РќР°Р·РЅР°С‡РёС‚СЊ
+                                Назначить
                               </button>
                             </div>
                           ) : (
                             <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-xs text-zinc-300">
-                              РђРґРјРёРЅР° РЅРµ РЅР°Р·РЅР°С‡Р°РµРј
+                              Админа не назначаем
                             </div>
                           )}
                         </div>
@@ -3384,16 +3384,16 @@ const [editOpen, setEditOpen] = useState(false)
             </div>
           ) : null}
 
-          {/* РЎРњР•РќР« */}
+          {/* СМЕНЫ */}
           {tab === 'jobs' ? (
             <div className="mt-6 grid gap-4">
               <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
-                <div className="text-sm font-semibold text-yellow-100">РЎРѕР·РґР°С‚СЊ СЃРјРµРЅСѓ</div>
-                <div className="mt-1 text-xs text-zinc-300">РћР±СЉРµРєС‚ + РґР°С‚Р° + РІСЂРµРјСЏ + РЅРµСЃРєРѕР»СЊРєРѕ СЂР°Р±РѕС‚РЅРёРєРѕРІ.</div>
+                <div className="text-sm font-semibold text-yellow-100">Создать смену</div>
+                <div className="mt-1 text-xs text-zinc-300">Объект + дата + время + несколько работников.</div>
 
                 <div className="mt-4 grid gap-3 lg:grid-cols-[1.3fr_1.7fr_0.8fr_0.7fr_0.7fr_auto]">
                   <label className="grid gap-1">
-                    <span className="text-[11px] text-zinc-300">РћР±СЉРµРєС‚</span>
+                    <span className="text-[11px] text-zinc-300">Объект</span>
                     <select
                       value={newSiteId}
                       onChange={(e) => {
@@ -3403,7 +3403,7 @@ const [editOpen, setEditOpen] = useState(false)
                       }}
                       className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
                     >
-                      <option value="">Р’С‹Р±РµСЂРё РѕР±СЉРµРєС‚вЂ¦</option>
+                      <option value="">Выбери объект…</option>
                       {activeSites.map((s) => (
                         <option key={s.id} value={s.id}>
                           {s.name || s.id}
@@ -3413,12 +3413,12 @@ const [editOpen, setEditOpen] = useState(false)
                   </label>
 
                   <label className="grid gap-1">
-                    <span className="text-[11px] text-zinc-300">Р Р°Р±РѕС‚РЅРёРєРё (РјРѕР¶РЅРѕ РЅРµСЃРєРѕР»СЊРєРѕ)</span>
+                    <span className="text-[11px] text-zinc-300">Работники (можно несколько)</span>
                     <MultiWorkerPicker workers={workersForPicker} value={newWorkers} onChange={setNewWorkers} disabled={!newSiteId} />
                   </label>
 
                   <label className="grid gap-1">
-                    <span className="text-[11px] text-zinc-300">Р”Р°С‚Р°</span>
+                    <span className="text-[11px] text-zinc-300">Дата</span>
                     <input
                       type="date"
                       value={newDate}
@@ -3428,7 +3428,7 @@ const [editOpen, setEditOpen] = useState(false)
                   </label>
 
                   <label className="grid gap-1">
-                    <span className="text-[11px] text-zinc-300">Р’СЂРµРјСЏ</span>
+                    <span className="text-[11px] text-zinc-300">Время</span>
                     <input
                       type="time"
                       value={newTime}
@@ -3438,7 +3438,7 @@ const [editOpen, setEditOpen] = useState(false)
                   </label>
 
                   <label className="grid gap-1">
-                    <span className="text-[11px] text-zinc-300">РљРѕРЅРµС†</span>
+                    <span className="text-[11px] text-zinc-300">Конец</span>
                     <input
                       type="time"
                       value={newTimeTo}
@@ -3453,7 +3453,7 @@ const [editOpen, setEditOpen] = useState(false)
                     disabled={busy || !newSiteId || newWorkers.length === 0}
                     className="mt-5 rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
                   >
-                    РЎРѕР·РґР°С‚СЊ СЃРјРµРЅСѓ
+                    Создать смену
                   </button>
                 </div>
 
@@ -3465,7 +3465,7 @@ const [editOpen, setEditOpen] = useState(false)
                       jobsView === 'table' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
                     )}
                   >
-                    Р Р°СЃРїРёСЃР°РЅРёРµ
+                    Расписание
                   </button>
                   <button
                     onClick={() => setJobsView('board')}
@@ -3474,7 +3474,7 @@ const [editOpen, setEditOpen] = useState(false)
                       jobsView === 'board' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
                     )}
                   >
-                    Р”РѕСЃРєР°
+                    Доска
                   </button>
 
                   <div className="ml-auto flex flex-wrap items-center gap-2">
@@ -3485,7 +3485,7 @@ const [editOpen, setEditOpen] = useState(false)
                       }}
                       className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/40"
                     >
-                      РЎРµРіРѕРґРЅСЏ
+                      Сегодня
                     </button>
                     <button
                       onClick={() => {
@@ -3496,7 +3496,7 @@ const [editOpen, setEditOpen] = useState(false)
                       }}
                       className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/40"
                     >
-                      РќРµРґРµР»СЏ
+                      Неделя
                     </button>
                     <button
                       onClick={() => {
@@ -3507,7 +3507,7 @@ const [editOpen, setEditOpen] = useState(false)
                       }}
                       className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/40"
                     >
-                      РњРµСЃСЏС†
+                      Месяц
                     </button>
                   </div>
                 </div>
@@ -3515,11 +3515,11 @@ const [editOpen, setEditOpen] = useState(false)
 
               <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
                 <div className="flex flex-wrap items-end justify-between gap-3">
-                  <div className="text-sm font-semibold text-yellow-100">Р¤РёР»СЊС‚СЂС‹</div>
+                  <div className="text-sm font-semibold text-yellow-100">Фильтры</div>
 
                   <div className="flex flex-wrap items-end gap-2">
                     <label className="grid gap-1">
-                      <span className="text-[11px] text-zinc-300">РЎ</span>
+                      <span className="text-[11px] text-zinc-300">С</span>
                       <input
                         type="date"
                         value={dateFrom}
@@ -3528,7 +3528,7 @@ const [editOpen, setEditOpen] = useState(false)
                       />
                     </label>
                     <label className="grid gap-1">
-                      <span className="text-[11px] text-zinc-300">РџРѕ</span>
+                      <span className="text-[11px] text-zinc-300">По</span>
                       <input
                         type="date"
                         value={dateTo}
@@ -3538,13 +3538,13 @@ const [editOpen, setEditOpen] = useState(false)
                     </label>
 
                     <label className="grid gap-1">
-                      <span className="text-[11px] text-zinc-300">РћР±СЉРµРєС‚</span>
+                      <span className="text-[11px] text-zinc-300">Объект</span>
                       <select
                         value={filterSite}
                         onChange={(e) => setFilterSite(e.target.value)}
                         className="w-[220px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                       >
-                        <option value="">Р’СЃРµ</option>
+                        <option value="">Все</option>
                         {sites
                           .slice()
                           .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
@@ -3557,19 +3557,19 @@ const [editOpen, setEditOpen] = useState(false)
                     </label>
 
                     <label className="grid gap-1">
-                      <span className="text-[11px] text-zinc-300">Р Р°Р±РѕС‚РЅРёРє</span>
+                      <span className="text-[11px] text-zinc-300">Работник</span>
                       <select
                         value={filterWorker}
                         onChange={(e) => setFilterWorker(e.target.value)}
                         className="w-[220px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                       >
-                        <option value="">Р’СЃРµ</option>
+                        <option value="">Все</option>
                         {workers
                           .slice()
                           .sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''))
                           .map((w) => (
                             <option key={w.id} value={w.id}>
-                              {w.full_name || 'Р‘РµР· РёРјРµРЅРё'}
+                              {w.full_name || 'Без имени'}
                             </option>
                           ))}
                       </select>
@@ -3580,16 +3580,16 @@ const [editOpen, setEditOpen] = useState(false)
                 {jobsView === 'board' ? (
                   <div className="mt-5 grid gap-3 lg:grid-cols-4">
                     {[
-                      { key: 'planned', title: 'Р—Р°РїР»Р°РЅРёСЂРѕРІР°РЅРѕ', items: planned },
-                      { key: 'in_progress', title: 'Р’ РїСЂРѕС†РµСЃСЃРµ', items: inProgress },
-                      { key: 'done', title: 'Р—Р°РІРµСЂС€РµРЅРѕ', items: done },
-                      { key: 'cancelled', title: 'РћС‚РјРµРЅРµРЅРѕ', items: cancelled },
+                      { key: 'planned', title: 'Запланировано', items: planned },
+                      { key: 'in_progress', title: 'В процессе', items: inProgress },
+                      { key: 'done', title: 'Завершено', items: done },
+                      { key: 'cancelled', title: 'Отменено', items: cancelled },
                     ].map((col) => (
                       <div key={col.key} className="rounded-3xl border border-yellow-400/12 bg-black/20 p-4">
                         <div className="text-xs font-semibold text-zinc-200">{col.title}</div>
                         <div className="mt-3 grid gap-2">
                           {col.items.map((j) => jobCard(j, false))}
-                          {col.items.length === 0 ? <div className="text-xs text-zinc-500">вЂ”</div> : null}
+                          {col.items.length === 0 ? <div className="text-xs text-zinc-500">—</div> : null}
                         </div>
                       </div>
                     ))}
@@ -3599,13 +3599,13 @@ const [editOpen, setEditOpen] = useState(false)
                     <table className="min-w-[920px] w-full text-left text-sm">
                       <thead className="bg-black/30 text-xs text-zinc-300">
                         <tr>
-                          <th className="px-4 py-3">Р”Р°С‚Р°</th>
-                          <th className="px-4 py-3">Р’СЂРµРјСЏ</th>
-                          <th className="px-4 py-3">РћР±СЉРµРєС‚</th>
-                          <th className="px-4 py-3">Р Р°Р±РѕС‚РЅРёРє</th>
-                          <th className="px-4 py-3">РЎС‚Р°С‚СѓСЃ</th>
-                          <th className="px-4 py-3">РќР°С‡Р°Р»</th>
-                          <th className="px-4 py-3">Р—Р°РєРѕРЅС‡РёР»</th>
+                          <th className="px-4 py-3">Дата</th>
+                          <th className="px-4 py-3">Время</th>
+                          <th className="px-4 py-3">Объект</th>
+                          <th className="px-4 py-3">Работник</th>
+                          <th className="px-4 py-3">Статус</th>
+                          <th className="px-4 py-3">Начал</th>
+                          <th className="px-4 py-3">Закончил</th>
                           <th className="px-4 py-3"></th>
                         </tr>
                       </thead>
@@ -3643,14 +3643,14 @@ const [editOpen, setEditOpen] = useState(false)
                                           'relative h-7 w-10 overflow-hidden rounded-xl border border-yellow-400/15 bg-black/30',
                                           canNav ? 'hover:border-yellow-300/40' : ''
                                         )}
-                                        title={canNav ? 'РћС‚РєСЂС‹С‚СЊ РЅР°РІРёРіР°С†РёСЋ' : 'Р¤РѕС‚Рѕ РѕР±СЉРµРєС‚Р°'}
+                                        title={canNav ? 'Открыть навигацию' : 'Фото объекта'}
                                       >
                                         {/* eslint-disable-next-line @next/next/no-img-element */}
                                         <img src={url} alt="" className="h-full w-full object-cover" loading="lazy" />
                                       </button>
                                     )
                                   })()}
-                                  <span>{j.site_name || 'вЂ”'}</span>
+                                  <span>{j.site_name || '—'}</span>
                                 </div>
                               </td>
                               <td className="px-4 py-3">
@@ -3672,10 +3672,10 @@ const [editOpen, setEditOpen] = useState(false)
                                         {initials(j.worker_name)}
                                       </span>
                                     )}
-                                    <span className="truncate">{j.worker_name || 'вЂ”'}</span>
+                                    <span className="truncate">{j.worker_name || '—'}</span>
                                   </button>
                                 ) : (
-                                  'вЂ”'
+                                  '—'
                                 )}
                               </td>
                               <td className="px-4 py-3">{statusRu(String(j.status || ''))}</td>
@@ -3686,7 +3686,7 @@ const [editOpen, setEditOpen] = useState(false)
                                   onClick={() => openEditForJob(j)}
                                   className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40"
                                 >
-                                  РїСЂР°РІРёС‚СЊ
+                                  править
                                 </button>
                               </td>
                             </tr>
@@ -3694,7 +3694,7 @@ const [editOpen, setEditOpen] = useState(false)
                         {scheduleFiltered.length === 0 ? (
                           <tr>
                             <td colSpan={8} className="px-4 py-6 text-center text-xs text-zinc-500">
-                              РќРµС‚ СЃРјРµРЅ
+                              Нет смен
                             </td>
                           </tr>
                         ) : null}
@@ -3706,7 +3706,7 @@ const [editOpen, setEditOpen] = useState(false)
             </div>
           ) : null}
 
-          {/* Р“Р РђР¤РРљ */}
+          {/* ГРАФИК */}
           {tab === 'plan' ? (
             <div className="mt-6">
               <PlanToolbar />
@@ -3716,24 +3716,24 @@ const [editOpen, setEditOpen] = useState(false)
               {planView === 'month' ? <PlanMonthGrid /> : null}
 
               <div className="mt-4 rounded-3xl border border-yellow-400/15 bg-black/20 p-4 text-xs text-zinc-300">
-                РџРѕРґСЃРєР°Р·РєР°: РїРµСЂРµС‚Р°СЃРєРёРІР°Р№ СЃРјРµРЅС‹ РјС‹С€РєРѕР№. РљР»РёРє РїРѕ СЃРјРµРЅРµ вЂ” вЂњРїСЂР°РІРёС‚СЊвЂќ. вЂњРџРµСЂРµРЅРµСЃС‚РёвЂќ вЂ” Р±С‹СЃС‚СЂС‹Р№ РїРµСЂРµРІРѕРґ РЅР° РґСЂСѓРіРѕРіРѕ СЂР°Р±РѕС‚РЅРёРєР°. вЂњРћС‚РјРµРЅРёС‚СЊвЂќ вЂ” СѓР±СЂР°С‚СЊ РёР· РіСЂР°С„РёРєР°.
+                Подсказка: перетаскивай смены мышкой. Клик по смене — “править”. “Перенести” — быстрый перевод на другого работника. “Отменить” — убрать из графика.
               </div>
             </div>
           ) : null}
         </div>
       </div>
 
-      {/* РњРћР”РђР›РљРђ: РџР РђР’РљРђ РЎРњР•РќР« */}
-      <Modal open={editOpen} title="РџСЂР°РІРєР° СЃРјРµРЅС‹" onClose={() => setEditOpen(false)}>
+      {/* МОДАЛКА: ПРАВКА СМЕНЫ */}
+      <Modal open={editOpen} title="Правка смены" onClose={() => setEditOpen(false)}>
         <div className="grid gap-3">
           <div className="grid gap-1">
-            <span className="text-[11px] text-zinc-300">РћР±СЉРµРєС‚</span>
+            <span className="text-[11px] text-zinc-300">Объект</span>
             <select
               value={editSiteId}
               onChange={(e) => setEditSiteId(e.target.value)}
               className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
             >
-              <option value="">вЂ”</option>
+              <option value="">—</option>
               {activeSites.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name || s.id}
@@ -3743,16 +3743,16 @@ const [editOpen, setEditOpen] = useState(false)
           </div>
 
           <div className="grid gap-1">
-            <span className="text-[11px] text-zinc-300">Р Р°Р±РѕС‚РЅРёРє</span>
+            <span className="text-[11px] text-zinc-300">Работник</span>
             <select
               value={editWorkerId}
               onChange={(e) => setEditWorkerId(e.target.value)}
               className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
             >
-              <option value="">вЂ”</option>
+              <option value="">—</option>
               {workersForSelect.map((w) => (
                 <option key={w.id} value={w.id}>
-                  {w.full_name || 'Р Р°Р±РѕС‚РЅРёРє'}
+                  {w.full_name || 'Работник'}
                 </option>
               ))}
             </select>
@@ -3760,7 +3760,7 @@ const [editOpen, setEditOpen] = useState(false)
 
           <div className="grid gap-3 sm:grid-cols-3">
             <label className="grid gap-1">
-              <span className="text-[11px] text-zinc-300">Р”Р°С‚Р°</span>
+              <span className="text-[11px] text-zinc-300">Дата</span>
               <input
                 type="date"
                 value={editDate}
@@ -3769,7 +3769,7 @@ const [editOpen, setEditOpen] = useState(false)
               />
             </label>
             <label className="grid gap-1">
-              <span className="text-[11px] text-zinc-300">РќР°С‡Р°Р»Рѕ</span>
+              <span className="text-[11px] text-zinc-300">Начало</span>
               <input
                 type="time"
                 value={editTime}
@@ -3778,7 +3778,7 @@ const [editOpen, setEditOpen] = useState(false)
               />
             </label>
             <label className="grid gap-1">
-              <span className="text-[11px] text-zinc-300">РљРѕРЅРµС†</span>
+              <span className="text-[11px] text-zinc-300">Конец</span>
               <input
                 type="time"
                 value={editTimeTo}
@@ -3789,16 +3789,16 @@ const [editOpen, setEditOpen] = useState(false)
           </div>
 
           <div className="grid gap-1">
-            <span className="text-[11px] text-zinc-300">РЎС‚Р°С‚СѓСЃ</span>
+            <span className="text-[11px] text-zinc-300">Статус</span>
             <select
               value={String(editStatus)}
               onChange={(e) => setEditStatus(e.target.value)}
               className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
             >
-              <option value="planned">Р—Р°РїР»Р°РЅРёСЂРѕРІР°РЅРѕ</option>
-              <option value="in_progress">Р’ РїСЂРѕС†РµСЃСЃРµ</option>
-              <option value="done">Р—Р°РІРµСЂС€РµРЅРѕ</option>
-              <option value="cancelled">РћС‚РјРµРЅРµРЅРѕ</option>
+              <option value="planned">Запланировано</option>
+              <option value="in_progress">В процессе</option>
+              <option value="done">Завершено</option>
+              <option value="cancelled">Отменено</option>
             </select>
           </div>
 
@@ -3811,7 +3811,7 @@ const [editOpen, setEditOpen] = useState(false)
               }}
               className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/40"
             >
-              РћС‚РјРµРЅРёС‚СЊ СЃРјРµРЅСѓ
+              Отменить смену
             </button>
 
             <button
@@ -3819,39 +3819,39 @@ const [editOpen, setEditOpen] = useState(false)
               disabled={busy || !editJobId}
               className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-2 text-xs font-semibold text-yellow-100 hover:border-yellow-200/70 disabled:opacity-60"
             >
-              РЎРѕС…СЂР°РЅРёС‚СЊ
+              Сохранить
             </button>
           </div>
         </div>
       </Modal>
 
-      {/* РњРћР”РђР›РљРђ: РљРђР РўРћР§РљРђ Р РђР‘РћРўРќРРљРђ */}
-      <Modal open={workerCardOpen} title="РљР°СЂС‚РѕС‡РєР° СЂР°Р±РѕС‚РЅРёРєР°" onClose={() => setWorkerCardOpen(false)}>
+      {/* МОДАЛКА: КАРТОЧКА РАБОТНИКА */}
+      <Modal open={workerCardOpen} title="Карточка работника" onClose={() => setWorkerCardOpen(false)}>
         <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-4">
           {(() => {
             const w = workersById.get(workerCardId)
             const archived = w?.active === false
-            const role = w?.role === 'admin' ? 'РђРґРјРёРЅ' : 'Р Р°Р±РѕС‚РЅРёРє'
+            const role = w?.role === 'admin' ? 'Админ' : 'Работник'
 
             return (
               <div className="grid gap-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <div className="text-sm font-semibold text-yellow-100">{w?.full_name || 'Р Р°Р±РѕС‚РЅРёРє'}</div>
+                    <div className="text-sm font-semibold text-yellow-100">{w?.full_name || 'Работник'}</div>
                     <div className="mt-1 text-xs text-zinc-300">
                       {role}
-                      {archived ? ' вЂў РІ Р°СЂС…РёРІРµ' : ' вЂў Р°РєС‚РёРІРµРЅ'}
-                      <span className="text-zinc-500"> вЂў </span>
+                      {archived ? ' • в архиве' : ' • активен'}
+                      <span className="text-zinc-500"> • </span>
                       <span className="text-zinc-400">ID:</span>{' '}
                       <span className="font-mono text-[11px] text-zinc-400">{workerCardId}</span>
                     </div>
-                    <div className="mt-1 text-xs text-zinc-300">Р”РёР°РїР°Р·РѕРЅ: {fmtD(dateFrom)} вЂ” {fmtD(dateTo)}</div>
+                    <div className="mt-1 text-xs text-zinc-300">Диапазон: {fmtD(dateFrom)} — {fmtD(dateTo)}</div>
                   </div>
                 </div>
 
                 <div className="grid gap-2">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-sm font-semibold text-yellow-100">Р”Р°РЅРЅС‹Рµ Рё Р·Р°РјРµС‚РєРё</div>
+                    <div className="text-sm font-semibold text-yellow-100">Данные и заметки</div>
 
                     <button
                       onClick={() => {
@@ -3864,46 +3864,46 @@ const [editOpen, setEditOpen] = useState(false)
                         workerProfileSaving ? 'opacity-70' : ''
                       )}
                     >
-                      {workerProfileSaving ? 'РЎРѕС…СЂР°РЅРµРЅРёРµвЂ¦' : 'РЎРѕС…СЂР°РЅРёС‚СЊ'}
+                      {workerProfileSaving ? 'Сохранение…' : 'Сохранить'}
                     </button>
                   </div>
 
                   {workerProfileLoading ? (
-                    <div className="rounded-2xl border border-yellow-400/10 bg-black/20 px-3 py-3 text-xs text-yellow-100/55">Р—Р°РіСЂСѓР·РєР° РґР°РЅРЅС‹С…вЂ¦</div>
+                    <div className="rounded-2xl border border-yellow-400/10 bg-black/20 px-3 py-3 text-xs text-yellow-100/55">Загрузка данных…</div>
                   ) : (
                     <div className="grid gap-2 rounded-3xl border border-yellow-400/10 bg-black/20 p-3">
                       <div className="grid gap-2 md:grid-cols-2">
                         <div className="grid gap-1">
-                          <div className="text-[11px] text-zinc-400">Р¤РРћ</div>
+                          <div className="text-[11px] text-zinc-400">ФИО</div>
                           <input
                             value={workerCardFullName}
                             onChange={(e) => setWorkerCardFullName(e.target.value)}
-                            placeholder="РРјСЏ СЂР°Р±РѕС‚РЅРёРєР°"
+                            placeholder="Имя работника"
                             className="w-full rounded-xl border border-yellow-400/10 bg-black/30 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-yellow-300/40"
                           />
                         </div>
 
                         <div className="grid gap-1">
-                          <div className="text-[11px] text-zinc-400">РљРѕРЅС‚Р°РєС‚С‹</div>
+                          <div className="text-[11px] text-zinc-400">Контакты</div>
                           <div className="rounded-xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-xs text-zinc-200">
                             <div>
                               <span className="text-zinc-500">Email:</span>{' '}
-                              <span className="text-zinc-200">{workerProfileById?.[workerCardId]?.email || 'вЂ”'}</span>
+                              <span className="text-zinc-200">{workerProfileById?.[workerCardId]?.email || '—'}</span>
                             </div>
                             <div className="mt-1">
-                              <span className="text-zinc-500">РўРµР»:</span>{' '}
-                              <span className="text-zinc-200">{workerProfileById?.[workerCardId]?.phone || 'вЂ”'}</span>
+                              <span className="text-zinc-500">Тел:</span>{' '}
+                              <span className="text-zinc-200">{workerProfileById?.[workerCardId]?.phone || '—'}</span>
                             </div>
                           </div>
                         </div>
                       </div>
 
                       <div className="grid gap-1">
-                        <div className="text-[11px] text-zinc-400">Р—Р°РјРµС‚РєРё</div>
+                        <div className="text-[11px] text-zinc-400">Заметки</div>
                         <textarea
                           value={workerCardNotes}
                           onChange={(e) => setWorkerCardNotes(e.target.value)}
-                          placeholder="Р—Р°РјРµС‚РєРё: РіСЂР°С„РёРє, РєР»СЋС‡Рё, РёРЅСЃС‚СЂСѓРєС†РёРё, РЅСЋР°РЅСЃС‹вЂ¦"
+                          placeholder="Заметки: график, ключи, инструкции, нюансы…"
                           rows={4}
                           className="w-full resize-none rounded-2xl border border-yellow-400/10 bg-black/30 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-yellow-300/40"
                         />
@@ -3913,10 +3913,10 @@ const [editOpen, setEditOpen] = useState(false)
                 </div>
 
                 <div className="grid gap-2">
-                  <div className="text-sm font-semibold text-yellow-100">Р¤РѕС‚Рѕ (РґРѕ 5)</div>
+                  <div className="text-sm font-semibold text-yellow-100">Фото (до 5)</div>
 
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-xs text-yellow-100/55">РЎРµР№С‡Р°СЃ: {workerCardPhotos.length}/5</div>
+                    <div className="text-xs text-yellow-100/55">Сейчас: {workerCardPhotos.length}/5</div>
 
                     <div className="flex flex-wrap gap-2">
                       <label
@@ -3925,7 +3925,7 @@ const [editOpen, setEditOpen] = useState(false)
                           workerPhotoBusy || !workerCardId || workerCardPhotos.length >= 5 ? 'opacity-70' : ''
                         )}
                       >
-                        Р—Р°РіСЂСѓР·РёС‚СЊ С„РѕС‚Рѕ
+                        Загрузить фото
                         <input
                           type="file"
                           accept="image/*"
@@ -3947,7 +3947,7 @@ const [editOpen, setEditOpen] = useState(false)
                           workerPhotoBusy || !workerCardId || workerCardPhotos.length >= 5 ? 'opacity-70' : ''
                         )}
                       >
-                        РЎРґРµР»Р°С‚СЊ С„РѕС‚Рѕ
+                        Сделать фото
                         <input
                           type="file"
                           accept="image/*"
@@ -3966,7 +3966,7 @@ const [editOpen, setEditOpen] = useState(false)
                   </div>
 
                   {workerCardPhotos.length === 0 ? (
-                    <div className="rounded-2xl border border-yellow-400/10 bg-black/20 px-3 py-3 text-xs text-yellow-100/55">Р¤РѕС‚Рѕ РЅРµС‚</div>
+                    <div className="rounded-2xl border border-yellow-400/10 bg-black/20 px-3 py-3 text-xs text-yellow-100/55">Фото нет</div>
                   ) : (
                     <div className="grid grid-cols-2 gap-2">
                       {workerCardPhotos.map((p) => (
@@ -3986,7 +3986,7 @@ const [editOpen, setEditOpen] = useState(false)
                                 workerPhotoBusy ? 'opacity-70' : 'hover:border-red-400/45'
                               )}
                             >
-                              РЈРґР°Р»РёС‚СЊ
+                              Удалить
                             </button>
                           </div>
 
@@ -4005,7 +4005,7 @@ const [editOpen, setEditOpen] = useState(false)
                                 workerPhotoBusy ? 'opacity-70' : ''
                               )}
                             >
-                              {workerCardAvatarPath === p.path ? 'РђРІР°С‚Р°СЂ' : 'РЎРґРµР»Р°С‚СЊ Р°РІР°С‚Р°СЂРѕРј'}
+                              {workerCardAvatarPath === p.path ? 'Аватар' : 'Сделать аватаром'}
                             </button>
                           </div>
                         </div>
@@ -4013,20 +4013,20 @@ const [editOpen, setEditOpen] = useState(false)
                     </div>
                   )}
 
-                  {workerPhotoBusy ? <div className="text-xs text-yellow-100/45">РћР±СЂР°Р±РѕС‚РєР°вЂ¦</div> : null}
+                  {workerPhotoBusy ? <div className="text-xs text-yellow-100/45">Обработка…</div> : null}
                 </div>
 
                 <div className="mt-1 grid gap-2">
-                  <div className="text-sm font-semibold text-yellow-100">РЎРјРµРЅС‹</div>
+                  <div className="text-sm font-semibold text-yellow-100">Смены</div>
 
                   {workerCardItems.length === 0 ? (
-                    <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-3 text-xs text-zinc-500">РЎРјРµРЅ РЅРµС‚</div>
+                    <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-3 text-xs text-zinc-500">Смен нет</div>
                   ) : null}
 
                   {workerCardItems.map((j) => (
                     <div key={j.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-yellow-400/10 bg-black/30 px-3 py-2">
                       <div className="text-xs text-zinc-200">
-                        <span className="text-zinc-100">{fmtD(j.job_date)}</span> вЂў <span className="text-zinc-100">{timeRangeHHMM(j.scheduled_time, j.scheduled_end_time)}</span> вЂў{' '}
+                        <span className="text-zinc-100">{fmtD(j.job_date)}</span> • <span className="text-zinc-100">{timeRangeHHMM(j.scheduled_time, j.scheduled_end_time)}</span> •{' '}
                         <span className="inline-flex items-center gap-2 text-zinc-100">
                           {(() => {
                             const ss = j.site_id ? sitesById.get(j.site_id) : null
@@ -4052,23 +4052,23 @@ const [editOpen, setEditOpen] = useState(false)
                                   'relative h-5 w-7 overflow-hidden rounded-lg border border-yellow-400/15 bg-black/30',
                                   canNav ? 'hover:border-yellow-300/40' : ''
                                 )}
-                                title={canNav ? 'РћС‚РєСЂС‹С‚СЊ РЅР°РІРёРіР°С†РёСЋ' : 'Р¤РѕС‚Рѕ РѕР±СЉРµРєС‚Р°'}
+                                title={canNav ? 'Открыть навигацию' : 'Фото объекта'}
                               >
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img src={url} alt="" className="h-full w-full object-cover" loading="lazy" />
                               </button>
                             )
                           })()}
-                          <span>{j.site_name || 'вЂ”'}</span>
-                        </span> вЂў <span className="text-zinc-500">{statusRu(String(j.status || ''))}</span>
-                        <div className="mt-1 text-[11px] text-zinc-400">РќР°С‡Р°Р»: {fmtDT(j.started_at)} вЂў Р—Р°РєРѕРЅС‡РёР»: {fmtDT(j.stopped_at)}</div>
+                          <span>{j.site_name || '—'}</span>
+                        </span> • <span className="text-zinc-500">{statusRu(String(j.status || ''))}</span>
+                        <div className="mt-1 text-[11px] text-zinc-400">Начал: {fmtDT(j.started_at)} • Закончил: {fmtDT(j.stopped_at)}</div>
                       </div>
                       <button
                         onClick={() => openEditForJob(j)}
                         disabled={busy}
                         className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40 disabled:opacity-60"
                       >
-                        РџСЂР°РІРёС‚СЊ
+                        Править
                       </button>
                     </div>
                   ))}
@@ -4079,20 +4079,20 @@ const [editOpen, setEditOpen] = useState(false)
         </div>
       </Modal>
 
-      {/* РњРћР”РђР›РљРђ: РџР•Р Р•РќРћРЎ РЎРњР•РќР« РќРђ Р”Р РЈР“РћР“Рћ Р РђР‘РћРўРќРРљРђ */}
-      <Modal open={moveJobOpen} title="РџРµСЂРµРЅРµСЃС‚Рё СЃРјРµРЅСѓ" onClose={() => setMoveJobOpen(false)}>
+      {/* МОДАЛКА: ПЕРЕНОС СМЕНЫ НА ДРУГОГО РАБОТНИКА */}
+      <Modal open={moveJobOpen} title="Перенести смену" onClose={() => setMoveJobOpen(false)}>
         <div className="grid gap-3">
           <div className="grid gap-1">
-            <span className="text-[11px] text-zinc-300">РљРѕРјСѓ РїРµСЂРµРЅРµСЃС‚Рё</span>
+            <span className="text-[11px] text-zinc-300">Кому перенести</span>
             <select
               value={moveJobTargetWorker}
               onChange={(e) => setMoveJobTargetWorker(e.target.value)}
               className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
             >
-              <option value="">Р’С‹Р±РµСЂРё СЂР°Р±РѕС‚РЅРёРєР°вЂ¦</option>
+              <option value="">Выбери работника…</option>
               {workersForSelect.map((w) => (
                 <option key={w.id} value={w.id}>
-                  {w.full_name || 'Р Р°Р±РѕС‚РЅРёРє'}
+                  {w.full_name || 'Работник'}
                 </option>
               ))}
             </select>
@@ -4107,16 +4107,16 @@ const [editOpen, setEditOpen] = useState(false)
             disabled={busy || !moveJobId || !moveJobTargetWorker}
             className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-yellow-100 hover:border-yellow-200/70 disabled:opacity-60"
           >
-            РџРµСЂРµРЅРµСЃС‚Рё
+            Перенести
           </button>
         </div>
       </Modal>
 
-      {/* РњРћР”РђР›РљРђ: РџР•Р Р•РќРћРЎ Р”РќРЇ */}
-      <Modal open={moveDayOpen} title="РџРµСЂРµРЅРµСЃС‚Рё РґРµРЅСЊ" onClose={() => setMoveDayOpen(false)}>
+      {/* МОДАЛКА: ПЕРЕНОС ДНЯ */}
+      <Modal open={moveDayOpen} title="Перенести день" onClose={() => setMoveDayOpen(false)}>
         <div className="grid gap-3">
           <div className="grid gap-1">
-            <span className="text-[11px] text-zinc-300">Р”Р°С‚Р°</span>
+            <span className="text-[11px] text-zinc-300">Дата</span>
             <input
               type="date"
               value={moveDayDate}
@@ -4127,32 +4127,32 @@ const [editOpen, setEditOpen] = useState(false)
 
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="grid gap-1">
-              <span className="text-[11px] text-zinc-300">РЎ РєРѕРіРѕ</span>
+              <span className="text-[11px] text-zinc-300">С кого</span>
               <select
                 value={moveDayFromWorker}
                 onChange={(e) => setMoveDayFromWorker(e.target.value)}
                 className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
               >
-                <option value="">Р’С‹Р±РµСЂРё СЂР°Р±РѕС‚РЅРёРєР°вЂ¦</option>
+                <option value="">Выбери работника…</option>
                 {workersForSelect.map((w) => (
                   <option key={w.id} value={w.id}>
-                    {w.full_name || 'Р Р°Р±РѕС‚РЅРёРє'}
+                    {w.full_name || 'Работник'}
                   </option>
                 ))}
               </select>
             </label>
 
             <label className="grid gap-1">
-              <span className="text-[11px] text-zinc-300">РќР° РєРѕРіРѕ</span>
+              <span className="text-[11px] text-zinc-300">На кого</span>
               <select
                 value={moveDayToWorker}
                 onChange={(e) => setMoveDayToWorker(e.target.value)}
                 className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
               >
-                <option value="">Р’С‹Р±РµСЂРё СЂР°Р±РѕС‚РЅРёРєР°вЂ¦</option>
+                <option value="">Выбери работника…</option>
                 {workersForSelect.map((w) => (
                   <option key={w.id} value={w.id}>
-                    {w.full_name || 'Р Р°Р±РѕС‚РЅРёРє'}
+                    {w.full_name || 'Работник'}
                   </option>
                 ))}
               </select>
@@ -4166,7 +4166,7 @@ const [editOpen, setEditOpen] = useState(false)
               onChange={(e) => setMoveDayOnlyPlanned(e.target.checked)}
               className="h-4 w-4 accent-yellow-400"
             />
-            РџРµСЂРµРЅРѕСЃРёС‚СЊ С‚РѕР»СЊРєРѕ вЂњР—Р°РїР»Р°РЅРёСЂРѕРІР°РЅРѕвЂќ
+            Переносить только “Запланировано”
           </label>
 
           <button
@@ -4174,16 +4174,16 @@ const [editOpen, setEditOpen] = useState(false)
             disabled={busy || !moveDayFromWorker || !moveDayToWorker || !moveDayDate}
             className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-yellow-100 hover:border-yellow-200/70 disabled:opacity-60"
           >
-            РџРµСЂРµРЅРµСЃС‚Рё РґРµРЅСЊ
+            Перенести день
           </button>
         </div>
       </Modal>
 
-      {/* РњРћР”РђР›РљРђ: РћРўРњР•РќРђ */}
-      <Modal open={cancelOpen} title="РћС‚РјРµРЅР° СЃРјРµРЅС‹" onClose={() => setCancelOpen(false)}>
+      {/* МОДАЛКА: ОТМЕНА */}
+      <Modal open={cancelOpen} title="Отмена смены" onClose={() => setCancelOpen(false)}>
         <div className="grid gap-3">
           <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-4 py-3 text-sm text-zinc-200">
-            Р­С‚Рѕ СѓР±РµСЂС‘С‚ СЃРјРµРЅСѓ РёР· СЂР°Р±РѕС‚С‹ (СЃС‚Р°С‚СѓСЃ вЂњРћС‚РјРµРЅРµРЅРѕвЂќ). РћС‚С‡С‘С‚С‹ РЅРµ Р»РѕРјР°РµРј.
+            Это уберёт смену из работы (статус “Отменено”). Отчёты не ломаем.
           </div>
 
           <button
@@ -4191,13 +4191,14 @@ const [editOpen, setEditOpen] = useState(false)
             disabled={busy || !cancelJobId}
             className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-yellow-100 hover:border-yellow-200/70 disabled:opacity-60"
           >
-            РћС‚РјРµРЅРёС‚СЊ
+            Отменить
           </button>
         </div>
       </Modal>
     </main>
   )
 }
+
 
 
 

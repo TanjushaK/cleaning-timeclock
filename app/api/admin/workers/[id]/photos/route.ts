@@ -123,10 +123,10 @@ function contentTypeFor(ext: string): string {
 }
 
 function validateImageFile(file: IncomingFile) {
-  if (file.size <= 0) throw new ApiError(400, 'Р¤Р°Р№Р» РїСѓСЃС‚РѕР№. Р’С‹Р±РµСЂРё С„РѕС‚Рѕ РµС‰С‘ СЂР°Р·.')
+  if (file.size <= 0) throw new ApiError(400, 'Файл пустой. Выбери фото ещё раз.')
   if (file.size > MAX_UPLOAD_BYTES) {
     const mb = Math.round((MAX_UPLOAD_BYTES / 1024 / 1024) * 10) / 10
-    throw new ApiError(400, `Р¤РѕС‚Рѕ СЃР»РёС€РєРѕРј Р±РѕР»СЊС€РѕРµ. РњР°РєСЃРёРјСѓРј ${mb} MB.`)
+    throw new ApiError(400, `Фото слишком большое. Максимум ${mb} MB.`)
   }
 
   const ext = fileExt(file)
@@ -135,7 +135,7 @@ function validateImageFile(file: IncomingFile) {
   const okByMime = mime ? ALLOWED_IMAGE_TYPES.has(mime) : false
   const okByExt = ALLOWED_EXT.has(ext)
 
-  if (!okByMime && !okByExt) throw new ApiError(400, 'Р¤РѕСЂРјР°С‚ РЅРµ РїРѕРґРґРµСЂР¶РёРІР°РµС‚СЃСЏ. РСЃРїРѕР»СЊР·СѓР№ JPG/PNG/WebP/HEIC/HEIF.')
+  if (!okByMime && !okByExt) throw new ApiError(400, 'Формат не поддерживается. Используй JPG/PNG/WebP/HEIC/HEIF.')
 }
 
 let AVATAR_KEY: AvatarKey | null = null
@@ -223,11 +223,11 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     if (!workerId) throw new ApiError(400, 'Missing worker id')
 
     const current = await listPhotos(sb, workerId)
-    if (current.length >= 5) throw new ApiError(400, 'Р›РёРјРёС‚: 5 С„РѕС‚Рѕ. РЈРґР°Р»Рё РѕРґРЅРѕ Рё РїРѕРїСЂРѕР±СѓР№ СЃРЅРѕРІР°.')
+    if (current.length >= 5) throw new ApiError(400, 'Лимит: 5 фото. Удали одно и попробуй снова.')
 
     const form = await req.formData()
     const file = asIncomingFile(form.get('file'))
-    if (!file) throw new ApiError(400, 'Р’С‹Р±РµСЂРё С„РѕС‚Рѕ РґР»СЏ Р·Р°РіСЂСѓР·РєРё.')
+    if (!file) throw new ApiError(400, 'Выбери фото для загрузки.')
 
     validateImageFile(file)
 
@@ -276,7 +276,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     if (!path) throw new ApiError(400, 'path_required')
 
     const pref = workerPrefix(workerId)
-    if (!path.startsWith(`${pref}/`)) throw new ApiError(403, 'РќРµР»СЊР·СЏ СѓРґР°Р»СЏС‚СЊ С‡СѓР¶РёРµ С„Р°Р№Р»С‹')
+    if (!path.startsWith(`${pref}/`)) throw new ApiError(403, 'Нельзя удалять чужие файлы')
 
     const { error: delErr } = await sb.storage.from(BUCKET).remove([path])
     if (delErr) throw new ApiError(500, delErr.message)
@@ -296,4 +296,5 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     return toErrorResponse(e)
   }
 }
+
 
