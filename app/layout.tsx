@@ -8,6 +8,7 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
+  themeColor: '#F59E0B',
 }
 
 export const metadata: Metadata = {
@@ -15,7 +16,6 @@ export const metadata: Metadata = {
   description: 'Van Tanija BV Cleaning — Cleaning Timeclock',
   icons: { icon: '/tanija-logo.png', apple: '/apple-touch-icon.png' },
   manifest: '/manifest.webmanifest',
-  themeColor: '#F59E0B',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
