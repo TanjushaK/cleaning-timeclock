@@ -1,4 +1,4 @@
-// app/api/me/photos/route.ts
+﻿// app/api/me/photos/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { ApiError, requireUser, toErrorResponse } from '@/lib/supabase-server'
 
@@ -133,7 +133,7 @@ export async function POST(req: NextRequest) {
     const { supabase, userId } = await requireUser(req)
 
     const current = await listPhotos(supabase, userId)
-    if (current.length >= 5) throw new ApiError(400, 'Лимит: 5 фото. Удали одно и попробуй снова.')
+    if (current.length >= 5) throw new ApiError(400, 'Р›РёРјРёС‚: 5 С„РѕС‚Рѕ. РЈРґР°Р»Рё РѕРґРЅРѕ Рё РїРѕРїСЂРѕР±СѓР№ СЃРЅРѕРІР°.')
 
     const form = await req.formData()
     const file = form.get('file')
@@ -200,3 +200,4 @@ export async function PATCH(req: NextRequest) {
     return toErrorResponse(e)
   }
 }
+

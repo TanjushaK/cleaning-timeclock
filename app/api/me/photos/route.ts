@@ -1,4 +1,4 @@
-// app/api/me/photos/route.ts
+﻿// app/api/me/photos/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { ApiError, requireUser, toErrorResponse } from '@/lib/supabase-server'
 
@@ -19,7 +19,7 @@ const ALLOWED_IMAGE_TYPES = new Set([
   'image/jpeg',
   'image/png',
   'image/webp',
-  // iPhone часто отдаёт HEIC/HEIF
+  // iPhone С‡Р°СЃС‚Рѕ РѕС‚РґР°С‘С‚ HEIC/HEIF
   'image/heic',
   'image/heif',
   'image/heic-sequence',
@@ -111,10 +111,10 @@ function contentTypeFor(ext: string): string {
 }
 
 function validateImageFile(file: IncomingFile) {
-  if (file.size <= 0) throw new ApiError(400, 'Файл пустой. Выбери фото ещё раз.')
+  if (file.size <= 0) throw new ApiError(400, 'Р¤Р°Р№Р» РїСѓСЃС‚РѕР№. Р’С‹Р±РµСЂРё С„РѕС‚Рѕ РµС‰С‘ СЂР°Р·.')
   if (file.size > MAX_UPLOAD_BYTES) {
     const mb = Math.round((MAX_UPLOAD_BYTES / 1024 / 1024) * 10) / 10
-    throw new ApiError(400, `Фото слишком большое. Максимум ${mb} MB.`)
+    throw new ApiError(400, `Р¤РѕС‚Рѕ СЃР»РёС€РєРѕРј Р±РѕР»СЊС€РѕРµ. РњР°РєСЃРёРјСѓРј ${mb} MB.`)
   }
 
   const ext = fileExt(file)
@@ -123,7 +123,7 @@ function validateImageFile(file: IncomingFile) {
   const okByMime = mime ? ALLOWED_IMAGE_TYPES.has(mime) : false
   const okByExt = ALLOWED_EXT.has(ext)
 
-  if (!okByMime && !okByExt) throw new ApiError(400, 'Формат не поддерживается. Используй JPG/PNG/WebP/HEIC/HEIF.')
+  if (!okByMime && !okByExt) throw new ApiError(400, 'Р¤РѕСЂРјР°С‚ РЅРµ РїРѕРґРґРµСЂР¶РёРІР°РµС‚СЃСЏ. РСЃРїРѕР»СЊР·СѓР№ JPG/PNG/WebP/HEIC/HEIF.')
 }
 
 async function resolveAvatarKey(sb: any): Promise<AvatarKey> {
@@ -188,11 +188,11 @@ export async function POST(req: NextRequest) {
     const { supabase, userId } = await requireUser(req)
 
     const current = await listPhotos(supabase, userId)
-    if (current.length >= 5) throw new ApiError(400, 'Лимит: 5 фото. Удали одно и попробуй снова.')
+    if (current.length >= 5) throw new ApiError(400, 'Р›РёРјРёС‚: 5 С„РѕС‚Рѕ. РЈРґР°Р»Рё РѕРґРЅРѕ Рё РїРѕРїСЂРѕР±СѓР№ СЃРЅРѕРІР°.')
 
     const form = await req.formData()
     const file = asIncomingFile(form.get('file'))
-    if (!file) throw new ApiError(400, 'Выбери фото для загрузки.')
+    if (!file) throw new ApiError(400, 'Р’С‹Р±РµСЂРё С„РѕС‚Рѕ РґР»СЏ Р·Р°РіСЂСѓР·РєРё.')
 
     validateImageFile(file)
 
@@ -281,3 +281,4 @@ export async function DELETE(req: NextRequest) {
     return toErrorResponse(e)
   }
 }
+

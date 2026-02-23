@@ -1,4 +1,4 @@
-// app/api/admin/workers/[id]/photos/route.ts
+﻿// app/api/admin/workers/[id]/photos/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
 
@@ -183,7 +183,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     if (!workerId) throw new ApiError(400, 'Missing worker id')
 
     const current = await listPhotos(sb, workerId)
-    if (current.length >= 5) throw new ApiError(400, 'Лимит: 5 фото. Удали одно и попробуй снова.')
+    if (current.length >= 5) throw new ApiError(400, 'Р›РёРјРёС‚: 5 С„РѕС‚Рѕ. РЈРґР°Р»Рё РѕРґРЅРѕ Рё РїРѕРїСЂРѕР±СѓР№ СЃРЅРѕРІР°.')
 
     const form = await req.formData()
     const file = form.get('file')
@@ -236,7 +236,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     if (!path) throw new ApiError(400, 'path_required')
 
     const pref = workerPrefix(workerId)
-    if (!path.startsWith(`${pref}/`)) throw new ApiError(403, 'Нельзя удалять чужие файлы')
+    if (!path.startsWith(`${pref}/`)) throw new ApiError(403, 'РќРµР»СЊР·СЏ СѓРґР°Р»СЏС‚СЊ С‡СѓР¶РёРµ С„Р°Р№Р»С‹')
 
     const { error: delErr } = await sb.storage.from(BUCKET).remove([path])
     if (delErr) throw new ApiError(500, delErr.message)
@@ -256,3 +256,4 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     return toErrorResponse(e)
   }
 }
+
