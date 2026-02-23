@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+﻿import { NextRequest, NextResponse } from 'next/server'
 import { requireUser } from '@/lib/supabase-server'
 
 export const runtime = 'nodejs'
@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     const uPhone = (user as any).phone ? String((user as any).phone) : null
     const uEmail = user.email ? String(user.email) : null
 
-    const tempPassword = Boolean((user as any)?.user_metadata?.temp_password)
+    const rawTemp = (user as any)?.user_metadata?.temp_password; const tempPassword = rawTemp === true || rawTemp === 'true' || rawTemp === 1 || rawTemp === '1'
 
     if (!profile) {
       const { data: created, error: cErr } = await supabase
@@ -72,8 +72,9 @@ export async function GET(req: NextRequest) {
       profile,
     })
   } catch (e: any) {
-    const msg = e?.message || 'Ошибка'
-    const status = /Нет токена/i.test(msg) ? 401 : 400
+    const msg = e?.message || 'РћС€РёР±РєР°'
+    const status = /РќРµС‚ С‚РѕРєРµРЅР°/i.test(msg) ? 401 : 400
     return NextResponse.json({ error: msg }, { status })
   }
 }
+
