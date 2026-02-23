@@ -138,10 +138,11 @@ export default function AppPage() {
 
   const authed = !!token;
 
-  const bearerHeaders = useCallback(() => {
+  const bearerHeaders = useCallback((): HeadersInit => {
     const t = getAccessToken();
-    if (!t) return {};
-    return { Authorization: `Bearer ${t}` };
+    const h = new Headers();
+    if (t) h.set("Authorization", `Bearer ${t}`);
+    return h;
   }, []);
 
   const loadPhotos = useCallback(async () => {
