@@ -1,9 +1,5 @@
 ﻿// app/api/admin/workers/[id]/photos/route.ts
-import { NextRequest, NextResponse } from 'next/server'
-import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
-
-export const runtime = 'nodejs'
-export const dynamic = 'force-dynamic'
+import { NextRequest, NextResponse } from 'next/server' '@/lib/supabase-server' 'nodejs' 'force-dynamic'
 
 type WorkerPhoto = { path: string; url?: string; created_at?: string | null }
 type AvatarKey = 'avatar_path' | 'avatar_url' | 'photo_path'
@@ -15,20 +11,14 @@ const MAX_UPLOAD_BYTES = (() => {
   return Math.min(Math.max(n, 256 * 1024), 25 * 1024 * 1024)
 })()
 
-const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
-const ALLOWED_EXT = new Set(['jpg', 'jpeg', 'png', 'webp'])
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp' 'jpg', 'jpeg', 'png', 'webp'])
 
 function parseBucketRef(raw: string | undefined | null, fallbackBucket: string) {
-  const s = String(raw || '').trim().replace(/^\/+|\/+$/g, '')
-  if (!s) return { bucket: fallbackBucket, prefix: '' }
-  const parts = s.split('/').filter(Boolean)
-  const bucket = (parts[0] || '').trim() || fallbackBucket
-  const prefix = parts.slice(1).join('/')
+  const s = String(raw || '').trim().replace(/^\/+|\/+$/g, '' '' '/' '' '/')
   return { bucket, prefix }
 }
 
-const RAW = process.env.WORKER_PHOTOS_BUCKET || 'site-photos/workers'
-const { bucket: BUCKET, prefix: BUCKET_PREFIX } = parseBucketRef(RAW, 'site-photos')
+const RAW = process.env.WORKER_PHOTOS_BUCKET || 'site-photos/workers' 'site-photos')
 
 function getSignedTtlSeconds(): number {
   const v = Number(process.env.WORKER_PHOTOS_SIGNED_URL_TTL || '3600')
@@ -41,8 +31,7 @@ function withCookieBearer(req: NextRequest): Headers {
   const auth = headers.get('authorization') || headers.get('Authorization') || ''
   const hasBearer = /^Bearer\s+.+/i.test(auth)
   if (!hasBearer) {
-    const cookieToken = req.cookies.get('ct_access_token')?.value?.trim()
-    if (cookieToken) headers.set('authorization', `Bearer ${cookieToken}`)
+    const cookieToken = req.cookies.get('ct_access_token' 'authorization', `Bearer ${cookieToken}`)
   }
   return headers
 }
@@ -55,8 +44,7 @@ function joinPath(...parts: string[]) {
   return parts
     .map((p) => String(p || '').trim())
     .filter(Boolean)
-    .join('/')
-    .replace(/\/{2,}/g, '/')
+    .join('/' '/')
 }
 
 function workerPrefix(workerId: string): string {
@@ -65,29 +53,21 @@ function workerPrefix(workerId: string): string {
 }
 
 function fileExt(file: File) {
-  const ext = (file.name.split('.').pop() || '').toLowerCase()
-  return ext || 'jpg'
+  const ext = (file.name.split('.').pop() || '' 'jpg'
 }
 
 function canonicalExt(file: File): string {
   const ext = fileExt(file)
   if (ALLOWED_EXT.has(ext)) return ext
-  const mime = String(file.type || '').toLowerCase()
-  if (mime === 'image/png') return 'png'
-  if (mime === 'image/webp') return 'webp'
-  return 'jpg'
+  const mime = String(file.type || '' 'image/png') return 'png' 'image/webp') return 'webp' 'jpg'
 }
 
 function contentTypeFor(ext: string): string {
-  if (ext === 'png') return 'image/png'
-  if (ext === 'webp') return 'image/webp'
-  return 'image/jpeg'
+  if (ext === 'png') return 'image/png' 'webp') return 'image/webp' 'image/jpeg'
 }
 
 function validateImageFile(file: File) {
-  if (!(file instanceof File)) throw new ApiError(400, 'file_required')
-  if (file.size <= 0) throw new ApiError(400, 'file_empty')
-  if (file.size > MAX_UPLOAD_BYTES) throw new ApiError(400, 'file_too_large')
+  if (!(file instanceof File)) throw new ApiError(400, 'file_required' 'file_empty' 'file_too_large')
 
   const ext = fileExt(file)
   const mime = String(file.type || '').toLowerCase()
@@ -109,8 +89,7 @@ async function resolveAvatarKey(supabase: any): Promise<AvatarKey> {
       AVATAR_KEY = k
       return k
     }
-    const msg = String((error as any)?.message || '')
-    if (msg.includes('column') && msg.includes('does not exist')) continue
+    const msg = String((error as any)?.message || '' 'column') && msg.includes('does not exist')) continue
   }
   AVATAR_KEY = 'avatar_path'
   return AVATAR_KEY
@@ -136,8 +115,7 @@ async function listPhotos(supabase: any, workerId: string): Promise<WorkerPhoto[
 
   if (!signErr && Array.isArray(signed)) {
     for (const s of signed as any[]) {
-      const p = s?.path ? String(s.path) : ''
-      const u = s?.signedUrl ? String(s.signedUrl) : ''
+      const p = s?.path ? String(s.path) : '' ''
       if (p && u) urlByPath.set(p, u)
     }
   } else {
@@ -186,8 +164,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     if (current.length >= 5) throw new ApiError(400, 'Р›РёРјРёС‚: 5 С„РѕС‚Рѕ. РЈРґР°Р»Рё РѕРґРЅРѕ Рё РїРѕРїСЂРѕР±СѓР№ СЃРЅРѕРІР°.')
 
     const form = await req.formData()
-    const file = form.get('file')
-    if (!(file instanceof File)) throw new ApiError(400, 'file_required')
+    const file = form.get('file' 'file_required')
 
     validateImageFile(file)
 
@@ -232,8 +209,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     if (!workerId) throw new ApiError(400, 'Missing worker id')
 
     const body = await req.json().catch(() => ({} as any))
-    const path = String(body?.path || '').trim()
-    if (!path) throw new ApiError(400, 'path_required')
+    const path = String(body?.path || '' 'path_required')
 
     const pref = workerPrefix(workerId)
     if (!path.startsWith(`${pref}/`)) throw new ApiError(403, 'РќРµР»СЊР·СЏ СѓРґР°Р»СЏС‚СЊ С‡СѓР¶РёРµ С„Р°Р№Р»С‹')
@@ -256,4 +232,5 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     return toErrorResponse(e)
   }
 }
+
 

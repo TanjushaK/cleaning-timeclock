@@ -1,15 +1,7 @@
-import { NextResponse } from 'next/server';
-import { requireAdmin } from '@/lib/admin-auth';
-import { getSupabaseAdmin } from '@/lib/supabase-admin';
-
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
+﻿import { NextResponse } from 'next/server' '@/lib/admin-auth' '@/lib/supabase-admin' 'nodejs' 'force-dynamic';
 
 function toErr(e: any) {
-  const msg = String(e?.message || e || '');
-  if (msg === 'UNAUTHORIZED') return { status: 401, error: 'Нужно войти' };
-  if (msg === 'FORBIDDEN') return { status: 403, error: 'Нет доступа' };
-  return { status: 500, error: msg || 'Ошибка сервера' };
+  const msg = String(e?.message || e || '' 'UNAUTHORIZED') return { status: 401, error: 'РќСѓР¶РЅРѕ РІРѕР№С‚Рё' 'FORBIDDEN') return { status: 403, error: 'РќРµС‚ РґРѕСЃС‚СѓРїР°' 'РћС€РёР±РєР° СЃРµСЂРІРµСЂР°' };
 }
 
 export async function POST(req: Request) {
@@ -21,7 +13,7 @@ export async function POST(req: Request) {
     const active = Boolean(body?.active);
 
     if (!workerId) {
-      return NextResponse.json({ error: 'Нужен worker_id' }, { status: 400 });
+      return NextResponse.json({ error: 'РќСѓР¶РµРЅ worker_id' }, { status: 400 });
     }
 
     const supabase = getSupabaseAdmin();
@@ -32,7 +24,7 @@ export async function POST(req: Request) {
       .eq('id', workerId);
 
     if (error) {
-      throw new Error(`Не смог обновить worker: ${error.message}`);
+      throw new Error(`РќРµ СЃРјРѕРі РѕР±РЅРѕРІРёС‚СЊ worker: ${error.message}`);
     }
 
     return NextResponse.json({ ok: true }, { status: 200 });
@@ -41,3 +33,4 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: r.error }, { status: r.status });
   }
 }
+

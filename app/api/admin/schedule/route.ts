@@ -1,8 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-
-export const runtime = 'nodejs'
-export const dynamic = 'force-dynamic'
+﻿import { NextRequest, NextResponse } from 'next/server' '@supabase/supabase-js' 'nodejs' 'force-dynamic'
 
 function bearer(req: NextRequest) {
   const h = req.headers.get('authorization') || ''
@@ -11,8 +7,7 @@ function bearer(req: NextRequest) {
 }
 
 function cleanEnv(v: string | undefined | null): string {
-  const s = String(v ?? '').replace(/\uFEFF/g, '').trim()
-  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+  const s = String(v ?? '').replace(/\uFEFF/g, '' '"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
     return s.slice(1, -1).trim()
   }
   return s
@@ -30,10 +25,7 @@ function isISODate(s: string) {
 
 async function assertAdmin(req: NextRequest) {
   const token = bearer(req)
-  if (!token) return { ok: false as const, status: 401, error: 'Нет входа. Авторизуйся в админке.' }
-
-  const url = envOrThrow('NEXT_PUBLIC_SUPABASE_URL')
-  const anon = envOrThrow('NEXT_PUBLIC_SUPABASE_ANON_KEY')
+  if (!token) return { ok: false as const, status: 401, error: 'РќРµС‚ РІС…РѕРґР°. РђРІС‚РѕСЂРёР·СѓР№СЃСЏ РІ Р°РґРјРёРЅРєРµ.' 'NEXT_PUBLIC_SUPABASE_URL' 'NEXT_PUBLIC_SUPABASE_ANON_KEY')
 
   const sb = createClient(url, anon, {
     global: { headers: { Authorization: `Bearer ${token}` } },
@@ -41,11 +33,7 @@ async function assertAdmin(req: NextRequest) {
   })
 
   const { data: userData, error: userErr } = await sb.auth.getUser(token)
-  if (userErr || !userData?.user) return { ok: false as const, status: 401, error: 'Невалидный токен' }
-
-  const { data: prof, error: profErr } = await sb.from('profiles').select('id, role, active').eq('id', userData.user.id).single()
-  if (profErr || !prof) return { ok: false as const, status: 403, error: 'Профиль не найден' }
-  if (prof.role !== 'admin' || prof.active !== true) return { ok: false as const, status: 403, error: 'Доступ запрещён' }
+  if (userErr || !userData?.user) return { ok: false as const, status: 401, error: 'РќРµРІР°Р»РёРґРЅС‹Р№ С‚РѕРєРµРЅ' 'profiles').select('id, role, active').eq('id' 'РџСЂРѕС„РёР»СЊ РЅРµ РЅР°Р№РґРµРЅ' 'admin' || prof.active !== true) return { ok: false as const, status: 403, error: 'Р”РѕСЃС‚СѓРї Р·Р°РїСЂРµС‰С‘РЅ' }
 
   return { ok: true as const }
 }
@@ -55,41 +43,31 @@ export async function GET(req: NextRequest) {
     const guard = await assertAdmin(req)
     if (!guard.ok) return NextResponse.json({ error: guard.error }, { status: guard.status })
 
-    const url = envOrThrow('NEXT_PUBLIC_SUPABASE_URL')
-    const service = envOrThrow('SUPABASE_SERVICE_ROLE_KEY')
+    const url = envOrThrow('NEXT_PUBLIC_SUPABASE_URL' 'SUPABASE_SERVICE_ROLE_KEY')
     const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } })
 
     const sp = req.nextUrl.searchParams
 
-    // Совместимость: UI может слать date_from/date_to, а старые версии — from/to.
-    const rawFrom = (sp.get('date_from') || sp.get('from') || '').trim()
-    const rawTo = (sp.get('date_to') || sp.get('to') || '').trim()
-
-    if (!rawFrom || !rawTo) return NextResponse.json({ error: 'from и to обязательны' }, { status: 400 })
-    if (!isISODate(rawFrom) || !isISODate(rawTo)) return NextResponse.json({ error: 'Неверный диапазон дат' }, { status: 400 })
+    // РЎРѕРІРјРµСЃС‚РёРјРѕСЃС‚СЊ: UI РјРѕР¶РµС‚ СЃР»Р°С‚СЊ date_from/date_to, Р° СЃС‚Р°СЂС‹Рµ РІРµСЂСЃРёРё вЂ” from/to.
+    const rawFrom = (sp.get('date_from') || sp.get('from') || '' 'date_to') || sp.get('to') || '' 'from Рё to РѕР±СЏР·Р°С‚РµР»СЊРЅС‹' 'РќРµРІРµСЂРЅС‹Р№ РґРёР°РїР°Р·РѕРЅ РґР°С‚' }, { status: 400 })
 
     const dateFrom = rawFrom
     const dateTo = rawTo
 
-    const siteId = (sp.get('site_id') || '').trim()
-    const workerId = (sp.get('worker_id') || '').trim()
+    const siteId = (sp.get('site_id') || '' 'worker_id') || '').trim()
 
-    // Смена должна иметь начало и конец.
-    // В разных ревизиях БД колонка конца может называться по-разному,
-    // но в текущем UI мы используем scheduled_end_time.
-    // Поэтому: пытаемся запросить scheduled_end_time; если колонки нет —
-    // повторяем запрос без неё (UI покажет только начало).
+    // РЎРјРµРЅР° РґРѕР»Р¶РЅР° РёРјРµС‚СЊ РЅР°С‡Р°Р»Рѕ Рё РєРѕРЅРµС†.
+    // Р’ СЂР°Р·РЅС‹С… СЂРµРІРёР·РёСЏС… Р‘Р” РєРѕР»РѕРЅРєР° РєРѕРЅС†Р° РјРѕР¶РµС‚ РЅР°Р·С‹РІР°С‚СЊСЃСЏ РїРѕ-СЂР°Р·РЅРѕРјСѓ,
+    // РЅРѕ РІ С‚РµРєСѓС‰РµРј UI РјС‹ РёСЃРїРѕР»СЊР·СѓРµРј scheduled_end_time.
+    // РџРѕСЌС‚РѕРјСѓ: РїС‹С‚Р°РµРјСЃСЏ Р·Р°РїСЂРѕСЃРёС‚СЊ scheduled_end_time; РµСЃР»Рё РєРѕР»РѕРЅРєРё РЅРµС‚ вЂ”
+    // РїРѕРІС‚РѕСЂСЏРµРј Р·Р°РїСЂРѕСЃ Р±РµР· РЅРµС‘ (UI РїРѕРєР°Р¶РµС‚ С‚РѕР»СЊРєРѕ РЅР°С‡Р°Р»Рѕ).
 
     const baseSelect = 'id,status,job_date,scheduled_time,site_id,worker_id'
 
     let q = admin
       .from('jobs')
       .select(`${baseSelect},scheduled_end_time`)
-      .gte('job_date', dateFrom)
-      .lte('job_date', dateTo)
-
-    if (siteId) q = q.eq('site_id', siteId)
-    if (workerId) q = q.eq('worker_id', workerId)
+      .gte('job_date' 'job_date' 'site_id' 'worker_id', workerId)
 
     let jobs: any[] | null = null
     let jobsErr: any = null
@@ -100,11 +78,7 @@ export async function GET(req: NextRequest) {
       let q2 = admin
         .from('jobs')
         .select(baseSelect)
-        .gte('job_date', dateFrom)
-        .lte('job_date', dateTo)
-
-      if (siteId) q2 = q2.eq('site_id', siteId)
-      if (workerId) q2 = q2.eq('worker_id', workerId)
+        .gte('job_date' 'job_date' 'site_id' 'worker_id', workerId)
 
       ;({ data: jobs, error: jobsErr } = await q2)
     }
@@ -116,9 +90,7 @@ export async function GET(req: NextRequest) {
     const workerIds = Array.from(new Set((jobs || []).map((j: any) => j.worker_id).filter(Boolean)))
 
     const [sitesRes, workersRes, logsRes] = await Promise.all([
-      siteIds.length ? admin.from('sites').select('id,name').in('id', siteIds) : Promise.resolve({ data: [], error: null } as any),
-      workerIds.length ? admin.from('profiles').select('id,full_name').in('id', workerIds) : Promise.resolve({ data: [], error: null } as any),
-      jobIds.length ? admin.from('time_logs').select('job_id,started_at,stopped_at').in('job_id', jobIds) : Promise.resolve({ data: [], error: null } as any),
+      siteIds.length ? admin.from('sites').select('id,name').in('id' 'profiles').select('id,full_name').in('id' 'time_logs').select('job_id,started_at,stopped_at').in('job_id', jobIds) : Promise.resolve({ data: [], error: null } as any),
     ])
 
     if (sitesRes.error) return NextResponse.json({ error: sitesRes.error.message }, { status: 500 })
@@ -163,6 +135,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ items })
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'Ошибка сервера' }, { status: 500 })
+    return NextResponse.json({ error: e?.message || 'РћС€РёР±РєР° СЃРµСЂРІРµСЂР°' }, { status: 500 })
   }
 }
+

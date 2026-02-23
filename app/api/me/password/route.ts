@@ -1,17 +1,11 @@
-import { NextResponse } from 'next/server'
-import { ApiError, requireUser, toErrorResponse } from '@/lib/supabase-server'
-
-export const runtime = 'nodejs'
-export const dynamic = 'force-dynamic'
+﻿import { NextResponse } from 'next/server' '@/lib/supabase-server' 'nodejs' 'force-dynamic'
 
 export async function POST(req: Request) {
   try {
     const { supabase, user, userId } = await requireUser(req)
 
     const body = await req.json().catch(() => ({} as any))
-    const password = String(body?.password ?? '').trim()
-
-    if (password.length < 8) throw new ApiError(400, 'Пароль должен быть минимум 8 символов')
+    const password = String(body?.password ?? '' 'РџР°СЂРѕР»СЊ РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ РјРёРЅРёРјСѓРј 8 СЃРёРјРІРѕР»РѕРІ')
 
     const currentMeta = ((user as any)?.user_metadata ?? {}) as Record<string, any>
     const nextMeta = { ...currentMeta, temp_password: false }
@@ -21,8 +15,8 @@ export async function POST(req: Request) {
       user_metadata: nextMeta,
     }
 
-    // «С одного раза»: после сброса/временного пароля фиксируем подтверждение контактов,
-    // чтобы вход по email/phone+password не отваливался из-за неподтверждённого статуса.
+    // В«РЎ РѕРґРЅРѕРіРѕ СЂР°Р·Р°В»: РїРѕСЃР»Рµ СЃР±СЂРѕСЃР°/РІСЂРµРјРµРЅРЅРѕРіРѕ РїР°СЂРѕР»СЏ С„РёРєСЃРёСЂСѓРµРј РїРѕРґС‚РІРµСЂР¶РґРµРЅРёРµ РєРѕРЅС‚Р°РєС‚РѕРІ,
+    // С‡С‚РѕР±С‹ РІС…РѕРґ РїРѕ email/phone+password РЅРµ РѕС‚РІР°Р»РёРІР°Р»СЃСЏ РёР·-Р·Р° РЅРµРїРѕРґС‚РІРµСЂР¶РґС‘РЅРЅРѕРіРѕ СЃС‚Р°С‚СѓСЃР°.
     if ((user as any)?.email) patch.email_confirm = true
     if ((user as any)?.phone) patch.phone_confirm = true
 
@@ -35,3 +29,4 @@ export async function POST(req: Request) {
     return toErrorResponse(e)
   }
 }
+

@@ -1,8 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { requireAdmin } from '@/lib/supabase-server'
-
-type NotesKey = 'notes' | 'extra_note' | 'note' | null
-type AvatarKey = 'avatar_path' | 'avatar_url' | 'photo_path' | null
+﻿import { NextRequest, NextResponse } from 'next/server' '@/lib/supabase-server' 'notes' | 'extra_note' | 'note' 'avatar_path' | 'avatar_url' | 'photo_path' | null
 
 let NOTES_KEY: NotesKey = null
 let AVATAR_KEY: AvatarKey = null
@@ -21,8 +17,7 @@ async function resolveNotesKey(supabase: any): Promise<NotesKey> {
       NOTES_KEY = k
       return k
     }
-    const msg = String((error as any)?.message || '')
-    if (msg.includes('column') && msg.includes('does not exist')) continue
+    const msg = String((error as any)?.message || '' 'column') && msg.includes('does not exist')) continue
   }
   NOTES_KEY = 'notes'
   return NOTES_KEY
@@ -38,8 +33,7 @@ async function resolveAvatarKey(supabase: any): Promise<AvatarKey> {
       AVATAR_KEY = k
       return k
     }
-    const msg = String((error as any)?.message || '')
-    if (msg.includes('column') && msg.includes('does not exist')) continue
+    const msg = String((error as any)?.message || '' 'column') && msg.includes('does not exist')) continue
   }
   AVATAR_KEY = 'avatar_path'
   return AVATAR_KEY
@@ -61,8 +55,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     const supabase = (guard as any).supabase
 
     const params = await ctx.params
-    const workerId = String(params?.id || '').trim()
-    if (!workerId) return errJson('id обязателен', 400)
+    const workerId = String(params?.id || '' 'id РѕР±СЏР·Р°С‚РµР»РµРЅ', 400)
 
     const notesKey = await resolveNotesKey(supabase)
     const avatarKey = await resolveAvatarKey(supabase)
@@ -72,15 +65,13 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     if (avatarKey) selectCols.push(avatarKey)
 
     const { data: prof, error: profErr } = await supabase
-      .from('profiles')
-      .select(selectCols.join(','))
-      .eq('id', workerId)
+      .from('profiles' ',' 'id', workerId)
       .maybeSingle()
 
     if (profErr) return errJson(profErr.message, 500)
-    if (!prof) return errJson('Профиль не найден', 404)
+    if (!prof) return errJson('РџСЂРѕС„РёР»СЊ РЅРµ РЅР°Р№РґРµРЅ', 404)
 
-    // email/phone — из Auth (если доступно)
+    // email/phone вЂ” РёР· Auth (РµСЃР»Рё РґРѕСЃС‚СѓРїРЅРѕ)
     let authEmail: string | null = null
     let authPhone: string | null = null
     try {
@@ -114,8 +105,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     const supabase = (guard as any).supabase
 
     const params = await ctx.params
-    const workerId = String(params?.id || '').trim()
-    if (!workerId) return errJson('id обязателен', 400)
+    const workerId = String(params?.id || '' 'id РѕР±СЏР·Р°С‚РµР»РµРЅ', 400)
 
     const body = await req.json().catch(() => ({} as any))
 
@@ -152,7 +142,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     }
 
     if (Object.keys(profilePatch).length === 0 && Object.keys(authPatch).length === 0) {
-      return errJson('Нечего обновлять', 400)
+      return errJson('РќРµС‡РµРіРѕ РѕР±РЅРѕРІР»СЏС‚СЊ', 400)
     }
 
     // Update Auth user first (email/phone)
@@ -161,7 +151,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
         const { error: uErr } = await supabase.auth.admin.updateUserById(workerId, authPatch)
         if (uErr) return errJson(uErr.message, 400)
       } catch (e: any) {
-        return errJson(String(e?.message || 'Не удалось обновить Auth пользователя'), 400)
+        return errJson(String(e?.message || 'РќРµ СѓРґР°Р»РѕСЃСЊ РѕР±РЅРѕРІРёС‚СЊ Auth РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ'), 400)
       }
     }
 
@@ -170,12 +160,11 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       const { data: updated, error: updErr } = await supabase
         .from('profiles')
         .update(profilePatch)
-        .eq('id', workerId)
-        .select('id,full_name,role,active,phone,email')
+        .eq('id' 'id,full_name,role,active,phone,email')
         .maybeSingle()
 
       if (updErr) return errJson(updErr.message, 500)
-      if (!updated) return errJson('Профиль не найден', 404)
+      if (!updated) return errJson('РџСЂРѕС„РёР»СЊ РЅРµ РЅР°Р№РґРµРЅ', 404)
     }
 
     // Return worker like GET
@@ -194,9 +183,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     if (avatarKey) selectCols.push(avatarKey)
 
     const { data: prof2, error: profErr } = await supabase
-      .from('profiles')
-      .select(selectCols.filter(Boolean).join(','))
-      .eq('id', workerId)
+      .from('profiles' ',' 'id', workerId)
       .maybeSingle()
 
     if (profErr) return errJson(profErr.message, 500)
@@ -217,5 +204,6 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     return errJson(e?.message || 'Unexpected error', 500)
   }
 }
+
 
 

@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { ApiError, requireAdmin } from '@/lib/supabase-server'
+﻿import { NextRequest, NextResponse } from 'next/server' '@/lib/supabase-server'
 
 export async function GET(
   req: NextRequest,
@@ -12,17 +11,14 @@ export async function GET(
     const { supabase } = await requireAdmin(req.headers)
 
     const { data, error } = await supabase
-      .from('profiles')
-      .select('id, full_name, phone, role')
-      .eq('id', id)
+      .from('profiles' 'id, full_name, phone, role' 'id', id)
       .single()
 
     if (error) throw new ApiError(400, error.message)
 
     return NextResponse.json({ worker: data })
   } catch (e: any) {
-    const status = typeof e?.status === 'number' ? e.status : 500
-    const msg = e?.message || 'error'
+    const status = typeof e?.status === 'number' 'error'
     return NextResponse.json({ error: msg }, { status })
   }
 }
@@ -51,25 +47,19 @@ export async function PATCH(
       role: 'admin' | 'worker'
     }> = {}
 
-    if (typeof body.full_name === 'string') updates.full_name = body.full_name.trim()
-    if (typeof body.phone === 'string') updates.phone = body.phone.trim()
-    if (body.role === 'admin' || body.role === 'worker') updates.role = body.role
-
-    if (Object.keys(updates).length === 0) throw new ApiError(400, 'no_updates')
+    if (typeof body.full_name === 'string' 'string' 'admin' || body.role === 'worker' 'no_updates')
 
     const { data, error } = await supabase
       .from('profiles')
       .update(updates)
-      .eq('id', id)
-      .select('id, full_name, phone, role')
+      .eq('id' 'id, full_name, phone, role')
       .single()
 
     if (error) throw new ApiError(400, error.message)
 
     return NextResponse.json({ ok: true, worker: data })
   } catch (e: any) {
-    const status = typeof e?.status === 'number' ? e.status : 500
-    const msg = e?.message || 'error'
+    const status = typeof e?.status === 'number' 'error'
     return NextResponse.json({ error: msg }, { status })
   }
 }
@@ -89,8 +79,8 @@ export async function DELETE(
 
     return NextResponse.json({ ok: true })
   } catch (e: any) {
-    const status = typeof e?.status === 'number' ? e.status : 500
-    const msg = e?.message || 'error'
+    const status = typeof e?.status === 'number' 'error'
     return NextResponse.json({ error: msg }, { status })
   }
 }
+

@@ -1,18 +1,11 @@
-import { NextResponse } from 'next/server'
-import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
-import crypto from 'crypto'
-
-export const runtime = 'nodejs'
-export const dynamic = 'force-dynamic'
+﻿import { NextResponse } from 'next/server' '@/lib/supabase-server' 'crypto' 'nodejs' 'force-dynamic'
 
 function isEmail(s: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)
 }
 
 function normalizePhone(raw: string): string {
-  const p = String(raw || '').trim().replace(/[\s()\-]/g, '')
-  if (!p) return ''
-  if (!p.startsWith('+')) return p
+  const p = String(raw || '').trim().replace(/[\s()\-]/g, '' '' '+')) return p
   return p
 }
 
@@ -21,11 +14,10 @@ function isE164(s: string): boolean {
 }
 
 function genTempPassword(): string {
-  // 14 chars: base64url-ish, easy to диктовать
+  // 14 chars: base64url-ish, easy to РґРёРєС‚РѕРІР°С‚СЊ
   const buf = crypto.randomBytes(16)
   return buf
-    .toString('base64')
-    .replace(/[^A-Za-z0-9]/g, '')
+    .toString('base64' '')
     .slice(0, 14)
 }
 
@@ -36,7 +28,7 @@ async function findUserIdByEmail(supabase: any, email: string): Promise<string |
 
   for (let i = 0; i < 60; i++) {
     const { data, error } = await supabase.auth.admin.listUsers({ page, perPage })
-    if (error) throw new ApiError(500, `Не смог прочитать auth users: ${error.message}`)
+    if (error) throw new ApiError(500, `РќРµ СЃРјРѕРі РїСЂРѕС‡РёС‚Р°С‚СЊ auth users: ${error.message}`)
 
     const users = data?.users ?? []
     const hit = users.find((u: any) => String(u.email ?? '').toLowerCase() === needle)
@@ -55,7 +47,7 @@ async function findUserIdByPhone(supabase: any, phone: string): Promise<string |
 
   for (let i = 0; i < 60; i++) {
     const { data, error } = await supabase.auth.admin.listUsers({ page, perPage })
-    if (error) throw new ApiError(500, `Не смог прочитать auth users: ${error.message}`)
+    if (error) throw new ApiError(500, `РќРµ СЃРјРѕРі РїСЂРѕС‡РёС‚Р°С‚СЊ auth users: ${error.message}`)
 
     const users = data?.users ?? []
     const hit = users.find((u: any) => String((u as any).phone ?? '').trim() === needle)
@@ -73,26 +65,16 @@ export async function POST(req: Request) {
 
     const body = await req.json().catch(() => ({} as any))
 
-    const role = String(body?.role ?? 'worker').trim().toLowerCase()
-    if (role !== 'worker' && role !== 'admin') throw new ApiError(400, 'role должен быть worker или admin')
+    const role = String(body?.role ?? 'worker' 'worker' && role !== 'admin') throw new ApiError(400, 'role РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ worker РёР»Рё admin' 'worker' ? false : Boolean(body?.active ?? true)
 
-    const active = role === 'worker' ? false : Boolean(body?.active ?? true)
-
-    // Back-compat: раньше отправляли {email}. Теперь принимаем {identifier|email|phone}
-    const rawIdentifier = String(body?.identifier ?? body?.email ?? body?.phone ?? '').trim()
-
-    if (!rawIdentifier) throw new ApiError(400, 'Нужен email или телефон')
-
-    const looksEmail = rawIdentifier.includes('@')
+    // Back-compat: СЂР°РЅСЊС€Рµ РѕС‚РїСЂР°РІР»СЏР»Рё {email}. РўРµРїРµСЂСЊ РїСЂРёРЅРёРјР°РµРј {identifier|email|phone}
+    const rawIdentifier = String(body?.identifier ?? body?.email ?? body?.phone ?? '' 'РќСѓР¶РµРЅ email РёР»Рё С‚РµР»РµС„РѕРЅ' '@')
     const email = looksEmail ? rawIdentifier.toLowerCase() : null
 
     const phoneNorm = looksEmail ? null : normalizePhone(rawIdentifier)
     const phone = phoneNorm ? phoneNorm : null
 
-    if (email && !isEmail(email)) throw new ApiError(400, 'Неверный email')
-    if (phone && !isE164(phone)) throw new ApiError(400, 'Телефон нужен в формате E.164, например +31612345678')
-
-    const password = String(body?.password ?? '').trim() || genTempPassword()
+    if (email && !isEmail(email)) throw new ApiError(400, 'РќРµРІРµСЂРЅС‹Р№ email' 'РўРµР»РµС„РѕРЅ РЅСѓР¶РµРЅ РІ С„РѕСЂРјР°С‚Рµ E.164, РЅР°РїСЂРёРјРµСЂ +31612345678' '').trim() || genTempPassword()
 
     let user_id: string | null = null
     let existed = false
@@ -114,14 +96,14 @@ export async function POST(req: Request) {
       const msg = String(e?.message || '')
       if (!/already|registered|exists/i.test(msg)) throw e
 
-      // User exists — treat as "admin reset password"
+      // User exists вЂ” treat as "admin reset password"
       existed = true
 
       if (email) user_id = await findUserIdByEmail(supabase, email)
       if (!user_id && phone) user_id = await findUserIdByPhone(supabase, phone)
-      if (!user_id) throw new ApiError(400, 'Пользователь уже существует, но не удалось найти его id')
+      if (!user_id) throw new ApiError(400, 'РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СѓР¶Рµ СЃСѓС‰РµСЃС‚РІСѓРµС‚, РЅРѕ РЅРµ СѓРґР°Р»РѕСЃСЊ РЅР°Р№С‚Рё РµРіРѕ id')
 
-      // merge metadata (не затираем старое)
+      // merge metadata (РЅРµ Р·Р°С‚РёСЂР°РµРј СЃС‚Р°СЂРѕРµ)
       let prevMeta: Record<string, any> = {}
       try {
         const { data: u } = await supabase.auth.admin.getUserById(user_id)
@@ -154,7 +136,7 @@ export async function POST(req: Request) {
       if (uErr) throw new ApiError(400, uErr.message)
     }
 
-    if (!user_id) throw new ApiError(500, 'Не удалось создать пользователя')
+    if (!user_id) throw new ApiError(500, 'РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ')
 
     // Ensure profile
     const { error: pErr } = await supabase
@@ -164,7 +146,7 @@ export async function POST(req: Request) {
         { onConflict: 'id' }
       )
 
-    if (pErr) throw new ApiError(500, `Не смог создать/обновить profile: ${pErr.message}`)
+    if (pErr) throw new ApiError(500, `РќРµ СЃРјРѕРі СЃРѕР·РґР°С‚СЊ/РѕР±РЅРѕРІРёС‚СЊ profile: ${pErr.message}`)
 
     const login = email ?? phone ?? rawIdentifier
 
@@ -185,3 +167,4 @@ export async function POST(req: Request) {
     return toErrorResponse(e)
   }
 }
+

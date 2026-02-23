@@ -1,5 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { ApiError, requireAdmin } from '@/lib/supabase-server'
+﻿import { NextRequest, NextResponse } from 'next/server' '@/lib/supabase-server'
 
 export async function DELETE(
   req: NextRequest,
@@ -19,8 +18,8 @@ export async function DELETE(
 
     return NextResponse.json({ ok: true })
   } catch (e: any) {
-    const status = typeof e?.status === 'number' ? e.status : 500
-    const msg = e?.message || 'error'
+    const status = typeof e?.status === 'number' 'error'
     return NextResponse.json({ error: msg }, { status })
   }
 }
+

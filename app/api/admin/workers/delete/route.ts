@@ -1,6 +1,5 @@
-// app/api/admin/workers/delete/route.ts
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+﻿// app/api/admin/workers/delete/route.ts
+import { NextRequest, NextResponse } from 'next/server' '@supabase/supabase-js'
 
 function bearer(req: NextRequest) {
   const h = req.headers.get('authorization') || ''
@@ -9,8 +8,7 @@ function bearer(req: NextRequest) {
 }
 
 function cleanEnv(v: string | undefined | null): string {
-  const s = String(v ?? '').replace(/\uFEFF/g, '').trim()
-  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+  const s = String(v ?? '').replace(/\uFEFF/g, '' '"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
     return s.slice(1, -1).trim()
   }
   return s
@@ -24,10 +22,7 @@ function envOrThrow(name: string) {
 
 async function assertAdmin(req: NextRequest) {
   const token = bearer(req)
-  if (!token) return { ok: false as const, status: 401, error: 'Нет токена (Authorization: Bearer ...)' }
-
-  const url = envOrThrow('NEXT_PUBLIC_SUPABASE_URL')
-  const anon = envOrThrow('NEXT_PUBLIC_SUPABASE_ANON_KEY')
+  if (!token) return { ok: false as const, status: 401, error: 'РќРµС‚ С‚РѕРєРµРЅР° (Authorization: Bearer ...)' 'NEXT_PUBLIC_SUPABASE_URL' 'NEXT_PUBLIC_SUPABASE_ANON_KEY')
 
   const sb = createClient(url, anon, {
     global: { headers: { Authorization: `Bearer ${token}` } },
@@ -35,16 +30,13 @@ async function assertAdmin(req: NextRequest) {
   })
 
   const { data: userData, error: userErr } = await sb.auth.getUser(token)
-  if (userErr || !userData?.user) return { ok: false as const, status: 401, error: 'Невалидный токен' }
+  if (userErr || !userData?.user) return { ok: false as const, status: 401, error: 'РќРµРІР°Р»РёРґРЅС‹Р№ С‚РѕРєРµРЅ' }
 
   const { data: prof, error: profErr } = await sb
-    .from('profiles')
-    .select('id, role, active')
-    .eq('id', userData.user.id)
+    .from('profiles' 'id, role, active' 'id', userData.user.id)
     .single()
 
-  if (profErr || !prof) return { ok: false as const, status: 403, error: 'Профиль не найден' }
-  if (prof.role !== 'admin' || prof.active !== true) return { ok: false as const, status: 403, error: 'FORBIDDEN' }
+  if (profErr || !prof) return { ok: false as const, status: 403, error: 'РџСЂРѕС„РёР»СЊ РЅРµ РЅР°Р№РґРµРЅ' 'admin' || prof.active !== true) return { ok: false as const, status: 403, error: 'FORBIDDEN' }
 
   return { ok: true as const, adminUserId: userData.user.id }
 }
@@ -55,68 +47,57 @@ export async function POST(req: NextRequest) {
     if (!guard.ok) return NextResponse.json({ error: guard.error }, { status: guard.status })
 
     const body = await req.json().catch(() => ({} as any))
-    const workerId = String(body?.worker_id || '').trim()
-    if (!workerId) return NextResponse.json({ error: 'worker_id обязателен' }, { status: 400 })
-
-    const url = envOrThrow('NEXT_PUBLIC_SUPABASE_URL')
-    const service = envOrThrow('SUPABASE_SERVICE_ROLE_KEY')
+    const workerId = String(body?.worker_id || '' 'worker_id РѕР±СЏР·Р°С‚РµР»РµРЅ' 'NEXT_PUBLIC_SUPABASE_URL' 'SUPABASE_SERVICE_ROLE_KEY')
     const admin = createClient(url, service, {
       auth: { persistSession: false, autoRefreshToken: false },
     })
 
-    // 0) нельзя удалять админа
+    // 0) РЅРµР»СЊР·СЏ СѓРґР°Р»СЏС‚СЊ Р°РґРјРёРЅР°
     const { data: prof, error: profErr } = await admin
-      .from('profiles')
-      .select('id, role')
-      .eq('id', workerId)
+      .from('profiles' 'id, role' 'id', workerId)
       .single()
 
-    if (profErr || !prof) return NextResponse.json({ error: 'Профиль не найден' }, { status: 404 })
-    if (prof.role === 'admin') return NextResponse.json({ error: 'Админа удалить нельзя' }, { status: 409 })
+    if (profErr || !prof) return NextResponse.json({ error: 'РџСЂРѕС„РёР»СЊ РЅРµ РЅР°Р№РґРµРЅ' 'admin') return NextResponse.json({ error: 'РђРґРјРёРЅР° СѓРґР°Р»РёС‚СЊ РЅРµР»СЊР·СЏ' }, { status: 409 })
 
-    // 1) если есть time_logs — запрет (сохраняем отчёты)
+    // 1) РµСЃР»Рё РµСЃС‚СЊ time_logs вЂ” Р·Р°РїСЂРµС‚ (СЃРѕС…СЂР°РЅСЏРµРј РѕС‚С‡С‘С‚С‹)
     const { data: logsHit, error: logsErr } = await admin
-      .from('time_logs')
-      .select('id')
-      .eq('worker_id', workerId)
+      .from('time_logs' 'id' 'worker_id', workerId)
       .limit(1)
 
     if (logsErr) return NextResponse.json({ error: logsErr.message }, { status: 500 })
     if (logsHit && logsHit.length > 0) {
       return NextResponse.json(
-        { error: 'Нельзя удалить работника: есть таймлоги. Используй "Отключить" или "Удалить (анонимизировать)".' },
+        { error: 'РќРµР»СЊР·СЏ СѓРґР°Р»РёС‚СЊ СЂР°Р±РѕС‚РЅРёРєР°: РµСЃС‚СЊ С‚Р°Р№РјР»РѕРіРё. РСЃРїРѕР»СЊР·СѓР№ "РћС‚РєР»СЋС‡РёС‚СЊ" РёР»Рё "РЈРґР°Р»РёС‚СЊ (Р°РЅРѕРЅРёРјРёР·РёСЂРѕРІР°С‚СЊ)".' },
         { status: 409 }
       )
     }
 
-    // 2) если есть jobs — тоже запрет (в зависимости от модели данных)
+    // 2) РµСЃР»Рё РµСЃС‚СЊ jobs вЂ” С‚РѕР¶Рµ Р·Р°РїСЂРµС‚ (РІ Р·Р°РІРёСЃРёРјРѕСЃС‚Рё РѕС‚ РјРѕРґРµР»Рё РґР°РЅРЅС‹С…)
     const { data: jobsHit, error: jobsErr } = await admin
-      .from('jobs')
-      .select('id')
-      .eq('worker_id', workerId)
+      .from('jobs' 'id' 'worker_id', workerId)
       .limit(1)
 
     if (jobsErr) {
-      // если в схеме нет worker_id — не валим удаление, просто идём дальше
+      // РµСЃР»Рё РІ СЃС…РµРјРµ РЅРµС‚ worker_id вЂ” РЅРµ РІР°Р»РёРј СѓРґР°Р»РµРЅРёРµ, РїСЂРѕСЃС‚Рѕ РёРґС‘Рј РґР°Р»СЊС€Рµ
     } else if (jobsHit && jobsHit.length > 0) {
       return NextResponse.json(
-        { error: 'Нельзя удалить работника: есть смены (или история смен). Используй "Отключить" или "Удалить (анонимизировать)".' },
+        { error: 'РќРµР»СЊР·СЏ СѓРґР°Р»РёС‚СЊ СЂР°Р±РѕС‚РЅРёРєР°: РµСЃС‚СЊ СЃРјРµРЅС‹ (РёР»Рё РёСЃС‚РѕСЂРёСЏ СЃРјРµРЅ). РСЃРїРѕР»СЊР·СѓР№ "РћС‚РєР»СЋС‡РёС‚СЊ" РёР»Рё "РЈРґР°Р»РёС‚СЊ (Р°РЅРѕРЅРёРјРёР·РёСЂРѕРІР°С‚СЊ)".' },
         { status: 409 }
       )
     }
 
-    // 3) чистим assignments
+    // 3) С‡РёСЃС‚РёРј assignments
     await admin.from('assignments').delete().eq('worker_id', workerId)
 
-    // 4) удаляем профиль
+    // 4) СѓРґР°Р»СЏРµРј РїСЂРѕС„РёР»СЊ
     const { error: profDelErr } = await admin.from('profiles').delete().eq('id', workerId)
     if (profDelErr) return NextResponse.json({ error: profDelErr.message }, { status: 500 })
 
-    // 5) удаляем auth user (service role)
+    // 5) СѓРґР°Р»СЏРµРј auth user (service role)
     const { error: authDelErr } = await admin.auth.admin.deleteUser(workerId)
     if (authDelErr) {
       return NextResponse.json(
-        { error: `Профиль удалён, но auth user не удалён: ${authDelErr.message}` },
+        { error: `РџСЂРѕС„РёР»СЊ СѓРґР°Р»С‘РЅ, РЅРѕ auth user РЅРµ СѓРґР°Р»С‘РЅ: ${authDelErr.message}` },
         { status: 200 }
       )
     }
@@ -126,3 +107,4 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: e?.message || 'Server error' }, { status: 500 })
   }
 }
+

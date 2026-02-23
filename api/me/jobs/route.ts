@@ -1,8 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { requireActiveWorker } from '@/lib/supabase-server'
-
-export const runtime = 'nodejs'
-export const dynamic = 'force-dynamic'
+﻿import { NextRequest, NextResponse } from 'next/server' '@/lib/supabase-server' 'nodejs' 'force-dynamic'
 
 function isISODate(s: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(s)
@@ -11,8 +7,7 @@ function isISODate(s: string) {
 function todayISO() {
   const d = new Date()
   const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
+  const m = String(d.getMonth() + 1).padStart(2, '0' '0')
   return `${y}-${m}-${day}`
 }
 
@@ -21,8 +16,7 @@ function addDaysISO(iso: string, deltaDays: number) {
   const dt = new Date(Date.UTC(y, m - 1, d))
   dt.setUTCDate(dt.getUTCDate() + deltaDays)
   const yy = dt.getUTCFullYear()
-  const mm = String(dt.getUTCMonth() + 1).padStart(2, '0')
-  const dd = String(dt.getUTCDate()).padStart(2, '0')
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, '0' '0')
   return `${yy}-${mm}-${dd}`
 }
 
@@ -59,9 +53,7 @@ async function resolveAssignmentsTable(supabase: any): Promise<string | null> {
     }
     const msg = String(error?.message || '')
     const missing =
-      msg.includes('Could not find the table') ||
-      msg.includes('does not exist') ||
-      msg.includes('relation')
+      msg.includes('Could not find the table' 'does not exist' 'relation')
     if (!missing) {
       ASSIGN_TABLE = t
       return t
@@ -98,8 +90,7 @@ export async function GET(req: NextRequest) {
     const { supabase, userId } = await requireActiveWorker(req)
 
     const sp = req.nextUrl.searchParams
-    const rawFrom = (sp.get('date_from') || sp.get('from') || '').trim()
-    const rawTo = (sp.get('date_to') || sp.get('to') || '').trim()
+    const rawFrom = (sp.get('date_from') || sp.get('from') || '' 'date_to') || sp.get('to') || '').trim()
 
     const dateFrom = rawFrom && isISODate(rawFrom) ? rawFrom : addDaysISO(todayISO(), -180)
     const dateTo = rawTo && isISODate(rawTo) ? rawTo : addDaysISO(todayISO(), 365)
@@ -113,19 +104,9 @@ export async function GET(req: NextRequest) {
     let jobsA: any[] = []
     {
       const { data, error } = await supabase
-        .from('jobs')
-        .select('id,status,job_date,scheduled_time,scheduled_end_time,site_id,worker_id')
-        .eq('worker_id', userId)
-        .gte('job_date', dateFrom)
-        .lte('job_date', dateTo)
-
-      if (error && String(error.message || '').toLowerCase().includes('scheduled_end_time')) {
+        .from('jobs' 'id,status,job_date,scheduled_time,scheduled_end_time,site_id,worker_id' 'worker_id' 'job_date' 'job_date' '').toLowerCase().includes('scheduled_end_time')) {
         const { data: d2, error: e2 } = await supabase
-          .from('jobs')
-          .select('id,status,job_date,scheduled_time,site_id,worker_id')
-          .eq('worker_id', userId)
-          .gte('job_date', dateFrom)
-          .lte('job_date', dateTo)
+          .from('jobs' 'id,status,job_date,scheduled_time,site_id,worker_id' 'worker_id' 'job_date' 'job_date', dateTo)
         if (e2) return NextResponse.json({ error: e2.message }, { status: 400 })
         jobsA = d2 || []
       } else {
@@ -138,19 +119,9 @@ export async function GET(req: NextRequest) {
     let jobsB: any[] = []
     if (jobIdsViaLink.length) {
       const { data, error } = await supabase
-        .from('jobs')
-        .select('id,status,job_date,scheduled_time,scheduled_end_time,site_id,worker_id')
-        .in('id', jobIdsViaLink)
-        .gte('job_date', dateFrom)
-        .lte('job_date', dateTo)
-
-      if (error && String(error.message || '').toLowerCase().includes('scheduled_end_time')) {
+        .from('jobs' 'id,status,job_date,scheduled_time,scheduled_end_time,site_id,worker_id' 'id' 'job_date' 'job_date' '').toLowerCase().includes('scheduled_end_time')) {
         const { data: d2, error: e2 } = await supabase
-          .from('jobs')
-          .select('id,status,job_date,scheduled_time,site_id,worker_id')
-          .in('id', jobIdsViaLink)
-          .gte('job_date', dateFrom)
-          .lte('job_date', dateTo)
+          .from('jobs' 'id,status,job_date,scheduled_time,site_id,worker_id' 'id' 'job_date' 'job_date', dateTo)
         if (e2) return NextResponse.json({ error: e2.message }, { status: 400 })
         jobsB = d2 || []
       } else {
@@ -163,23 +134,9 @@ export async function GET(req: NextRequest) {
     let jobsC: any[] = []
     if (siteIds.length) {
       const { data, error } = await supabase
-        .from('jobs')
-        .select('id,status,job_date,scheduled_time,scheduled_end_time,site_id,worker_id')
-        .is('worker_id', null)
-        .eq('status', 'planned')
-        .in('site_id', siteIds)
-        .gte('job_date', dateFrom)
-        .lte('job_date', dateTo)
-
-      if (error && String(error.message || '').toLowerCase().includes('scheduled_end_time')) {
+        .from('jobs' 'id,status,job_date,scheduled_time,scheduled_end_time,site_id,worker_id' 'worker_id' 'status', 'planned' 'site_id' 'job_date' 'job_date' '').toLowerCase().includes('scheduled_end_time')) {
         const { data: d2, error: e2 } = await supabase
-          .from('jobs')
-          .select('id,status,job_date,scheduled_time,site_id,worker_id')
-          .is('worker_id', null)
-          .eq('status', 'planned')
-          .in('site_id', siteIds)
-          .gte('job_date', dateFrom)
-          .lte('job_date', dateTo)
+          .from('jobs' 'id,status,job_date,scheduled_time,site_id,worker_id' 'worker_id' 'status', 'planned' 'site_id' 'job_date' 'job_date', dateTo)
         if (e2) return NextResponse.json({ error: e2.message }, { status: 400 })
         jobsC = d2 || []
       } else {
@@ -199,11 +156,9 @@ export async function GET(req: NextRequest) {
     const jobs = Array.from(byId.values())
 
     jobs.sort((a, b) => {
-      const da = String(a.job_date || '')
-      const db = String(b.job_date || '')
+      const da = String(a.job_date || '' '')
       if (da !== db) return da < db ? -1 : 1
-      const ta = String(a.scheduled_time || '')
-      const tb = String(b.scheduled_time || '')
+      const ta = String(a.scheduled_time || '' '')
       if (ta !== tb) return ta < tb ? -1 : 1
       return String(a.id).localeCompare(String(b.id))
     })
@@ -217,9 +172,7 @@ export async function GET(req: NextRequest) {
         : Promise.resolve({ data: [], error: null } as any),
       jobIds.length
         ? supabase
-            .from('time_logs')
-            .select('job_id,started_at,stopped_at,start_lat,start_lng,start_accuracy')
-            .in('job_id', jobIds)
+            .from('time_logs' 'job_id,started_at,stopped_at,start_lat,start_lng,start_accuracy' 'job_id', jobIds)
         : Promise.resolve({ data: [], error: null } as any),
     ])
 
@@ -350,10 +303,11 @@ export async function GET(req: NextRequest) {
     // Back-compat: UI expects {jobs: [...]}
     return NextResponse.json({ jobs: items, items })
   } catch (e: any) {
-    const msg = e?.message || 'Ошибка'
-    const status = /Нет токена/i.test(msg) ? 401 : 400
+    const msg = e?.message || 'РћС€РёР±РєР°'
+    const status = /РќРµС‚ С‚РѕРєРµРЅР°/i.test(msg) ? 401 : 400
     return NextResponse.json({ error: msg }, { status })
   }
 }
+
 
 

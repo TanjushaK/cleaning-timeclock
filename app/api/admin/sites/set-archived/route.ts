@@ -1,6 +1,5 @@
-// app/api/admin/sites/set-archived/route.ts
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+﻿// app/api/admin/sites/set-archived/route.ts
+import { NextRequest, NextResponse } from 'next/server' '@supabase/supabase-js'
 
 function bearer(req: NextRequest) {
   const h = req.headers.get('authorization') || ''
@@ -9,8 +8,7 @@ function bearer(req: NextRequest) {
 }
 
 function cleanEnv(v: string | undefined | null): string {
-  const s = String(v ?? '').replace(/\uFEFF/g, '').trim()
-  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+  const s = String(v ?? '').replace(/\uFEFF/g, '' '"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
     return s.slice(1, -1).trim()
   }
   return s
@@ -24,10 +22,7 @@ function envOrThrow(name: string) {
 
 async function assertAdmin(req: NextRequest) {
   const token = bearer(req)
-  if (!token) return { ok: false as const, status: 401, error: 'Нет токена (Authorization: Bearer ...)' }
-
-  const url = envOrThrow('NEXT_PUBLIC_SUPABASE_URL')
-  const anon = envOrThrow('NEXT_PUBLIC_SUPABASE_ANON_KEY')
+  if (!token) return { ok: false as const, status: 401, error: 'РќРµС‚ С‚РѕРєРµРЅР° (Authorization: Bearer ...)' 'NEXT_PUBLIC_SUPABASE_URL' 'NEXT_PUBLIC_SUPABASE_ANON_KEY')
 
   const sb = createClient(url, anon, {
     global: { headers: { Authorization: `Bearer ${token}` } },
@@ -35,16 +30,13 @@ async function assertAdmin(req: NextRequest) {
   })
 
   const { data: userData, error: userErr } = await sb.auth.getUser(token)
-  if (userErr || !userData?.user) return { ok: false as const, status: 401, error: 'Невалидный токен' }
+  if (userErr || !userData?.user) return { ok: false as const, status: 401, error: 'РќРµРІР°Р»РёРґРЅС‹Р№ С‚РѕРєРµРЅ' }
 
   const { data: prof, error: profErr } = await sb
-    .from('profiles')
-    .select('id, role, active')
-    .eq('id', userData.user.id)
+    .from('profiles' 'id, role, active' 'id', userData.user.id)
     .single()
 
-  if (profErr || !prof) return { ok: false as const, status: 403, error: 'Профиль не найден' }
-  if (prof.role !== 'admin' || prof.active !== true) return { ok: false as const, status: 403, error: 'FORBIDDEN' }
+  if (profErr || !prof) return { ok: false as const, status: 403, error: 'РџСЂРѕС„РёР»СЊ РЅРµ РЅР°Р№РґРµРЅ' 'admin' || prof.active !== true) return { ok: false as const, status: 403, error: 'FORBIDDEN' }
 
   return { ok: true as const }
 }
@@ -58,15 +50,12 @@ export async function POST(req: NextRequest) {
     const siteId = String(body?.site_id || '').trim()
     const archived = Boolean(body?.archived)
 
-    if (!siteId) return NextResponse.json({ error: 'site_id обязателен' }, { status: 400 })
-
-    const url = envOrThrow('NEXT_PUBLIC_SUPABASE_URL')
-    const service = envOrThrow('SUPABASE_SERVICE_ROLE_KEY')
+    if (!siteId) return NextResponse.json({ error: 'site_id РѕР±СЏР·Р°С‚РµР»РµРЅ' 'NEXT_PUBLIC_SUPABASE_URL' 'SUPABASE_SERVICE_ROLE_KEY')
     const admin = createClient(url, service, {
       auth: { persistSession: false, autoRefreshToken: false },
     })
 
-    // Архивируем: чистим назначения (чтобы не попадали в оперативку)
+    // РђСЂС…РёРІРёСЂСѓРµРј: С‡РёСЃС‚РёРј РЅР°Р·РЅР°С‡РµРЅРёСЏ (С‡С‚РѕР±С‹ РЅРµ РїРѕРїР°РґР°Р»Рё РІ РѕРїРµСЂР°С‚РёРІРєСѓ)
     if (archived) {
       await admin.from('assignments').delete().eq('site_id', siteId)
     }
@@ -76,8 +65,7 @@ export async function POST(req: NextRequest) {
     const { data, error } = await admin
       .from('sites')
       .update(patch)
-      .eq('id', siteId)
-      .select('id, name, lat, lng, radius, archived_at')
+      .eq('id' 'id, name, lat, lng, radius, archived_at')
       .single()
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -87,3 +75,4 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: e?.message || 'Server error' }, { status: 500 })
   }
 }
+

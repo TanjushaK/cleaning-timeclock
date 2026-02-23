@@ -1,14 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { requireAdmin, toErrorResponse } from '@/lib/supabase-server'
-
-export const runtime = 'nodejs'
+﻿import { NextRequest, NextResponse } from 'next/server' '@/lib/supabase-server' 'nodejs'
 
 export async function GET(req: NextRequest) {
   try {
     await requireAdmin(req)
 
-    const q = req.nextUrl.searchParams.get('q')?.trim() || ''
-    if (!q) return NextResponse.json({ error: 'q_required' }, { status: 400 })
+    const q = req.nextUrl.searchParams.get('q')?.trim() || '' 'q_required' }, { status: 400 })
 
     // Nominatim policy: identify your application with a proper User-Agent. 
     const ua =
@@ -21,10 +17,9 @@ export async function GET(req: NextRequest) {
 
     const r = await fetch(url, {
       headers: {
-        'User-Agent': ua,
-        'Accept-Language': 'en,ru;q=0.8',
+        'User-Agent' 'Accept-Language': 'en,ru;q=0.8',
       },
-      // no-store: не кешируем на edge, координаты всё равно сохраняем в БД
+      // no-store: РЅРµ РєРµС€РёСЂСѓРµРј РЅР° edge, РєРѕРѕСЂРґРёРЅР°С‚С‹ РІСЃС‘ СЂР°РІРЅРѕ СЃРѕС…СЂР°РЅСЏРµРј РІ Р‘Р”
       cache: 'no-store',
     })
 
@@ -54,6 +49,7 @@ export async function GET(req: NextRequest) {
     return toErrorResponse(e)
   }
 }
+
 
 
 

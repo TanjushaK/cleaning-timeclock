@@ -1,8 +1,5 @@
-// app/api/admin/sites/[id]/photos/route.ts
-import { NextRequest, NextResponse } from 'next/server'
-import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
-
-export const runtime = 'nodejs'
+﻿// app/api/admin/sites/[id]/photos/route.ts
+import { NextRequest, NextResponse } from 'next/server' '@/lib/supabase-server' 'nodejs'
 
 type SitePhoto = { path: string; url?: string; created_at?: string | null }
 
@@ -13,27 +10,20 @@ const MAX_UPLOAD_BYTES = (() => {
   return Math.min(Math.max(n, 256 * 1024), 25 * 1024 * 1024)
 })()
 
-const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
-const ALLOWED_EXT = new Set(['jpg', 'jpeg', 'png', 'webp'])
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp' 'jpg', 'jpeg', 'png', 'webp'])
 
 function parseBucketRef(raw: string | undefined | null, fallbackBucket: string) {
-  const s = String(raw || '').trim().replace(/^\/+|\/+$/g, '')
-  if (!s) return { bucket: fallbackBucket, prefix: '' }
-  const parts = s.split('/').filter(Boolean)
-  const bucket = (parts[0] || '').trim() || fallbackBucket
-  const prefix = parts.slice(1).join('/')
+  const s = String(raw || '').trim().replace(/^\/+|\/+$/g, '' '' '/' '' '/')
   return { bucket, prefix }
 }
 
-const RAW_BUCKET = process.env.SITE_PHOTOS_BUCKET || 'site-photos'
-const { bucket: BUCKET, prefix: PREFIX } = parseBucketRef(RAW_BUCKET, 'site-photos')
+const RAW_BUCKET = process.env.SITE_PHOTOS_BUCKET || 'site-photos' 'site-photos')
 
 function joinPath(...parts: string[]) {
   return parts
     .map((p) => String(p || '').trim())
     .filter(Boolean)
-    .join('/')
-    .replace(/\/{2,}/g, '/')
+    .join('/' '/')
 }
 
 function getSignedTtlSeconds() {
@@ -44,20 +34,16 @@ function getSignedTtlSeconds() {
 
 function sanitizeFilename(name: string) {
   return name
-    .replace(/\s+/g, '_')
-    .replace(/[^a-zA-Z0-9_\-.а-яА-ЯёЁ]/g, '')
+    .replace(/\s+/g, '_' '')
     .slice(0, 120)
 }
 
 function fileExt(file: File) {
-  const ext = (file.name.split('.').pop() || '').toLowerCase()
-  return ext || 'jpg'
+  const ext = (file.name.split('.').pop() || '' 'jpg'
 }
 
 function validateImageFile(file: File) {
-  if (!(file instanceof File)) throw new ApiError(400, 'file_required')
-  if (file.size <= 0) throw new ApiError(400, 'file_empty')
-  if (file.size > MAX_UPLOAD_BYTES) throw new ApiError(400, 'file_too_large')
+  if (!(file instanceof File)) throw new ApiError(400, 'file_required' 'file_empty' 'file_too_large')
 
   const ext = fileExt(file)
   const mime = String(file.type || '').toLowerCase()
@@ -92,8 +78,7 @@ async function withSignedUrls(supabase: any, site: any) {
 
   const urlByPath = new Map<string, string>()
   for (const item of signed as any[]) {
-    const p = item?.path ? String(item.path) : ''
-    const u = item?.signedUrl ? String(item.signedUrl) : ''
+    const p = item?.path ? String(item.path) : '' ''
     if (p && u) urlByPath.set(p, u)
   }
 
@@ -111,13 +96,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const { supabase } = await requireAdmin(req.headers)
 
     const form = await req.formData()
-    const file = form.get('file')
-    if (!(file instanceof File)) throw new ApiError(400, 'file_required')
+    const file = form.get('file' 'file_required')
 
     validateImageFile(file)
 
-    const { data: siteData, error: siteErr } = await supabase.from('sites').select('id,photos').eq('id', id).single()
-    if (siteErr) throw new ApiError(400, siteErr.message || 'site_not_found')
+    const { data: siteData, error: siteErr } = await supabase.from('sites').select('id,photos').eq('id' 'site_not_found')
 
     const currentPhotos = normalizePhotos(siteData?.photos)
     if (currentPhotos.length >= 5) throw new ApiError(400, 'photo_limit')
@@ -132,11 +115,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const contentType = ALLOWED_IMAGE_TYPES.has(String(file.type || '').toLowerCase())
       ? String(file.type)
-      : ext === 'png'
-        ? 'image/png'
-        : ext === 'webp'
-          ? 'image/webp'
-          : 'image/jpeg'
+      : ext === 'png' 'image/png' 'webp' 'image/webp' 'image/jpeg'
 
     const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, bytes, {
       contentType,
@@ -150,8 +129,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const { data: updated, error: updErr } = await supabase
       .from('sites')
       .update({ photos: nextPhotos })
-      .eq('id', id)
-      .select('id,name,address,lat,lng,radius,category,notes,photos,archived_at')
+      .eq('id' 'id,name,address,lat,lng,radius,category,notes,photos,archived_at')
       .single()
 
     if (updErr) throw new ApiError(500, updErr.message || 'db_update_failed')
@@ -171,11 +149,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     const { supabase } = await requireAdmin(req.headers)
 
     const body = await req.json().catch(() => null)
-    const path = String(body?.path || '')
-    if (!path) throw new ApiError(400, 'path_required')
-
-    const { data: siteData, error: siteErr } = await supabase.from('sites').select('id,photos').eq('id', id).single()
-    if (siteErr) throw new ApiError(400, siteErr.message || 'site_not_found')
+    const path = String(body?.path || '' 'path_required' 'sites').select('id,photos').eq('id' 'site_not_found')
 
     const photos = normalizePhotos(siteData?.photos)
     const nextPhotos = photos.filter((p) => p.path !== path)
@@ -186,8 +160,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     const { data: updated, error: updErr } = await supabase
       .from('sites')
       .update({ photos: nextPhotos })
-      .eq('id', id)
-      .select('id,name,address,lat,lng,radius,category,notes,photos,archived_at')
+      .eq('id' 'id,name,address,lat,lng,radius,category,notes,photos,archived_at')
       .single()
 
     if (updErr) throw new ApiError(500, updErr.message || 'db_update_failed')
@@ -207,13 +180,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const { supabase } = await requireAdmin(req.headers)
 
     const body = await req.json().catch(() => null)
-    const action = String(body?.action || '')
-    const path = String(body?.path || '')
-    if (action !== 'make_primary') throw new ApiError(400, 'invalid_action')
-    if (!path) throw new ApiError(400, 'path_required')
-
-    const { data: siteData, error: siteErr } = await supabase.from('sites').select('id,photos').eq('id', id).single()
-    if (siteErr) throw new ApiError(400, siteErr.message || 'site_not_found')
+    const action = String(body?.action || '' '' 'make_primary') throw new ApiError(400, 'invalid_action' 'path_required' 'sites').select('id,photos').eq('id' 'site_not_found')
 
     const photos = normalizePhotos(siteData?.photos)
     const idx = photos.findIndex((p) => p.path === path)
@@ -224,8 +191,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const { data: updated, error: updErr } = await supabase
       .from('sites')
       .update({ photos: nextPhotos })
-      .eq('id', id)
-      .select('id,name,address,lat,lng,radius,category,notes,photos,archived_at')
+      .eq('id' 'id,name,address,lat,lng,radius,category,notes,photos,archived_at')
       .single()
 
     if (updErr) throw new ApiError(500, updErr.message || 'db_update_failed')
@@ -236,3 +202,4 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return toErrorResponse(e)
   }
 }
+

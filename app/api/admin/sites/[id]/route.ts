@@ -1,7 +1,4 @@
-import { NextResponse } from 'next/server'
-import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
-
-export const runtime = 'nodejs'
+﻿import { NextResponse } from 'next/server' '@/lib/supabase-server' 'nodejs'
 
 function toFiniteOrNull(v: any): number | null {
   if (v == null) return null
@@ -14,15 +11,14 @@ function toCategoryOrNull(v: any): number | null {
   const n = Number(v)
   if (!Number.isFinite(n)) return null
   const i = Math.trunc(n)
-  if (i < 1 || i > 15) throw new ApiError(400, 'Категория должна быть от 1 до 15')
+  if (i < 1 || i > 15) throw new ApiError(400, 'РљР°С‚РµРіРѕСЂРёСЏ РґРѕР»Р¶РЅР° Р±С‹С‚СЊ РѕС‚ 1 РґРѕ 15')
   return i
 }
 
 async function getSiteIdFromCtx(ctx: any): Promise<string> {
-  // Next 16 на build иногда типизирует params как Promise — unwrap безопасно
+  // Next 16 РЅР° build РёРЅРѕРіРґР° С‚РёРїРёР·РёСЂСѓРµС‚ params РєР°Рє Promise вЂ” unwrap Р±РµР·РѕРїР°СЃРЅРѕ
   const p = await Promise.resolve(ctx?.params)
-  const id = String(p?.id || '').trim()
-  if (!id) throw new ApiError(400, 'Missing site id')
+  const id = String(p?.id || '' 'Missing site id')
   return id
 }
 
@@ -32,12 +28,10 @@ export async function GET(req: Request, ctx: any) {
     const siteId = await getSiteIdFromCtx(ctx)
 
     const { data, error } = await supabase
-      .from('sites')
-      .select('id,name,address,lat,lng,radius,category,notes,photos,archived_at')
-      .eq('id', siteId)
+      .from('sites' 'id,name,address,lat,lng,radius,category,notes,photos,archived_at' 'id', siteId)
       .single()
 
-    if (error) throw new ApiError(404, 'Объект не найден')
+    if (error) throw new ApiError(404, 'РћР±СЉРµРєС‚ РЅРµ РЅР°Р№РґРµРЅ')
 
     return NextResponse.json({ site: data }, { status: 200 })
   } catch (e) {
@@ -72,29 +66,26 @@ export async function PUT(req: Request, ctx: any) {
     if (category !== undefined) patch.category = category
     if (notes !== undefined) patch.notes = notes
 
-    // Ничего не меняем — нечего апдейтить
+    // РќРёС‡РµРіРѕ РЅРµ РјРµРЅСЏРµРј вЂ” РЅРµС‡РµРіРѕ Р°РїРґРµР№С‚РёС‚СЊ
     if (Object.keys(patch).length === 0) {
       const { data, error } = await supabase
-        .from('sites')
-        .select('id,name,address,lat,lng,radius,category,notes,photos,archived_at')
-        .eq('id', siteId)
+        .from('sites' 'id,name,address,lat,lng,radius,category,notes,photos,archived_at' 'id', siteId)
         .single()
 
-      if (error) throw new ApiError(404, 'Объект не найден')
+      if (error) throw new ApiError(404, 'РћР±СЉРµРєС‚ РЅРµ РЅР°Р№РґРµРЅ')
       return NextResponse.json({ site: data }, { status: 200 })
     }
 
-    // Базовая валидация
-    if (patch.name !== undefined && !patch.name) throw new ApiError(400, 'Нужно название объекта')
+    // Р‘Р°Р·РѕРІР°СЏ РІР°Р»РёРґР°С†РёСЏ
+    if (patch.name !== undefined && !patch.name) throw new ApiError(400, 'РќСѓР¶РЅРѕ РЅР°Р·РІР°РЅРёРµ РѕР±СЉРµРєС‚Р°')
 
     const { data, error } = await supabase
       .from('sites')
       .update(patch)
-      .eq('id', siteId)
-      .select('id,name,address,lat,lng,radius,category,notes,photos,archived_at')
+      .eq('id' 'id,name,address,lat,lng,radius,category,notes,photos,archived_at')
       .single()
 
-    if (error) throw new ApiError(500, error.message || 'Не удалось обновить объект')
+    if (error) throw new ApiError(500, error.message || 'РќРµ СѓРґР°Р»РѕСЃСЊ РѕР±РЅРѕРІРёС‚СЊ РѕР±СЉРµРєС‚')
 
     return NextResponse.json({ site: data }, { status: 200 })
   } catch (e) {
@@ -107,15 +98,15 @@ export async function DELETE(req: Request, ctx: any) {
     const { supabase } = await requireAdmin(req.headers)
     const siteId = await getSiteIdFromCtx(ctx)
 
-    // 1) Пытаемся удалить сам объект.
-    // Если есть FK-ограничения — Supabase вернёт ошибку, и мы покажем понятный текст.
+    // 1) РџС‹С‚Р°РµРјСЃСЏ СѓРґР°Р»РёС‚СЊ СЃР°Рј РѕР±СЉРµРєС‚.
+    // Р•СЃР»Рё РµСЃС‚СЊ FK-РѕРіСЂР°РЅРёС‡РµРЅРёСЏ вЂ” Supabase РІРµСЂРЅС‘С‚ РѕС€РёР±РєСѓ, Рё РјС‹ РїРѕРєР°Р¶РµРј РїРѕРЅСЏС‚РЅС‹Р№ С‚РµРєСЃС‚.
     const { error } = await supabase.from('sites').delete().eq('id', siteId)
 
     if (error) {
-      // Частая причина — связанные назначения/смены. Сообщаем как есть.
+      // Р§Р°СЃС‚Р°СЏ РїСЂРёС‡РёРЅР° вЂ” СЃРІСЏР·Р°РЅРЅС‹Рµ РЅР°Р·РЅР°С‡РµРЅРёСЏ/СЃРјРµРЅС‹. РЎРѕРѕР±С‰Р°РµРј РєР°Рє РµСЃС‚СЊ.
       throw new ApiError(
         409,
-        `Не удалось удалить объект. Скорее всего есть связанные данные (смены/назначения). Детали: ${error.message}`
+        `РќРµ СѓРґР°Р»РѕСЃСЊ СѓРґР°Р»РёС‚СЊ РѕР±СЉРµРєС‚. РЎРєРѕСЂРµРµ РІСЃРµРіРѕ РµСЃС‚СЊ СЃРІСЏР·Р°РЅРЅС‹Рµ РґР°РЅРЅС‹Рµ (СЃРјРµРЅС‹/РЅР°Р·РЅР°С‡РµРЅРёСЏ). Р”РµС‚Р°Р»Рё: ${error.message}`
       )
     }
 

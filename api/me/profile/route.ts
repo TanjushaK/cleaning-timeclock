@@ -1,17 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { requireUser } from '@/lib/supabase-server'
-
-export const runtime = 'nodejs'
-export const dynamic = 'force-dynamic'
+﻿import { NextRequest, NextResponse } from 'next/server' '@/lib/supabase-server' 'nodejs' 'force-dynamic'
 
 export async function GET(req: NextRequest) {
   try {
     const { supabase, user } = await requireUser(req)
 
     const { data: profile, error } = await supabase
-      .from('profiles')
-      .select('id, role, active, full_name, phone, email, avatar_path, notes, onboarding_submitted_at')
-      .eq('id', user.id)
+      .from('profiles' 'id, role, active, full_name, phone, email, avatar_path, notes, onboarding_submitted_at' 'id', user.id)
       .maybeSingle()
 
     if (error) return NextResponse.json({ error: error.message }, { status: 400 })
@@ -72,8 +66,9 @@ export async function GET(req: NextRequest) {
       profile,
     })
   } catch (e: any) {
-    const msg = e?.message || 'Ошибка'
-    const status = /Нет токена/i.test(msg) ? 401 : 400
+    const msg = e?.message || 'РћС€РёР±РєР°'
+    const status = /РќРµС‚ С‚РѕРєРµРЅР°/i.test(msg) ? 401 : 400
     return NextResponse.json({ error: msg }, { status })
   }
 }
+

@@ -1,9 +1,5 @@
 ﻿// app/api/me/photos/route.ts
-import { NextRequest, NextResponse } from 'next/server'
-import { ApiError, requireUser, toErrorResponse } from '@/lib/supabase-server'
-
-export const runtime = 'nodejs'
-export const dynamic = 'force-dynamic'
+import { NextRequest, NextResponse } from 'next/server' '@/lib/supabase-server' 'nodejs' 'force-dynamic'
 
 type Photo = { path: string; url?: string; created_at?: string | null }
 type AvatarKey = 'avatar_path' | 'avatar_url' | 'photo_path'
@@ -16,14 +12,9 @@ const MAX_UPLOAD_BYTES = (() => {
 })()
 
 const ALLOWED_IMAGE_TYPES = new Set([
-  'image/jpeg',
-  'image/png',
-  'image/webp',
+  'image/jpeg' 'image/png' 'image/webp',
   // iPhone С‡Р°СЃС‚Рѕ РѕС‚РґР°С‘С‚ HEIC/HEIF
-  'image/heic',
-  'image/heif',
-  'image/heic-sequence',
-  'image/heif-sequence',
+  'image/heic' 'image/heif' 'image/heic-sequence' 'image/heif-sequence',
 ])
 const ALLOWED_EXT = new Set(['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'])
 
@@ -38,10 +29,7 @@ function asIncomingFile(v: FormDataEntryValue | null): IncomingFile | null {
   if (!v) return null
   if (typeof v === 'string') return null
   const anyv: any = v as any
-  if (typeof anyv?.arrayBuffer !== 'function' || typeof anyv?.size !== 'number') return null
-
-  const name = typeof anyv?.name === 'string' && anyv.name ? String(anyv.name) : 'photo.jpg'
-  const type = typeof anyv?.type === 'string' ? String(anyv.type) : ''
+  if (typeof anyv?.arrayBuffer !== 'function' || typeof anyv?.size !== 'number' 'string' && anyv.name ? String(anyv.name) : 'photo.jpg' 'string' ? String(anyv.type) : ''
   const size = Number(anyv.size) || 0
 
   return {
@@ -53,23 +41,17 @@ function asIncomingFile(v: FormDataEntryValue | null): IncomingFile | null {
 }
 
 function parseBucketRef(raw: string | undefined | null, fallbackBucket: string) {
-  const s = String(raw || '').trim().replace(/^\/+|\/+$/g, '')
-  if (!s) return { bucket: fallbackBucket, prefix: '' }
-  const parts = s.split('/').filter(Boolean)
-  const bucket = (parts[0] || '').trim() || fallbackBucket
-  const prefix = parts.slice(1).join('/')
+  const s = String(raw || '').trim().replace(/^\/+|\/+$/g, '' '' '/' '' '/')
   return { bucket, prefix }
 }
 
-const RAW = process.env.WORKER_PHOTOS_BUCKET || 'site-photos/workers'
-const { bucket: BUCKET, prefix: BUCKET_PREFIX } = parseBucketRef(RAW, 'site-photos')
+const RAW = process.env.WORKER_PHOTOS_BUCKET || 'site-photos/workers' 'site-photos')
 
 function joinPath(...parts: string[]) {
   return parts
     .map((p) => String(p || '').trim())
     .filter(Boolean)
-    .join('/')
-    .replace(/\/{2,}/g, '/')
+    .join('/' '/')
 }
 
 function safeName(s: string) {
@@ -87,27 +69,17 @@ function pref(userId: string) {
 }
 
 function fileExt(file: IncomingFile) {
-  const ext = (file.name.split('.').pop() || '').toLowerCase()
-  return ext || 'jpg'
+  const ext = (file.name.split('.').pop() || '' 'jpg'
 }
 
 function canonicalExt(file: IncomingFile): string {
   const ext = fileExt(file)
   if (ALLOWED_EXT.has(ext)) return ext
-  const mime = String(file.type || '').toLowerCase()
-  if (mime === 'image/png') return 'png'
-  if (mime === 'image/webp') return 'webp'
-  if (mime === 'image/heic' || mime === 'image/heic-sequence') return 'heic'
-  if (mime === 'image/heif' || mime === 'image/heif-sequence') return 'heif'
-  return 'jpg'
+  const mime = String(file.type || '' 'image/png') return 'png' 'image/webp') return 'webp' 'image/heic' || mime === 'image/heic-sequence') return 'heic' 'image/heif' || mime === 'image/heif-sequence') return 'heif' 'jpg'
 }
 
 function contentTypeFor(ext: string): string {
-  if (ext === 'png') return 'image/png'
-  if (ext === 'webp') return 'image/webp'
-  if (ext === 'heic') return 'image/heic'
-  if (ext === 'heif') return 'image/heif'
-  return 'image/jpeg'
+  if (ext === 'png') return 'image/png' 'webp') return 'image/webp' 'heic') return 'image/heic' 'heif') return 'image/heif' 'image/jpeg'
 }
 
 function validateImageFile(file: IncomingFile) {
@@ -131,8 +103,7 @@ async function resolveAvatarKey(sb: any): Promise<AvatarKey> {
   for (const k of candidates) {
     const { error } = await sb.from('profiles').select(k).limit(1)
     if (!error) return k
-    const msg = String(error?.message || '')
-    if (msg.includes('column') && msg.includes('does not exist')) continue
+    const msg = String(error?.message || '' 'column') && msg.includes('does not exist')) continue
   }
   return 'avatar_path'
 }
@@ -155,8 +126,7 @@ async function listPhotos(sb: any, userId: string): Promise<Photo[]> {
   const { data: signed, error: signErr } = await sb.storage.from(BUCKET).createSignedUrls(paths, ttl)
   if (!signErr && Array.isArray(signed)) {
     for (const s of signed as any[]) {
-      const pp = s?.path ? String(s.path) : ''
-      const uu = s?.signedUrl ? String(s.signedUrl) : ''
+      const pp = s?.path ? String(s.path) : '' ''
       if (pp && uu) urlByPath.set(pp, uu)
     }
   }
@@ -174,8 +144,7 @@ export async function GET(req: NextRequest) {
     const photos = await listPhotos(supabase, userId)
 
     const avatarKey = await resolveAvatarKey(supabase)
-    const { data: prof } = await supabase.from('profiles').select(avatarKey).eq('id', userId).maybeSingle()
-    const avatar_path = prof ? String((prof as any)[avatarKey] || '') : ''
+    const { data: prof } = await supabase.from('profiles').select(avatarKey).eq('id' '') : ''
 
     return NextResponse.json({ photos, avatar_path: avatar_path || null })
   } catch (e) {
@@ -191,8 +160,7 @@ export async function POST(req: NextRequest) {
     if (current.length >= 5) throw new ApiError(400, 'Р›РёРјРёС‚: 5 С„РѕС‚Рѕ. РЈРґР°Р»Рё РѕРґРЅРѕ Рё РїРѕРїСЂРѕР±СѓР№ СЃРЅРѕРІР°.')
 
     const form = await req.formData()
-    const file = asIncomingFile(form.get('file'))
-    if (!file) throw new ApiError(400, 'Р’С‹Р±РµСЂРё С„РѕС‚Рѕ РґР»СЏ Р·Р°РіСЂСѓР·РєРё.')
+    const file = asIncomingFile(form.get('file' 'Р’С‹Р±РµСЂРё С„РѕС‚Рѕ РґР»СЏ Р·Р°РіСЂСѓР·РєРё.')
 
     validateImageFile(file)
 
@@ -220,8 +188,7 @@ export async function POST(req: NextRequest) {
     }
 
     const photos = await listPhotos(supabase, userId)
-    const { data: prof2 } = await supabase.from('profiles').select(avatarKey).eq('id', userId).maybeSingle()
-    const avatar_path = prof2 ? String((prof2 as any)[avatarKey] || '') : ''
+    const { data: prof2 } = await supabase.from('profiles').select(avatarKey).eq('id' '') : ''
 
     return NextResponse.json({ photos, avatar_path: avatar_path || null })
   } catch (e) {
@@ -234,11 +201,7 @@ export async function PATCH(req: NextRequest) {
     const { supabase, userId } = await requireUser(req)
     const body = await req.json().catch(() => ({} as any))
 
-    const action = String(body?.action || '')
-    const path = String(body?.path || '').trim()
-    if (action !== 'make_primary') throw new ApiError(400, 'invalid_action')
-    if (!path) throw new ApiError(400, 'path_required')
-    if (!path.startsWith(`${pref(userId)}/`)) throw new ApiError(403, 'forbidden')
+    const action = String(body?.action || '' '' 'make_primary') throw new ApiError(400, 'invalid_action' 'path_required' 'forbidden')
 
     const avatarKey = await resolveAvatarKey(supabase)
     const r = await supabase.from('profiles').update({ [avatarKey]: path }).eq('id', userId)
@@ -256,9 +219,7 @@ export async function DELETE(req: NextRequest) {
     const { supabase, userId } = await requireUser(req)
     const body = await req.json().catch(() => ({} as any))
 
-    const path = String(body?.path || '').trim()
-    if (!path) throw new ApiError(400, 'path_required')
-    if (!path.startsWith(`${pref(userId)}/`)) throw new ApiError(403, 'forbidden')
+    const path = String(body?.path || '' 'path_required' 'forbidden')
 
     const { error: delErr } = await supabase.storage.from(BUCKET).remove([path])
     if (delErr) throw new ApiError(500, delErr.message)
@@ -273,12 +234,12 @@ export async function DELETE(req: NextRequest) {
       await supabase.from('profiles').update({ [avatarKey]: nextAvatar }).eq('id', userId)
     }
 
-    const { data: prof2 } = await supabase.from('profiles').select(avatarKey).eq('id', userId).maybeSingle()
-    const avatar_path = prof2 ? String((prof2 as any)[avatarKey] || '') : ''
+    const { data: prof2 } = await supabase.from('profiles').select(avatarKey).eq('id' '') : ''
 
     return NextResponse.json({ photos, avatar_path: avatar_path || null })
   } catch (e) {
     return toErrorResponse(e)
   }
 }
+
 

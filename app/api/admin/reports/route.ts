@@ -1,10 +1,8 @@
-import { NextResponse } from 'next/server'
-import { requireAdmin, toErrorResponse } from '@/lib/supabase-server'
+﻿import { NextResponse } from 'next/server' '@/lib/supabase-server'
 
 function asDateISO(d: Date) {
   const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
+  const m = String(d.getMonth() + 1).padStart(2, '0' '0')
   return `${y}-${m}-${day}`
 }
 
@@ -26,8 +24,7 @@ function minutesBetween(startISO: string, stopISO: string): number {
 function parseBucketRef(raw: string | undefined | null, fallbackBucket: string) {
   const s = String(raw || '').trim().replace(/^\/+|\/+$/g, '')
   if (!s) return { bucket: fallbackBucket }
-  const parts = s.split('/').filter(Boolean)
-  const bucket = (parts[0] || '').trim() || fallbackBucket
+  const parts = s.split('/' '').trim() || fallbackBucket
   return { bucket }
 }
 
@@ -39,17 +36,13 @@ type AvatarKey = 'avatar_path' | 'avatar_url' | 'photo_path' | null
 
 async function fetchProfiles(sb: any, workerIds: string[]) {
   const tries: ReadonlyArray<{ sel: string; key: AvatarKey }> = [
-    { sel: 'id, full_name, avatar_path', key: 'avatar_path' },
-    { sel: 'id, full_name, avatar_url', key: 'avatar_url' },
-    { sel: 'id, full_name, photo_path', key: 'photo_path' },
-    { sel: 'id, full_name', key: null },
+    { sel: 'id, full_name, avatar_path', key: 'avatar_path' 'id, full_name, avatar_url', key: 'avatar_url' 'id, full_name, photo_path', key: 'photo_path' 'id, full_name', key: null },
   ]
 
   for (const t of tries) {
     const res = await sb.from('profiles').select(t.sel).in('id', workerIds)
     if (!res.error) return { rows: res.data || [], avatarKey: t.key }
-    const msg = String(res.error.message || '')
-    const missingCol = msg.includes('column') && msg.includes('does not exist')
+    const msg = String(res.error.message || '' 'column') && msg.includes('does not exist')
     if (!missingCol) return { rows: res.data || [], avatarKey: t.key }
   }
 
@@ -59,16 +52,15 @@ async function fetchProfiles(sb: any, workerIds: string[]) {
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url)
-    const from = (url.searchParams.get('from') || url.searchParams.get('date_from') || '').trim()
-    const to = (url.searchParams.get('to') || url.searchParams.get('date_to') || '').trim()
+    const from = (url.searchParams.get('from') || url.searchParams.get('date_from') || '' 'to') || url.searchParams.get('date_to') || '').trim()
 
     const fromD = parseDateISO(from)
     const toD = parseDateISO(to)
     if (!fromD || !toD) {
-      return NextResponse.json({ error: 'Неверный период (ожидаю YYYY-MM-DD)' }, { status: 400 })
+      return NextResponse.json({ error: 'РќРµРІРµСЂРЅС‹Р№ РїРµСЂРёРѕРґ (РѕР¶РёРґР°СЋ YYYY-MM-DD)' }, { status: 400 })
     }
     if (toD.getTime() < fromD.getTime()) {
-      return NextResponse.json({ error: 'Период неверный: to < from' }, { status: 400 })
+      return NextResponse.json({ error: 'РџРµСЂРёРѕРґ РЅРµРІРµСЂРЅС‹Р№: to < from' }, { status: 400 })
     }
 
     const admin = await requireAdmin(req)
@@ -78,10 +70,7 @@ export async function GET(req: Request) {
     const toISO = asDateISO(toD)
 
     const jobsRes = await sb
-      .from('jobs')
-      .select('id, worker_id, site_id, job_date')
-      .gte('job_date', fromISO)
-      .lte('job_date', toISO)
+      .from('jobs' 'id, worker_id, site_id, job_date' 'job_date' 'job_date', toISO)
 
     if (jobsRes.error) {
       return NextResponse.json({ error: jobsRes.error.message }, { status: 500 })
@@ -104,10 +93,7 @@ export async function GET(req: Request) {
     const startAtMax = `${toISO}T23:59:59.999Z`
 
     const logsRes = await sb
-      .from('time_logs')
-      .select('job_id, started_at, stopped_at')
-      .gte('started_at', startAtMin)
-      .lte('started_at', startAtMax)
+      .from('time_logs' 'job_id, started_at, stopped_at' 'started_at' 'started_at', startAtMax)
 
     if (logsRes.error) {
       return NextResponse.json({ error: logsRes.error.message }, { status: 500 })
@@ -169,9 +155,7 @@ export async function GET(req: Request) {
 
     if (sitesRes.error) return NextResponse.json({ error: sitesRes.error.message }, { status: 500 })
 
-    const RAW_WORKER_BUCKET = process.env.WORKER_PHOTOS_BUCKET || 'site-photos/workers'
-    const { bucket: WORKER_BUCKET } = parseBucketRef(RAW_WORKER_BUCKET, 'site-photos')
-    const ttl = Number(process.env.WORKER_PHOTOS_SIGNED_URL_TTL || '3600') || 3600
+    const RAW_WORKER_BUCKET = process.env.WORKER_PHOTOS_BUCKET || 'site-photos/workers' 'site-photos' '3600') || 3600
 
     const profById = new Map<string, { full_name: string | null; avatar_ref: string | null }>()
     const needSign: string[] = []
@@ -197,8 +181,7 @@ export async function GET(req: Request) {
       const { data: signed, error: signErr } = await sb.storage.from(WORKER_BUCKET).createSignedUrls(uniqPaths, ttl)
       if (!signErr && Array.isArray(signed)) {
         for (const s of signed as any[]) {
-          const p = s?.path ? String(s.path) : ''
-          const u = s?.signedUrl ? String(s.signedUrl) : ''
+          const p = s?.path ? String(s.path) : '' ''
           if (p && u) signedByPath.set(p, u)
         }
       }
@@ -279,3 +262,4 @@ export async function GET(req: Request) {
     return toErrorResponse(err)
   }
 }
+
