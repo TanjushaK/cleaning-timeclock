@@ -3885,15 +3885,20 @@ const [editOpen, setEditOpen] = useState(false)
 
                         <div className="grid gap-1">
                           <div className="text-[11px] text-zinc-400">Контакты</div>
-                          <div className="rounded-xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-xs text-zinc-200">
-                            <div>
-                              <span className="text-zinc-500">Email:</span>{' '}
-                              <span className="text-zinc-200">{workerProfileById?.[workerCardId]?.email || '—'}</span>
-                            </div>
-                            <div className="mt-1">
-                              <span className="text-zinc-500">Тел:</span>{' '}
-                              <span className="text-zinc-200">{workerProfileById?.[workerCardId]?.phone || '—'}</span>
-                            </div>
+                          <div className="grid gap-2">
+                            <input
+                              value={workerCardEmail}
+                              onChange={(e) => setWorkerCardEmail(e.target.value)}
+                              placeholder="Email (логин)"
+                              autoComplete="email"
+                              className="w-full rounded-xl border border-yellow-400/10 bg-black/30 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-yellow-300/40"
+                            />
+                            <input
+                              value={workerCardPhone}
+                              onChange={(e) => setWorkerCardPhone(e.target.value)}
+                              placeholder="Телефон для SMS (например +31612345678)"
+                              className="w-full rounded-xl border border-yellow-400/10 bg-black/30 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-yellow-300/40"
+                            />
                           </div>
                         </div>
                       </div>
