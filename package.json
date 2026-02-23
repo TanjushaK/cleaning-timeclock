@@ -6,14 +6,19 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "cap:init": "npx cap init",
+    "cap:sync": "npx cap sync",
+    "cap:android": "npx cap open android",
+    "cap:add-android": "npx cap add android"
   },
   "dependencies": {
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.95.3",
     "next": "16.1.6",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "@capacitor/core": "^6.1.2"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -23,6 +28,8 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "@capacitor/cli": "^6.1.2",
+    "@capacitor/android": "^6.1.2"
   }
 }
