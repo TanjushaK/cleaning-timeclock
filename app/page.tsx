@@ -12,6 +12,7 @@ type Profile = {
   phone?: string | null;
   email?: string | null;
   avatar_path?: string | null;
+  notes?: string | null;
   onboarding_submitted_at?: string | null;
 };
 
@@ -26,130 +27,104 @@ type MeProfileResponse = {
   profile: Profile;
 };
 
-type JobItem = {
-  id: string;
-  status: "planned" | "in_progress" | "done" | string;
-  job_date: string | null;
-  scheduled_time: string | null;
-  scheduled_end_time?: string | null;
-  site_id: string | null;
-  site_name: string | null;
-  worker_id: string | null;
-  started_at: string | null;
-  stopped_at: string | null;
-  actual_minutes?: number | null;
-  can_accept?: boolean | null;
+type MeJobsResponse = {
+  jobs: Array<{
+    id: string;
+    job_date: string | null;
+    scheduled_time: string | null;
+    status: "planned" | "in_progress" | "done" | string;
+    site_id: string | null;
+    site_name?: string | null;
+    site_address?: string | null;
+    site_radius?: number | null;
+    site_lat?: number | null;
+    site_lng?: number | null;
+    accepted_at?: string | null;
+    started_at?: string | null;
+    stopped_at?: string | null;
+    distance_m?: number | null;
+    accuracy_m?: number | null;
+    worker_note?: string | null;
+  }>;
 };
-
-type MeJobsResponse = { items: JobItem[] };
-
-type Gps = { lat: number; lng: number; accuracy: number };
 
 type MyPhotosResponse = {
   photos: Array<{ path: string; url?: string | null }>;
-  avatar_path: string | null;
+  avatar_path?: string | null;
 };
 
-function pad2(n: number) {
-  return String(n).padStart(2, "0");
+function clsx(...xs: Array<string | false | null | undefined>) {
+  return xs.filter(Boolean).join(" ");
 }
 
-function fmtD(iso?: string | null) {
+function formatDateRu(iso: string | null | undefined) {
   if (!iso) return "—";
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
-  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}-${d.getFullYear()}`;
+  if (Number.isNaN(d.getTime())) return String(iso);
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = String(d.getFullYear());
+  return `${dd}-${mm}-${yyyy}`;
 }
 
-function timeHHMM(t?: string | null) {
-  if (!t) return null;
-  const x = String(t);
-  return x.length >= 5 ? x.slice(0, 5) : x;
+function formatTimeRu(time: string | null | undefined) {
+  if (!time) return "—";
+  const t = String(time);
+  const m = t.match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return t;
+  const hh = String(m[1]).padStart(2, "0");
+  const mm = String(m[2]).padStart(2, "0");
+  return `${hh}:${mm}`;
 }
 
-function minutesFromHHMM(t: string) {
-  const m = /^(\d{2}):(\d{2})$/.exec(t);
-  if (!m) return null;
-  const hh = parseInt(m[1], 10);
-  const mm = parseInt(m[2], 10);
-  if (Number.isNaN(hh) || Number.isNaN(mm)) return null;
-  return hh * 60 + mm;
+function formatDateTimeRu(iso: string | null | undefined) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso);
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = String(d.getFullYear());
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return `${dd}-${mm}-${yyyy} ${hh}:${mi}`;
 }
 
-function fmtDur(mins: number) {
-  const m = Math.max(0, Math.floor(mins || 0));
-  const h = Math.floor(m / 60);
-  const r = m % 60;
-  if (h <= 0) return `${r}м`;
-  return `${h}ч ${pad2(r)}м`;
+function isE164(phone: string) {
+  return /^\+\d{8,15}$/.test(phone);
 }
 
-function plannedMinutes(from?: string | null, to?: string | null) {
-  const f = timeHHMM(from);
-  const t = timeHHMM(to);
-  if (!f || !t) return null;
-  const a = minutesFromHHMM(f);
-  const b = minutesFromHHMM(t);
-  if (a == null || b == null) return null;
-  let d = b - a;
-  if (d < 0) d += 24 * 60;
-  return d;
+function digitsOnly(phone: string) {
+  return String(phone || "").replace(/[^\d]/g, "");
 }
 
-function statusRu(s: string) {
-  if (s === "planned") return "Запланировано";
-  if (s === "in_progress") return "В процессе";
-  if (s === "done") return "Завершено";
-  return s || "—";
+function makeWorkerEmailFromPhone(phoneE164: string) {
+  const digits = digitsOnly(phoneE164);
+  return `${digits}@workers.tanjusha`;
 }
 
-function getGps(): Promise<Gps> {
-  return new Promise((resolve, reject) => {
-    if (typeof window === "undefined") return reject(new Error("GPS недоступен."));
-    if (!("geolocation" in navigator)) return reject(new Error("GPS недоступен в браузере."));
-    navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
-      (err) => {
-        const msg =
-          err.code === err.PERMISSION_DENIED
-            ? "Доступ к геолокации запрещён. Разреши GPS для сайта."
-            : err.code === err.POSITION_UNAVAILABLE
-              ? "GPS недоступен. Попробуй выйти на улицу/включить геолокацию."
-              : "Таймаут GPS. Повтори ещё раз.";
-        reject(new Error(msg));
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-    );
-  });
-}
-
-function bearerHeaders(): Record<string, string> {
-  const h: Record<string, string> = {};
-  const t = typeof window !== "undefined" ? window.localStorage.getItem("ct_access_token") : null;
-  if (t) h["Authorization"] = `Bearer ${t}`;
-  return h;
-}
+type Tab = "login" | "sms" | "email";
 
 export default function AppPage() {
-  const [booting, setBooting] = useState(true);
   const [token, setToken] = useState<string | null>(null);
+  const [me, setMe] = useState<MeProfileResponse | null>(null);
+  const [jobs, setJobs] = useState<MeJobsResponse["jobs"]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const [loginMode, setLoginMode] = useState<"phone" | "email">("email");
-  
+  const [tab, setTab] = useState<Tab>("login");
+
+  // login
   const [email, setEmail] = useState("");
   const [emailPassword, setEmailPassword] = useState("");
-  
-  const [phone, setPhone] = useState("");
-  const [otp, setOtp] = useState("");
-  const [otpSent, setOtpSent] = useState(false);
-  const [recoverNewPassword, setRecoverNewPassword] = useState("");
-  const [forceNewPassword, setForceNewPassword] = useState("");
-  const [forceNewPassword2, setForceNewPassword2] = useState("");
 
-  const [me, setMe] = useState<MeProfileResponse | null>(null);
-  const [jobs, setJobs] = useState<JobItem[]>([]);
+  // sms recovery
+  const [smsPhone, setSmsPhone] = useState("");
+  const [smsOtp, setSmsOtp] = useState("");
+  const [smsNewPassword, setSmsNewPassword] = useState("");
+  const [smsStep, setSmsStep] = useState<"enter_phone" | "enter_code" | "set_password">("enter_phone");
+
+  // email recovery link
+  const [emailRecover, setEmailRecover] = useState("");
+
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -163,6 +138,12 @@ export default function AppPage() {
 
   const authed = !!token;
 
+  const bearerHeaders = useCallback(() => {
+    const t = getAccessToken();
+    if (!t) return {};
+    return { Authorization: `Bearer ${t}` };
+  }, []);
+
   const loadPhotos = useCallback(async () => {
     const r = await fetch("/api/me/photos", {
       headers: bearerHeaders(),
@@ -172,57 +153,64 @@ export default function AppPage() {
     if (!r.ok) throw new Error(String(data?.error || `HTTP ${r.status}`));
     setPhotos(Array.isArray(data.photos) ? data.photos : []);
     setAvatarPath(data.avatar_path || null);
-  }, []);
+  }, [bearerHeaders]);
 
   const loadAll = useCallback(async () => {
-    setError(null);
-    setNotice(null);
-
     const profile = await authFetchJson<MeProfileResponse>("/api/me/profile", { cache: "no-store" });
     setMe(profile);
+    setFullName(profile?.profile?.full_name || "");
+    setProfileEmail(profile?.profile?.email || "");
 
-    setFullName(String(profile?.profile?.full_name || ""));
-    setProfileEmail(String(profile?.profile?.email || profile?.user?.email || ""));
-
-    // Фото нужны и активному работнику: аватар/галерея.
     await loadPhotos().catch(() => {});
 
-    if (profile?.profile?.active !== true) {
-      setJobs([]);
-      return;
-    }
-
     const jobsRes = await authFetchJson<MeJobsResponse>("/api/me/jobs", { cache: "no-store" });
-    setJobs(jobsRes.items || []);
+    setJobs(Array.isArray(jobsRes.jobs) ? jobsRes.jobs : []);
   }, [loadPhotos]);
 
   useEffect(() => {
+    const t = getAccessToken();
+    setToken(t);
     (async () => {
       try {
-        const t = getAccessToken();
-        setToken(t);
         if (t) await loadAll();
       } catch (e: any) {
-        const msg = String(e?.message || e || "Ошибка");
-        if (msg.includes("401") || /токен|unauthorized/i.test(msg)) {
+        const msg = String(e?.message || e || "");
+        if (/401|Нет токена|token/i.test(msg)) {
           clearAuthTokens();
-          try {
-            await supabase.auth.signOut();
-          } catch {}
           setToken(null);
           setMe(null);
           setJobs([]);
+          try {
+            await supabase.auth.signOut();
+          } catch {}
         } else {
-          setError(msg);
+          setError(msg || "Ошибка загрузки");
         }
       } finally {
-        setBooting(false);
+        setLoading(false);
       }
     })();
   }, [loadAll]);
 
-  const doPhoneSend = useCallback(async () => {
+  const doLogout = useCallback(async () => {
     setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      clearAuthTokens();
+      setToken(null);
+      setMe(null);
+      setJobs([]);
+      try {
+        await supabase.auth.signOut();
+      } catch {}
+      setNotice("Вы вышли.");
+    } catch (e: any) {
+      setError(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  }, []);
 
   const doEmailPasswordLogin = useCallback(async () => {
     setBusy(true);
@@ -250,7 +238,6 @@ export default function AppPage() {
       await loadAll();
       setNotice("Вход выполнен.");
 
-      // Если роль admin — без лишних кликов в админку
       try {
         const prof = await authFetchJson<MeProfileResponse>("/api/me/profile", { cache: "no-store" });
         if (prof?.profile?.role === "admin") window.location.href = "/admin";
@@ -262,97 +249,188 @@ export default function AppPage() {
     }
   }, [email, emailPassword, loadAll]);
 
-  const doLogout = useCallback(() => {
-    clearAuthTokens();
-    try {
-      supabase.auth.signOut();
-    } catch {}
-    setToken(null);
-    setMe(null);
-    setJobs([]);
-    setNotice("Вы вышли.");
-  }, []);
-
-  const saveProfile = useCallback(async () => {
+  const doSmsSend = useCallback(async () => {
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
-      const name = fullName.trim();
-      if (!name) throw new Error("Укажи имя");
-      const em = profileEmail.trim();
+      const p = smsPhone.trim();
+      if (!isE164(p)) throw new Error("Телефон нужен в формате E.164, например +31612345678");
 
-      if (em) {
-        try {
-          const { error: uErr } = await supabase.auth.updateUser({ email: em });
-          if (uErr) throw uErr;
-        } catch {}
-      }
-
-      await authFetchJson("/api/me/profile/update", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ full_name: name, email: em || null }),
+      const { error: otpErr } = await supabase.auth.signInWithOtp({
+        phone: p,
+        options: {
+          shouldCreateUser: false,
+        },
       });
 
-      await loadAll();
-      setNotice("Сохранено.");
+      if (otpErr) throw new Error(otpErr.message);
+
+      setSmsStep("enter_code");
+      setNotice("Код отправлен по SMS.");
     } catch (e: any) {
-      setError(String(e?.message || e || "Ошибка"));
+      setError(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  }, [smsPhone]);
+
+  const doSmsVerify = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const p = smsPhone.trim();
+      const code = smsOtp.trim();
+      if (!isE164(p)) throw new Error("Телефон нужен в формате E.164, например +31612345678");
+      if (!code) throw new Error("Введи код из SMS");
+
+      const { data, error: vErr } = await supabase.auth.verifyOtp({
+        phone: p,
+        token: code,
+        type: "sms",
+      });
+
+      if (vErr) throw new Error(vErr.message);
+      if (!data?.session) throw new Error("Не удалось создать сессию по SMS");
+
+      setAuthTokens(String(data.session.access_token), data.session.refresh_token ? String(data.session.refresh_token) : null);
+      setToken(getAccessToken());
+      setSmsStep("set_password");
+      setNotice("Номер подтверждён. Теперь задай новый пароль.");
+    } catch (e: any) {
+      setError(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  }, [smsPhone, smsOtp]);
+
+  const doSmsSetPassword = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const pw = smsNewPassword;
+      if (!pw || pw.trim().length < 6) throw new Error("Пароль должен быть минимум 6 символов");
+
+      const { error: uErr } = await supabase.auth.updateUser({
+        password: pw.trim(),
+        data: { temp_password: false },
+      });
+
+      if (uErr) throw new Error(uErr.message);
+
+      await loadAll().catch(() => {});
+      setNotice("Пароль обновлён. Можешь входить паролем.");
+      setTab("login");
+      setSmsStep("enter_phone");
+      setSmsOtp("");
+      setSmsNewPassword("");
+    } catch (e: any) {
+      setError(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  }, [smsNewPassword, loadAll]);
+
+  const doEmailRecovery = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const em = emailRecover.trim().toLowerCase();
+      if (!em || !em.includes("@")) throw new Error("Введи корректный email");
+
+      const redirectTo =
+        typeof window !== "undefined"
+          ? `${window.location.origin}/reset-password`
+          : "https://timeclock.tanjusha.nl/reset-password";
+
+      const { error: rErr } = await supabase.auth.resetPasswordForEmail(em, {
+        redirectTo,
+      });
+
+      if (rErr) throw new Error(rErr.message);
+
+      setNotice("Письмо для восстановления отправлено. Проверь почту.");
+    } catch (e: any) {
+      setError(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  }, [emailRecover]);
+
+  const doUpdateProfile = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const payload = {
+        full_name: fullName.trim() || null,
+        email: profileEmail.trim() || null,
+      };
+      const res = await authFetchJson<any>("/api/me/profile/update", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      if (res?.error) throw new Error(String(res.error));
+      await loadAll();
+      setNotice("Профиль обновлён.");
+    } catch (e: any) {
+      setError(String(e?.message || e));
     } finally {
       setBusy(false);
     }
   }, [fullName, profileEmail, loadAll]);
 
-  const uploadPhoto = useCallback(
-    async (file: File) => {
-      setBusy(true);
-      setError(null);
-      setNotice(null);
-      try {
-        if (photos.length >= 5) throw new Error("Достигнут лимит 5 фото");
-        const fd = new FormData();
-        fd.append("file", file);
-        const r = await fetch("/api/me/photos", { method: "POST", headers: bearerHeaders(), body: fd });
-        const data = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(String((data as any)?.error || `HTTP ${r.status}`));
-        await loadPhotos();
-        setNotice("Фото загружено.");
-      } catch (e: any) {
-        setError(String(e?.message || e || "Ошибка загрузки"));
-      } finally {
-        setBusy(false);
-        if (fileRef.current) fileRef.current.value = "";
-      }
-    },
-    [loadPhotos, photos.length]
-  );
+  const doSubmitForApproval = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await authFetchJson<any>("/api/me/profile/submit", {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      if (res?.error) throw new Error(String(res.error));
+      await loadAll();
+      setNotice("Заявка отправлена. Жди активации админом.");
+    } catch (e: any) {
+      setError(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  }, [loadAll]);
 
-  const delPhoto = useCallback(
-    async (path: string) => {
-      setBusy(true);
-      setError(null);
-      setNotice(null);
-      try {
-        const r = await fetch("/api/me/photos", {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json", ...bearerHeaders() },
-          body: JSON.stringify({ path }),
-        });
-        const data = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(String((data as any)?.error || `HTTP ${r.status}`));
-        await loadPhotos();
-        setNotice("Удалено.");
-      } catch (e: any) {
-        setError(String(e?.message || e || "Ошибка удаления"));
-      } finally {
-        setBusy(false);
-      }
-    },
-    [loadPhotos]
-  );
+  const doUploadPhoto = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const input = fileRef.current;
+      const file = input?.files?.[0];
+      if (!file) throw new Error("Выбери файл");
+      const fd = new FormData();
+      fd.append("file", file);
 
-  const makeAvatar = useCallback(
+      const r = await fetch("/api/me/photos", {
+        method: "POST",
+        headers: bearerHeaders(),
+        body: fd,
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data?.error || `HTTP ${r.status}`);
+      await loadPhotos();
+      setNotice("Фото загружено.");
+      if (input) input.value = "";
+    } catch (e: any) {
+      setError(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  }, [bearerHeaders, loadPhotos]);
+
+  const doMakePrimary = useCallback(
     async (path: string) => {
       setBusy(true);
       setError(null);
@@ -364,674 +442,504 @@ export default function AppPage() {
           body: JSON.stringify({ action: "make_primary", path }),
         });
         const data = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(String((data as any)?.error || `HTTP ${r.status}`));
+        if (!r.ok) throw new Error(data?.error || `HTTP ${r.status}`);
         await loadPhotos();
-        await loadAll();
-        setNotice("Аватар установлен.");
+        setNotice("Аватар обновлён.");
       } catch (e: any) {
-        setError(String(e?.message || e || "Ошибка"));
+        setError(String(e?.message || e));
       } finally {
         setBusy(false);
       }
     },
-    [loadPhotos, loadAll]
+    [bearerHeaders, loadPhotos]
   );
 
-  const submitForApproval = useCallback(async () => {
+  const doDeletePhoto = useCallback(
+    async (path: string) => {
+      setBusy(true);
+      setError(null);
+      setNotice(null);
+      try {
+        const r = await fetch("/api/me/photos", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json", ...bearerHeaders() },
+          body: JSON.stringify({ path }),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data?.error || `HTTP ${r.status}`);
+        await loadPhotos();
+        setNotice("Фото удалено.");
+      } catch (e: any) {
+        setError(String(e?.message || e));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [bearerHeaders, loadPhotos]
+  );
+
+  const doAccept = useCallback(async (jobId: string) => {
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
-      await authFetchJson("/api/me/profile/submit", { method: "POST" });
+      const res = await authFetchJson<any>("/api/me/jobs/accept", {
+        method: "POST",
+        body: JSON.stringify({ id: jobId }),
+      });
+      if (res?.error) throw new Error(String(res.error));
       await loadAll();
-      setNotice("Отправлено на активацию.");
+      setNotice("Принято.");
     } catch (e: any) {
-      setError(String(e?.message || e || "Ошибка"));
+      setError(String(e?.message || e));
     } finally {
       setBusy(false);
     }
   }, [loadAll]);
 
-  const acceptJob = useCallback(
-    async (jobId: string) => {
-      setBusy(true);
-      setError(null);
-      setNotice(null);
-      try {
-        await authFetchJson("/api/me/jobs/accept", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ jobId }),
-        });
-        setNotice("Смена принята.");
-        await loadAll();
-      } catch (e: any) {
-        setError(String(e?.message || e || "Ошибка принятия"));
-      } finally {
-        setBusy(false);
-      }
-    },
-    [loadAll]
+  const doStart = useCallback(async (jobId: string) => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await authFetchJson<any>("/api/me/jobs/start", {
+        method: "POST",
+        body: JSON.stringify({ id: jobId }),
+      });
+      if (res?.error) throw new Error(String(res.error));
+      await loadAll();
+      setNotice("Старт.");
+    } catch (e: any) {
+      setError(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  }, [loadAll]);
+
+  const doStop = useCallback(async (jobId: string) => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await authFetchJson<any>("/api/me/jobs/stop", {
+        method: "POST",
+        body: JSON.stringify({ id: jobId }),
+      });
+      if (res?.error) throw new Error(String(res.error));
+      await loadAll();
+      setNotice("Стоп.");
+    } catch (e: any) {
+      setError(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  }, [loadAll]);
+
+  const workerIsActive = Boolean(me?.profile?.active);
+  const isAdmin = me?.profile?.role === "admin";
+  const tempPassword = Boolean(me?.user?.temp_password);
+
+  const jobsSorted = useMemo(() => {
+    const xs = [...jobs];
+    xs.sort((a, b) => {
+      const ad = a.job_date ? new Date(a.job_date).getTime() : 0;
+      const bd = b.job_date ? new Date(b.job_date).getTime() : 0;
+      if (ad !== bd) return ad - bd;
+      const at = a.scheduled_time || "";
+      const bt = b.scheduled_time || "";
+      return at.localeCompare(bt);
+    });
+    return xs;
+  }, [jobs]);
+
+  const gold = "text-amber-200";
+  const border = "border border-amber-500/25";
+  const card = clsx("rounded-2xl bg-zinc-950/80", border, "shadow-[0_0_0_1px_rgba(245,158,11,0.08),0_20px_60px_rgba(0,0,0,0.45)]");
+  const btn = clsx(
+    "rounded-xl px-4 py-2 font-medium",
+    "bg-amber-400/15 hover:bg-amber-400/25",
+    "text-amber-100",
+    border,
+    "disabled:opacity-50 disabled:cursor-not-allowed"
+  );
+  const btnSolid = clsx(
+    "rounded-xl px-4 py-2 font-semibold",
+    "bg-amber-400 text-zinc-950 hover:bg-amber-300",
+    "shadow-[0_10px_30px_rgba(245,158,11,0.25)]",
+    "disabled:opacity-50 disabled:cursor-not-allowed"
+  );
+  const input = clsx(
+    "w-full rounded-xl px-3 py-2 bg-zinc-950/60",
+    border,
+    "text-zinc-100 placeholder:text-zinc-500",
+    "focus:outline-none focus:ring-2 focus:ring-amber-400/30"
   );
 
-  const startJob = useCallback(
-    async (jobId: string) => {
-      setBusy(true);
-      setError(null);
-      setNotice(null);
-      try {
-        const gps = await getGps();
-        await authFetchJson("/api/me/jobs/start", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ jobId, ...gps }),
-        });
-        setNotice("Старт зафиксирован.");
-        await loadAll();
-      } catch (e: any) {
-        setError(String(e?.message || e || "Ошибка старта"));
-      } finally {
-        setBusy(false);
-      }
-    },
-    [loadAll]
-  );
-
-  const stopJob = useCallback(
-    async (jobId: string) => {
-      setBusy(true);
-      setError(null);
-      setNotice(null);
-      try {
-        const gps = await getGps();
-        await authFetchJson("/api/me/jobs/stop", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ jobId, ...gps }),
-        });
-        setNotice("Стоп зафиксирован.");
-        await loadAll();
-      } catch (e: any) {
-        setError(String(e?.message || e || "Ошибка стопа"));
-      } finally {
-        setBusy(false);
-      }
-    },
-    [loadAll]
-  );
-
-  const planned = useMemo(() => jobs.filter((j) => j.status === "planned"), [jobs]);
-  const inprog = useMemo(() => jobs.filter((j) => j.status === "in_progress"), [jobs]);
-  const done = useMemo(() => jobs.filter((j) => j.status === "done"), [jobs]);
-
-  if (booting) {
+  if (loading) {
     return (
-      <div className="min-h-screen bg-zinc-950 text-amber-100 flex items-center justify-center">
-        <div className="text-sm opacity-80">Загрузка…</div>
-      </div>
+      <main className="min-h-screen bg-black text-zinc-100 flex items-center justify-center p-6">
+        <div className={clsx(card, "p-6 w-full max-w-md")}>
+          <div className="text-lg font-semibold">Загрузка…</div>
+          <div className="mt-2 text-sm opacity-70">Поднимаю сессию и профиль.</div>
+        </div>
+      </main>
     );
   }
 
-  // LOGIN
-  if (!authed || !me) {
-    return (
-      <div className="min-h-screen bg-zinc-950 text-amber-100 flex items-center justify-center p-4 sm:p-6">
-        <div className="relative w-full max-w-md">
-          <div className="pointer-events-none absolute -inset-2 rounded-[28px] bg-gradient-to-r from-amber-500/55 via-amber-500/18 to-amber-500/55 blur-2xl" />
-          <div className="relative w-full rounded-2xl border border-amber-500/40 bg-zinc-950/70 p-6 shadow-[0_0_0_1px_rgba(245,158,11,0.18),0_0_95px_rgba(245,158,11,0.14),0_25px_90px_rgba(0,0,0,0.75)]">
-            <div className="text-xl font-semibold">Tanija • Worker</div>
-            <div className="text-sm opacity-80 mt-1">Вход</div>
+  return (
+    <main className="min-h-screen bg-black text-zinc-100 p-6">
+      <div className="max-w-6xl mx-auto">
+        <header className="flex items-center justify-between gap-3">
+          <div>
+            <div className={clsx("text-2xl font-semibold", gold)}>Cleaning Timeclock</div>
+            <div className="text-sm opacity-70">Tanija • dark+gold</div>
+          </div>
 
-            <div className="mt-4 flex gap-2">
-              <button
-                className={`flex-1 rounded-xl px-3 py-2 text-sm border ${
-                  loginMode === "phone" ? "bg-amber-500 text-zinc-950 border-amber-500" : "border-amber-500/30 hover:bg-amber-500/10"
-                }`}
-                onClick={() => {
-                  setLoginMode("phone");
-                  setOtpSent(false);
-                  setOtp("");
-                  setError(null);
-                  setNotice(null);
-                }}
-                disabled={busy}
-              >
-                Восстановить
-              </button>
-              <button
-                className={`flex-1 rounded-xl px-3 py-2 text-sm border ${
-                  loginMode === "email" ? "bg-amber-500 text-zinc-950 border-amber-500" : "border-amber-500/30 hover:bg-amber-500/10"
-                }`}
-                onClick={() => {
-                  setLoginMode("email");
-                  
-                  setError(null);
-                  setNotice(null);
-                }}
-                disabled={busy}
-              >
-                Пароль
-              </button>
+          <div className="flex items-center gap-2">
+            {authed && (
+              <>
+                <a className={btn} href="/me/profile">Профиль</a>
+                {isAdmin && <a className={btn} href="/admin">Админ</a>}
+                <button className={btn} onClick={doLogout} disabled={busy}>Выйти</button>
+              </>
+            )}
+          </div>
+        </header>
+
+        {(error || notice) && (
+          <div className={clsx("mt-4", card, "p-4")}>
+            {error && <div className="text-sm text-red-300">{error}</div>}
+            {notice && <div className="text-sm text-emerald-200">{notice}</div>}
+          </div>
+        )}
+
+        {!authed ? (
+          <section className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className={clsx(card, "p-6")}>
+              <div className="flex items-center gap-2">
+                <button
+                  className={clsx(btn, tab === "login" && "bg-amber-400/30")}
+                  onClick={() => setTab("login")}
+                >
+                  Вход
+                </button>
+                <button
+                  className={clsx(btn, tab === "sms" && "bg-amber-400/30")}
+                  onClick={() => setTab("sms")}
+                >
+                  По SMS
+                </button>
+                <button
+                  className={clsx(btn, tab === "email" && "bg-amber-400/30")}
+                  onClick={() => setTab("email")}
+                >
+                  По Email
+                </button>
+              </div>
+
+              {tab === "login" && (
+                <div className="mt-5 space-y-3">
+                  <div className="text-sm opacity-80">Логин = email или телефон (+31…); вход по паролю.</div>
+
+                  <input
+                    className={input}
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="Email или телефон, например +31612345678"
+                    autoComplete="username"
+                  />
+
+                  <input
+                    className={input}
+                    value={emailPassword}
+                    onChange={(e) => setEmailPassword(e.target.value)}
+                    placeholder="Пароль"
+                    type="password"
+                    autoComplete="current-password"
+                  />
+
+                  <div className="flex items-center gap-2">
+                    <button className={btnSolid} onClick={doEmailPasswordLogin} disabled={busy}>
+                      Войти
+                    </button>
+                    <a className="text-sm underline opacity-80 hover:opacity-100" href="/forgot-password">
+                      Забыл пароль (email)
+                    </a>
+                  </div>
+
+                  <div className="text-xs opacity-60">
+                    Если у воркера нет email — логин будет вида <span className="font-mono">{makeWorkerEmailFromPhone("+31612345678")}</span>
+                  </div>
+                </div>
+              )}
+
+              {tab === "sms" && (
+                <div className="mt-5 space-y-3">
+                  <div className="text-sm opacity-80">Восстановление пароля через SMS (если телефон привязан к аккаунту).</div>
+
+                  <input
+                    className={input}
+                    value={smsPhone}
+                    onChange={(e) => setSmsPhone(e.target.value)}
+                    placeholder="Телефон, например +31612345678"
+                    autoComplete="tel"
+                  />
+
+                  {smsStep === "enter_phone" && (
+                    <button className={btnSolid} onClick={doSmsSend} disabled={busy}>
+                      Отправить код
+                    </button>
+                  )}
+
+                  {smsStep === "enter_code" && (
+                    <>
+                      <input
+                        className={input}
+                        value={smsOtp}
+                        onChange={(e) => setSmsOtp(e.target.value)}
+                        placeholder="Код из SMS"
+                        autoComplete="one-time-code"
+                      />
+                      <div className="flex gap-2">
+                        <button className={btnSolid} onClick={doSmsVerify} disabled={busy}>
+                          Подтвердить
+                        </button>
+                        <button
+                          className={btn}
+                          onClick={() => {
+                            setSmsStep("enter_phone");
+                            setSmsOtp("");
+                          }}
+                          disabled={busy}
+                        >
+                          Назад
+                        </button>
+                      </div>
+                    </>
+                  )}
+
+                  {smsStep === "set_password" && (
+                    <>
+                      <input
+                        className={input}
+                        value={smsNewPassword}
+                        onChange={(e) => setSmsNewPassword(e.target.value)}
+                        placeholder="Новый пароль (мин. 6 символов)"
+                        type="password"
+                        autoComplete="new-password"
+                      />
+                      <button className={btnSolid} onClick={doSmsSetPassword} disabled={busy}>
+                        Сохранить пароль
+                      </button>
+                    </>
+                  )}
+
+                  <div className="text-xs opacity-70">
+                    Если SMS “не находит” — значит телефон не привязан к аккаунту. Привязку делает админ в профиле воркера.
+                  </div>
+                </div>
+              )}
+
+              {tab === "email" && (
+                <div className="mt-5 space-y-3">
+                  <div className="text-sm opacity-80">Резервное восстановление через письмо.</div>
+                  <input
+                    className={input}
+                    value={emailRecover}
+                    onChange={(e) => setEmailRecover(e.target.value)}
+                    placeholder="Email"
+                    autoComplete="email"
+                  />
+                  <button className={btnSolid} onClick={doEmailRecovery} disabled={busy}>
+                    Отправить письмо
+                  </button>
+                  <div className="text-xs opacity-60">
+                    Письмо ведёт на <span className="font-mono">/reset-password</span>.
+                  </div>
+                </div>
+              )}
             </div>
 
-            {error ? (
-              <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{error}</div>
-            ) : null}
-            {notice ? (
-              <div className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">{notice}</div>
-            ) : null}
-
-            {loginMode === "phone" ? (
-              <div className="mt-4 space-y-3">
-                <input
-                  className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-                  placeholder="Телефон, например +31612345678"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  autoComplete="tel"
-                />
-                <div className="text-xs opacity-70">Восстановление пароля по SMS: работает, если телефон привязан к вашему аккаунту.</div>
-                {!otpSent ? (
-                  <button
-                    className="w-full rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
-                    onClick={doPhoneSend}
-                    disabled={busy || !phone.trim()}
-                  >
-                    {busy ? "Отправляю…" : "Отправить код"}
-                  </button>
-                ) : (
-                  <>
-                    <input
-                      className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-                      placeholder="Код из SMS"
-                      value={otp}
-                      onChange={(e) => setOtp(e.target.value)}
-                      inputMode="numeric"
-                    />
-                    <input
-                      className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-                      placeholder="Новый пароль (мин. 8)"
-                      type="password"
-                      value={recoverNewPassword}
-                      onChange={(e) => setRecoverNewPassword(e.target.value)}
-                      autoComplete="new-password"
-                    />
-                    <button
-                      className="w-full rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
-                      onClick={doPhoneVerify}
-                      disabled={busy || !otp.trim() || recoverNewPassword.trim().length < 8}
-                    >
-                      {busy ? "Проверяю…" : "Установить пароль"}
-                    </button>
-                    <button
-                      className="w-full rounded-xl border border-amber-500/30 px-4 py-2 text-sm hover:bg-amber-500/10 disabled:opacity-60"
-                      onClick={doPhoneSend}
-                      disabled={busy}
-                    >
-                      Отправить ещё раз
-                    </button>
-                  </>
-                )}
+            <div className={clsx(card, "p-6")}>
+              <div className="text-lg font-semibold">Как это теперь работает</div>
+              <ul className="mt-3 space-y-2 text-sm opacity-80 list-disc pl-5">
+                <li>Админ создаёт воркера и выдаёт временный пароль.</li>
+                <li>Воркер заходит логин+пароль (без magic link).</li>
+                <li>Телефон — восстановление через SMS (если привязан к аккаунту).</li>
+                <li>Email — второе восстановление (страница /forgot-password или вкладка “По Email”).</li>
+              </ul>
+              <div className="mt-4 text-xs opacity-60">
+                Если ты админ — после входа тебя перекинет в /admin автоматически.
               </div>
-            ) : (
+            </div>
+          </section>
+        ) : (
+          <section className="mt-6 grid grid-cols-1 xl:grid-cols-3 gap-6">
+            <div className={clsx(card, "p-6 xl:col-span-1")}>
+              <div className="flex items-center justify-between">
+                <div className="text-lg font-semibold">Профиль</div>
+                <div className="text-xs opacity-70">
+                  Role: <span className={gold}>{me?.profile?.role || "—"}</span> • Active:{" "}
+                  <span className={gold}>{workerIsActive ? "да" : "нет"}</span>
+                </div>
+              </div>
+
+              {tempPassword && (
+                <div className={clsx("mt-4 p-3 rounded-xl", border, "bg-amber-400/10")}>
+                  <div className="text-sm font-semibold text-amber-200">Временный пароль</div>
+                  <div className="text-xs opacity-80 mt-1">
+                    У тебя стоит временный пароль. Перейди во вкладку “По SMS” и задай новый пароль (или используй email-восстановление).
+                  </div>
+                </div>
+              )}
+
               <div className="mt-4 space-y-3">
+                <div>
+                  <div className="text-xs opacity-70">Имя</div>
+                  <input className={input} value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="ФИО" />
+                </div>
+                <div>
+                  <div className="text-xs opacity-70">Email (для контакта)</div>
+                  <input className={input} value={profileEmail} onChange={(e) => setProfileEmail(e.target.value)} placeholder="Email" />
+                </div>
 
-                <input
-                  className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-                  placeholder="Email или телефон (+316...)"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  autoComplete="username"
-                />
-
-                <input
-                  className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-                  placeholder="Пароль"
-                  type="password"
-                  value={emailPassword}
-                  onChange={(e) => setEmailPassword(e.target.value)}
-                  autoComplete="current-password"
-                />
-
-                <button
-                  className="w-full rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
-                  onClick={doEmailPasswordLogin}
-                  disabled={busy || !email.trim() || !emailPassword.trim()}
-                >
-                  {busy ? "Вхожу…" : "Войти"}
+                <button className={btnSolid} onClick={doUpdateProfile} disabled={busy}>
+                  Сохранить профиль
                 </button>
 
-                <div className="flex items-center justify-between text-xs opacity-80">
-                  <a className="underline hover:opacity-100" href="/forgot-password">
-                    Забыл пароль по email
-                  </a>
-                  <button
-                    type="button"
-                    className="underline hover:opacity-100"
-                    onClick={() => {
-                      setLoginMode("phone");
-                      setOtpSent(false);
-                      setOtp("");
-                      setError(null);
-                      setNotice(null);
-                    }}
-                    disabled={busy}
-                  >
-                    По SMS
+                <div className="text-xs opacity-70">
+                  Телефон: {me?.user?.phone || me?.profile?.phone || "—"} • Email подтверждён:{" "}
+                  {me?.user?.email ? (me?.user?.email_confirmed_at ? "да" : "нет") : "—"}
+                </div>
+              </div>
+
+              <div className="mt-6 border-t border-amber-500/15 pt-5">
+                <div className="text-lg font-semibold">Фото (до 5)</div>
+
+                <div className="mt-3 flex gap-2 items-center">
+                  <input ref={fileRef} className={clsx("text-xs", "w-full")} type="file" accept="image/png,image/jpeg,image/webp" />
+                  <button className={btn} onClick={doUploadPhoto} disabled={busy}>
+                    Upload
                   </button>
                 </div>
 
-                <div className="text-xs opacity-70">
-                  Основной вход: логин + пароль. Если пароль временный — сразу попросим сменить.
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  {photos.map((p) => {
+                    const isPrimary = avatarPath && p.path === avatarPath;
+                    return (
+                      <div key={p.path} className={clsx("rounded-xl overflow-hidden", border, "bg-zinc-950/60")}>
+                        <div className="aspect-[4/3] bg-zinc-900/30 flex items-center justify-center">
+                          {p.url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={p.url} alt="photo" className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="text-xs opacity-60">no preview</div>
+                          )}
+                        </div>
+                        <div className="p-2 flex gap-2">
+                          <button className={clsx(btn, "text-xs px-2 py-1")} onClick={() => doMakePrimary(p.path)} disabled={busy}>
+                            {isPrimary ? "Аватар" : "Сделать аватаром"}
+                          </button>
+                          <button className={clsx(btn, "text-xs px-2 py-1")} onClick={() => doDeletePhoto(p.path)} disabled={busy}>
+                            Удалить
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-4">
+                  <button className={btnSolid} onClick={doSubmitForApproval} disabled={busy}>
+                    Submit на активацию
+                  </button>
+                  <div className="text-xs opacity-60 mt-2">
+                    После submit админ активирует тебя в /admin/approvals.
+                  </div>
                 </div>
               </div>
-            )}
-
-            <div className="mt-4 text-xs opacity-70">
-              Для админа: <a className="underline" href="/admin">/admin</a> • заявки: <a className="underline" href="/admin/approvals">/admin/approvals</a>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-
-  // FORCE CHANGE PASSWORD (temp password)
-  if (authed && me?.user?.temp_password) {
-    return (
-      <div className="min-h-screen bg-zinc-950 text-amber-100 flex items-center justify-center p-4 sm:p-6">
-        <div className="relative w-full max-w-md">
-          <div className="pointer-events-none absolute -inset-2 rounded-[28px] bg-gradient-to-r from-amber-500/55 via-amber-500/18 to-amber-500/55 blur-2xl" />
-          <div className="relative w-full rounded-2xl border border-amber-500/40 bg-zinc-950/70 p-6 shadow-[0_0_0_1px_rgba(245,158,11,0.18),0_0_95px_rgba(245,158,11,0.14),0_25px_90px_rgba(0,0,0,0.75)]">
-            <div className="text-xl font-semibold">Смена пароля</div>
-            <div className="text-sm opacity-80 mt-1">У вас временный пароль. Поставьте новый и поехали работать.</div>
-
-            {error ? (
-              <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{error}</div>
-            ) : null}
-            {notice ? (
-              <div className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200">{notice}</div>
-            ) : null}
-
-            <div className="mt-4 space-y-3">
-              <input
-                className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-                placeholder="Новый пароль (мин. 8)"
-                type="password"
-                value={forceNewPassword}
-                onChange={(e) => setForceNewPassword(e.target.value)}
-                autoComplete="new-password"
-              />
-              <input
-                className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-                placeholder="Повтори новый пароль"
-                type="password"
-                value={forceNewPassword2}
-                onChange={(e) => setForceNewPassword2(e.target.value)}
-                autoComplete="new-password"
-              />
-              <button
-                className="w-full rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
-                disabled={busy || forceNewPassword.trim().length < 8 || forceNewPassword !== forceNewPassword2}
-                onClick={async () => {
-                  setBusy(true);
-                  setError(null);
-                  setNotice(null);
-                  try {
-                    const pw1 = forceNewPassword.trim();
-                    const pw2 = forceNewPassword2.trim();
-                    if (pw1.length < 8) throw new Error("Пароль: минимум 8 символов");
-                    if (pw1 !== pw2) throw new Error("Пароли не совпадают");
-                    const { error: uErr } = await supabase.auth.updateUser({ password: pw1, data: { temp_password: false } });
-                    if (uErr) throw new Error(uErr.message);
-                    setForceNewPassword("");
-                    setForceNewPassword2("");
-                    await loadAll();
-                    setNotice("Пароль обновлён.");
-                  } catch (e: any) {
-                    setError(String(e?.message || e || "Ошибка смены пароля"));
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
-              >
-                {busy ? "Сохраняю…" : "Сменить пароль"}
-              </button>
-
-              <button className="w-full rounded-xl border border-amber-500/30 px-4 py-2 text-sm hover:bg-amber-500/10" onClick={doLogout} disabled={busy}>
-                Выйти
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // INACTIVE / ONBOARDING
-  if (me.profile?.active !== true) {
-    const submitted = !!me.profile?.onboarding_submitted_at;
-
-    return (
-      <div className="min-h-screen bg-zinc-950 text-amber-100 p-4 sm:p-6">
-        <div className="mx-auto max-w-3xl">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <div className="text-2xl font-semibold">Профиль работника</div>
-              <div className="text-sm opacity-80 mt-1">Заполни данные, поставь аватар и отправь на активацию</div>
-            </div>
-            <div className="flex flex-wrap gap-2 sm:justify-end">
-              <a className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10" href="/admin/approvals">
-                Админу: /admin/approvals
-              </a>
-              <button className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10" onClick={doLogout}>
-                Выйти
-              </button>
-            </div>
-          </div>
-
-          {error ? <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">{error}</div> : null}
-          {notice ? <div className="mt-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">{notice}</div> : null}
-
-          <div className="mt-6 rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-5 shadow-xl">
-            <div className="text-lg font-semibold">Данные</div>
-
-            <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-              <input
-                className="rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-                placeholder="Имя и фамилия"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-              />
-              <input
-                className="rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-                placeholder="Email (по желанию)"
-                value={profileEmail}
-                onChange={(e) => setProfileEmail(e.target.value)}
-              />
             </div>
 
-            <div className="mt-3 text-xs opacity-70">
-              Телефон: {me.user.phone || me.profile.phone || "—"} • Email подтверждён: {me.user.email ? (me.user.email_confirmed_at ? "да" : "нет") : "—"}
-            </div>
-
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button
-                className="rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
-                disabled={busy}
-                onClick={saveProfile}
-              >
-                {busy ? "Сохраняю…" : "Сохранить"}
-              </button>
-              <button
-                className="rounded-xl border border-amber-500/30 px-4 py-2 text-sm hover:bg-amber-500/10 disabled:opacity-60"
-                disabled={busy}
-                onClick={async () => {
-                  setBusy(true);
-                  setError(null);
-                  setNotice(null);
-                  try {
-                    await loadAll();
-                    setNotice("Обновлено.");
-                  } catch (e: any) {
-                    setError(String(e?.message || e || "Ошибка"));
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
-              >
-                {busy ? "…" : "Обновить"}
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-4 rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-5 shadow-xl">
-            <div className="flex items-baseline justify-between">
-              <div className="text-lg font-semibold">Фото (до 5)</div>
-              <div className="text-sm opacity-70">{photos.length}/5</div>
-            </div>
-
-            <div className="mt-3 flex gap-2">
-              <input
-                ref={fileRef}
-                type="file"
-                accept="image/*"
-                className="block w-full text-sm"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) uploadPhoto(f);
-                }}
-                disabled={busy || photos.length >= 5}
-              />
-            </div>
-
-            <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-3">
-              {photos.map((p) => {
-                const isAvatar = avatarPath && p.path === avatarPath;
-                return (
-                  <div key={p.path} className="rounded-xl border border-amber-500/15 bg-zinc-900/30 overflow-hidden">
-                    <div className="aspect-square bg-black/30 flex items-center justify-center">
-                      {p.url ? <img src={p.url} className="h-full w-full object-cover" /> : <div className="text-xs opacity-60">—</div>}
-                    </div>
-                    <div className="p-2 space-y-2">
-                      <button
-                        className="w-full rounded-lg bg-amber-500 text-zinc-950 px-2 py-1 text-xs font-semibold hover:bg-amber-400 disabled:opacity-60"
-                        disabled={busy}
-                        onClick={() => makeAvatar(p.path)}
-                      >
-                        {isAvatar ? "Аватар" : "Сделать аватаром"}
-                      </button>
-                      <button
-                        className="w-full rounded-lg border border-amber-500/30 px-2 py-1 text-xs hover:bg-amber-500/10 disabled:opacity-60"
-                        disabled={busy}
-                        onClick={() => delPhoto(p.path)}
-                      >
-                        Удалить
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {photos.length === 0 ? <div className="mt-3 text-sm opacity-70">Загрузи фото и выбери аватар.</div> : null}
-          </div>
-
-          <div className="mt-4 rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-5 shadow-xl">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <div className="text-lg font-semibold">Активация</div>
-                <div className="text-sm opacity-80 mt-1">
-                  {submitted ? "Заявка отправлена. Ждём подтверждения админом." : "Когда всё готово — отправь на активацию."}
-                </div>
+            <div className={clsx(card, "p-6 xl:col-span-2")}>
+              <div className="flex items-center justify-between">
+                <div className="text-lg font-semibold">Jobs</div>
+                <button className={btn} onClick={() => loadAll().catch((e) => setError(String((e as any)?.message || e)))} disabled={busy}>
+                  Обновить
+                </button>
               </div>
 
-              <button
-                className="rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
-                disabled={busy}
-                onClick={submitForApproval}
-              >
-                {busy ? "Отправляю…" : "Отправить на активацию"}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ACTIVE WORKER SCREEN
-  return (
-    <div className="min-h-screen bg-zinc-950 text-amber-100 p-4 sm:p-6">
-      <div className="mx-auto max-w-5xl">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <div className="text-2xl font-semibold">Tanija • Worker</div>
-            <div className="text-sm opacity-80 mt-1">
-              {me.profile?.full_name || "—"} • {me.user?.email || me.profile?.email || "—"} • {me.profile?.role || "worker"}
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-2 sm:justify-end">
-            {me.profile?.role === "admin" ? (
-              <a className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10" href="/admin">
-                Админка
-              </a>
-            ) : null}
-
-            <a className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10" href="/me/profile">
-              Профиль
-            </a>
-
-            <button
-              className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10 disabled:opacity-60"
-              onClick={async () => {
-                setBusy(true);
-                setError(null);
-                setNotice(null);
-                try {
-                  await loadAll();
-                  setNotice("Обновлено.");
-                } catch (e: any) {
-                  setError(String(e?.message || e || "Ошибка обновления"));
-                } finally {
-                  setBusy(false);
-                }
-              }}
-              disabled={busy}
-            >
-              {busy ? "Обновляю…" : "Обновить"}
-            </button>
-
-            <button
-              className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10"
-              onClick={doLogout}
-              disabled={busy}
-            >
-              Выйти
-            </button>
-          </div>
-        </div>
-
-        {error ? <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">{error}</div> : null}
-        {notice ? <div className="mt-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">{notice}</div> : null}
-
-        <div className="mt-6 rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-4 shadow-xl">
-          <div className="flex items-baseline justify-between">
-            <div className="text-lg font-semibold">Фото (до 5)</div>
-            <div className="text-sm opacity-70">{photos.length}/5</div>
-          </div>
-
-          <div className="mt-3">
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              className="block w-full text-sm"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) uploadPhoto(f);
-              }}
-              disabled={busy || photos.length >= 5}
-            />
-          </div>
-
-          <div className="mt-4 flex gap-3 overflow-x-auto pb-1">
-            {photos.map((p) => {
-              const isAvatar = avatarPath && p.path === avatarPath;
-              return (
-                <div key={p.path} className="min-w-[150px] max-w-[150px] rounded-xl border border-amber-500/15 bg-zinc-900/30 overflow-hidden">
-                  <div className="aspect-square bg-black/30 flex items-center justify-center">
-                    {p.url ? <img src={p.url} className="h-full w-full object-cover" /> : <div className="text-xs opacity-60">—</div>}
-                  </div>
-                  <div className="p-2 space-y-2">
-                    <button
-                      className="w-full rounded-lg bg-amber-500 text-zinc-950 px-2 py-1 text-xs font-semibold hover:bg-amber-400 disabled:opacity-60"
-                      disabled={busy}
-                      onClick={() => makeAvatar(p.path)}
-                    >
-                      {isAvatar ? "Аватар" : "Сделать аватаром"}
-                    </button>
-                    <button
-                      className="w-full rounded-lg border border-amber-500/30 px-2 py-1 text-xs hover:bg-amber-500/10 disabled:opacity-60"
-                      disabled={busy}
-                      onClick={() => delPhoto(p.path)}
-                    >
-                      Удалить
-                    </button>
+              {!workerIsActive && !isAdmin && (
+                <div className={clsx("mt-4 p-3 rounded-xl", border, "bg-amber-400/10")}>
+                  <div className="text-sm font-semibold text-amber-200">Ожидание активации</div>
+                  <div className="text-xs opacity-80 mt-1">
+                    Пока аккаунт не активирован админом, доступ к работам может быть ограничен.
                   </div>
                 </div>
-              );
-            })}
-          </div>
+              )}
 
-          {photos.length === 0 ? <div className="mt-3 text-sm opacity-70">Загрузи фото и выбери аватар.</div> : null}
-        </div>
+              <div className="mt-4 space-y-3">
+                {jobsSorted.length === 0 ? (
+                  <div className="text-sm opacity-70">Пока нет заданий.</div>
+                ) : (
+                  jobsSorted.map((j) => {
+                    const planned = j.status === "planned";
+                    const inProg = j.status === "in_progress";
+                    const done = j.status === "done";
 
-        <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <Section title="Запланировано" items={planned} busy={busy} meUserId={me.user.id} onAccept={acceptJob} onStart={startJob} onStop={stopJob} />
-          <Section title="В процессе" items={inprog} busy={busy} meUserId={me.user.id} onAccept={acceptJob} onStart={startJob} onStop={stopJob} />
-          <Section title="Завершено" items={done} busy={busy} meUserId={me.user.id} onAccept={acceptJob} onStart={startJob} onStop={stopJob} />
-        </div>
+                    return (
+                      <div key={j.id} className={clsx("rounded-2xl p-4", border, "bg-zinc-950/60")}>
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-semibold">
+                              {formatDateRu(j.job_date)} • {formatTimeRu(j.scheduled_time)} •{" "}
+                              <span className={gold}>{String(j.status)}</span>
+                            </div>
+                            <div className="text-xs opacity-70 mt-1">
+                              {j.site_name || "Site"} — {j.site_address || "—"}
+                            </div>
+                          </div>
 
-        <div className="mt-6 text-xs opacity-70">Правило: старт/стоп только рядом с объектом, GPS точность ≤ 80м.</div>
+                          <div className="flex items-center gap-2">
+                            {planned && (
+                              <button className={btnSolid} onClick={() => doAccept(j.id)} disabled={busy}>
+                                Accept
+                              </button>
+                            )}
+                            {inProg && (
+                              <button className={btnSolid} onClick={() => doStop(j.id)} disabled={busy}>
+                                Stop
+                              </button>
+                            )}
+                            {(planned || done) && (
+                              <button className={btn} onClick={() => doStart(j.id)} disabled={busy}>
+                                Start
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3 text-xs opacity-80">
+                          <div>Accepted: {formatDateTimeRu(j.accepted_at)}</div>
+                          <div>Start: {formatDateTimeRu(j.started_at)}</div>
+                          <div>Stop: {formatDateTimeRu(j.stopped_at)}</div>
+                        </div>
+
+                        <div className="mt-2 text-xs opacity-70">
+                          GPS: dist {j.distance_m ?? "—"} m • acc {j.accuracy_m ?? "—"} m
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </section>
+        )}
+
+        <footer className="mt-10 text-xs opacity-50">
+          build-safe • Model B • email+password + recovery via SMS/email
+        </footer>
       </div>
-    </div>
+    </main>
   );
-
-  function Section({
-    title,
-    items,
-    busy,
-  }: {
-    title: string;
-    items: JobItem[];
-    busy: boolean;
-    meUserId: string;
-    onAccept: (jobId: string) => void;
-    onStart: (jobId: string) => void;
-    onStop: (jobId: string) => void;
-  }) {
-    return (
-      <div className="rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-4 shadow-xl">
-        <div className="flex items-baseline justify-between">
-          <div className="text-lg font-semibold">{title}</div>
-          <div className="text-sm opacity-70">{items.length}</div>
-        </div>
-
-        <div className="mt-3 space-y-3">
-          {items.length === 0 ? (
-            <div className="text-sm opacity-70">—</div>
-          ) : (
-            items.map((j) => {
-              const from = timeHHMM(j.scheduled_time);
-              const to = timeHHMM(j.scheduled_end_time ?? null);
-              const planM = plannedMinutes(from, to);
-
-              const factM = Math.max(0, Math.floor(Number(j.actual_minutes || 0) || 0));
-              const showFact = j.status === "done" && factM > 0;
-
-              const line =
-                j.status === "done"
-                  ? `${fmtD(j.job_date)} • ${from && to ? `${from}–${to}` : from || "—"} • ${showFact ? `факт ${fmtDur(factM)}` : planM != null ? `${fmtDur(planM)}` : "—"} • ${statusRu(String(j.status || ""))}`
-                  : `${fmtD(j.job_date)} • ${from && to ? `${from}–${to}` : from || "—"}${planM != null ? ` • ${fmtDur(planM)}` : ""} • ${statusRu(String(j.status || ""))}`;
-
-              return (
-                <div key={j.id} className="rounded-xl border border-amber-500/15 bg-zinc-900/30 p-3">
-                  <div className="text-sm font-semibold">{j.site_name || "Объект"}</div>
-                  <div className="mt-1 text-xs opacity-80">{line}</div>
-                </div>
-              );
-            })
-          )}
-        </div>
-      </div>
-    );
-  }
 }
-
-
-
-
-
