@@ -18,7 +18,7 @@ export async function POST(req: Request) {
 
     const { error } = await supabase.auth.admin.updateUserById(userId, {
       password,
-      data: nextMeta,
+      user_metadata: nextMeta,
     })
 
     if (error) throw new ApiError(400, error.message)
