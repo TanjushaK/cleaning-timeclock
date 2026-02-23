@@ -18,7 +18,7 @@ function applyCors(req: NextRequest, res: NextResponse) {
   }
 }
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   if (!req.nextUrl.pathname.startsWith("/api/")) return NextResponse.next();
 
   if (req.method === "OPTIONS") {
@@ -35,3 +35,4 @@ export function middleware(req: NextRequest) {
 export const config = {
   matcher: ["/api/:path*"],
 };
+
