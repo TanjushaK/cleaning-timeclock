@@ -28,13 +28,7 @@
 }
 
 .adminTheme :where([class*='bg-black']) {
-  /* make sure it stays chocolate, not full black */
   background-color: rgba(18, 8, 6, 0.55) !important;
-}
-
-.adminTheme :where([class*='bg-gradient-to-b']) {
-  background-image: none !important;
-  background-color: transparent !important;
 }
 
 .adminTheme :where([class*='border-yellow-400'], [class*='border-amber-500']) {
@@ -45,7 +39,6 @@
   color: rgba(254, 243, 199, 0.96) !important;
 }
 
-/* Make the card glow a bit punchier */
 .adminTheme :where([class*='shadow-xl'], [class*='shadow-2xl'], [class*='shadow-[']) {
   box-shadow:
     0 0 0 1px rgba(245, 158, 11, 0.20),
@@ -53,6 +46,7 @@
     0 25px 90px rgba(0, 0, 0, 0.70) !important;
 }
 
+/* Footer should stay visible */
 .adminFooter {
   padding: 18px 16px 26px;
   text-align: center;
@@ -65,7 +59,6 @@
   color: rgba(254, 243, 199, 0.72);
 }
 
-/* Mobile: make everything easier to hit + a bit larger (WITHOUT shrinking anything) */
 @media (hover: none) and (pointer: coarse) {
   .adminTheme :where(button, a, [role="button"]) {
     min-height: 44px;
@@ -80,11 +73,7 @@
   .adminTheme :where(input, select, textarea) {
     min-height: 44px;
     padding: 10px 12px !important;
-    font-size: 16px !important; /* iOS */
+    font-size: 16px !important;
     line-height: 20px !important;
-  }
-
-  .adminTheme :where(nav, header, section, div) {
-    -webkit-text-size-adjust: 100%;
   }
 }
