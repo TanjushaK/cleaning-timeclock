@@ -593,7 +593,7 @@ export default function AppPage() {
         <header className="flex items-center justify-between gap-3">
           <div>
             <div className={clsx("text-2xl font-semibold", gold)}>Cleaning Timeclock</div>
-            <div className="text-sm opacity-70">Tanija • dark+gold</div>
+            <div className="text-sm opacity-70">Van Tanija</div>
           </div>
 
           <div className="flex items-center gap-2">
