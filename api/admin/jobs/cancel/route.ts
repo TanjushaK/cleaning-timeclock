@@ -1,4 +1,5 @@
-﻿import { NextResponse } from 'next/server' '@/lib/supabase-server'
+import { NextResponse } from 'next/server'
+import { requireAdmin, toErrorResponse } from '@/lib/supabase-server'
 
 function jsonError(status: number, message: string, details?: any) {
   return NextResponse.json(
@@ -27,7 +28,8 @@ async function deleteRowsByJobId(
     if (!res?.error) return { ok: true, used: col }
 
     const err = res.error as SupabaseErr
-    if (err?.code === '42703' 't exist in this schema; try next.
+    if (err?.code === '42703') {
+      // Column doesn't exist in this schema; try next.
       continue
     }
 
@@ -53,12 +55,15 @@ export async function POST(req: Request) {
     const jobId: string | undefined =
       body?.job_id ?? body?.jobId ?? body?.id ?? body?.job?.id
 
-    if (!jobId || typeof jobId !== 'string' 'Missing job_id')
+    if (!jobId || typeof jobId !== 'string') {
+      return jsonError(400, 'Missing job_id')
     }
 
     // 0) Load job (optional rule: only allow delete if planned)
     const jobRes = await guard.supabase
-      .from('jobs' 'id,status' 'id', jobId)
+      .from('jobs')
+      .select('id,status')
+      .eq('id', jobId)
       .maybeSingle()
 
     if (jobRes.error) {
@@ -69,13 +74,20 @@ export async function POST(req: Request) {
     }
 
     // Optional strictness: don't allow deleting running/done shifts.
-    // If you want "admin can delete anything" вЂ” just delete this block.
-    if (jobRes.data.status === 'in_progress' || jobRes.data.status === 'done' 'Cannot cancel (delete) job that is in progress or done')
+    // If you want "admin can delete anything" — just delete this block.
+    if (jobRes.data.status === 'in_progress' || jobRes.data.status === 'done') {
+      return jsonError(409, 'Cannot cancel (delete) job that is in progress or done')
     }
 
     // 1) Delete join rows (assignments) with schema-probing (no DB migrations).
     // Your DB might use a different FK column name; we try common variants.
-    const delAssign = await deleteRowsByJobId(guard.supabase, 'assignments' 'job_id' 'jobId' 'job' 'job_uuid' 'shift_id' 'shiftId'
+    const delAssign = await deleteRowsByJobId(guard.supabase, 'assignments', jobId, [
+      'job_id',
+      'jobId',
+      'job',
+      'job_uuid',
+      'shift_id',
+      'shiftId'
     ])
 
     if (!delAssign.ok) {
@@ -93,4 +105,3 @@ export async function POST(req: Request) {
     return toErrorResponse(err)
   }
 }
-

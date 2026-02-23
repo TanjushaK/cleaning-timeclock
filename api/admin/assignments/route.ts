@@ -1,4 +1,7 @@
-﻿import { NextRequest, NextResponse } from 'next/server' '@/lib/supabase-server' 'nodejs'
+import { NextRequest, NextResponse } from 'next/server'
+import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
+
+export const runtime = 'nodejs'
 
 type AssignmentRow = {
   site_id: string
@@ -10,7 +13,12 @@ export async function GET(req: NextRequest) {
     const guard = await requireAdmin(req.headers)
 
     const { data, error } = await guard.supabase
-      .from('assignments' 'site_id,worker_id' 'site_id' 'worker_id' 'РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РЅР°Р·РЅР°С‡РµРЅРёСЏ')
+      .from('assignments')
+      .select('site_id,worker_id')
+      .order('site_id', { ascending: true })
+      .order('worker_id', { ascending: true })
+
+    if (error) throw new ApiError(500, error.message || 'Не удалось загрузить назначения')
 
     return NextResponse.json({ assignments: (data ?? []) as AssignmentRow[] }, { status: 200 })
   } catch (e) {
@@ -29,23 +37,38 @@ export async function POST(req: NextRequest) {
       body = null
     }
 
-    const action = String(body?.action || '' '' '' 'action РѕР±СЏР·Р°С‚РµР»РµРЅ (assign | unassign)' 'site_id РѕР±СЏР·Р°С‚РµР»РµРЅ' 'worker_id РѕР±СЏР·Р°С‚РµР»РµРЅ')
+    const action = String(body?.action || '').trim()
+    const siteId = String(body?.site_id || '').trim()
+    const workerId = String(body?.worker_id || '').trim()
+
+    if (!action) throw new ApiError(400, 'action обязателен (assign | unassign)')
+    if (!siteId) throw new ApiError(400, 'site_id обязателен')
+    if (!workerId) throw new ApiError(400, 'worker_id обязателен')
 
     const admin = guard.supabase
 
-    if (action === 'unassign' 'assignments').delete().eq('site_id', siteId).eq('worker_id', workerId)
+    if (action === 'unassign') {
+      const { error } = await admin.from('assignments').delete().eq('site_id', siteId).eq('worker_id', workerId)
       if (error) throw new ApiError(500, error.message)
       return NextResponse.json({ ok: true }, { status: 200 })
     }
 
-    if (action !== 'assign' 'РќРµРёР·РІРµСЃС‚РЅС‹Р№ action (assign | unassign)')
+    if (action !== 'assign') {
+      throw new ApiError(400, 'Неизвестный action (assign | unassign)')
     }
 
     const { data: site, error: siteErr } = await admin.from('sites').select('id, archived_at').eq('id', siteId).maybeSingle()
     if (siteErr) throw new ApiError(500, siteErr.message)
-    if (!site) throw new ApiError(404, 'РћР±СЉРµРєС‚ РЅРµ РЅР°Р№РґРµРЅ' 'РћР±СЉРµРєС‚ РІ Р°СЂС…РёРІРµ' 'profiles').select('id, role, active').eq('id', workerId).maybeSingle()
+    if (!site) throw new ApiError(404, 'Объект не найден')
+    if ((site as any).archived_at) throw new ApiError(409, 'Объект в архиве')
+
+    const { data: prof, error: profErr } = await admin.from('profiles').select('id, role, active').eq('id', workerId).maybeSingle()
     if (profErr) throw new ApiError(500, profErr.message)
-    if (!prof) throw new ApiError(404, 'Р Р°Р±РѕС‚РЅРёРє РЅРµ РЅР°Р№РґРµРЅ' 'admin') throw new ApiError(409, 'РђРґРјРёРЅР° РЅР°Р·РЅР°С‡Р°С‚СЊ РЅРµР»СЊР·СЏ' 'Р Р°Р±РѕС‚РЅРёРє РЅРµ Р°РєС‚РёРІРµРЅ' 'assignments').delete().eq('site_id', siteId).eq('worker_id', workerId)
+    if (!prof) throw new ApiError(404, 'Работник не найден')
+    if ((prof as any).role === 'admin') throw new ApiError(409, 'Админа назначать нельзя')
+    if ((prof as any).active === false) throw new ApiError(409, 'Работник не активен')
+
+    const { error: delErr } = await admin.from('assignments').delete().eq('site_id', siteId).eq('worker_id', workerId)
     if (delErr) throw new ApiError(500, delErr.message)
 
     const { data: ins, error: insErr } = await admin
@@ -61,4 +84,3 @@ export async function POST(req: NextRequest) {
     return toErrorResponse(e)
   }
 }
-

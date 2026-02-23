@@ -1,4 +1,7 @@
-﻿import { NextResponse } from 'next/server' '@/lib/supabase-server' 'nodejs'
+import { NextResponse } from 'next/server'
+import { requireAdmin, toErrorResponse } from '@/lib/supabase-server'
+
+export const runtime = 'nodejs'
 
 type NominatimItem = {
   lat: string
@@ -28,17 +31,19 @@ export async function POST(req: Request) {
       'https://nominatim.openstreetmap.org/search?' +
       new URLSearchParams({
         q: address,
-        format: 'json' '1',
+        format: 'json',
+        limit: '1',
       }).toString()
 
-    // Р’РђР–РќРћ: Nominatim С‡Р°СЃС‚Рѕ СЂРµР¶РµС‚ Р·Р°РїСЂРѕСЃС‹ Р±РµР· РЅРѕСЂРјР°Р»СЊРЅС‹С… Р·Р°РіРѕР»РѕРІРєРѕРІ
+    // ВАЖНО: Nominatim часто режет запросы без нормальных заголовков
     const res = await fetch(url, {
       method: 'GET',
       headers: {
-        // РјРѕР¶РЅРѕ Р·Р°РјРµРЅРёС‚СЊ РЅР° С‚РІРѕР№ РґРѕРјРµРЅ/РїСЂРѕРґСѓРєС‚
-        'User-Agent': 'CleaningTimeclock/1.0 (admin geocoder)' 'Accept': 'application/json',
+        // можно заменить на твой домен/продукт
+        'User-Agent': 'CleaningTimeclock/1.0 (admin geocoder)',
+        'Accept': 'application/json',
       },
-      // РЅРµР±РѕР»СЊС€РѕР№ С‚Р°Р№РјР°СѓС‚ С‡РµСЂРµР· AbortController вЂ” РїРѕ Р¶РµР»Р°РЅРёСЋ
+      // небольшой таймаут через AbortController — по желанию
     })
 
     if (!res.ok) {
@@ -62,4 +67,3 @@ export async function POST(req: Request) {
     return toErrorResponse(e)
   }
 }
-

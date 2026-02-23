@@ -1,4 +1,7 @@
-﻿import { NextResponse } from 'next/server' '@/lib/supabase-server' 'nodejs'
+import { NextResponse } from 'next/server'
+import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
+
+export const runtime = 'nodejs'
 
 function toFiniteOrNull(v: any): number | null {
   if (v == null) return null
@@ -11,7 +14,7 @@ function toCategoryOrNull(v: any): number | null {
   const n = Number(v)
   if (!Number.isFinite(n)) return null
   const i = Math.trunc(n)
-  if (i < 1 || i > 15) throw new ApiError(400, 'РљР°С‚РµРіРѕСЂРёСЏ РґРѕР»Р¶РЅР° Р±С‹С‚СЊ РѕС‚ 1 РґРѕ 15')
+  if (i < 1 || i > 15) throw new ApiError(400, 'Категория должна быть от 1 до 15')
   return i
 }
 
@@ -25,7 +28,8 @@ async function geocodeAddress(address: string): Promise<{ lat: number; lng: numb
     'https://nominatim.openstreetmap.org/search?' +
     new URLSearchParams({
       q,
-      format: 'json' '1',
+      format: 'json',
+      limit: '1',
     }).toString()
 
   const ac = new AbortController()
@@ -35,7 +39,8 @@ async function geocodeAddress(address: string): Promise<{ lat: number; lng: numb
     const res = await fetch(url, {
       method: 'GET',
       headers: {
-        'User-Agent': 'CleaningTimeclock/1.0 (admin sites geocoder)' 'Accept': 'application/json',
+        'User-Agent': 'CleaningTimeclock/1.0 (admin sites geocoder)',
+        'Accept': 'application/json',
       },
       signal: ac.signal,
       cache: 'no-store',
@@ -73,10 +78,10 @@ export async function POST(req: Request) {
     const category = toCategoryOrNull(body?.category)
     const notes = body?.notes == null ? null : String(body.notes)
 
-    if (!name) throw new ApiError(400, 'РќСѓР¶РЅРѕ РЅР°Р·РІР°РЅРёРµ РѕР±СЉРµРєС‚Р°')
+    if (!name) throw new ApiError(400, 'Нужно название объекта')
     const safeRadius = radius != null ? radius : 150
 
-    // в­ђ Р“Р»Р°РІРЅРѕРµ: РµСЃР»Рё Р°РґСЂРµСЃ РµСЃС‚СЊ, Р° РєРѕРѕСЂРґРёРЅР°С‚ РЅРµС‚ вЂ” РіРµРѕРєРѕРґРёРј Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё
+    // ⭐ Главное: если адрес есть, а координат нет — геокодим автоматически
     if (address && (lat == null || lng == null)) {
       const geo = await geocodeAddress(address)
       if (geo) {
@@ -100,7 +105,7 @@ export async function POST(req: Request) {
       .select('id,name,address,lat,lng,radius,category,notes,photos,archived_at')
       .single()
 
-    if (error) throw new ApiError(500, error.message || 'РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕР·РґР°С‚СЊ РѕР±СЉРµРєС‚')
+    if (error) throw new ApiError(500, error.message || 'Не удалось создать объект')
 
     return NextResponse.json({ site: data }, { status: 200 })
   } catch (e) {

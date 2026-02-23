@@ -1,5 +1,6 @@
-﻿// app/api/admin/workers/set-active/route.ts
-import { NextRequest, NextResponse } from 'next/server' '@supabase/supabase-js'
+// app/api/admin/workers/set-active/route.ts
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 
 function bearer(req: NextRequest) {
   const h = req.headers.get('authorization') || ''
@@ -8,7 +9,8 @@ function bearer(req: NextRequest) {
 }
 
 function cleanEnv(v: string | undefined | null): string {
-  const s = String(v ?? '').replace(/\uFEFF/g, '' '"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+  const s = String(v ?? '').replace(/\uFEFF/g, '').trim()
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
     return s.slice(1, -1).trim()
   }
   return s
@@ -22,7 +24,10 @@ function envOrThrow(name: string) {
 
 async function assertAdmin(req: NextRequest) {
   const token = bearer(req)
-  if (!token) return { ok: false as const, status: 401, error: 'РќРµС‚ С‚РѕРєРµРЅР° (Authorization: Bearer ...)' 'NEXT_PUBLIC_SUPABASE_URL' 'NEXT_PUBLIC_SUPABASE_ANON_KEY')
+  if (!token) return { ok: false as const, status: 401, error: 'Нет токена (Authorization: Bearer ...)' }
+
+  const url = envOrThrow('NEXT_PUBLIC_SUPABASE_URL')
+  const anon = envOrThrow('NEXT_PUBLIC_SUPABASE_ANON_KEY')
 
   const sb = createClient(url, anon, {
     global: { headers: { Authorization: `Bearer ${token}` } },
@@ -30,13 +35,16 @@ async function assertAdmin(req: NextRequest) {
   })
 
   const { data: userData, error: userErr } = await sb.auth.getUser(token)
-  if (userErr || !userData?.user) return { ok: false as const, status: 401, error: 'РќРµРІР°Р»РёРґРЅС‹Р№ С‚РѕРєРµРЅ' }
+  if (userErr || !userData?.user) return { ok: false as const, status: 401, error: 'Невалидный токен' }
 
   const { data: prof, error: profErr } = await sb
-    .from('profiles' 'id, role, active' 'id', userData.user.id)
+    .from('profiles')
+    .select('id, role, active')
+    .eq('id', userData.user.id)
     .single()
 
-  if (profErr || !prof) return { ok: false as const, status: 403, error: 'РџСЂРѕС„РёР»СЊ РЅРµ РЅР°Р№РґРµРЅ' 'admin' || prof.active !== true) return { ok: false as const, status: 403, error: 'FORBIDDEN' }
+  if (profErr || !prof) return { ok: false as const, status: 403, error: 'Профиль не найден' }
+  if (prof.role !== 'admin' || prof.active !== true) return { ok: false as const, status: 403, error: 'FORBIDDEN' }
 
   return { ok: true as const, adminUserId: userData.user.id }
 }
@@ -50,22 +58,28 @@ export async function POST(req: NextRequest) {
     const workerId = String(body?.worker_id || '').trim()
     const active = Boolean(body?.active)
 
-    if (!workerId) return NextResponse.json({ error: 'worker_id РѕР±СЏР·Р°С‚РµР»РµРЅ' 'NEXT_PUBLIC_SUPABASE_URL' 'SUPABASE_SERVICE_ROLE_KEY')
+    if (!workerId) return NextResponse.json({ error: 'worker_id обязателен' }, { status: 400 })
+
+    const url = envOrThrow('NEXT_PUBLIC_SUPABASE_URL')
+    const service = envOrThrow('SUPABASE_SERVICE_ROLE_KEY')
     const admin = createClient(url, service, {
       auth: { persistSession: false, autoRefreshToken: false },
     })
 
     const { data: prof, error: profErr } = await admin
-      .from('profiles' 'id, role' 'id', workerId)
+      .from('profiles')
+      .select('id, role')
+      .eq('id', workerId)
       .single()
 
-    if (profErr || !prof) return NextResponse.json({ error: 'РџСЂРѕС„РёР»СЊ РЅРµ РЅР°Р№РґРµРЅ' 'admin') return NextResponse.json({ error: 'РђРґРјРёРЅР° РѕС‚РєР»СЋС‡Р°С‚СЊ РЅРµР»СЊР·СЏ' }, { status: 409 })
+    if (profErr || !prof) return NextResponse.json({ error: 'Профиль не найден' }, { status: 404 })
+    if (prof.role === 'admin') return NextResponse.json({ error: 'Админа отключать нельзя' }, { status: 409 })
 
-    // РѕС‚РєР»СЋС‡Р°РµРј/РІРєР»СЋС‡Р°РµРј
+    // отключаем/включаем
     const { error: updErr } = await admin.from('profiles').update({ active }).eq('id', workerId)
     if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
 
-    // РїСЂРё РѕС‚РєР»СЋС‡РµРЅРёРё вЂ” РјРѕР¶РЅРѕ СЃРЅСЏС‚СЊ assignments, С‡С‚РѕР±С‹ РЅРµ РїСѓС‚Р°С‚СЊ
+    // при отключении — можно снять assignments, чтобы не путать
     if (!active) {
       await admin.from('assignments').delete().eq('worker_id', workerId)
     }
@@ -75,4 +89,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: e?.message || 'Server error' }, { status: 500 })
   }
 }
-

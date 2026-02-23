@@ -1,4 +1,8 @@
-﻿import { NextResponse } from 'next/server' '@/lib/supabase-server' 'nodejs' 'force-dynamic'
+import { NextResponse } from 'next/server'
+import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
 function pickStr(v: any): string | null {
   if (typeof v !== 'string') return null
@@ -22,7 +26,9 @@ function hasOwn(obj: any, key: string) {
 function normalizeStatus(v: any): string | null {
   const s = pickStr(v)
   if (!s) return null
-  if (s === 'planned' || s === 'in_progress' || s === 'done' 'cancelled') throw new ApiError(400, 'РћС‚РјРµРЅР° РґРµР»Р°РµС‚СЃСЏ РєРЅРѕРїРєРѕР№ вЂњРћС‚РјРµРЅРёС‚СЊ СЃРјРµРЅСѓвЂќ' 'РќРµРґРѕРїСѓСЃС‚РёРјС‹Р№ СЃС‚Р°С‚СѓСЃ')
+  if (s === 'planned' || s === 'in_progress' || s === 'done') return s
+  if (s === 'cancelled') throw new ApiError(400, 'Отмена делается кнопкой “Отменить смену”')
+  throw new ApiError(400, 'Недопустимый статус')
 }
 
 /**
@@ -58,7 +64,7 @@ export async function POST(req: Request) {
     const tFromRaw = hasOwn(body, 'scheduled_time') ? body.scheduled_time : (hasOwn(body, 'to_time') ? body.to_time : (hasOwn(body, 'toTime') ? body.toTime : (hasOwn(body, 'time') ? body.time : undefined)))
     if (tFromRaw !== undefined) {
       const t = normalizeTimeHHMM(tFromRaw)
-      if (!t) throw new ApiError(400, 'scheduled_time РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ HH:MM')
+      if (!t) throw new ApiError(400, 'scheduled_time должен быть HH:MM')
       patch.scheduled_time = t
     }
 
@@ -68,7 +74,7 @@ export async function POST(req: Request) {
         patch.scheduled_end_time = null
       } else {
         const t = normalizeTimeHHMM(tToRaw)
-        if (!t) throw new ApiError(400, 'scheduled_end_time РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ HH:MM')
+        if (!t) throw new ApiError(400, 'scheduled_end_time должен быть HH:MM')
         patch.scheduled_end_time = t
       }
     }
@@ -89,7 +95,8 @@ export async function POST(req: Request) {
     const { data, error } = await guard.supabase
       .from('jobs')
       .update(patch)
-      .eq('id' 'id,status,job_date,scheduled_time,scheduled_end_time,site_id,worker_id')
+      .eq('id', jobId)
+      .select('id,status,job_date,scheduled_time,scheduled_end_time,site_id,worker_id')
       .maybeSingle()
 
     if (error) throw new ApiError(400, error.message)
@@ -101,5 +108,4 @@ export async function POST(req: Request) {
     return toErrorResponse(e)
   }
 }
-
 

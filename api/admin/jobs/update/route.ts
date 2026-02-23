@@ -1,4 +1,5 @@
-﻿import { NextRequest, NextResponse } from 'next/server' '@supabase/supabase-js'
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 
 function bearer(req: NextRequest) {
   const h = req.headers.get('authorization') || ''
@@ -7,7 +8,8 @@ function bearer(req: NextRequest) {
 }
 
 function cleanEnv(v: string | undefined | null): string {
-  const s = String(v ?? '').replace(/\uFEFF/g, '' '"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+  const s = String(v ?? '').replace(/\uFEFF/g, '').trim()
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
     return s.slice(1, -1).trim()
   }
   return s
@@ -21,7 +23,10 @@ function envOrThrow(name: string) {
 
 async function assertAdmin(req: NextRequest) {
   const token = bearer(req)
-  if (!token) return { ok: false as const, status: 401, error: 'РќРµС‚ РІС…РѕРґР°. РђРІС‚РѕСЂРёР·СѓР№СЃСЏ РІ Р°РґРјРёРЅРєРµ.' 'NEXT_PUBLIC_SUPABASE_URL' 'NEXT_PUBLIC_SUPABASE_ANON_KEY')
+  if (!token) return { ok: false as const, status: 401, error: 'Нет входа. Авторизуйся в админке.' }
+
+  const url = envOrThrow('NEXT_PUBLIC_SUPABASE_URL')
+  const anon = envOrThrow('NEXT_PUBLIC_SUPABASE_ANON_KEY')
 
   const sb = createClient(url, anon, {
     global: { headers: { Authorization: `Bearer ${token}` } },
@@ -29,7 +34,11 @@ async function assertAdmin(req: NextRequest) {
   })
 
   const { data: userData, error: userErr } = await sb.auth.getUser(token)
-  if (userErr || !userData?.user) return { ok: false as const, status: 401, error: 'РќРµРІР°Р»РёРґРЅС‹Р№ С‚РѕРєРµРЅ' 'profiles').select('id, role, active').eq('id' 'РџСЂРѕС„РёР»СЊ РЅРµ РЅР°Р№РґРµРЅ' 'admin' || prof.active !== true) return { ok: false as const, status: 403, error: 'Р”РѕСЃС‚СѓРї Р·Р°РїСЂРµС‰С‘РЅ' }
+  if (userErr || !userData?.user) return { ok: false as const, status: 401, error: 'Невалидный токен' }
+
+  const { data: prof, error: profErr } = await sb.from('profiles').select('id, role, active').eq('id', userData.user.id).single()
+  if (profErr || !prof) return { ok: false as const, status: 403, error: 'Профиль не найден' }
+  if (prof.role !== 'admin' || prof.active !== true) return { ok: false as const, status: 403, error: 'Доступ запрещён' }
 
   return { ok: true as const }
 }
@@ -41,7 +50,8 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json().catch(() => ({} as any))
 
-    const jobId = String(body?.job_id || '' 'job_id РѕР±СЏР·Р°С‚РµР»РµРЅ' }, { status: 400 })
+    const jobId = String(body?.job_id || '').trim()
+    if (!jobId) return NextResponse.json({ error: 'job_id обязателен' }, { status: 400 })
 
     const patch: Record<string, any> = {}
 
@@ -54,7 +64,10 @@ export async function POST(req: NextRequest) {
     }
     if (body?.status != null) patch.status = String(body.status).trim() || null
 
-    if (Object.keys(patch).length === 0) return NextResponse.json({ error: 'РќРµС‡РµРіРѕ РѕР±РЅРѕРІР»СЏС‚СЊ' 'NEXT_PUBLIC_SUPABASE_URL' 'SUPABASE_SERVICE_ROLE_KEY')
+    if (Object.keys(patch).length === 0) return NextResponse.json({ error: 'Нечего обновлять' }, { status: 400 })
+
+    const url = envOrThrow('NEXT_PUBLIC_SUPABASE_URL')
+    const service = envOrThrow('SUPABASE_SERVICE_ROLE_KEY')
     const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } })
 
     const { data: logs, error: logsErr } = await admin.from('time_logs').select('id').eq('job_id', jobId).limit(1)
@@ -64,16 +77,16 @@ export async function POST(req: NextRequest) {
 
     if (hasLogs) {
       if (patch.worker_id != null && patch.worker_id !== undefined) {
-        return NextResponse.json({ error: 'РќРµР»СЊР·СЏ СЃРјРµРЅРёС‚СЊ СЂР°Р±РѕС‚РЅРёРєР°: РїРѕ СЃРјРµРЅРµ СѓР¶Рµ РµСЃС‚СЊ РѕС‚РјРµС‚РєРё РІСЂРµРјРµРЅРё.' }, { status: 400 })
+        return NextResponse.json({ error: 'Нельзя сменить работника: по смене уже есть отметки времени.' }, { status: 400 })
       }
       if (patch.site_id != null && patch.site_id !== undefined) {
-        return NextResponse.json({ error: 'РќРµР»СЊР·СЏ СЃРјРµРЅРёС‚СЊ РѕР±СЉРµРєС‚: РїРѕ СЃРјРµРЅРµ СѓР¶Рµ РµСЃС‚СЊ РѕС‚РјРµС‚РєРё РІСЂРµРјРµРЅРё.' }, { status: 400 })
+        return NextResponse.json({ error: 'Нельзя сменить объект: по смене уже есть отметки времени.' }, { status: 400 })
       }
       if (patch.job_date != null && patch.job_date !== undefined) {
-        return NextResponse.json({ error: 'РќРµР»СЊР·СЏ СЃРјРµРЅРёС‚СЊ РґР°С‚Сѓ: РїРѕ СЃРјРµРЅРµ СѓР¶Рµ РµСЃС‚СЊ РѕС‚РјРµС‚РєРё РІСЂРµРјРµРЅРё.' }, { status: 400 })
+        return NextResponse.json({ error: 'Нельзя сменить дату: по смене уже есть отметки времени.' }, { status: 400 })
       }
       if (patch.scheduled_time != null && patch.scheduled_time !== undefined) {
-        return NextResponse.json({ error: 'РќРµР»СЊР·СЏ СЃРјРµРЅРёС‚СЊ РІСЂРµРјСЏ: РїРѕ СЃРјРµРЅРµ СѓР¶Рµ РµСЃС‚СЊ РѕС‚РјРµС‚РєРё РІСЂРµРјРµРЅРё.' }, { status: 400 })
+        return NextResponse.json({ error: 'Нельзя сменить время: по смене уже есть отметки времени.' }, { status: 400 })
       }
     }
 
@@ -82,7 +95,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true })
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'РћС€РёР±РєР° СЃРµСЂРІРµСЂР°' }, { status: 500 })
+    return NextResponse.json({ error: e?.message || 'Ошибка сервера' }, { status: 500 })
   }
 }
-

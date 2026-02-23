@@ -1,5 +1,9 @@
-﻿// app/api/me/jobs/stop/route.ts
-import { NextResponse } from 'next/server' '@/lib/supabase-server' 'nodejs' 'force-dynamic';
+// app/api/me/jobs/stop/route.ts
+import { NextResponse } from 'next/server';
+import { requireActiveWorker, toErrorResponse } from '@/lib/supabase-server';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 type StopBody = {
   jobId?: string;
@@ -49,33 +53,39 @@ export async function POST(req: Request) {
     const body: StopBody = await req.json().catch(() => ({} as StopBody));
     const jobId: string | null = body.jobId || body.job_id || body.id || null;
 
-    if (!jobId) return NextResponse.json({ error: 'РќСѓР¶РµРЅ id СЃРјРµРЅС‹.' }, { status: 400 });
+    if (!jobId) return NextResponse.json({ error: 'Нужен id смены.' }, { status: 400 });
 
     const lat = toNum(body.lat);
     const lng = toNum(body.lng);
     const acc = toNum(body.accuracy);
 
     if (lat === null || lng === null || acc === null) {
-      return NextResponse.json({ error: 'РќСѓР¶РЅС‹ РєРѕРѕСЂРґРёРЅР°С‚С‹ Рё С‚РѕС‡РЅРѕСЃС‚СЊ GPS.' }, { status: 400 });
+      return NextResponse.json({ error: 'Нужны координаты и точность GPS.' }, { status: 400 });
     }
 
     const { data: jobRaw, error: jobErr } = await supabase
-      .from('jobs' 'id,status,worker_id,site:sites(lat,lng,radius)' 'id', jobId)
+      .from('jobs')
+      .select('id,status,worker_id,site:sites(lat,lng,radius)')
+      .eq('id', jobId)
       .maybeSingle();
 
     if (jobErr) return NextResponse.json({ error: jobErr.message }, { status: 400 });
-    if (!jobRaw) return NextResponse.json({ error: 'РЎРјРµРЅР° РЅРµ РЅР°Р№РґРµРЅР°.' }, { status: 404 });
+    if (!jobRaw) return NextResponse.json({ error: 'Смена не найдена.' }, { status: 404 });
 
     const job: JobRow = jobRaw as unknown as JobRow;
 
-    if (job.status !== 'in_progress' 'РЎС‚РѕРї РґРѕСЃС‚СѓРїРµРЅ С‚РѕР»СЊРєРѕ РґР»СЏ СЃРјРµРЅ РІ СЂР°Р±РѕС‚Рµ.' }, { status: 400 });
+    if (job.status !== 'in_progress') {
+      return NextResponse.json({ error: 'Стоп доступен только для смен в работе.' }, { status: 400 });
     }
 
     let allowed = job.worker_id === uid;
 
     if (!allowed) {
       const { data: linkRaw, error: linkErr } = await supabase
-        .from('job_workers' 'job_id' 'job_id' 'worker_id', uid)
+        .from('job_workers')
+        .select('job_id')
+        .eq('job_id', jobId)
+        .eq('worker_id', uid)
         .maybeSingle();
 
       if (linkErr) return NextResponse.json({ error: linkErr.message }, { status: 400 });
@@ -84,21 +94,21 @@ export async function POST(req: Request) {
       allowed = !!(link && link.job_id);
     }
 
-    if (!allowed) return NextResponse.json({ error: 'РќРµС‚ РґРѕСЃС‚СѓРїР° Рє СЌС‚РѕР№ СЃРјРµРЅРµ.' }, { status: 403 });
+    if (!allowed) return NextResponse.json({ error: 'Нет доступа к этой смене.' }, { status: 403 });
 
     const site = job.site;
     if (!site || site.lat === null || site.lng === null) {
-      return NextResponse.json({ error: 'РЈ РѕР±СЉРµРєС‚Р° РЅРµС‚ РєРѕРѕСЂРґРёРЅР°С‚. РЎС‚РѕРї Р·Р°РїСЂРµС‰С‘РЅ.' }, { status: 400 });
+      return NextResponse.json({ error: 'У объекта нет координат. Стоп запрещён.' }, { status: 400 });
     }
 
     const radius = site.radius ?? 0;
     if (!radius || radius <= 0) {
-      return NextResponse.json({ error: 'РЈ РѕР±СЉРµРєС‚Р° РЅРµ Р·Р°РґР°РЅ СЂР°РґРёСѓСЃ. РЎС‚РѕРї Р·Р°РїСЂРµС‰С‘РЅ.' }, { status: 400 });
+      return NextResponse.json({ error: 'У объекта не задан радиус. Стоп запрещён.' }, { status: 400 });
     }
 
     if (acc > 80) {
       return NextResponse.json(
-        { error: `РўРѕС‡РЅРѕСЃС‚СЊ GPS СЃР»РёС€РєРѕРј РЅРёР·РєР°СЏ: ${Math.round(acc)} Рј (РЅСѓР¶РЅРѕ в‰¤ 80 Рј).` },
+        { error: `Точность GPS слишком низкая: ${Math.round(acc)} м (нужно ≤ 80 м).` },
         { status: 400 }
       );
     }
@@ -106,18 +116,23 @@ export async function POST(req: Request) {
     const dist = haversineMeters(lat, lng, site.lat, site.lng);
     if (dist > radius) {
       return NextResponse.json(
-        { error: `Р’С‹ РґР°Р»РµРєРѕ РѕС‚ РѕР±СЉРµРєС‚Р°: ${Math.round(dist)} Рј (РЅСѓР¶РЅРѕ в‰¤ ${Math.round(radius)} Рј).` },
+        { error: `Вы далеко от объекта: ${Math.round(dist)} м (нужно ≤ ${Math.round(radius)} м).` },
         { status: 400 }
       );
     }
 
     const { data: logRaw, error: logErr } = await supabase
-      .from('time_logs' 'id,started_at' 'job_id' 'worker_id' 'stopped_at' 'started_at', { ascending: false })
+      .from('time_logs')
+      .select('id,started_at')
+      .eq('job_id', jobId)
+      .eq('worker_id', uid)
+      .is('stopped_at', null)
+      .order('started_at', { ascending: false })
       .limit(1)
       .maybeSingle();
 
     if (logErr) return NextResponse.json({ error: logErr.message }, { status: 400 });
-    if (!logRaw) return NextResponse.json({ error: 'РќРµС‚ Р°РєС‚РёРІРЅРѕРіРѕ СЃС‚Р°СЂС‚Р° РїРѕ СЌС‚РѕР№ СЃРјРµРЅРµ.' }, { status: 400 });
+    if (!logRaw) return NextResponse.json({ error: 'Нет активного старта по этой смене.' }, { status: 400 });
 
     const log: TimeLogRow = logRaw as unknown as TimeLogRow;
 
@@ -143,6 +158,5 @@ export async function POST(req: Request) {
     return toErrorResponse(err);
   }
 }
-
 
 

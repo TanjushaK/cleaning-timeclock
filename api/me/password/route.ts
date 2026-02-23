@@ -1,11 +1,16 @@
-﻿import { NextResponse } from 'next/server' '@/lib/supabase-server' 'nodejs' 'force-dynamic'
+import { NextResponse } from 'next/server'
+import { ApiError, requireUser, toErrorResponse } from '@/lib/supabase-server'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
 export async function POST(req: Request) {
   try {
     const { supabase, user, userId } = await requireUser(req)
 
     const body = await req.json().catch(() => ({} as any))
-    const password = String(body?.password ?? '' 'РџР°СЂРѕР»СЊ РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ РјРёРЅРёРјСѓРј 8 СЃРёРјРІРѕР»РѕРІ')
+    const password = String(body?.password ?? '').trim()
+    if (password.length < 8) throw new ApiError(400, 'Пароль должен быть минимум 8 символов')
 
     const currentMeta = ((user as any)?.user_metadata ?? {}) as Record<string, any>
     const nextMeta = { ...currentMeta, temp_password: false }
@@ -22,4 +27,3 @@ export async function POST(req: Request) {
     return toErrorResponse(e)
   }
 }
-

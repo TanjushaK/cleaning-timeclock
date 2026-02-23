@@ -1,15 +1,18 @@
-﻿import { NextRequest, NextResponse } from 'next/server' '@/lib/supabase-server'
+import { NextRequest, NextResponse } from 'next/server'
+import { requireAdmin, ApiError, toErrorResponse } from '@/lib/supabase-server'
 
 type SitePhoto = { path: string; url?: string; created_at?: string | null }
 
 function parseBucketRef(raw: string | undefined | null, fallbackBucket: string) {
   const s = String(raw || '').trim().replace(/^\/+|\/+$/g, '')
   if (!s) return { bucket: fallbackBucket }
-  const parts = s.split('/' '').trim() || fallbackBucket
+  const parts = s.split('/').filter(Boolean)
+  const bucket = (parts[0] || '').trim() || fallbackBucket
   return { bucket }
 }
 
-const RAW_BUCKET = process.env.SITE_PHOTOS_BUCKET || 'site-photos' 'site-photos')
+const RAW_BUCKET = process.env.SITE_PHOTOS_BUCKET || 'site-photos'
+const { bucket: BUCKET } = parseBucketRef(RAW_BUCKET, 'site-photos')
 
 function getSignedTtlSeconds() {
   const raw = process.env.SITE_PHOTOS_SIGNED_URL_TTL
@@ -35,14 +38,16 @@ export async function GET(req: NextRequest) {
     const includeArchived = req.nextUrl.searchParams.get('include_archived') === '1'
 
     let q = supabase
-      .from('sites' 'id,name,address,lat,lng,radius,category,notes,photos,archived_at' 'name', { ascending: true })
+      .from('sites')
+      .select('id,name,address,lat,lng,radius,category,notes,photos,archived_at')
+      .order('name', { ascending: true })
 
     if (!includeArchived) {
       q = q.is('archived_at', null)
     }
 
     const { data, error } = await q
-    if (error) throw new ApiError(500, error.message || 'РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РѕР±СЉРµРєС‚С‹')
+    if (error) throw new ApiError(500, error.message || 'Не удалось загрузить объекты')
 
     const sites = (data ?? []).map((s: any) => ({ ...s, photos: normalizePhotos(s.photos) }))
 
@@ -62,7 +67,8 @@ export async function GET(req: NextRequest) {
       if (!signErr && Array.isArray(signed)) {
         const urlByPath = new Map<string, string>()
         for (const item of signed as any[]) {
-          const p = item?.path ? String(item.path) : '' ''
+          const p = item?.path ? String(item.path) : ''
+          const u = item?.signedUrl ? String(item.signedUrl) : ''
           if (p && u) urlByPath.set(p, u)
         }
 
@@ -81,4 +87,3 @@ export async function GET(req: NextRequest) {
     return toErrorResponse(e)
   }
 }
-

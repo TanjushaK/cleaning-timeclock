@@ -1,4 +1,5 @@
-﻿import { NextRequest, NextResponse } from 'next/server' '@supabase/supabase-js'
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 function bearer(req: NextRequest) {
   const h = req.headers.get('authorization') || ''
@@ -7,7 +8,8 @@ function bearer(req: NextRequest) {
 }
 
 function cleanEnv(v: string | undefined | null): string {
-  const s = String(v ?? '').replace(/\uFEFF/g, '' '"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+  const s = String(v ?? '').replace(/\uFEFF/g, '').trim()
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
     return s.slice(1, -1).trim()
   }
   return s
@@ -21,7 +23,10 @@ function envOrThrow(name: string) {
 
 async function assertAdmin(req: NextRequest) {
   const token = bearer(req)
-  if (!token) return { ok: false as const, status: 401, error: 'РќРµС‚ РІС…РѕРґР°. РђРІС‚РѕСЂРёР·СѓР№СЃСЏ РІ Р°РґРјРёРЅРєРµ.' 'NEXT_PUBLIC_SUPABASE_URL' 'NEXT_PUBLIC_SUPABASE_ANON_KEY')
+  if (!token) return { ok: false as const, status: 401, error: 'Нет входа. Авторизуйся в админке.' }
+
+  const url = envOrThrow('NEXT_PUBLIC_SUPABASE_URL')
+  const anon = envOrThrow('NEXT_PUBLIC_SUPABASE_ANON_KEY')
 
   const sb = createClient(url, anon, {
     global: { headers: { Authorization: `Bearer ${token}` } },
@@ -29,7 +34,11 @@ async function assertAdmin(req: NextRequest) {
   })
 
   const { data: userData, error: userErr } = await sb.auth.getUser(token)
-  if (userErr || !userData?.user) return { ok: false as const, status: 401, error: 'РќРµРІР°Р»РёРґРЅС‹Р№ С‚РѕРєРµРЅ' 'profiles').select('id, role, active').eq('id' 'РџСЂРѕС„РёР»СЊ РЅРµ РЅР°Р№РґРµРЅ' 'admin' || prof.active !== true) return { ok: false as const, status: 403, error: 'Р”РѕСЃС‚СѓРї Р·Р°РїСЂРµС‰С‘РЅ' }
+  if (userErr || !userData?.user) return { ok: false as const, status: 401, error: 'Невалидный токен' }
+
+  const { data: prof, error: profErr } = await sb.from('profiles').select('id, role, active').eq('id', userData.user.id).single()
+  if (profErr || !prof) return { ok: false as const, status: 403, error: 'Профиль не найден' }
+  if (prof.role !== 'admin' || prof.active !== true) return { ok: false as const, status: 403, error: 'Доступ запрещён' }
 
   return { ok: true as const }
 }
@@ -46,14 +55,15 @@ async function resolveAssignmentsTable(admin: SupabaseClient) {
       ASSIGNMENTS_TABLE = t
       return t
     }
-    const msg = String(error?.message || '' 'Could not find the table') || msg.includes('does not exist') || msg.includes('relation')
+    const msg = String(error?.message || '')
+    const missing = msg.includes('Could not find the table') || msg.includes('does not exist') || msg.includes('relation')
     if (!missing) {
       ASSIGNMENTS_TABLE = t
       return t
     }
   }
 
-  throw new Error('РќРµ РЅР°Р№РґРµРЅР° С‚Р°Р±Р»РёС†Р° РЅР°Р·РЅР°С‡РµРЅРёР№ (assignments/site_workers).')
+  throw new Error('Не найдена таблица назначений (assignments/site_workers).')
 }
 
 let JOBS_END_TIME_COL: string | null | undefined = undefined
@@ -69,9 +79,10 @@ async function resolveJobsEndTimeColumn(admin: SupabaseClient) {
       return c
     }
 
-    const msg = String(error?.message || '' 'does not exist') || msg.includes('Could not find') || msg.includes('column') || msg.includes('unknown')
+    const msg = String(error?.message || '')
+    const missing = msg.includes('does not exist') || msg.includes('Could not find') || msg.includes('column') || msg.includes('unknown')
     if (!missing) {
-      // РєР°РєР°СЏ-С‚Рѕ РґСЂСѓРіР°СЏ РѕС€РёР±РєР° вЂ” РІСЃС‘ СЂР°РІРЅРѕ Р·Р°РїРѕРјРЅРёРј РєРѕР»РѕРЅРєСѓ, С‡С‚РѕР±С‹ РЅРµ РєСЂСѓС‚РёС‚СЊ РґРµС‚РµРєС‚РѕСЂ Р±РµСЃРєРѕРЅРµС‡РЅРѕ
+      // какая-то другая ошибка — всё равно запомним колонку, чтобы не крутить детектор бесконечно
       JOBS_END_TIME_COL = c
       return c
     }
@@ -94,7 +105,9 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json().catch(() => ({} as any))
 
-    const siteId = String(body?.site_id || '' '' '').trim() // HH:MM
+    const siteId = String(body?.site_id || '').trim()
+    const jobDate = String(body?.job_date || '').trim() // YYYY-MM-DD
+    const scheduledTime = String(body?.scheduled_time || '').trim() // HH:MM
 
     const scheduledTimeToRaw =
       body?.scheduled_time_to ?? body?.scheduled_end_time ?? body?.scheduled_time_end ?? body?.end_time ?? body?.time_to ?? null
@@ -102,10 +115,16 @@ export async function POST(req: NextRequest) {
     const workerIdsRaw = Array.isArray(body?.worker_ids) ? body.worker_ids : []
     const workerIds = workerIdsRaw.map((x: any) => String(x).trim()).filter(Boolean)
 
-    if (!siteId) return NextResponse.json({ error: 'site_id РѕР±СЏР·Р°С‚РµР»РµРЅ' 'job_date РѕР±СЏР·Р°С‚РµР»РµРЅ' 'scheduled_time РѕР±СЏР·Р°С‚РµР»РµРЅ' 'Р’С‹Р±РµСЂРё С…РѕС‚СЏ Р±С‹ РѕРґРЅРѕРіРѕ СЂР°Р±РѕС‚РЅРёРєР°' 'NEXT_PUBLIC_SUPABASE_URL' 'SUPABASE_SERVICE_ROLE_KEY')
+    if (!siteId) return NextResponse.json({ error: 'site_id обязателен' }, { status: 400 })
+    if (!jobDate) return NextResponse.json({ error: 'job_date обязателен' }, { status: 400 })
+    if (!scheduledTime) return NextResponse.json({ error: 'scheduled_time обязателен' }, { status: 400 })
+    if (workerIds.length === 0) return NextResponse.json({ error: 'Выбери хотя бы одного работника' }, { status: 400 })
+
+    const url = envOrThrow('NEXT_PUBLIC_SUPABASE_URL')
+    const service = envOrThrow('SUPABASE_SERVICE_ROLE_KEY')
     const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } })
 
-    // Р§С‚РѕР±С‹ Сѓ СЂР°Р±РѕС‚РЅРёРєРѕРІ РЅРµ Р±С‹Р»Рѕ вЂњРїСѓСЃС‚РѕвЂќ, РіР°СЂР°РЅС‚РёСЂСѓРµРј РЅР°Р·РЅР°С‡РµРЅРёРµ РѕР±СЉРµРєС‚в†”СЂР°Р±РѕС‚РЅРёРє
+    // Чтобы у работников не было “пусто”, гарантируем назначение объект↔работник
     const assignTable = await resolveAssignmentsTable(admin)
     for (const wid of workerIds) {
       const { data: ex, error: exErr } = await admin.from(assignTable).select('site_id,worker_id').eq('site_id', siteId).eq('worker_id', wid).limit(1)
@@ -117,7 +136,7 @@ export async function POST(req: NextRequest) {
     }
 
     const timeFrom = normalizeHHMM(scheduledTime)
-    if (!timeFrom) return NextResponse.json({ error: 'scheduled_time РѕР±СЏР·Р°С‚РµР»РµРЅ' }, { status: 400 })
+    if (!timeFrom) return NextResponse.json({ error: 'scheduled_time обязателен' }, { status: 400 })
 
     const timeTo = scheduledTimeToRaw == null ? null : normalizeHHMM(String(scheduledTimeToRaw))
     const endCol = timeTo ? await resolveJobsEndTimeColumn(admin) : null
@@ -139,7 +158,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, created: data ?? [] })
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'РћС€РёР±РєР° СЃРµСЂРІРµСЂР°' }, { status: 500 })
+    return NextResponse.json({ error: e?.message || 'Ошибка сервера' }, { status: 500 })
   }
 }
-

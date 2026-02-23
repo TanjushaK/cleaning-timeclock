@@ -1,4 +1,8 @@
-﻿import { NextResponse } from 'next/server' '@/lib/supabase-server' 'nodejs' 'force-dynamic'
+import { NextResponse } from 'next/server'
+import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
 function parseHM(s: string): number | null {
   const m = /^(\d{1,2}):(\d{2})$/.exec(String(s || '').trim())
@@ -16,7 +20,8 @@ export async function POST(req: Request) {
     const sb = guard.supabase
 
     const body = await req.json().catch(() => ({} as any))
-    const jobId = String(body?.job_id || body?.jobId || '' 'job_id РѕР±СЏР·Р°С‚РµР»РµРЅ')
+    const jobId = String(body?.job_id || body?.jobId || '').trim()
+    if (!jobId) throw new ApiError(400, 'job_id обязателен')
 
     let minutes: number | null = null
     if (body?.minutes != null) minutes = Math.max(0, Math.floor(Number(body.minutes) || 0))
@@ -24,18 +29,24 @@ export async function POST(req: Request) {
       const m = parseHM(String(body.hm))
       minutes = m == null ? null : Math.max(0, m)
     }
-    if (minutes == null) throw new ApiError(400, 'РќСѓР¶РµРЅ minutes (С‡РёСЃР»Рѕ) РёР»Рё hm (РЅР°РїСЂРёРјРµСЂ "3:30")')
+    if (minutes == null) throw new ApiError(400, 'Нужен minutes (число) или hm (например "3:30")')
 
     const { data: log, error: logErr } = await sb
-      .from('time_logs' 'id, started_at, stopped_at' 'job_id' 'started_at', { ascending: true })
+      .from('time_logs')
+      .select('id, started_at, stopped_at')
+      .eq('job_id', jobId)
+      .order('started_at', { ascending: true })
       .limit(1)
       .maybeSingle()
 
     if (logErr) throw new ApiError(400, logErr.message)
-    if (!log || !log.id) throw new ApiError(400, 'РџРѕ СЌС‚РѕР№ СЃРјРµРЅРµ РЅРµС‚ time_logs (РЅРµС‡РµРіРѕ РїСЂР°РІРёС‚СЊ)' '' 'РЈ time_logs РЅРµС‚ started_at')
+    if (!log || !log.id) throw new ApiError(400, 'По этой смене нет time_logs (нечего править)')
+
+    const startedAt = String((log as any).started_at || '').trim()
+    if (!startedAt) throw new ApiError(400, 'У time_logs нет started_at')
 
     const startMs = new Date(startedAt).getTime()
-    if (!Number.isFinite(startMs)) throw new ApiError(400, 'started_at РЅРµРєРѕСЂСЂРµРєС‚РЅС‹Р№')
+    if (!Number.isFinite(startMs)) throw new ApiError(400, 'started_at некорректный')
 
     const stopMs = startMs + minutes * 60000
     const stoppedAt = new Date(stopMs).toISOString()
@@ -48,4 +59,3 @@ export async function POST(req: Request) {
     return toErrorResponse(e)
   }
 }
-

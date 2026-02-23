@@ -1,9 +1,17 @@
-﻿import { NextResponse } from 'next/server' '@/lib/supabase-server' 'nodejs' 'force-dynamic'
+import { NextResponse } from 'next/server'
+import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
 function isMissingMsg(msg: string) {
   const m = String(msg || '')
   return (
-    m.includes('Could not find the table' 'does not exist' 'relation' 'schema cache' 'column') && m.includes('does not exist'))
+    m.includes('Could not find the table') ||
+    m.includes('does not exist') ||
+    m.includes('relation') ||
+    m.includes('schema cache') ||
+    (m.includes('column') && m.includes('does not exist'))
   )
 }
 
@@ -44,7 +52,8 @@ export async function POST(req: Request) {
       errors: [],
     }
 
-    out.step = 'load_workers' 'profiles').select('id').eq('role', 'worker')
+    out.step = 'load_workers'
+    const { data: workers, error: wErr } = await sb.from('profiles').select('id').eq('role', 'worker')
     if (wErr) throw new ApiError(500, `profiles: ${wErr.message}`)
 
     const ids = (workers || []).map((x: any) => String(x.id)).filter(Boolean)
@@ -56,11 +65,22 @@ export async function POST(req: Request) {
       return NextResponse.json(out, { status: 200 })
     }
 
-    // вњ… РіР»Р°РІРЅРѕРµ: С‡РёСЃС‚РёРј time_logs РїРѕ worker_id (Сѓ С‚РµР±СЏ СЌС‚Рѕ РµСЃС‚СЊ)
-    out.step = 'delete_time_logs' 'time_logs', 'worker_id' 'delete_assignments' 'assignments', 'worker_id' 'delete_job_workers' 'job_workers', 'worker_id', ids, out)
+    // ✅ главное: чистим time_logs по worker_id (у тебя это есть)
+    out.step = 'delete_time_logs'
+    await tryDeleteIn(sb, 'time_logs', 'worker_id', ids, out)
 
-    // РЅР° РІСЃСЏРєРёР№ вЂ” РµСЃР»Рё РіРґРµ-С‚Рѕ РІ jobs РµСЃС‚СЊ worker_id
-    out.step = 'unlink_jobs' 'jobs', { worker_id: null }, 'worker_id' 'delete_profiles' 'profiles').delete().in('id', ids)
+    out.step = 'delete_assignments'
+    await tryDeleteIn(sb, 'assignments', 'worker_id', ids, out)
+
+    out.step = 'delete_job_workers'
+    await tryDeleteIn(sb, 'job_workers', 'worker_id', ids, out)
+
+    // на всякий — если где-то в jobs есть worker_id
+    out.step = 'unlink_jobs'
+    await tryUpdateIn(sb, 'jobs', { worker_id: null }, 'worker_id', ids, out)
+
+    out.step = 'delete_profiles'
+    const pRes = await sb.from('profiles').delete().in('id', ids)
     if (pRes.error) throw new ApiError(500, `profiles delete: ${pRes.error.message}`)
 
     out.step = 'delete_auth_users'
@@ -79,4 +99,3 @@ export async function POST(req: Request) {
     return toErrorResponse(e)
   }
 }
-
