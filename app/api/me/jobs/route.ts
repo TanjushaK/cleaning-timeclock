@@ -34,6 +34,18 @@ function minutesBetween(startISO: string, stopISO: string): number {
   return Math.round(diff / 60000)
 }
 
+function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371000
+  const toRad = (x: number) => (x * Math.PI) / 180
+  const dLat = toRad(lat2 - lat1)
+  const dLon = toRad(lon2 - lon1)
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  return R * c
+}
+
 let ASSIGN_TABLE: string | null | undefined = undefined
 
 async function resolveAssignmentsTable(supabase: any): Promise<string | null> {
@@ -200,21 +212,58 @@ export async function GET(req: NextRequest) {
     const siteIds2 = Array.from(new Set(jobs.map((j: any) => j.site_id).filter(Boolean)))
 
     const [sitesRes, logsRes] = await Promise.all([
-      siteIds2.length ? supabase.from('sites').select('id,name').in('id', siteIds2) : Promise.resolve({ data: [], error: null } as any),
-      jobIds.length ? supabase.from('time_logs').select('job_id,started_at,stopped_at').in('job_id', jobIds) : Promise.resolve({ data: [], error: null } as any),
+      siteIds2.length
+        ? supabase.from('sites').select('id,name,address,lat,lng,radius').in('id', siteIds2)
+        : Promise.resolve({ data: [], error: null } as any),
+      jobIds.length
+        ? supabase
+            .from('time_logs')
+            .select('job_id,started_at,stopped_at,start_lat,start_lng,start_accuracy')
+            .in('job_id', jobIds)
+        : Promise.resolve({ data: [], error: null } as any),
     ])
 
     if (sitesRes.error) return NextResponse.json({ error: sitesRes.error.message }, { status: 400 })
     if (logsRes.error) return NextResponse.json({ error: logsRes.error.message }, { status: 400 })
 
-    const siteName = new Map<string, string>()
-    for (const s of (sitesRes.data || []) as any[]) siteName.set(String(s.id), s.name || '')
+    const siteInfo = new Map<
+      string,
+      { name: string | null; address: string | null; lat: number | null; lng: number | null; radius: number | null }
+    >()
+    for (const s of (sitesRes.data || []) as any[]) {
+      siteInfo.set(String(s.id), {
+        name: s.name ?? null,
+        address: s.address ?? null,
+        lat: s.lat ?? null,
+        lng: s.lng ?? null,
+        radius: s.radius ?? null,
+      })
+    }
 
-    // logs: aggregate start/stop + sum minutes
-    const logAgg = new Map<string, { started_at: string | null; stopped_at: string | null; actual_minutes: number }>()
+    // logs: aggregate start/stop + sum minutes + latest start gps
+    const logAgg = new Map<
+      string,
+      {
+        started_at: string | null
+        stopped_at: string | null
+        actual_minutes: number
+        latest_start_at: string | null
+        latest_start_lat: number | null
+        latest_start_lng: number | null
+        latest_start_accuracy: number | null
+      }
+    >()
     for (const l of (logsRes.data || []) as any[]) {
       const id = String(l.job_id)
-      const cur = logAgg.get(id) || { started_at: null, stopped_at: null, actual_minutes: 0 }
+      const cur = logAgg.get(id) || {
+        started_at: null,
+        stopped_at: null,
+        actual_minutes: 0,
+        latest_start_at: null,
+        latest_start_lat: null,
+        latest_start_lng: null,
+        latest_start_accuracy: null,
+      }
 
       const sa = l.started_at ? String(l.started_at) : null
       const so = l.stopped_at ? String(l.stopped_at) : null
@@ -230,14 +279,46 @@ export async function GET(req: NextRequest) {
         cur.actual_minutes += minutesBetween(sa, so)
       }
 
+      if (sa) {
+        if (!cur.latest_start_at || sa > cur.latest_start_at) {
+          cur.latest_start_at = sa
+          cur.latest_start_lat = Number.isFinite(Number(l.start_lat)) ? Number(l.start_lat) : null
+          cur.latest_start_lng = Number.isFinite(Number(l.start_lng)) ? Number(l.start_lng) : null
+          cur.latest_start_accuracy = Number.isFinite(Number(l.start_accuracy)) ? Number(l.start_accuracy) : null
+        }
+      }
+
       logAgg.set(id, cur)
     }
 
     const items = jobs.map((j: any) => {
-      const agg = logAgg.get(String(j.id)) || { started_at: null, stopped_at: null, actual_minutes: 0 }
+      const agg = logAgg.get(String(j.id)) || {
+        started_at: null,
+        stopped_at: null,
+        actual_minutes: 0,
+        latest_start_at: null,
+        latest_start_lat: null,
+        latest_start_lng: null,
+        latest_start_accuracy: null,
+      }
+
+      const si = j.site_id ? siteInfo.get(String(j.site_id)) : null
+
+      let distance_m: number | null = null
+      if (
+        si?.lat != null &&
+        si?.lng != null &&
+        agg.latest_start_lat != null &&
+        agg.latest_start_lng != null &&
+        Number.isFinite(si.lat) &&
+        Number.isFinite(si.lng)
+      ) {
+        distance_m = Math.round(haversineMeters(agg.latest_start_lat, agg.latest_start_lng, si.lat, si.lng))
+      }
+
       const can_accept =
         String(j.status || '') === 'planned' &&
-        (j.worker_id == null) &&
+        j.worker_id == null &&
         siteIds.includes(String(j.site_id || ''))
 
       return {
@@ -247,16 +328,27 @@ export async function GET(req: NextRequest) {
         scheduled_time: j.scheduled_time,
         scheduled_end_time: (j as any).scheduled_end_time ?? null,
         site_id: j.site_id,
-        site_name: j.site_id ? siteName.get(String(j.site_id)) || null : null,
-        worker_id: j.worker_id,
+        site_name: si?.name ?? null,
+        site_address: si?.address ?? null,
+        site_radius: si?.radius ?? null,
+        site_lat: si?.lat ?? null,
+        site_lng: si?.lng ?? null,
+        accepted_at: null,
         started_at: agg.started_at,
         stopped_at: agg.stopped_at,
+        distance_m,
+        accuracy_m: agg.latest_start_accuracy,
+        worker_note: null,
+
+        // legacy fields (used by admin/reports)
+        worker_id: j.worker_id,
         actual_minutes: agg.actual_minutes || 0,
         can_accept,
       }
     })
 
-    return NextResponse.json({ items })
+    // Back-compat: UI expects {jobs: [...]}
+    return NextResponse.json({ jobs: items, items })
   } catch (e: any) {
     const msg = e?.message || 'Ошибка'
     const status = /Нет токена/i.test(msg) ? 401 : 400

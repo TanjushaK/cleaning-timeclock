@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import AppFooter from '@/app/_components/AppFooter'
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
@@ -33,8 +34,8 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#07070b] text-zinc-100">
-      <div className="mx-auto max-w-md px-5 py-10">
+    <div className="appTheme min-h-screen flex flex-col">
+      <div className="mx-auto max-w-md px-5 py-10 flex-1">
         <div className="rounded-3xl border border-amber-400/20 bg-gradient-to-b from-[#0b0b12] to-[#07070b] p-6 shadow-2xl">
           <div className="flex items-center gap-3">
             <img src="/tanija-logo.png" alt="Tanija" className="h-10 w-10 rounded-xl" />
@@ -88,6 +89,7 @@ export default function ForgotPasswordPage() {
           В Supabase Auth добавь Redirect URL: <span className="text-zinc-300">/reset-password</span>
         </div>
       </div>
+      <AppFooter />
     </div>
   )
 }

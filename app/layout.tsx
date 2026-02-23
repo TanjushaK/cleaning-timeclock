@@ -1,6 +1,8 @@
 import './globals.css'
+import './app-theme.css'
 import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
+import ClientSessionWarmup from '@/lib/client-session-warmup'
 
 const inter = Inter({ subsets: ['latin', 'cyrillic'], weight: ['400', '500', '600', '700'] })
 
@@ -21,7 +23,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ru">
-      <body className={inter.className}>{children}</body>
+      <body className={inter.className}>
+        <ClientSessionWarmup />
+        {children}
+      </body>
     </html>
   )
 }

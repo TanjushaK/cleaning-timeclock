@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { authFetchJson, clearAuthTokens, getAccessToken } from '@/lib/auth-fetch'
+import AppFooter from '@/app/_components/AppFooter'
 
 type Profile = {
   id: string
@@ -148,7 +149,11 @@ export default function WorkerProfilePage() {
       const p2 = newPassword2.trim()
       if (p1.length < 8) throw new Error('Пароль должен быть минимум 8 символов')
       if (p1 !== p2) throw new Error('Пароли не совпадают')
-      await supabase.auth.updateUser({ password: p1, data: { temp_password: false } })
+      await authFetchJson('/api/me/password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: p1 }),
+      })
       setNewPassword('')
       setNewPassword2('')
       await loadMe().catch(() => {})
@@ -233,29 +238,35 @@ export default function WorkerProfilePage() {
 
   if (booting) {
     return (
-      <div className="min-h-screen bg-zinc-950 text-amber-100 flex items-center justify-center">
-        <div className="text-sm opacity-80">Загрузка…</div>
+      <div className="appTheme min-h-screen flex flex-col">
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-sm opacity-80">Загрузка…</div>
+        </div>
+        <AppFooter />
       </div>
     )
   }
 
   if (!authed) {
     return (
-      <div className="min-h-screen bg-zinc-950 text-amber-100 flex items-center justify-center p-6">
-        <div className="w-full max-w-md rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-6 shadow-xl">
-          <div className="text-lg font-semibold">Нужен вход</div>
-          <div className="text-sm opacity-80 mt-2">Открой главную страницу и войди по телефону или email.</div>
-          <a className="mt-4 inline-block rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10" href="/">
-            На главную
-          </a>
+      <div className="appTheme min-h-screen flex flex-col p-6">
+        <div className="flex-1 flex items-center justify-center">
+          <div className="w-full max-w-md rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-6 shadow-xl">
+            <div className="text-lg font-semibold">Нужен вход</div>
+            <div className="text-sm opacity-80 mt-2">Открой главную страницу и войди по телефону или email.</div>
+            <a className="mt-4 inline-block rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10" href="/">
+              На главную
+            </a>
+          </div>
         </div>
+        <AppFooter />
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-amber-100 p-6">
-      <div className="mx-auto max-w-4xl">
+    <div className="appTheme min-h-screen flex flex-col p-6">
+      <div className="mx-auto max-w-4xl flex-1 w-full">
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="text-2xl font-semibold">Профиль работника</div>
@@ -433,6 +444,7 @@ export default function WorkerProfilePage() {
           {photos.length === 0 ? <div className="mt-3 text-sm opacity-70">Загрузи фото и выбери аватар.</div> : null}
         </div>
       </div>
+      <AppFooter />
     </div>
   )
 }

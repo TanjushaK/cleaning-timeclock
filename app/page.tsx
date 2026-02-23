@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { authFetchJson, clearAuthTokens, getAccessToken, setAuthTokens } from "@/lib/auth-fetch";
+import AppFooter from "@/app/_components/AppFooter";
 
 type Profile = {
   id: string;
@@ -164,8 +165,13 @@ export default function AppPage() {
 
     await loadPhotos().catch(() => {});
 
-    const jobsRes = await authFetchJson<MeJobsResponse>("/api/me/jobs", { cache: "no-store" });
-    setJobs(Array.isArray(jobsRes.jobs) ? jobsRes.jobs : []);
+    const jobsRes = await authFetchJson<any>("/api/me/jobs", { cache: "no-store" });
+    const list = Array.isArray(jobsRes?.jobs)
+      ? jobsRes.jobs
+      : Array.isArray(jobsRes?.items)
+        ? jobsRes.items
+        : [];
+    setJobs(Array.isArray(list) ? list : []);
   }, [loadPhotos]);
 
   useEffect(() => {
@@ -234,6 +240,17 @@ export default function AppPage() {
       if (!payload?.access_token) throw new Error("Не удалось получить токен");
 
       setAuthTokens(String(payload.access_token), payload.refresh_token ? String(payload.refresh_token) : null);
+
+      // Синхронизируем сессию Supabase-клиента, иначе supabase.auth.updateUser() не работает после /api/auth/login
+      try {
+        if (payload.refresh_token) {
+          await supabase.auth.setSession({
+            access_token: String(payload.access_token),
+            refresh_token: String(payload.refresh_token),
+          });
+        }
+      } catch {}
+
       const t = getAccessToken();
       setToken(t);
       await loadAll();
@@ -314,12 +331,11 @@ export default function AppPage() {
       const pw = smsNewPassword;
       if (!pw || pw.trim().length < 6) throw new Error("Пароль должен быть минимум 6 символов");
 
-      const { error: uErr } = await supabase.auth.updateUser({
-        password: pw.trim(),
-        data: { temp_password: false },
+      await authFetchJson('/api/me/password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pw.trim() }),
       });
-
-      if (uErr) throw new Error(uErr.message);
 
       await loadAll().catch(() => {});
       setNotice("Пароль обновлён. Можешь входить паролем.");
@@ -578,18 +594,22 @@ export default function AppPage() {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-black text-zinc-100 flex items-center justify-center p-6">
-        <div className={clsx(card, "p-6 w-full max-w-md")}>
-          <div className="text-lg font-semibold">Загрузка…</div>
-          <div className="mt-2 text-sm opacity-70">Поднимаю сессию и профиль.</div>
-        </div>
-      </main>
+      <div className="appTheme min-h-screen flex flex-col">
+        <main className="flex-1 bg-black text-zinc-100 flex items-center justify-center p-6">
+          <div className={clsx(card, "p-6 w-full max-w-md")}>
+            <div className="text-lg font-semibold">Загрузка…</div>
+            <div className="mt-2 text-sm opacity-70">Поднимаю сессию и профиль.</div>
+          </div>
+        </main>
+        <AppFooter />
+      </div>
     );
   }
 
   return (
-    <main className="min-h-screen bg-black text-zinc-100 p-6">
-      <div className="max-w-6xl mx-auto">
+    <div className="appTheme min-h-screen flex flex-col">
+      <main className="flex-1 bg-black text-zinc-100 p-6">
+        <div className="max-w-6xl mx-auto">
         <header className="flex items-center justify-between gap-3">
           <div>
             <div className={clsx("text-2xl font-semibold", gold)}>Cleaning Timeclock</div>
@@ -789,7 +809,8 @@ export default function AppPage() {
                 <div className={clsx("mt-4 p-3 rounded-xl", border, "bg-amber-400/10")}>
                   <div className="text-sm font-semibold text-amber-200">Временный пароль</div>
                   <div className="text-xs opacity-80 mt-1">
-                    У тебя стоит временный пароль. Перейди во вкладку “По SMS” и задай новый пароль (или используй email-восстановление).
+                    У тебя временный пароль от админа. Открой <span className="font-semibold">Профиль → Пароль</span> и задай свой.
+                    Если доступа к email нет — восстановление через SMS / Email.
                   </div>
                 </div>
               )}
@@ -850,14 +871,18 @@ export default function AppPage() {
                   })}
                 </div>
 
-                <div className="mt-4">
-                  <button className={btnSolid} onClick={doSubmitForApproval} disabled={busy}>
-                    Submit на активацию
-                  </button>
-                  <div className="text-xs opacity-60 mt-2">
-                    После submit админ активирует тебя в /admin/approvals.
+                {!workerIsActive && !isAdmin ? (
+                  <div className="mt-4">
+                    <button className={btnSolid} onClick={doSubmitForApproval} disabled={busy}>
+                      Submit на активацию
+                    </button>
+                    <div className="text-xs opacity-60 mt-2">
+                      После submit админ активирует тебя в /admin/approvals.
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="mt-4 text-xs opacity-70">Аккаунт активирован.</div>
+                )}
               </div>
             </div>
 
@@ -937,7 +962,9 @@ export default function AppPage() {
           </section>
         )}
 
-      </div>
-    </main>
+        </div>
+      </main>
+      <AppFooter />
+    </div>
   );
 }

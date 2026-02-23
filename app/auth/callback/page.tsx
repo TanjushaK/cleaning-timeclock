@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { setAuthTokens } from '@/lib/auth-fetch'
+import AppFooter from '@/app/_components/AppFooter'
 
 export default function AuthCallbackPage() {
   const [msg, setMsg] = useState('Завершаю вход…')
@@ -42,10 +43,13 @@ export default function AuthCallbackPage() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-amber-100 flex items-center justify-center p-6">
-      <div className="w-full max-w-md rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-6 shadow-xl">
-        <div className="text-sm opacity-80">{msg}</div>
+    <div className="appTheme min-h-screen flex flex-col p-6">
+      <div className="flex-1 flex items-center justify-center">
+        <div className="w-full max-w-md rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-6 shadow-xl">
+          <div className="text-sm opacity-80">{msg}</div>
+        </div>
       </div>
+      <AppFooter />
     </div>
   )
 }
