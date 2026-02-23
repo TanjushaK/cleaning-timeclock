@@ -8,4 +8,40 @@ body {
 body {
   background: #07070b;
   color: #e4e4e7;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+:where(button, a, [role="button"], input, select, textarea) {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  /* Mobile-first tap targets (Apple HIG ~44px) */
+  :where(button, a, [role="button"]) {
+    min-height: 44px;
+    min-width: 44px;
+    touch-action: manipulation;
+  }
+
+  :where(input, select, textarea) {
+    min-height: 44px;
+    font-size: 16px !important; /* prevent iOS zoom on focus */
+  }
+
+  /* Increase base readable size on mobile without changing Tailwind classes */
+  body {
+    font-size: 16px;
+  }
+}
+
+/* Respect users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
