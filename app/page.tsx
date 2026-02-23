@@ -138,11 +138,10 @@ export default function AppPage() {
 
   const authed = !!token;
 
-  const bearerHeaders = useCallback((): HeadersInit => {
+  const bearerHeaders = useCallback(() => {
     const t = getAccessToken();
-    const h = new Headers();
-    if (t) h.set("Authorization", `Bearer ${t}`);
-    return h;
+    if (!t) return {};
+    return { Authorization: `Bearer ${t}` };
   }, []);
 
   const loadPhotos = useCallback(async () => {
@@ -593,7 +592,7 @@ export default function AppPage() {
         <header className="flex items-center justify-between gap-3">
           <div>
             <div className={clsx("text-2xl font-semibold", gold)}>Cleaning Timeclock</div>
-            <div className="text-sm opacity-70">Van Tanija BV Cleaning</div>
+            <div className="text-sm opacity-70">Tanija • dark+gold</div>
           </div>
 
           <div className="flex items-center gap-2">
@@ -789,7 +788,7 @@ export default function AppPage() {
                 <div className={clsx("mt-4 p-3 rounded-xl", border, "bg-amber-400/10")}>
                   <div className="text-sm font-semibold text-amber-200">Временный пароль</div>
                   <div className="text-xs opacity-80 mt-1">
-                    У тебя стоит временный пароль. Перейди во вкладку “По SMS” и задай новый пароль (или используй email-восстановление).
+                    У тебя стоит временный пароль. Открой “Профиль” → блок “Пароль” и установи новый пароль.
                   </div>
                 </div>
               )}
@@ -938,7 +937,7 @@ export default function AppPage() {
         )}
 
         <footer className="mt-10 text-xs opacity-50">
-          build-safe • Model B • email+password + recovery via SMS/email
+          © Van Tanija BV Cleaning
         </footer>
       </div>
     </main>

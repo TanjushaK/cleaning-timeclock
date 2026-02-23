@@ -148,7 +148,7 @@ export default function WorkerProfilePage() {
       const p2 = newPassword2.trim()
       if (p1.length < 8) throw new Error('Пароль должен быть минимум 8 символов')
       if (p1 !== p2) throw new Error('Пароли не совпадают')
-      await supabase.auth.updateUser({ password: p1 })
+      await supabase.auth.updateUser({ password: p1, data: { temp_password: false } })
       setNewPassword('')
       setNewPassword2('')
       await loadMe().catch(() => {})
