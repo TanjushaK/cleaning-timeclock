@@ -4,10 +4,10 @@
   min-height: 100vh;
   color: #fffbeb;
   background:
-    radial-gradient(900px circle at 18% -8%, rgba(245, 158, 11, 0.18), transparent 55%),
+    radial-gradient(900px circle at 18% -8%, rgba(245, 158, 11, 0.14), transparent 55%),
     radial-gradient(900px circle at 82% 8%, rgba(245, 158, 11, 0.16), transparent 60%),
-    radial-gradient(700px circle at 50% 110%, rgba(245, 158, 11, 0.10), transparent 55%),
-    #120805;
+    radial-gradient(700px circle at 50% 110%, rgba(245, 158, 11, 0.06), transparent 55%),
+    #0b0604;
 }
 
 .adminChrome {
@@ -18,35 +18,40 @@
   background: transparent !important;
 }
 
-/* Repaint the existing zinc/yellow palette to chocolate/gold without touching the huge admin page file */
+/* Repaint the existing zinc/yellow palette to chocolate/gold without touching the giant admin page file */
 .adminTheme :where([class*='bg-zinc-950']) {
-  background-color: rgba(18, 8, 6, 0.90) !important;
+  background-color: rgba(18, 8, 6, 0.86) !important;
 }
 
 .adminTheme :where([class*='bg-zinc-900']) {
-  background-color: rgba(18, 8, 6, 0.62) !important;
+  background-color: rgba(18, 8, 6, 0.58) !important;
 }
 
 .adminTheme :where([class*='bg-black']) {
-  background-color: rgba(18, 8, 6, 0.55) !important;
+  background-color: rgba(0, 0, 0, 0.35) !important;
+}
+
+.adminTheme :where([class*='bg-gradient-to-b']) {
+  background-image: none !important;
+  background-color: transparent !important;
 }
 
 .adminTheme :where([class*='border-yellow-400'], [class*='border-amber-500']) {
-  border-color: rgba(245, 158, 11, 0.32) !important;
+  border-color: rgba(245, 158, 11, 0.30) !important;
 }
 
 .adminTheme :where([class*='text-yellow-']) {
   color: rgba(254, 243, 199, 0.96) !important;
 }
 
+/* Make the card glow a bit punchier for login screens */
 .adminTheme :where([class*='shadow-xl'], [class*='shadow-2xl'], [class*='shadow-[']) {
   box-shadow:
     0 0 0 1px rgba(245, 158, 11, 0.20),
     0 0 70px rgba(245, 158, 11, 0.16),
-    0 25px 90px rgba(0, 0, 0, 0.70) !important;
+    0 25px 90px rgba(0, 0, 0, 0.75) !important;
 }
 
-/* Footer should stay visible */
 .adminFooter {
   padding: 18px 16px 26px;
   text-align: center;
@@ -59,21 +64,42 @@
   color: rgba(254, 243, 199, 0.72);
 }
 
+/* Mobile ergonomics */
+.adminTheme{overflow-x:hidden;}
+
 @media (hover: none) and (pointer: coarse) {
-  .adminTheme :where(button, a, [role="button"]) {
+  /* Tabs row scrolls horizontally instead of forcing the whole page wider */
+  .adminTheme .adminTabRow {
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 8px;
+    margin-bottom: -8px;
+  }
+  .adminTheme .adminTabRow > * {
+    flex: 0 0 auto;
+  }
+  /* Bigger hit targets */
+  .adminTheme :where(button, a, [role='button']) {
     min-height: 44px;
     min-width: 44px;
-    padding: 10px 14px !important;
-    font-size: 16px !important;
-    line-height: 20px !important;
     touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
   }
-
   .adminTheme :where(input, select, textarea) {
     min-height: 44px;
-    padding: 10px 12px !important;
-    font-size: 16px !important;
-    line-height: 20px !important;
+    font-size: 16px;
+  }
+  /* Never let containers exceed viewport */
+  .adminTheme :where(.max-w-5xl, .max-w-6xl, .max-w-7xl) {
+    max-width: 100% !important;
+  }
+  /* Tables: allow inner scroll instead of page-wide scroll */
+  .adminTheme table {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
 }

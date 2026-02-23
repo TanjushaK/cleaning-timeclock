@@ -660,7 +660,7 @@ function ReportsPanel() {
           </div>
         </div>
   
-        <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap -mx-2 px-2 py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => setReportPickerOpen(true)}
@@ -688,7 +688,7 @@ function ReportsPanel() {
               type="button"
               onClick={() => setReportsView('workers')}
               className={cn(
-                'rounded-2xl px-4 py-3 text-sm font-semibold transition',
+                'rounded-2xl px-3 py-2 text-[11px] font-semibold transition',
                 reportsView === 'workers' ? 'bg-yellow-400/10 text-yellow-100' : 'text-zinc-200 hover:text-yellow-100'
               )}
             >
@@ -698,7 +698,7 @@ function ReportsPanel() {
               type="button"
               onClick={() => setReportsView('sites')}
               className={cn(
-                'rounded-2xl px-4 py-3 text-sm font-semibold transition',
+                'rounded-2xl px-3 py-2 text-[11px] font-semibold transition',
                 reportsView === 'sites' ? 'bg-yellow-400/10 text-yellow-100' : 'text-zinc-200 hover:text-yellow-100'
               )}
             >
@@ -804,7 +804,7 @@ function ReportsPanel() {
                 type="button"
                 onClick={() => setReportPickerTab('payroll')}
                 className={cn(
-                  'flex-1 rounded-2xl px-4 py-3 text-sm font-semibold transition',
+                  'flex-1 rounded-2xl px-3 py-2 text-[11px] font-semibold transition',
                   reportPickerTab === 'payroll' ? 'bg-yellow-400/10 text-yellow-100' : 'text-zinc-200 hover:text-yellow-100'
                 )}
               >
@@ -814,7 +814,7 @@ function ReportsPanel() {
                 type="button"
                 onClick={() => setReportPickerTab('custom')}
                 className={cn(
-                  'flex-1 rounded-2xl px-4 py-3 text-sm font-semibold transition',
+                  'flex-1 rounded-2xl px-3 py-2 text-[11px] font-semibold transition',
                   reportPickerTab === 'custom' ? 'bg-yellow-400/10 text-yellow-100' : 'text-zinc-200 hover:text-yellow-100'
                 )}
               >
@@ -2129,7 +2129,7 @@ const [editOpen, setEditOpen] = useState(false)
               recalcRange('day', anchorDate)
             }}
             className={cn(
-              'shrink-0 rounded-2xl border px-4 py-3 text-sm font-semibold transition',
+              'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
               planView === 'day' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
             )}
           >
@@ -2141,7 +2141,7 @@ const [editOpen, setEditOpen] = useState(false)
               recalcRange('week', anchorDate)
             }}
             className={cn(
-              'shrink-0 rounded-2xl border px-4 py-3 text-sm font-semibold transition',
+              'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
               planView === 'week' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
             )}
           >
@@ -2153,7 +2153,7 @@ const [editOpen, setEditOpen] = useState(false)
               recalcRange('month', anchorDate)
             }}
             className={cn(
-              'shrink-0 rounded-2xl border px-4 py-3 text-sm font-semibold transition',
+              'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
               planView === 'month' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
             )}
           >
@@ -2165,7 +2165,7 @@ const [editOpen, setEditOpen] = useState(false)
           <button
             onClick={() => setPlanMode('workers')}
             className={cn(
-              'shrink-0 rounded-2xl border px-4 py-3 text-sm font-semibold transition',
+              'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
               planMode === 'workers' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
             )}
           >
@@ -2174,7 +2174,7 @@ const [editOpen, setEditOpen] = useState(false)
           <button
             onClick={() => setPlanMode('sites')}
             className={cn(
-              'shrink-0 rounded-2xl border px-4 py-3 text-sm font-semibold transition',
+              'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
               planMode === 'sites' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
             )}
           >
@@ -2272,7 +2272,7 @@ const [editOpen, setEditOpen] = useState(false)
                     {planMode === 'workers' ? (
                       <button
                         onClick={() => openWorkerCard(ent.id)}
-                        className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm text-zinc-200 hover:border-yellow-300/40"
+                        className="rounded-2xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-[11px] text-zinc-200 hover:border-yellow-300/40"
                       >
                         карточка
                       </button>
@@ -2299,7 +2299,7 @@ const [editOpen, setEditOpen] = useState(false)
                   >
                     <div className="grid gap-2">
                       {jobsInCell({ entityId: ent.id, dateISO: d.iso }).map((j) => jobCard(j, true))}
-                      <div className="rounded-2xl border border-dashed border-yellow-400/10 bg-black/10 px-4 py-3 text-sm text-zinc-500">
+                      <div className="rounded-2xl border border-dashed border-yellow-400/10 bg-black/10 px-3 py-2 text-[11px] text-zinc-500">
                         перетащи сюда
                       </div>
                     </div>
@@ -2379,7 +2379,7 @@ const [editOpen, setEditOpen] = useState(false)
                   >
                     <div className="grid gap-2">
                       {jobsInCell({ entityId: ent.id, dateISO: dayISO, hour: h }).map((j) => jobCard(j, true))}
-                      <div className="rounded-2xl border border-dashed border-yellow-400/10 bg-black/10 px-4 py-3 text-sm text-zinc-500">
+                      <div className="rounded-2xl border border-dashed border-yellow-400/10 bg-black/10 px-3 py-2 text-[11px] text-zinc-500">
                         перетащи сюда
                       </div>
                     </div>
@@ -2446,12 +2446,12 @@ const [editOpen, setEditOpen] = useState(false)
                       .map((j) => jobCard(j, true))}
 
                     {schedule.filter((j) => (j.job_date || '') === d.iso).length > 3 ? (
-                      <div className="rounded-2xl border border-yellow-400/10 bg-black/15 px-4 py-3 text-sm text-zinc-400">
+                      <div className="rounded-2xl border border-yellow-400/10 bg-black/15 px-3 py-2 text-[11px] text-zinc-400">
                         ещё {schedule.filter((j) => (j.job_date || '') === d.iso).length - 3}
                       </div>
                     ) : null}
 
-                    <div className="rounded-2xl border border-dashed border-yellow-400/10 bg-black/10 px-4 py-3 text-sm text-zinc-500">
+                    <div className="rounded-2xl border border-dashed border-yellow-400/10 bg-black/10 px-3 py-2 text-[11px] text-zinc-500">
                       перетащи сюда
                     </div>
                   </div>
@@ -2585,13 +2585,13 @@ const [editOpen, setEditOpen] = useState(false)
 
         <div className="rounded-3xl border border-yellow-400/20 bg-zinc-950/50 p-6 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
+            <div className="adminTabRow flex items-center gap-2">
               {(['sites', 'workers', 'jobs', 'plan', 'reports'] as TabKey[]).map((k) => (
                 <button
                   key={k}
                   onClick={() => setTab(k)}
                   className={cn(
-                    'shrink-0 rounded-2xl border px-4 py-3 text-sm font-semibold transition',
+                    'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
                     tab === k ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
                   )}
                 >
@@ -2602,7 +2602,7 @@ const [editOpen, setEditOpen] = useState(false)
 
             <div className="flex items-center gap-3">
               {tab === 'sites' ? (
-                <label className="flex items-center gap-2 rounded-2xl border border-yellow-400/10 bg-black/25 px-4 py-3 text-sm text-zinc-200">
+                <label className="flex items-center gap-2 rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-[11px] text-zinc-200">
                   <input
                     type="checkbox"
                     checked={showArchivedSites}
@@ -2613,7 +2613,7 @@ const [editOpen, setEditOpen] = useState(false)
                 </label>
               ) : null}
 
-              <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-4 py-3 text-sm text-zinc-200">
+              <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-[11px] text-zinc-200">
                 Объекты: {sites.length} • Работники: {workers.length} • Смены: {schedule.length}
               </div>
             </div>
@@ -3453,7 +3453,7 @@ const [editOpen, setEditOpen] = useState(false)
                   <button
                     onClick={() => setJobsView('table')}
                     className={cn(
-                      'shrink-0 rounded-2xl border px-4 py-3 text-sm font-semibold transition',
+                      'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
                       jobsView === 'table' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
                     )}
                   >
@@ -3462,7 +3462,7 @@ const [editOpen, setEditOpen] = useState(false)
                   <button
                     onClick={() => setJobsView('board')}
                     className={cn(
-                      'shrink-0 rounded-2xl border px-4 py-3 text-sm font-semibold transition',
+                      'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
                       jobsView === 'board' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
                     )}
                   >
