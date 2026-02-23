@@ -124,13 +124,6 @@ export default function WorkerProfilePage() {
         body: JSON.stringify(payload),
       })
 
-      // email в auth (чтобы magic-link шёл на новый email)
-      if (email.trim()) {
-        try {
-          await supabase.auth.updateUser({ email: email.trim() })
-        } catch {}
-      }
-
       await loadMe()
       setNotice('Сохранено.')
     } catch (e: any) {

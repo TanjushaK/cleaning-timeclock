@@ -18,8 +18,31 @@ export default function ResetPasswordPage() {
     let unsub: { data: { subscription: { unsubscribe: () => void } } } | null = null
 
     ;(async () => {
-      const { data } = await supabase.auth.getSession()
-      if (data?.session) setReady(true)
+      try {
+        // Supabase recovery link чаще всего приходит как ?code=... (PKCE).
+        // Наша цель — гарантированно обменять code на сессию, иначе пароль «как бы сохранился», но вход не работает.
+        const url = new URL(window.location.href)
+        const code = url.searchParams.get('code')
+
+        if (code) {
+          const { error } = await supabase.auth.exchangeCodeForSession(code)
+          if (error) throw error
+        } else {
+          // fallback на implicit flow (#access_token=...)
+          const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+          const access_token = hash.get('access_token')
+          const refresh_token = hash.get('refresh_token')
+          if (access_token && refresh_token) {
+            const { error } = await supabase.auth.setSession({ access_token, refresh_token })
+            if (error) throw error
+          }
+        }
+
+        const { data } = await supabase.auth.getSession()
+        if (data?.session) setReady(true)
+      } catch {
+        // ignore — покажем «Открой по ссылке»
+      }
     })()
 
     unsub = supabase.auth.onAuthStateChange((event) => {

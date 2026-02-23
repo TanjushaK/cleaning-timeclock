@@ -63,5 +63,29 @@
 .adminFooterYear {
   color: rgba(254, 243, 199, 0.72);
 }
+/* Mobile: make top tabs horizontally scrollable instead of overflowing page */
+@media (hover: none) and (pointer: coarse) {
+  .adminTheme {
+    overflow-x: hidden;
+  }
 
+  .adminTabRow {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 10px;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 2px 2px 6px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none; /* Firefox */
+  }
 
+  .adminTabRow::-webkit-scrollbar {
+    display: none; /* Chrome/Safari */
+  }
+
+  .adminTabRow > button {
+    flex: 0 0 auto;
+  }
+}

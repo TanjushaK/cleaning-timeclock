@@ -19,7 +19,7 @@ const ALLOWED_IMAGE_TYPES = new Set([
   'image/jpeg',
   'image/png',
   'image/webp',
-  // iPhone часто отдаёт HEIC/HEIF
+  // iPhone HEIC/HEIF
   'image/heic',
   'image/heif',
   'image/heic-sequence',

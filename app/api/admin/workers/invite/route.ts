@@ -21,6 +21,7 @@ function isE164(s: string): boolean {
 }
 
 function genTempPassword(): string {
+  // 14 chars: base64url-ish, easy to диктовать
   const buf = crypto.randomBytes(16)
   return buf
     .toString('base64')
@@ -77,7 +78,9 @@ export async function POST(req: Request) {
 
     const active = role === 'worker' ? false : Boolean(body?.active ?? true)
 
+    // Back-compat: раньше отправляли {email}. Теперь принимаем {identifier|email|phone}
     const rawIdentifier = String(body?.identifier ?? body?.email ?? body?.phone ?? '').trim()
+
     if (!rawIdentifier) throw new ApiError(400, 'Нужен email или телефон')
 
     const looksEmail = rawIdentifier.includes('@')
@@ -94,6 +97,7 @@ export async function POST(req: Request) {
     let user_id: string | null = null
     let existed = false
 
+    // Try create
     try {
       const { data, error } = await supabase.auth.admin.createUser({
         email: email ?? undefined,
@@ -110,12 +114,14 @@ export async function POST(req: Request) {
       const msg = String(e?.message || '')
       if (!/already|registered|exists/i.test(msg)) throw e
 
+      // User exists — treat as "admin reset password"
       existed = true
 
       if (email) user_id = await findUserIdByEmail(supabase, email)
       if (!user_id && phone) user_id = await findUserIdByPhone(supabase, phone)
       if (!user_id) throw new ApiError(400, 'Пользователь уже существует, но не удалось найти его id')
 
+      // merge metadata (не затираем старое)
       let prevMeta: Record<string, any> = {}
       try {
         const { data: u } = await supabase.auth.admin.getUserById(user_id)
@@ -135,7 +141,6 @@ export async function POST(req: Request) {
         password,
         user_metadata: nextMeta,
       }
-
       if (email) {
         authPatch.email = email
         authPatch.email_confirm = true
@@ -151,6 +156,7 @@ export async function POST(req: Request) {
 
     if (!user_id) throw new ApiError(500, 'Не удалось создать пользователя')
 
+    // Ensure profile
     const { error: pErr } = await supabase
       .from('profiles')
       .upsert(

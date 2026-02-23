@@ -16,10 +16,17 @@ export async function POST(req: Request) {
     const currentMeta = ((user as any)?.user_metadata ?? {}) as Record<string, any>
     const nextMeta = { ...currentMeta, temp_password: false }
 
-    const { error } = await supabase.auth.admin.updateUserById(userId, {
+    const patch: any = {
       password,
       user_metadata: nextMeta,
-    })
+    }
+
+    // «С одного раза»: после сброса/временного пароля фиксируем подтверждение контактов,
+    // чтобы вход по email/phone+password не отваливался из-за неподтверждённого статуса.
+    if ((user as any)?.email) patch.email_confirm = true
+    if ((user as any)?.phone) patch.phone_confirm = true
+
+    const { error } = await supabase.auth.admin.updateUserById(userId, patch)
 
     if (error) throw new ApiError(400, error.message)
 
