@@ -140,7 +140,9 @@ export default function AppPage() {
 
   const bearerHeaders = useCallback((): Record<string, string> => {
     const t = getAccessToken();
-    return t ? { Authorization: `Bearer ${t}` } : {};
+    const h: Record<string, string> = {};
+    if (t) h.Authorization = `Bearer ${t}`;
+    return h;
   }, []);
 
   const loadPhotos = useCallback(async () => {
@@ -591,7 +593,7 @@ export default function AppPage() {
         <header className="flex items-center justify-between gap-3">
           <div>
             <div className={clsx("text-2xl font-semibold", gold)}>Cleaning Timeclock</div>
-            <div className="text-sm opacity-70">Tanija • dark+gold</div>
+            <div className="text-sm opacity-70">Van Tanija BV Cleaning</div>
           </div>
 
           <div className="flex items-center gap-2">
@@ -935,9 +937,6 @@ export default function AppPage() {
           </section>
         )}
 
-        <footer className="mt-10 text-xs opacity-50">
-          build-safe • Model B • email+password + recovery via SMS/email
-        </footer>
       </div>
     </main>
   );
