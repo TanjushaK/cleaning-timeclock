@@ -4,10 +4,10 @@
   min-height: 100vh;
   color: #fffbeb;
   background:
-    radial-gradient(900px circle at 18% -8%, rgba(245, 158, 11, 0.14), transparent 55%),
+    radial-gradient(900px circle at 18% -8%, rgba(245, 158, 11, 0.18), transparent 55%),
     radial-gradient(900px circle at 82% 8%, rgba(245, 158, 11, 0.16), transparent 60%),
-    radial-gradient(700px circle at 50% 110%, rgba(245, 158, 11, 0.06), transparent 55%),
-    #0b0604;
+    radial-gradient(700px circle at 50% 110%, rgba(245, 158, 11, 0.10), transparent 55%),
+    #120805;
 }
 
 .adminChrome {
@@ -18,17 +18,18 @@
   background: transparent !important;
 }
 
-/* Repaint the existing zinc/yellow palette to chocolate/gold without touching the giant admin page file */
+/* Repaint the existing zinc/yellow palette to chocolate/gold without touching the huge admin page file */
 .adminTheme :where([class*='bg-zinc-950']) {
-  background-color: rgba(18, 8, 6, 0.86) !important;
+  background-color: rgba(18, 8, 6, 0.90) !important;
 }
 
 .adminTheme :where([class*='bg-zinc-900']) {
-  background-color: rgba(18, 8, 6, 0.58) !important;
+  background-color: rgba(18, 8, 6, 0.62) !important;
 }
 
 .adminTheme :where([class*='bg-black']) {
-  background-color: rgba(0, 0, 0, 0.35) !important;
+  /* make sure it stays chocolate, not full black */
+  background-color: rgba(18, 8, 6, 0.55) !important;
 }
 
 .adminTheme :where([class*='bg-gradient-to-b']) {
@@ -37,51 +38,19 @@
 }
 
 .adminTheme :where([class*='border-yellow-400'], [class*='border-amber-500']) {
-  border-color: rgba(245, 158, 11, 0.30) !important;
+  border-color: rgba(245, 158, 11, 0.32) !important;
 }
 
 .adminTheme :where([class*='text-yellow-']) {
   color: rgba(254, 243, 199, 0.96) !important;
 }
 
-/* Make the card glow a bit punchier for login screens */
+/* Make the card glow a bit punchier */
 .adminTheme :where([class*='shadow-xl'], [class*='shadow-2xl'], [class*='shadow-[']) {
   box-shadow:
     0 0 0 1px rgba(245, 158, 11, 0.20),
     0 0 70px rgba(245, 158, 11, 0.16),
-    0 25px 90px rgba(0, 0, 0, 0.75) !important;
-}
-
-/* Mobile tap targets (only on touch devices) */
-@media (hover: none) and (pointer: coarse) {
-  .adminTheme :where(button, a, [role="button"]) {
-    min-height: 44px;
-    min-width: 44px;
-    touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent;
-  }
-
-  .adminTheme :where(input, select, textarea) {
-    min-height: 44px;
-    font-size: 16px !important; /* prevent iOS zoom on focus */
-  }
-
-  /* Make dense admin controls a bit less cramped on phones */
-  .adminTheme :where([class*='p-1']) {
-    padding: 0.5rem !important;
-  }
-  .adminTheme :where([class*='py-1']) {
-    padding-top: 0.5rem !important;
-    padding-bottom: 0.5rem !important;
-  }
-  .adminTheme :where([class*='px-2']) {
-    padding-left: 0.875rem !important;
-    padding-right: 0.875rem !important;
-  }
-  .adminTheme :where([class*='text-xs']) {
-    font-size: 0.875rem !important; /* bump xs -> ~14px */
-    line-height: 1.25rem !important;
-  }
+    0 25px 90px rgba(0, 0, 0, 0.70) !important;
 }
 
 .adminFooter {
@@ -94,4 +63,28 @@
 
 .adminFooterYear {
   color: rgba(254, 243, 199, 0.72);
+}
+
+/* Mobile: make everything easier to hit + a bit larger (WITHOUT shrinking anything) */
+@media (hover: none) and (pointer: coarse) {
+  .adminTheme :where(button, a, [role="button"]) {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 10px 14px !important;
+    font-size: 16px !important;
+    line-height: 20px !important;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .adminTheme :where(input, select, textarea) {
+    min-height: 44px;
+    padding: 10px 12px !important;
+    font-size: 16px !important; /* iOS */
+    line-height: 20px !important;
+  }
+
+  .adminTheme :where(nav, header, section, div) {
+    -webkit-text-size-adjust: 100%;
+  }
 }
