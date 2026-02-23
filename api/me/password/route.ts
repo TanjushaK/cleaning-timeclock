@@ -10,7 +10,6 @@ export async function POST(req: Request) {
 
     const body = await req.json().catch(() => ({} as any))
     const password = String(body?.password ?? '').trim()
-
     if (password.length < 8) throw new ApiError(400, 'Пароль должен быть минимум 8 символов')
 
     const currentMeta = ((user as any)?.user_metadata ?? {}) as Record<string, any>
@@ -18,7 +17,7 @@ export async function POST(req: Request) {
 
     const { error } = await supabase.auth.admin.updateUserById(userId, {
       password,
-      data: nextMeta,
+      user_metadata: nextMeta,
     })
 
     if (error) throw new ApiError(400, error.message)
