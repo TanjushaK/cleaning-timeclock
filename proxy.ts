@@ -18,6 +18,28 @@ function applyCors(req: NextRequest, res: NextResponse) {
   }
 }
 
+function rewriteIfNeeded(req: NextRequest): NextResponse | null {
+  const { pathname } = req.nextUrl;
+
+  const mProfile = pathname.match(/^\/api\/admin\/workers\/([^/]+)\/profile$/);
+  if (mProfile) {
+    const url = req.nextUrl.clone();
+    url.pathname = "/api/admin/workers-profile";
+    url.searchParams.set("id", mProfile[1]);
+    return NextResponse.rewrite(url);
+  }
+
+  const mPhotos = pathname.match(/^\/api\/admin\/workers\/([^/]+)\/photos$/);
+  if (mPhotos) {
+    const url = req.nextUrl.clone();
+    url.pathname = "/api/admin/workers-photos";
+    url.searchParams.set("id", mPhotos[1]);
+    return NextResponse.rewrite(url);
+  }
+
+  return null;
+}
+
 export function proxy(req: NextRequest) {
   if (!req.nextUrl.pathname.startsWith("/api/")) return NextResponse.next();
 
@@ -25,6 +47,12 @@ export function proxy(req: NextRequest) {
     const res = new NextResponse(null, { status: 204 });
     applyCors(req, res);
     return res;
+  }
+
+  const rewritten = rewriteIfNeeded(req);
+  if (rewritten) {
+    applyCors(req, rewritten);
+    return rewritten;
   }
 
   const res = NextResponse.next();
@@ -35,4 +63,3 @@ export function proxy(req: NextRequest) {
 export const config = {
   matcher: ["/api/:path*"],
 };
-
