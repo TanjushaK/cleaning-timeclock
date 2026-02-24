@@ -1,0 +1,12 @@
+﻿{
+    "target":  {
+                   "sha256_cert_fingerprints":  [
+                                                    "C5:C4:77:F9:74:48:DF:87:F9:34:0B:2B:93:EF:1A:D3:80:9D:09:70:01:A6:50:D5:DD:CD:16:FD:4D:5D:08:37"
+                                                ],
+                   "namespace":  "android_app",
+                   "package_name":  "nl.tanjusha.cleaningtimeclock"
+               },
+    "relation":  [
+                     "delegate_permission/common.handle_all_urls"
+                 ]
+}
