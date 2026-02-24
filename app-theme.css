@@ -58,3 +58,5 @@
 .appFooterYear {
   color: rgba(254, 243, 199, 0.72);
 }
+
+html, body { overflow-x: hidden; }
