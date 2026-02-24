@@ -3243,24 +3243,23 @@ const [editOpen, setEditOpen] = useState(false)
                     <div key={w.id} className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="flex items-start gap-3">
-                          <div className="relative mt-0.5">
+                          <div className="relative mt-0.5 h-10 w-10 overflow-hidden rounded-full border border-yellow-400/20 bg-black/30 shadow-sm">
                             {workerPhotoMeta[w.id]?.thumb ? (
                               // eslint-disable-next-line @next/next/no-img-element
                               <img
                                 src={workerPhotoMeta[w.id]?.thumb || ''}
                                 alt="avatar"
-                                className="h-10 w-10 rounded-full border border-yellow-400/20 object-cover shadow-sm"
+                                className="absolute inset-0 h-full w-full object-cover"
                                 loading="lazy"
                               />
                             ) : (
-                              <div className="flex h-10 w-10 items-center justify-center rounded-full border border-yellow-400/15 bg-black/30 text-[12px] font-semibold text-yellow-100/80">
+                              <div className="flex h-full w-full items-center justify-center text-[12px] font-semibold text-yellow-100/80">
                                 {initials(w.full_name)}
                               </div>
                             )}
-                            <div className="absolute -bottom-1 -right-1 rounded-lg border border-yellow-400/25 bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-yellow-100/90">
+                            <div className="absolute -bottom-1 -right-1 z-10 rounded-lg border border-yellow-400/25 bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-yellow-100/90">
                               {workerPhotoMeta[w.id]?.count ?? '…'}/5
                             </div>
-
                           </div>
 
                           <div className="min-w-full sm:w-[220px]">
