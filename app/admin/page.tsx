@@ -3259,51 +3259,50 @@ const [editOpen, setEditOpen] = useState(false)
                             )}
                           </div>
 
-                          <div className="flex min-w-0 flex-1 items-start gap-3">
-                            <button
-                              type="button"
-                              onClick={() => openWorkerCard(w.id)}
-                              className="relative h-11 w-11 shrink-0 overflow-hidden rounded-2xl border border-yellow-400/25 bg-black/35 shadow-[0_0_0_1px_rgba(255,215,0,0.12)]"
-                              title="Открыть карточку работника"
-                            >
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              {workerPhotoMeta[w.id]?.thumb ? (
-                                <img
-                                  src={workerPhotoMeta[w.id]?.thumb}
-                                  alt=""
-                                  className="h-full w-full object-cover"
-                                  loading="lazy"
-                                />
-                              ) : (
-                                <div className="flex h-full w-full items-center justify-center text-sm font-semibold text-yellow-100/70">
-                                  {(String(w.full_name || w.id || "")).trim().slice(0, 1).toUpperCase() || "•"}
-                                </div>
-                              )}
-                          
-                              <div className="absolute -bottom-1 -right-1 rounded-full border border-yellow-400/20 bg-black/80 px-2 py-0.5 text-[10px] text-yellow-100/80">
-                                {(workerPhotoMeta[w.id]?.count ?? "…")}/5
-                              </div>
-                            </button>
-                          
-                            <div className="min-w-0 flex-1">
-                              <div className="truncate text-base font-semibold text-yellow-100">
-                                <button onClick={() => openWorkerCard(w.id)} className="hover:text-yellow-50" type="button">
-                                  {w.full_name || "Без имени"}
-                                </button>
-                              </div>
-                          
-                              <div className="mt-1 flex flex-wrap gap-2">
-                                {isAdmin ? (
-                                  <span className="rounded-xl border border-yellow-400/30 bg-yellow-400/10 px-2 py-1 text-[11px] text-yellow-100">админ</span>
-                                ) : (
-                                  <span className="rounded-xl border border-yellow-400/15 bg-black/30 px-2 py-1 text-[11px] text-zinc-200">работник</span>
-                                )}
-                                {w.active === false ? (
-                                  <span className="rounded-xl border border-red-400/20 bg-red-500/10 px-2 py-1 text-[11px] text-red-100">отключён</span>
-                                ) : null}
-                              </div>
-                            </div>
+                          <div className="min-w-full sm:w-[220px]">
+                            <div className="text-base font-semibold text-yellow-100">
+                              <button onClick={() => openWorkerCard(w.id)} className="hover:text-yellow-100">
+                                {w.full_name || 'Без имени'}
+                              </button>{' '}
+                            {isAdmin ? (
+                              <span className="ml-2 rounded-xl border border-yellow-400/30 bg-yellow-400/10 px-2 py-1 text-[11px] text-yellow-100">
+                                админ
+                              </span>
+                            ) : (
+                              <span className="ml-2 rounded-xl border border-yellow-400/15 bg-black/30 px-2 py-1 text-[11px] text-zinc-200">
+                                работник
+                              </span>
+                            )}
+                            {w.active === false ? (
+                              <span className="ml-2 rounded-xl border border-red-400/20 bg-red-500/10 px-2 py-1 text-[11px] text-red-100">
+                                отключён
+                              </span>
+                            ) : null}
+                            <span className="ml-2 rounded-xl border border-yellow-400/15 bg-black/30 px-2 py-1 text-[11px] text-zinc-200">
+                              фото: {workerPhotoMeta[w.id]?.count ?? '…'}/5
+                            </span>
                           </div>
+
+                          <div className="mt-3 text-xs text-zinc-300">Объекты:</div>
+                          {sitesList.length === 0 ? (
+                            <div className="mt-1 text-xs text-zinc-500">—</div>
+                          ) : (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {sitesList.map((s) => (
+                                <div key={s.id} className="flex items-center gap-2 rounded-2xl border border-yellow-400/10 bg-black/35 px-3 py-2 text-xs">
+                                  <span className="text-zinc-100">{s.name || s.id}</span>
+                                  <button
+                                    onClick={() => unassign(s.id, w.id)}
+                                    disabled={busy}
+                                    className="rounded-xl border border-yellow-400/20 bg-black/30 px-2 py-1 text-[11px] text-yellow-100/80 transition hover:border-yellow-300/50 disabled:opacity-60"
+                                  >
+                                    снять
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                         </div>
 
                         <div className="flex flex-col items-end gap-2">

@@ -13,7 +13,9 @@ function cleanEnv(v: string | undefined | null): string {
 const supabaseUrl = cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL)
 const supabaseAnonKey = cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
 
-if (!supabaseUrl) throw new Error('Missing env: NEXT_PUBLIC_SUPABASE_URL')
-if (!supabaseAnonKey) throw new Error('Missing env: NEXT_PUBLIC_SUPABASE_ANON_KEY')
+// Локальная сборка (без .env.local) не должна падать.
+// В проде на Vercel значения инлайнатся на этапе build.
+const FALLBACK_URL = 'http://localhost:54321'
+const FALLBACK_KEY = 'anon'
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+export const supabase = createClient(supabaseUrl || FALLBACK_URL, supabaseAnonKey || FALLBACK_KEY)
