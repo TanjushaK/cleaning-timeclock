@@ -3687,7 +3687,14 @@ const [editOpen, setEditOpen] = useState(false)
                                   '—'
                                 )}
                               </td>
-                              <td className="px-4 py-3">{statusRu(String(j.status || ''))}</td>
+                              <td className="px-4 py-3">
+  <div className="grid gap-1">
+    <div>{statusRu(String(j.status || ''))}</div>
+    {String(j.status || '') === 'planned' && j.worker_id ? (
+      <div className="text-[11px] font-semibold text-yellow-100/80">Принято</div>
+    ) : null}
+  </div>
+</td>
                               <td className="px-4 py-3">{fmtDT(j.started_at)}</td>
                               <td className="px-4 py-3">{fmtDT(j.stopped_at)}</td>
                               <td className="px-4 py-3">
