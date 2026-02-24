@@ -3257,6 +3257,10 @@ const [editOpen, setEditOpen] = useState(false)
                                 {initials(w.full_name)}
                               </div>
                             )}
+                            <div className="absolute -bottom-1 -right-1 rounded-lg border border-yellow-400/25 bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-yellow-100/90">
+                              {workerPhotoMeta[w.id]?.count ?? '…'}/5
+                            </div>
+
                           </div>
 
                           <div className="min-w-full sm:w-[220px]">
@@ -3278,9 +3282,7 @@ const [editOpen, setEditOpen] = useState(false)
                                 отключён
                               </span>
                             ) : null}
-                            <span className="ml-2 rounded-xl border border-yellow-400/15 bg-black/30 px-2 py-1 text-[11px] text-zinc-200">
-                              фото: {workerPhotoMeta[w.id]?.count ?? '…'}/5
-                            </span>
+                            
                           </div>
 
                           <div className="mt-3 text-xs text-zinc-300">Объекты:</div>
