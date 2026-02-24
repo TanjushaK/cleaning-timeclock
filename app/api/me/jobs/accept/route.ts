@@ -66,32 +66,15 @@ export async function POST(req: Request) {
     if (aErr) throw new ApiError(400, aErr.message)
     if (!Array.isArray(a) || a.length === 0) throw new ApiError(403, 'Нет доступа к объекту')
 
-    let updErr: any = null
-
-    // Пытаемся записать accepted_at (если колонка существует)
-    {
-      const acceptedAt = new Date().toISOString()
-      const { error } = await supabase
-        .from('jobs')
-        .update({ worker_id: userId, accepted_at: acceptedAt } as any)
-        .eq('id', jobId)
-        .is('worker_id', null)
-
-      updErr = error
-
-      const msg = String(updErr?.message || '').toLowerCase()
-      if (updErr && msg.includes('accepted_at')) {
-        const { error: e2 } = await supabase
-          .from('jobs')
-          .update({ worker_id: userId } as any)
-          .eq('id', jobId)
-          .is('worker_id', null)
-        updErr = e2
-      }
-    }
+    const { error: updErr } = await supabase
+      .from('jobs')
+      .update({ worker_id: userId })
+      .eq('id', jobId)
+      .is('worker_id', null)
 
     if (updErr) throw new ApiError(400, updErr.message)
-return NextResponse.json({ ok: true }, { status: 200 })
+
+    return NextResponse.json({ ok: true }, { status: 200 })
   } catch (e) {
     return toErrorResponse(e)
   }

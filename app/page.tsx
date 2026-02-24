@@ -46,8 +46,6 @@ type MeJobsResponse = {
     distance_m?: number | null;
     accuracy_m?: number | null;
     worker_note?: string | null;
-    worker_id?: string | null;
-    can_accept?: boolean | null;
   }>;
 };
 
@@ -92,31 +90,6 @@ function formatDateTimeRu(iso: string | null | undefined) {
   return `${dd}-${mm}-${yyyy} ${hh}:${mi}`;
 }
 
-
-function googleNavUrl(lat: number, lng: number) {
-  const dest = `${lat},${lng}`;
-  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}`;
-}
-
-function googleNavUrlAddress(address: string) {
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
-}
-
-function openNavForSite(site: { lat?: number | null; lng?: number | null; address?: string | null }) {
-  if (typeof window === "undefined") return;
-  const lat = site?.lat;
-  const lng = site?.lng;
-  const addr = site?.address;
-  if (lat != null && lng != null) {
-    window.open(googleNavUrl(lat, lng), "_blank", "noopener,noreferrer");
-    return;
-  }
-  if (addr) {
-    window.open(googleNavUrlAddress(String(addr)), "_blank", "noopener,noreferrer");
-  }
-}
-
-
 function isE164(phone: string) {
   return /^\+\d{8,15}$/.test(phone);
 }
@@ -136,7 +109,6 @@ export default function AppPage() {
   const [token, setToken] = useState<string | null>(null);
   const [me, setMe] = useState<MeProfileResponse | null>(null);
   const [jobs, setJobs] = useState<MeJobsResponse["jobs"]>([]);
-  const [siteThumbs, setSiteThumbs] = useState<Record<string, { url: string | null; count: number }>>({});
   const [loading, setLoading] = useState(true);
 
   const [tab, setTab] = useState<Tab>("login");
@@ -157,79 +129,6 @@ export default function AppPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-
-  const getGps = useCallback(
-    () =>
-      new Promise<{ lat: number; lng: number; accuracy: number }>((resolve, reject) => {
-        if (typeof window === "undefined") return reject(new Error("GPS доступен только в браузере."));
-        if (!("geolocation" in navigator)) return reject(new Error("На устройстве нет геолокации."));
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            const lat = Number(pos.coords.latitude);
-            const lng = Number(pos.coords.longitude);
-            const accuracy = Number(pos.coords.accuracy);
-            if (!Number.isFinite(lat) || !Number.isFinite(lng) || !Number.isFinite(accuracy)) {
-              reject(new Error("Не получилось прочитать координаты GPS."));
-              return;
-            }
-            resolve({ lat, lng, accuracy });
-          },
-          (err) => {
-            reject(new Error(err?.message || "GPS ошибка."));
-          },
-          { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-        );
-      }),
-    []
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadThumbs() {
-      const ids = Array.from(new Set(jobs.map((j) => j.site_id).filter(Boolean))) as string[];
-      if (!ids.length) return;
-
-      const next: Record<string, { url: string | null; count: number }> = {};
-      await Promise.all(
-        ids.map(async (siteId) => {
-          try {
-            const { data, error } = await (supabase as any).storage
-              .from("site-photos")
-              .list(`sites/${siteId}`, { limit: 100, offset: 0, sortBy: { column: "name", order: "asc" } });
-
-            if (error) {
-              next[siteId] = { url: null, count: 0 };
-              return;
-            }
-
-            const files = (data || []).filter((x: any) => x?.name && typeof x.name === "string");
-            const images = files.filter((x: any) => /\.(jpe?g|png|webp)$/i.test(String(x.name)));
-            const first = images[0]?.name ? String(images[0].name) : null;
-
-            if (first) {
-              const pub = (supabase as any).storage.from("site-photos").getPublicUrl(`sites/${siteId}/${first}`);
-              const url = String(pub?.data?.publicUrl || "");
-              next[siteId] = { url: url || null, count: images.length };
-            } else {
-              next[siteId] = { url: null, count: images.length };
-            }
-          } catch {
-            next[siteId] = { url: null, count: 0 };
-          }
-        })
-      );
-
-      if (cancelled) return;
-      setSiteThumbs((prev) => ({ ...prev, ...next }));
-    }
-
-    loadThumbs().catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [jobs]);
-
 
   // onboarding + photos
   const [fullName, setFullName] = useState("");
@@ -620,10 +519,9 @@ export default function AppPage() {
     setError(null);
     setNotice(null);
     try {
-      const gps = await getGps();
       const res = await authFetchJson<any>("/api/me/jobs/start", {
         method: "POST",
-        body: JSON.stringify({ id: jobId, lat: gps.lat, lng: gps.lng, accuracy: gps.accuracy }),
+        body: JSON.stringify({ id: jobId }),
       });
       if (res?.error) throw new Error(String(res.error));
       await loadAll();
@@ -633,18 +531,16 @@ export default function AppPage() {
     } finally {
       setBusy(false);
     }
-  }, [loadAll, getGps]);
+  }, [loadAll]);
 
-
-const doStop = useCallback(async (jobId: string) => {
+  const doStop = useCallback(async (jobId: string) => {
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
-      const gps = await getGps();
       const res = await authFetchJson<any>("/api/me/jobs/stop", {
         method: "POST",
-        body: JSON.stringify({ id: jobId, lat: gps.lat, lng: gps.lng, accuracy: gps.accuracy }),
+        body: JSON.stringify({ id: jobId }),
       });
       if (res?.error) throw new Error(String(res.error));
       await loadAll();
@@ -654,8 +550,7 @@ const doStop = useCallback(async (jobId: string) => {
     } finally {
       setBusy(false);
     }
-  }, [loadAll, getGps]);
-
+  }, [loadAll]);
 
   const workerIsActive = Boolean(me?.profile?.active);
   const isAdmin = me?.profile?.role === "admin";
@@ -993,7 +888,7 @@ const doStop = useCallback(async (jobId: string) => {
 
             <div className={clsx(card, "p-6 xl:col-span-2")}>
               <div className="flex items-center justify-between">
-                <div className="text-lg font-semibold">Смены</div>
+                <div className="text-lg font-semibold">Jobs</div>
                 <button className={btn} onClick={() => loadAll().catch((e) => setError(String((e as any)?.message || e)))} disabled={busy}>
                   Обновить
                 </button>
@@ -1017,85 +912,46 @@ const doStop = useCallback(async (jobId: string) => {
                     const inProg = j.status === "in_progress";
                     const done = j.status === "done";
 
-                    const statusRu = planned ? "запланировано" : inProg ? "в работе" : done ? "сделано" : String(j.status || "");
-                    const myId = String(me?.user?.id || "");
-                    const mine = String(j.worker_id || "") === myId;
-
-                    const canAccept = !!j.can_accept;
-                    const canStart = planned && mine && !canAccept;
-
-                    const siteId = String(j.site_id || "");
-                    const thumb = siteId ? siteThumbs[siteId]?.url || null : null;
-
                     return (
                       <div key={j.id} className={clsx("rounded-2xl p-4", border, "bg-zinc-950/60")}>
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div className="flex items-start gap-3">
-                            <div className="flex flex-col items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => openNavForSite({ lat: j.site_lat ?? null, lng: j.site_lng ?? null, address: j.site_address ?? null })}
-                                className="rounded-full"
-                                title="Навигация"
-                              >
-                                {thumb ? (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img src={thumb} alt="site" className="h-10 w-10 rounded-full border border-yellow-400/20 object-cover shadow-sm" />
-                                ) : (
-                                  <div className="flex h-10 w-10 items-center justify-center rounded-full border border-yellow-400/15 bg-black/30 text-[12px] font-semibold text-yellow-100/80">
-                                    {(String(j.site_name || "S").trim().slice(0, 1).toUpperCase() || "•")}
-                                  </div>
-                                )}
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => openNavForSite({ lat: j.site_lat ?? null, lng: j.site_lng ?? null, address: j.site_address ?? null })}
-                                className={clsx(btn, "text-[11px] px-2 py-1")}
-                              >
-                                Навигация
-                              </button>
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-semibold">
+                              {formatDateRu(j.job_date)} • {formatTimeRu(j.scheduled_time)} •{" "}
+                              <span className={gold}>{String(j.status)}</span>
                             </div>
-
-                            <div>
-                              <div className="text-sm font-semibold">
-                                {formatDateRu(j.job_date)} • {formatTimeRu(j.scheduled_time)} • <span className={gold}>{statusRu}</span>
-                              </div>
-                              <div className="text-xs opacity-70 mt-1">
-                                {j.site_name || "Объект"} — {j.site_address || "—"}
-                              </div>
-                              {planned && mine && !canAccept && (
-                                <div className="mt-1 text-[11px] opacity-70">Принято тобой</div>
-                              )}
+                            <div className="text-xs opacity-70 mt-1">
+                              {j.site_name || "Site"} — {j.site_address || "—"}
                             </div>
                           </div>
 
                           <div className="flex items-center gap-2">
-                            {canAccept && (
+                            {planned && (
                               <button className={btnSolid} onClick={() => doAccept(j.id)} disabled={busy}>
-                                Принять
-                              </button>
-                            )}
-                            {canStart && (
-                              <button className={btnSolid} onClick={() => doStart(j.id)} disabled={busy}>
-                                Старт
+                                Accept
                               </button>
                             )}
                             {inProg && (
                               <button className={btnSolid} onClick={() => doStop(j.id)} disabled={busy}>
-                                Стоп
+                                Stop
+                              </button>
+                            )}
+                            {(planned || done) && (
+                              <button className={btn} onClick={() => doStart(j.id)} disabled={busy}>
+                                Start
                               </button>
                             )}
                           </div>
                         </div>
 
-                        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3 text-xs opacity-80">
-                          <div>Старт: {formatDateTimeRu(j.started_at)}</div>
-                          <div>Стоп: {formatDateTimeRu(j.stopped_at)}</div>
+                        <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3 text-xs opacity-80">
+                          <div>Accepted: {formatDateTimeRu(j.accepted_at)}</div>
+                          <div>Start: {formatDateTimeRu(j.started_at)}</div>
+                          <div>Stop: {formatDateTimeRu(j.stopped_at)}</div>
                         </div>
 
                         <div className="mt-2 text-xs opacity-70">
-                          GPS: dist {j.distance_m ?? "—"} м • acc {j.accuracy_m ?? "—"} м
+                          GPS: dist {j.distance_m ?? "—"} m • acc {j.accuracy_m ?? "—"} m
                         </div>
                       </div>
                     );

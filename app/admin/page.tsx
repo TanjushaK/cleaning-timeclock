@@ -3243,27 +3243,25 @@ const [editOpen, setEditOpen] = useState(false)
                     <div key={w.id} className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="flex items-start gap-3">
-                          <div className="relative mt-0.5 h-10 w-10">
-                            <div className="absolute inset-0 flex items-center justify-center rounded-full border border-yellow-400/25 bg-black/35 text-[12px] font-semibold text-yellow-100/85">
-                              {initials(w.full_name || w.id)}
+                          <div className="relative mt-0.5 h-10 w-10 flex-shrink-0 overflow-hidden rounded-full border border-yellow-400/25 bg-black/35 shadow-sm">
+                            <div className="absolute inset-0 flex items-center justify-center text-[12px] font-semibold text-yellow-100/80">
+                              {initials(w.full_name)}
                             </div>
                             {workerPhotoMeta[w.id]?.thumb ? (
                               // eslint-disable-next-line @next/next/no-img-element
                               <img
-                                src={workerPhotoMeta[w.id]?.thumb || ""}
+                                src={workerPhotoMeta[w.id]?.thumb || ''}
                                 alt="avatar"
-                                className="absolute inset-0 h-full w-full rounded-full border border-yellow-400/20 object-cover shadow-sm"
+                                className="absolute inset-0 h-full w-full object-cover"
                                 loading="lazy"
-                                onError={() =>
-                                  setWorkerPhotoMeta((prev) => ({
-                                    ...prev,
-                                    [w.id]: { count: prev[w.id]?.count ?? 0 },
-                                  }))
-                                }
+                                onError={(e) => {
+                                  // keep initials visible under the image
+                                  ;(e.currentTarget as HTMLImageElement).style.display = "none"
+                                }}
                               />
                             ) : null}
-                            <div className="absolute -bottom-1 -right-1 rounded-lg border border-yellow-400/25 bg-black/80 px-1.5 py-0.5 text-[10px] font-semibold text-yellow-100/95">
-                              {workerPhotoMeta[w.id]?.count ?? 0}/5
+                            <div className="absolute -bottom-1 -right-1 rounded-full border border-yellow-400/30 bg-black/75 px-1.5 py-0.5 text-[10px] font-semibold text-yellow-100">
+                              {(workerPhotoMeta[w.id]?.count ?? "…")}/5
                             </div>
                           </div>
 
@@ -3286,7 +3284,6 @@ const [editOpen, setEditOpen] = useState(false)
                                 отключён
                               </span>
                             ) : null}
-                            
                           </div>
 
                           <div className="mt-3 text-xs text-zinc-300">Объекты:</div>
