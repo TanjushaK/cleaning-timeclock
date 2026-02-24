@@ -4,6 +4,8 @@ import { requireActiveWorker } from '@/lib/supabase-server'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+type SitePhoto = { path: string; url?: string | null; created_at?: string | null }
+
 function isISODate(s: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(s)
 }
@@ -46,6 +48,35 @@ function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number)
   return R * c
 }
 
+function parseBucketRef(raw: string | undefined | null, fallbackBucket: string) {
+  const s = String(raw || '').trim().replace(/^\/+|\/+$/g, '')
+  if (!s) return { bucket: fallbackBucket, prefix: '' }
+  const parts = s.split('/').filter(Boolean)
+  const bucket = (parts[0] || '').trim() || fallbackBucket
+  const prefix = parts.slice(1).join('/')
+  return { bucket, prefix }
+}
+
+function getSignedTtlSeconds() {
+  const raw = process.env.SITE_PHOTOS_SIGNED_URL_TTL
+  const n = raw ? Number.parseInt(raw, 10) : 86400
+  return Number.isFinite(n) && n > 0 ? n : 86400
+}
+
+function normalizePhotos(v: any): SitePhoto[] {
+  if (!Array.isArray(v)) return []
+  return v
+    .filter((p) => p && typeof p === 'object' && typeof (p as any).path === 'string')
+    .map((p) => ({
+      path: String((p as any).path),
+      url: (p as any).url ? String((p as any).url) : null,
+      created_at: (p as any).created_at ? String((p as any).created_at) : null,
+    }))
+}
+
+const RAW_BUCKET = process.env.SITE_PHOTOS_BUCKET || 'site-photos'
+const { bucket: SITE_PHOTOS_BUCKET } = parseBucketRef(RAW_BUCKET, 'site-photos')
+
 let ASSIGN_TABLE: string | null | undefined = undefined
 
 async function resolveAssignmentsTable(supabase: any): Promise<string | null> {
@@ -58,10 +89,7 @@ async function resolveAssignmentsTable(supabase: any): Promise<string | null> {
       return t
     }
     const msg = String(error?.message || '')
-    const missing =
-      msg.includes('Could not find the table') ||
-      msg.includes('does not exist') ||
-      msg.includes('relation')
+    const missing = msg.includes('Could not find the table') || msg.includes('does not exist') || msg.includes('relation')
     if (!missing) {
       ASSIGN_TABLE = t
       return t
@@ -109,7 +137,6 @@ export async function GET(req: NextRequest) {
       getJobWorkerJobIds(supabase, userId),
     ])
 
-    // jobs: worker_id = me
     let jobsA: any[] = []
     {
       const { data, error } = await supabase
@@ -134,7 +161,6 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // jobs via job_workers
     let jobsB: any[] = []
     if (jobIdsViaLink.length) {
       const { data, error } = await supabase
@@ -159,7 +185,6 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // open jobs on assigned sites (only planned & worker_id is null)
     let jobsC: any[] = []
     if (siteIds.length) {
       const { data, error } = await supabase
@@ -188,11 +213,8 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const all = [...jobsA, ...jobsB, ...jobsC]
-
-    // uniq by id
     const byId = new Map<string, any>()
-    for (const j of all) {
+    for (const j of [...jobsA, ...jobsB, ...jobsC]) {
       if (!j?.id) continue
       byId.set(String(j.id), j)
     }
@@ -211,48 +233,69 @@ export async function GET(req: NextRequest) {
     const jobIds = jobs.map((j) => String(j.id))
     const siteIds2 = Array.from(new Set(jobs.map((j: any) => j.site_id).filter(Boolean)))
 
-    const [sitesRes, logsRes] = await Promise.all([
+    const [sitesRes0, logsRes] = await Promise.all([
       siteIds2.length
-        ? supabase.from('sites').select('id,name,address,lat,lng,radius').in('id', siteIds2)
+        ? supabase.from('sites').select('id,name,address,lat,lng,radius,photos').in('id', siteIds2)
         : Promise.resolve({ data: [], error: null } as any),
       jobIds.length
-        ? supabase
-            .from('time_logs')
-            .select('job_id,started_at,stopped_at,start_lat,start_lng,start_accuracy')
-            .in('job_id', jobIds)
+        ? supabase.from('time_logs').select('job_id,started_at,stopped_at,start_lat,start_lng,start_accuracy').in('job_id', jobIds)
         : Promise.resolve({ data: [], error: null } as any),
     ])
+
+    let sitesRes = sitesRes0
+    if (sitesRes0.error && String(sitesRes0.error.message || '').toLowerCase().includes('photos')) {
+      sitesRes = siteIds2.length
+        ? await supabase.from('sites').select('id,name,address,lat,lng,radius').in('id', siteIds2)
+        : ({ data: [], error: null } as any)
+    }
 
     if (sitesRes.error) return NextResponse.json({ error: sitesRes.error.message }, { status: 400 })
     if (logsRes.error) return NextResponse.json({ error: logsRes.error.message }, { status: 400 })
 
-    const siteInfo = new Map<
-      string,
-      { name: string | null; address: string | null; lat: number | null; lng: number | null; radius: number | null }
-    >()
-    for (const s of (sitesRes.data || []) as any[]) {
-      siteInfo.set(String(s.id), {
+    const sitesData = (sitesRes.data || []) as any[]
+    const photosBySite = new Map<string, SitePhoto[]>()
+    const allPhotoPaths: string[] = []
+
+    for (const s of sitesData) {
+      const sid = String(s.id)
+      const photos = normalizePhotos((s as any).photos)
+      photosBySite.set(sid, photos)
+      for (const p of photos) if (p.path) allPhotoPaths.push(p.path)
+    }
+
+    const uniquePaths = Array.from(new Set(allPhotoPaths)).filter(Boolean)
+    const urlByPath = new Map<string, string>()
+
+    if (uniquePaths.length) {
+      const ttl = getSignedTtlSeconds()
+      const { data: signed, error: sErr } = await supabase.storage.from(SITE_PHOTOS_BUCKET).createSignedUrls(uniquePaths, ttl)
+      if (!sErr && Array.isArray(signed)) {
+        for (const item of signed as any[]) {
+          const p = item?.path ? String(item.path) : ''
+          const u = item?.signedUrl ? String(item.signedUrl) : ''
+          if (p && u) urlByPath.set(p, u)
+        }
+      }
+    }
+
+    const siteInfo = new Map<string, any>()
+    for (const s of sitesData) {
+      const sid = String(s.id)
+      const photos = photosBySite.get(sid) || []
+      const first = photos[0]
+      const thumbUrl = first ? urlByPath.get(first.path) || (first.url ? String(first.url) : '') : ''
+      siteInfo.set(sid, {
         name: s.name ?? null,
         address: s.address ?? null,
         lat: s.lat ?? null,
         lng: s.lng ?? null,
         radius: s.radius ?? null,
+        photos,
+        thumb_url: thumbUrl || null,
       })
     }
 
-    // logs: aggregate start/stop + sum minutes + latest start gps
-    const logAgg = new Map<
-      string,
-      {
-        started_at: string | null
-        stopped_at: string | null
-        actual_minutes: number
-        latest_start_at: string | null
-        latest_start_lat: number | null
-        latest_start_lng: number | null
-        latest_start_accuracy: number | null
-      }
-    >()
+    const logAgg = new Map<string, any>()
     for (const l of (logsRes.data || []) as any[]) {
       const id = String(l.job_id)
       const cur = logAgg.get(id) || {
@@ -268,16 +311,9 @@ export async function GET(req: NextRequest) {
       const sa = l.started_at ? String(l.started_at) : null
       const so = l.stopped_at ? String(l.stopped_at) : null
 
-      if (sa) {
-        if (!cur.started_at || sa < cur.started_at) cur.started_at = sa
-      }
-      if (so) {
-        if (!cur.stopped_at || so > cur.stopped_at) cur.stopped_at = so
-      }
-
-      if (sa && so) {
-        cur.actual_minutes += minutesBetween(sa, so)
-      }
+      if (sa) if (!cur.started_at || sa < cur.started_at) cur.started_at = sa
+      if (so) if (!cur.stopped_at || so > cur.stopped_at) cur.stopped_at = so
+      if (sa && so) cur.actual_minutes += minutesBetween(sa, so)
 
       if (sa) {
         if (!cur.latest_start_at || sa > cur.latest_start_at) {
@@ -305,21 +341,11 @@ export async function GET(req: NextRequest) {
       const si = j.site_id ? siteInfo.get(String(j.site_id)) : null
 
       let distance_m: number | null = null
-      if (
-        si?.lat != null &&
-        si?.lng != null &&
-        agg.latest_start_lat != null &&
-        agg.latest_start_lng != null &&
-        Number.isFinite(si.lat) &&
-        Number.isFinite(si.lng)
-      ) {
+      if (si?.lat != null && si?.lng != null && agg.latest_start_lat != null && agg.latest_start_lng != null) {
         distance_m = Math.round(haversineMeters(agg.latest_start_lat, agg.latest_start_lng, si.lat, si.lng))
       }
 
-      const can_accept =
-        String(j.status || '') === 'planned' &&
-        j.worker_id == null &&
-        siteIds.includes(String(j.site_id || ''))
+      const can_accept = String(j.status || '') === 'planned' && j.worker_id == null && siteIds.includes(String(j.site_id || ''))
 
       return {
         id: String(j.id),
@@ -333,6 +359,9 @@ export async function GET(req: NextRequest) {
         site_radius: si?.radius ?? null,
         site_lat: si?.lat ?? null,
         site_lng: si?.lng ?? null,
+        site_photo_url: si?.thumb_url ?? null,
+        site_photos_count: si?.photos?.length ?? 0,
+
         accepted_at: null,
         started_at: agg.started_at,
         stopped_at: agg.stopped_at,
@@ -340,14 +369,12 @@ export async function GET(req: NextRequest) {
         accuracy_m: agg.latest_start_accuracy,
         worker_note: null,
 
-        // legacy fields (used by admin/reports)
         worker_id: j.worker_id,
         actual_minutes: agg.actual_minutes || 0,
         can_accept,
       }
     })
 
-    // Back-compat: UI expects {jobs: [...]}
     return NextResponse.json({ jobs: items, items })
   } catch (e: any) {
     const msg = e?.message || 'Ошибка'
@@ -355,5 +382,3 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: msg }, { status })
   }
 }
-
-
