@@ -3461,7 +3461,7 @@ const [editOpen, setEditOpen] = useState(false)
                   <button
                     onClick={createJobs}
                     disabled={busy || !newSiteId || newWorkers.length === 0}
-                    className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60 w-full lg:w-auto lg:mt-5"
+                    className="w-full rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-center text-sm font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:cursor-not-allowed disabled:border-yellow-400/15 disabled:bg-black/30 disabled:text-zinc-400 disabled:opacity-100 lg:mt-5 lg:w-auto"
                   >
                     Создать смену
                   </button>
