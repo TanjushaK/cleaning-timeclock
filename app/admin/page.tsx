@@ -2599,7 +2599,7 @@ const [editOpen, setEditOpen] = useState(false)
 
         <div className="rounded-3xl border border-yellow-400/20 bg-zinc-950/50 p-6 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="adminTabRow">
+            <div className="adminTabRow flex flex-wrap items-center gap-2">
               {(['sites', 'workers', 'jobs', 'plan', 'reports'] as TabKey[]).map((k) => (
                 <button
                   key={k}
@@ -3397,7 +3397,7 @@ const [editOpen, setEditOpen] = useState(false)
                 <div className="text-sm font-semibold text-yellow-100">Создать смену</div>
                 <div className="mt-1 text-xs text-zinc-300">Объект + дата + время + несколько работников.</div>
 
-                <div className="mt-4 grid gap-3 lg:grid-cols-[1.3fr_1.7fr_0.8fr_0.7fr_0.7fr_auto]">
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-[1.3fr_1.7fr_0.8fr_0.7fr_0.7fr_auto]">
                   <label className="grid gap-1">
                     <span className="text-[11px] text-zinc-300">Объект</span>
                     <select
