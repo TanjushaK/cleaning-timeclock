@@ -2705,7 +2705,7 @@ const [editOpen, setEditOpen] = useState(false)
                             <button
                               onClick={quickAssign}
                               disabled={busy || !qaSite || !qaWorker}
-                              className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
+                              className="w-full sm:w-auto rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
                             >
                               Назначить
                             </button>
@@ -2815,7 +2815,7 @@ const [editOpen, setEditOpen] = useState(false)
                                         <button
                                           onClick={() => deleteObjectSite(s.id)}
                                           disabled={busy}
-                                          className="rounded-2xl border border-red-500/25 bg-red-500/15 px-4 py-2 text-xs font-semibold text-red-100/85 transition hover:border-red-400/45 disabled:opacity-60"
+                                          className="w-full sm:w-auto rounded-2xl border border-red-500/25 bg-red-500/15 px-4 py-2 text-xs font-semibold text-red-100/85 transition hover:border-red-400/45 disabled:opacity-60"
                                         >
                                           Удалить
                                         </button>
@@ -2851,7 +2851,7 @@ const [editOpen, setEditOpen] = useState(false)
                                     </div>
                                   </div>
 
-                                  <div className="flex flex-col items-end gap-2">
+                                  <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end">
                                     {!archived ? (
                                       <div className="flex flex-wrap items-end gap-2">
                                         <label className="grid gap-1">
@@ -2877,7 +2877,7 @@ const [editOpen, setEditOpen] = useState(false)
                                             void assign(s.id, wid)
                                           }}
                                           disabled={busy || !workerPickSite[s.id]}
-                                          className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
+                                          className="w-full sm:w-auto rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
                                         >
                                           Назначить
                                         </button>
@@ -3037,7 +3037,7 @@ const [editOpen, setEditOpen] = useState(false)
                                   <button
                                     onClick={() => deleteObjectSite(siteCardId)}
                                     disabled={busy}
-                                    className="rounded-2xl border border-red-500/25 bg-red-500/15 px-5 py-3 text-sm font-semibold text-red-100/85 transition hover:border-red-400/45 disabled:opacity-60"
+                                    className="w-full sm:w-auto rounded-2xl border border-red-500/25 bg-red-500/15 px-5 py-3 text-sm font-semibold text-red-100/85 transition hover:border-red-400/45 disabled:opacity-60"
                                   >
                                     Удалить объект
                                   </button>
@@ -3243,8 +3243,8 @@ const [editOpen, setEditOpen] = useState(false)
                     <div key={w.id} className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="flex items-start gap-3">
-                          <div className="relative mt-0.5 h-10 w-10 flex-shrink-0 overflow-hidden rounded-full border border-yellow-400/25 bg-black/35 shadow-sm">
-                            <div className="absolute inset-0 flex items-center justify-center text-[12px] font-semibold text-yellow-100/80">
+                          <div className="relative mt-0.5 h-10 w-10">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-yellow-400/15 bg-black/30 text-[12px] font-semibold text-yellow-100/80">
                               {initials(w.full_name)}
                             </div>
                             {workerPhotoMeta[w.id]?.thumb ? (
@@ -3252,16 +3252,17 @@ const [editOpen, setEditOpen] = useState(false)
                               <img
                                 src={workerPhotoMeta[w.id]?.thumb || ''}
                                 alt="avatar"
-                                className="absolute inset-0 h-full w-full object-cover"
+                                className="absolute inset-0 h-10 w-10 rounded-full border border-yellow-400/20 object-cover shadow-sm"
                                 loading="lazy"
                                 onError={(e) => {
-                                  // keep initials visible under the image
-                                  ;(e.currentTarget as HTMLImageElement).style.display = "none"
+                                  try {
+                                    ;(e.currentTarget as HTMLImageElement).style.display = 'none'
+                                  } catch {}
                                 }}
                               />
                             ) : null}
-                            <div className="absolute -bottom-1 -right-1 rounded-full border border-yellow-400/30 bg-black/75 px-1.5 py-0.5 text-[10px] font-semibold text-yellow-100">
-                              {(workerPhotoMeta[w.id]?.count ?? "…")}/5
+                            <div className="absolute -bottom-1 -right-1 rounded-xl border border-yellow-400/20 bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-yellow-100">
+                              {(workerPhotoMeta[w.id]?.count ?? '…')}/5
                             </div>
                           </div>
 
@@ -3308,13 +3309,13 @@ const [editOpen, setEditOpen] = useState(false)
                         </div>
                         </div>
 
-                        <div className="flex flex-col items-end gap-2">
-                          <div className="flex flex-wrap items-center justify-end gap-2">
+                        <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end">
+                          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
                             {!isAdmin ? (
                               <button
                                 onClick={() => setRole(w.id, 'admin')}
                                 disabled={busy}
-                                className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
+                                className="w-full sm:w-auto rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
                               >
                                 Сделать админом
                               </button>
@@ -3322,7 +3323,7 @@ const [editOpen, setEditOpen] = useState(false)
                               <button
                                 onClick={() => setRole(w.id, 'worker')}
                                 disabled={busy || isMe}
-                                className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 transition hover:border-yellow-300/40 disabled:opacity-60"
+                                className="w-full sm:w-auto rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 transition hover:border-yellow-300/40 disabled:opacity-60"
                               >
                                 Сделать работником
                               </button>
@@ -3330,12 +3331,12 @@ const [editOpen, setEditOpen] = useState(false)
                           </div>
 
                           {!isAdmin ? (
-                            <div className="flex flex-wrap items-center justify-end gap-2">
+                            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
                               <button
                                 onClick={() => setWorkerArchived(w.id, w.active !== false)}
                                 disabled={busy}
                                 className={cn(
-                                  'rounded-2xl border px-4 py-2 text-xs font-semibold transition disabled:opacity-60',
+                                  'w-full sm:w-auto rounded-2xl border px-4 py-2 text-xs font-semibold transition disabled:opacity-60',
                                   w.active === false
                                     ? 'border-yellow-300/45 bg-yellow-400/10 text-yellow-100 hover:border-yellow-200/70 hover:bg-yellow-400/15'
                                     : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
@@ -3347,7 +3348,7 @@ const [editOpen, setEditOpen] = useState(false)
                               <button
                                 onClick={() => deleteWorker(w.id)}
                                 disabled={busy}
-                                className="rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-2 text-xs font-semibold text-red-100 transition hover:border-red-300/40 hover:bg-red-500/15 disabled:opacity-60"
+                                className="w-full sm:w-auto rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-2 text-xs font-semibold text-red-100 transition hover:border-red-300/40 hover:bg-red-500/15 disabled:opacity-60"
                               >
                                 Удалить
                               </button>
@@ -3355,13 +3356,13 @@ const [editOpen, setEditOpen] = useState(false)
                           ) : null}
 
                           {!isAdmin ? (
-                            <div className="flex flex-wrap items-end gap-2">
-                              <label className="grid gap-1">
+                            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-end">
+                              <label className="grid w-full gap-1 sm:w-auto">
                                 <span className="text-[11px] text-zinc-300">Добавить объект</span>
                                 <select
                                   value={pick}
                                   onChange={(e) => setWorkerPickSite((p) => ({ ...p, [w.id]: e.target.value }))}
-                                  className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+                                  className="w-full rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                                 >
                                   <option value="">Выбери объект…</option>
                                   {activeSites.map((s) => (
@@ -3375,7 +3376,7 @@ const [editOpen, setEditOpen] = useState(false)
                               <button
                                 onClick={() => pick && assign(pick, w.id)}
                                 disabled={busy || !pick}
-                                className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
+                                className="w-full sm:w-auto rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
                               >
                                 Назначить
                               </button>
@@ -3400,7 +3401,7 @@ const [editOpen, setEditOpen] = useState(false)
                 <div className="text-sm font-semibold text-yellow-100">Создать смену</div>
                 <div className="mt-1 text-xs text-zinc-300">Объект + дата + время + несколько работников.</div>
 
-                <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-[1.3fr_1.7fr_0.8fr_0.7fr_0.7fr_auto]">
+                <div className="mt-4 grid gap-3 lg:grid-cols-2 2xl:grid-cols-[1.3fr_1.7fr_0.8fr_0.7fr_0.7fr_auto]">
                   <label className="grid gap-1">
                     <span className="text-[11px] text-zinc-300">Объект</span>
                     <select
@@ -3460,7 +3461,7 @@ const [editOpen, setEditOpen] = useState(false)
                   <button
                     onClick={createJobs}
                     disabled={busy || !newSiteId || newWorkers.length === 0}
-                    className="mt-5 rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
+                    className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60 w-full lg:w-auto lg:mt-5"
                   >
                     Создать смену
                   </button>
@@ -3526,7 +3527,7 @@ const [editOpen, setEditOpen] = useState(false)
                 <div className="flex flex-wrap items-end justify-between gap-3">
                   <div className="text-sm font-semibold text-yellow-100">Фильтры</div>
 
-                  <div className="flex flex-wrap items-end gap-2">
+                  <div className="mt-4 grid w-full gap-3 lg:grid-cols-4">
                     <label className="grid gap-1">
                       <span className="text-[11px] text-zinc-300">С</span>
                       <input
@@ -3551,7 +3552,7 @@ const [editOpen, setEditOpen] = useState(false)
                       <select
                         value={filterSite}
                         onChange={(e) => setFilterSite(e.target.value)}
-                        className="w-full sm:w-[220px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+                        className="w-full rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                       >
                         <option value="">Все</option>
                         {sites
@@ -3570,7 +3571,7 @@ const [editOpen, setEditOpen] = useState(false)
                       <select
                         value={filterWorker}
                         onChange={(e) => setFilterWorker(e.target.value)}
-                        className="w-full sm:w-[220px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+                        className="w-full rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                       >
                         <option value="">Все</option>
                         {workers
@@ -3688,13 +3689,13 @@ const [editOpen, setEditOpen] = useState(false)
                                 )}
                               </td>
                               <td className="px-4 py-3">
-  <div className="grid gap-1">
-    <div>{statusRu(String(j.status || ''))}</div>
-    {String(j.status || '') === 'planned' && j.worker_id ? (
-      <div className="text-[11px] font-semibold text-yellow-100/80">Принято</div>
-    ) : null}
-  </div>
-</td>
+                                <div className="grid gap-1">
+                                  <div>{statusRu(String(j.status || ''))}</div>
+                                  {String(j.status || '') === 'planned' && j.worker_id ? (
+                                    <div className="text-[11px] font-semibold text-yellow-100/80">Принято</div>
+                                  ) : null}
+                                </div>
+                              </td>
                               <td className="px-4 py-3">{fmtDT(j.started_at)}</td>
                               <td className="px-4 py-3">{fmtDT(j.stopped_at)}</td>
                               <td className="px-4 py-3">

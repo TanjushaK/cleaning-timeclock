@@ -40,6 +40,10 @@ type MeJobsResponse = {
     site_radius?: number | null;
     site_lat?: number | null;
     site_lng?: number | null;
+    site_photo_url?: string | null;
+    site_photos_count?: number | null;
+    worker_id?: string | null;
+    can_accept?: boolean | null;
     accepted_at?: string | null;
     started_at?: string | null;
     stopped_at?: string | null;
@@ -88,6 +92,56 @@ function formatDateTimeRu(iso: string | null | undefined) {
   const hh = String(d.getHours()).padStart(2, "0");
   const mi = String(d.getMinutes()).padStart(2, "0");
   return `${dd}-${mm}-${yyyy} ${hh}:${mi}`;
+}
+
+function statusRu(s: string | null | undefined) {
+  const v = String(s || "").toLowerCase();
+  if (v === "planned") return "запланировано";
+  if (v === "in_progress") return "в работе";
+  if (v === "done") return "завершено";
+  return s ? String(s) : "—";
+}
+
+
+function openNavToSite(lat: number | null | undefined, lng: number | null | undefined, address: string | null | undefined) {
+  if (typeof window === "undefined") return;
+  try {
+    if (lat != null && lng != null) {
+      const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(String(lat))},${encodeURIComponent(String(lng))}`;
+      window.open(url, "_blank", "noopener,noreferrer");
+      return;
+    }
+    const q = String(address || "").trim();
+    if (q) {
+      const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+  } catch {
+    // ignore
+  }
+}
+
+async function getGpsOnce(): Promise<{ lat: number; lng: number; accuracy: number }> {
+  if (typeof window === "undefined") throw new Error("GPS недоступен.");
+  if (!("geolocation" in navigator)) throw new Error("GPS недоступен на этом устройстве.");
+  return await new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        const accuracy = pos.coords.accuracy;
+        if (!Number.isFinite(lat) || !Number.isFinite(lng) || !Number.isFinite(accuracy)) {
+          reject(new Error("Не удалось получить корректный GPS."));
+          return;
+        }
+        resolve({ lat, lng, accuracy });
+      },
+      (err) => {
+        reject(new Error(`Не удалось получить GPS: ${err.message || err.code}`));
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  });
 }
 
 function isE164(phone: string) {
@@ -514,14 +568,15 @@ export default function AppPage() {
     }
   }, [loadAll]);
 
-  const doStart = useCallback(async (jobId: string) => {
+    const doStart = useCallback(async (jobId: string) => {
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
+      const gps = await getGpsOnce();
       const res = await authFetchJson<any>("/api/me/jobs/start", {
         method: "POST",
-        body: JSON.stringify({ id: jobId }),
+        body: JSON.stringify({ id: jobId, ...gps }),
       });
       if (res?.error) throw new Error(String(res.error));
       await loadAll();
@@ -533,14 +588,15 @@ export default function AppPage() {
     }
   }, [loadAll]);
 
-  const doStop = useCallback(async (jobId: string) => {
+    const doStop = useCallback(async (jobId: string) => {
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
+      const gps = await getGpsOnce();
       const res = await authFetchJson<any>("/api/me/jobs/stop", {
         method: "POST",
-        body: JSON.stringify({ id: jobId }),
+        body: JSON.stringify({ id: jobId, ...gps }),
       });
       if (res?.error) throw new Error(String(res.error));
       await loadAll();
@@ -796,11 +852,125 @@ export default function AppPage() {
           </section>
         ) : (
           <section className="mt-6 grid grid-cols-1 xl:grid-cols-3 gap-6">
+            <div className={clsx(card, "p-6 xl:col-span-2")}>
+              <div className="flex items-center justify-between">
+                <div className="text-lg font-semibold">Смены</div>
+                <button className={btn} onClick={() => loadAll().catch((e) => setError(String((e as any)?.message || e)))} disabled={busy}>
+                  Обновить
+                </button>
+              </div>
+
+              {!workerIsActive && !isAdmin && (
+                <div className={clsx("mt-4 p-3 rounded-xl", border, "bg-amber-400/10")}>
+                  <div className="text-sm font-semibold text-amber-200">Ожидание активации</div>
+                  <div className="text-xs opacity-80 mt-1">
+                    Пока аккаунт не активирован админом, доступ к работам может быть ограничен.
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-4 space-y-3">
+                {jobsSorted.length === 0 ? (
+                  <div className="text-sm opacity-70">Пока нет заданий.</div>
+                ) : (
+                  jobsSorted.map((j) => {
+                    const planned = j.status === "planned";
+                    const inProg = j.status === "in_progress";
+                    const done = j.status === "done";
+
+                    return (
+                      <div key={j.id} className={clsx("rounded-2xl p-4", border, "bg-zinc-950/60")}>
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                          <div className="flex items-start gap-3">
+                            <button
+                              type="button"
+                              onClick={() => openNavToSite(j.site_lat, j.site_lng, j.site_address)}
+                              className={clsx("relative h-12 w-12 overflow-hidden rounded-2xl", border, "bg-zinc-900/30", (j.site_lat != null && j.site_lng != null) || j.site_address ? "hover:bg-zinc-900/40" : "")}
+                              title="Навигация"
+                            >
+                              <div className="absolute inset-0 flex items-center justify-center text-xs opacity-70">
+                                {(j.site_name || "—").trim().slice(0, 1).toUpperCase() || "•"}
+                              </div>
+                              {j.site_photo_url ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={j.site_photo_url}
+                                  alt="site"
+                                  className="absolute inset-0 h-full w-full object-cover"
+                                  loading="lazy"
+                                  onError={(e) => {
+                                    try {
+                                      ;(e.currentTarget as HTMLImageElement).style.display = "none"
+                                    } catch {}
+                                  }}
+                                />
+                              ) : null}
+                            </button>
+
+                            <div>
+                              <div className="text-sm font-semibold">
+                                {formatDateRu(j.job_date)} • {formatTimeRu(j.scheduled_time)} • <span className={gold}>{statusRu(j.status)}</span>
+                              </div>
+                              <div className="text-xs opacity-70 mt-1">
+                                {j.site_name || "Объект"} — {j.site_address || "—"}
+                              </div>
+                              <div className="mt-2">
+                                <button
+                                  type="button"
+                                  className={clsx(btn, "text-xs px-3 py-1") }
+                                  onClick={() => openNavToSite(j.site_lat, j.site_lng, j.site_address)}
+                                >
+                                  Навигация
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex w-full flex-col gap-2 lg:w-auto lg:flex-row lg:items-center">
+                            {planned && Boolean(j.can_accept) && (
+                              <button className={btnSolid} onClick={() => doAccept(j.id)} disabled={busy}>
+                                Принять
+                              </button>
+                            )}
+                            {inProg && (
+                              <button className={btnSolid} onClick={() => doStop(j.id)} disabled={busy}>
+                                Стоп
+                              </button>
+                            )}
+                            {planned && !Boolean(j.can_accept) && (
+                              <button className={btn} onClick={() => doStart(j.id)} disabled={busy}>
+                                Старт
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="mt-3 grid grid-cols-1 gap-2 text-xs opacity-80 md:grid-cols-2">
+                          <div>Старт: {formatDateTimeRu(j.started_at)}</div>
+                          <div>Стоп: {formatDateTimeRu(j.stopped_at)}</div>
+                        </div>
+
+                        {(j.distance_m != null || j.accuracy_m != null) ? (
+                          <div className="mt-2 text-xs opacity-70">
+                            GPS: расстояние {j.distance_m ?? "—"} м • точность {j.accuracy_m ?? "—"} м
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
             <div className={clsx(card, "p-6 xl:col-span-1")}>
               <div className="flex items-center justify-between">
-                <div className="text-lg font-semibold">Профиль</div>
+                <div className="flex items-center gap-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src="/tanija-logo.png" alt="Tanija" className="h-6 w-auto" />
+                  <div className="text-lg font-semibold">Профиль</div>
+                </div>
                 <div className="text-xs opacity-70">
-                  Role: <span className={gold}>{me?.profile?.role || "—"}</span> • Active:{" "}
+                  Роль: <span className={gold}>{me?.profile?.role || "—"}</span> • Активен:{" "}
                   <span className={gold}>{workerIsActive ? "да" : "нет"}</span>
                 </div>
               </div>
@@ -841,7 +1011,7 @@ export default function AppPage() {
                 <div className="mt-3 flex gap-2 items-center">
                   <input ref={fileRef} className={clsx("text-xs", "w-full")} type="file" accept="image/png,image/jpeg,image/webp" />
                   <button className={btn} onClick={doUploadPhoto} disabled={busy}>
-                    Upload
+                    Загрузить
                   </button>
                 </div>
 
@@ -855,7 +1025,7 @@ export default function AppPage() {
                             // eslint-disable-next-line @next/next/no-img-element
                             <img src={p.url} alt="photo" className="w-full h-full object-cover" />
                           ) : (
-                            <div className="text-xs opacity-60">no preview</div>
+                            <div className="text-xs opacity-60">нет превью</div>
                           )}
                         </div>
                         <div className="p-2 flex gap-2">
@@ -874,88 +1044,14 @@ export default function AppPage() {
                 {!workerIsActive && !isAdmin ? (
                   <div className="mt-4">
                     <button className={btnSolid} onClick={doSubmitForApproval} disabled={busy}>
-                      Submit на активацию
+                      Отправить на активацию
                     </button>
                     <div className="text-xs opacity-60 mt-2">
-                      После submit админ активирует тебя в /admin/approvals.
+                      После отправки админ активирует тебя в /admin/approvals.
                     </div>
                   </div>
                 ) : (
                   <div className="mt-4 text-xs opacity-70">Аккаунт активирован.</div>
-                )}
-              </div>
-            </div>
-
-            <div className={clsx(card, "p-6 xl:col-span-2")}>
-              <div className="flex items-center justify-between">
-                <div className="text-lg font-semibold">Jobs</div>
-                <button className={btn} onClick={() => loadAll().catch((e) => setError(String((e as any)?.message || e)))} disabled={busy}>
-                  Обновить
-                </button>
-              </div>
-
-              {!workerIsActive && !isAdmin && (
-                <div className={clsx("mt-4 p-3 rounded-xl", border, "bg-amber-400/10")}>
-                  <div className="text-sm font-semibold text-amber-200">Ожидание активации</div>
-                  <div className="text-xs opacity-80 mt-1">
-                    Пока аккаунт не активирован админом, доступ к работам может быть ограничен.
-                  </div>
-                </div>
-              )}
-
-              <div className="mt-4 space-y-3">
-                {jobsSorted.length === 0 ? (
-                  <div className="text-sm opacity-70">Пока нет заданий.</div>
-                ) : (
-                  jobsSorted.map((j) => {
-                    const planned = j.status === "planned";
-                    const inProg = j.status === "in_progress";
-                    const done = j.status === "done";
-
-                    return (
-                      <div key={j.id} className={clsx("rounded-2xl p-4", border, "bg-zinc-950/60")}>
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <div>
-                            <div className="text-sm font-semibold">
-                              {formatDateRu(j.job_date)} • {formatTimeRu(j.scheduled_time)} •{" "}
-                              <span className={gold}>{String(j.status)}</span>
-                            </div>
-                            <div className="text-xs opacity-70 mt-1">
-                              {j.site_name || "Site"} — {j.site_address || "—"}
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            {planned && (
-                              <button className={btnSolid} onClick={() => doAccept(j.id)} disabled={busy}>
-                                Accept
-                              </button>
-                            )}
-                            {inProg && (
-                              <button className={btnSolid} onClick={() => doStop(j.id)} disabled={busy}>
-                                Stop
-                              </button>
-                            )}
-                            {(planned || done) && (
-                              <button className={btn} onClick={() => doStart(j.id)} disabled={busy}>
-                                Start
-                              </button>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3 text-xs opacity-80">
-                          <div>Accepted: {formatDateTimeRu(j.accepted_at)}</div>
-                          <div>Start: {formatDateTimeRu(j.started_at)}</div>
-                          <div>Stop: {formatDateTimeRu(j.stopped_at)}</div>
-                        </div>
-
-                        <div className="mt-2 text-xs opacity-70">
-                          GPS: dist {j.distance_m ?? "—"} m • acc {j.accuracy_m ?? "—"} m
-                        </div>
-                      </div>
-                    );
-                  })
                 )}
               </div>
             </div>

@@ -1,6 +1,7 @@
 ﻿// app/api/admin/workers/[id]/photos/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
+import sharp from 'sharp'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -156,6 +157,55 @@ async function resolveAvatarKey(supabase: any): Promise<AvatarKey> {
   return AVATAR_KEY
 }
 
+
+function isHeicName(name: string) {
+  return /\.(heic|heif)$/i.test(String(name || ''))
+}
+
+async function normalizeHeicInBucket(supabase: any, workerId: string, itemsRaw: any[]): Promise<boolean> {
+  const heic = (itemsRaw || []).filter((x: any) => isHeicName(String(x?.name || '')))
+  if (heic.length === 0) return false
+  const pref = workerPrefix(workerId)
+  const names = new Set((itemsRaw || []).map((x: any) => String(x?.name || '')))
+  const avatarKey = await resolveAvatarKey(supabase)
+  const { data: prof } = await supabase.from('profiles').select(avatarKey).eq('id', workerId).maybeSingle()
+  const curAvatar = prof ? String((prof as any)[avatarKey] || '') : ''
+  let nextAvatar = curAvatar
+  let changed = false
+  for (const it of heic) {
+    const name = String(it?.name || '')
+    if (!name) continue
+    const base = name.replace(/\.(heic|heif)$/i, '')
+    const jpgName = `${base}.jpg`
+    const oldPath = `${pref}/${name}`
+    const newPath = `${pref}/${jpgName}`
+    // если jpeg уже есть — просто удалим heic и поправим avatar_path
+    if (!names.has(jpgName)) {
+      const { data: blob, error: dlErr } = await supabase.storage.from(BUCKET).download(oldPath)
+      if (dlErr || !blob) continue
+      const ab = await (blob as any).arrayBuffer()
+      const input = Buffer.from(ab)
+      let out: Buffer
+      try {
+        out = await sharp(input).rotate().jpeg({ quality: 85 }).toBuffer()
+      } catch {
+        continue
+      }
+      const { error: upErr } = await supabase.storage.from(BUCKET).upload(newPath, out, { contentType: 'image/jpeg', upsert: false })
+      if (upErr) continue
+      names.add(jpgName)
+    }
+    if (curAvatar && curAvatar === oldPath) nextAvatar = newPath
+    await supabase.storage.from(BUCKET).remove([oldPath]).catch(() => null)
+    changed = true
+  }
+  if (nextAvatar && nextAvatar !== curAvatar) {
+    await supabase.from('profiles').update({ [avatarKey]: nextAvatar }).eq('id', workerId)
+    changed = true
+  }
+  return changed
+}
+
 async function listPhotos(supabase: any, workerId: string): Promise<WorkerPhoto[]> {
   const pref = workerPrefix(workerId)
 
@@ -165,7 +215,17 @@ async function listPhotos(supabase: any, workerId: string): Promise<WorkerPhoto[
 
   if (listErr) throw new ApiError(500, listErr.message)
 
-  const itemsRaw = (listed || []).filter((x: any) => x?.name && x.name !== '.emptyFolderPlaceholder')
+  let itemsRaw = (listed || []).filter((x: any) => x?.name && x.name !== '.emptyFolderPlaceholder')
+  // HEIC/HEIF часто не отображаются в Chrome/Android WebView — конвертируем в JPEG автоматически
+  if (itemsRaw.length) {
+    const changed = await normalizeHeicInBucket(supabase, workerId, itemsRaw).catch(() => false)
+    if (changed) {
+      const { data: relisted } = await supabase.storage
+        .from(BUCKET)
+        .list(pref, { limit: 100, sortBy: { column: "created_at", order: "desc" } })
+      itemsRaw = (relisted || []).filter((x: any) => x?.name && x.name !== ".emptyFolderPlaceholder")
+    }
+  }
   const ttl = getSignedTtlSeconds()
 
   const paths = itemsRaw.map((it: any) => `${pref}/${it.name}`)
@@ -231,16 +291,20 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
     validateImageFile(file)
 
-    const ext = canonicalExt(file)
+    let ext = canonicalExt(file)
     const base = safeName(file.name.replace(/\.[^.]+$/, '')) || 'photo'
+    let bytes: Buffer = Buffer.from(await file.arrayBuffer())
+    const mime = String(file.type || '').toLowerCase()
+    if (ext === 'heic' || ext === 'heif') {
+      bytes = await sharp(bytes).rotate().jpeg({ quality: 85 }).toBuffer()
+      ext = 'jpg'
+    }
     const filename = `${Date.now()}_${base}.${ext}`
 
     const pref = workerPrefix(workerId)
     const path = `${pref}/${filename}`
 
-    const bytes = Buffer.from(await file.arrayBuffer())
-    const mime = String(file.type || '').toLowerCase()
-    const contentType = ALLOWED_IMAGE_TYPES.has(mime) ? String(file.type) : contentTypeFor(ext)
+    const contentType = ext === 'jpg' ? 'image/jpeg' : (ALLOWED_IMAGE_TYPES.has(mime) ? String(file.type) : contentTypeFor(ext))
 
     const { error: upErr } = await sb.storage.from(BUCKET).upload(path, bytes, {
       contentType,

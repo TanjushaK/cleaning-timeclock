@@ -2691,7 +2691,7 @@ const [editOpen, setEditOpen] = useState(false)
                             <button
                               onClick={quickAssign}
                               disabled={busy || !qaSite || !qaWorker}
-                              className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
+                              className="w-full sm:w-auto rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
                             >
                               Назначить
                             </button>
@@ -2801,7 +2801,7 @@ const [editOpen, setEditOpen] = useState(false)
                                         <button
                                           onClick={() => deleteObjectSite(s.id)}
                                           disabled={busy}
-                                          className="rounded-2xl border border-red-500/25 bg-red-500/15 px-4 py-2 text-xs font-semibold text-red-100/85 transition hover:border-red-400/45 disabled:opacity-60"
+                                          className="w-full sm:w-auto rounded-2xl border border-red-500/25 bg-red-500/15 px-4 py-2 text-xs font-semibold text-red-100/85 transition hover:border-red-400/45 disabled:opacity-60"
                                         >
                                           Удалить
                                         </button>
@@ -2837,7 +2837,7 @@ const [editOpen, setEditOpen] = useState(false)
                                     </div>
                                   </div>
 
-                                  <div className="flex flex-col items-end gap-2">
+                                  <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end">
                                     {!archived ? (
                                       <div className="flex flex-wrap items-end gap-2">
                                         <label className="grid gap-1">
@@ -2863,7 +2863,7 @@ const [editOpen, setEditOpen] = useState(false)
                                             void assign(s.id, wid)
                                           }}
                                           disabled={busy || !workerPickSite[s.id]}
-                                          className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
+                                          className="w-full sm:w-auto rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
                                         >
                                           Назначить
                                         </button>
@@ -3023,7 +3023,7 @@ const [editOpen, setEditOpen] = useState(false)
                                   <button
                                     onClick={() => deleteObjectSite(siteCardId)}
                                     disabled={busy}
-                                    className="rounded-2xl border border-red-500/25 bg-red-500/15 px-5 py-3 text-sm font-semibold text-red-100/85 transition hover:border-red-400/45 disabled:opacity-60"
+                                    className="w-full sm:w-auto rounded-2xl border border-red-500/25 bg-red-500/15 px-5 py-3 text-sm font-semibold text-red-100/85 transition hover:border-red-400/45 disabled:opacity-60"
                                   >
                                     Удалить объект
                                   </button>
@@ -3291,13 +3291,13 @@ const [editOpen, setEditOpen] = useState(false)
                         </div>
                         </div>
 
-                        <div className="flex flex-col items-end gap-2">
-                          <div className="flex flex-wrap items-center justify-end gap-2">
+                        <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end">
+                          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
                             {!isAdmin ? (
                               <button
                                 onClick={() => setRole(w.id, 'admin')}
                                 disabled={busy}
-                                className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
+                                className="w-full sm:w-auto rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
                               >
                                 Сделать админом
                               </button>
@@ -3305,7 +3305,7 @@ const [editOpen, setEditOpen] = useState(false)
                               <button
                                 onClick={() => setRole(w.id, 'worker')}
                                 disabled={busy || isMe}
-                                className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 transition hover:border-yellow-300/40 disabled:opacity-60"
+                                className="w-full sm:w-auto rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 transition hover:border-yellow-300/40 disabled:opacity-60"
                               >
                                 Сделать работником
                               </button>
@@ -3313,12 +3313,12 @@ const [editOpen, setEditOpen] = useState(false)
                           </div>
 
                           {!isAdmin ? (
-                            <div className="flex flex-wrap items-center justify-end gap-2">
+                            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
                               <button
                                 onClick={() => setWorkerArchived(w.id, w.active !== false)}
                                 disabled={busy}
                                 className={cn(
-                                  'rounded-2xl border px-4 py-2 text-xs font-semibold transition disabled:opacity-60',
+                                  'w-full sm:w-auto rounded-2xl border px-4 py-2 text-xs font-semibold transition disabled:opacity-60',
                                   w.active === false
                                     ? 'border-yellow-300/45 bg-yellow-400/10 text-yellow-100 hover:border-yellow-200/70 hover:bg-yellow-400/15'
                                     : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
@@ -3330,7 +3330,7 @@ const [editOpen, setEditOpen] = useState(false)
                               <button
                                 onClick={() => deleteWorker(w.id)}
                                 disabled={busy}
-                                className="rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-2 text-xs font-semibold text-red-100 transition hover:border-red-300/40 hover:bg-red-500/15 disabled:opacity-60"
+                                className="w-full sm:w-auto rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-2 text-xs font-semibold text-red-100 transition hover:border-red-300/40 hover:bg-red-500/15 disabled:opacity-60"
                               >
                                 Удалить
                               </button>
@@ -3338,13 +3338,13 @@ const [editOpen, setEditOpen] = useState(false)
                           ) : null}
 
                           {!isAdmin ? (
-                            <div className="flex flex-wrap items-end gap-2">
-                              <label className="grid gap-1">
+                            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-end">
+                              <label className="grid w-full gap-1 sm:w-auto">
                                 <span className="text-[11px] text-zinc-300">Добавить объект</span>
                                 <select
                                   value={pick}
                                   onChange={(e) => setWorkerPickSite((p) => ({ ...p, [w.id]: e.target.value }))}
-                                  className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+                                  className="w-full rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                                 >
                                   <option value="">Выбери объект…</option>
                                   {activeSites.map((s) => (
@@ -3358,7 +3358,7 @@ const [editOpen, setEditOpen] = useState(false)
                               <button
                                 onClick={() => pick && assign(pick, w.id)}
                                 disabled={busy || !pick}
-                                className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
+                                className="w-full sm:w-auto rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
                               >
                                 Назначить
                               </button>

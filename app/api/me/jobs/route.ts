@@ -137,6 +137,7 @@ export async function GET(req: NextRequest) {
       getJobWorkerJobIds(supabase, userId),
     ])
 
+    // jobs: worker_id = me
     let jobsA: any[] = []
     {
       const { data, error } = await supabase
@@ -161,6 +162,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // jobs via job_workers
     let jobsB: any[] = []
     if (jobIdsViaLink.length) {
       const { data, error } = await supabase
@@ -185,6 +187,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // open jobs on assigned sites (only planned & worker_id is null)
     let jobsC: any[] = []
     if (siteIds.length) {
       const { data, error } = await supabase
@@ -213,6 +216,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // uniq by id
     const byId = new Map<string, any>()
     for (const j of [...jobsA, ...jobsB, ...jobsC]) {
       if (!j?.id) continue
@@ -238,7 +242,10 @@ export async function GET(req: NextRequest) {
         ? supabase.from('sites').select('id,name,address,lat,lng,radius,photos').in('id', siteIds2)
         : Promise.resolve({ data: [], error: null } as any),
       jobIds.length
-        ? supabase.from('time_logs').select('job_id,started_at,stopped_at,start_lat,start_lng,start_accuracy').in('job_id', jobIds)
+        ? supabase
+            .from('time_logs')
+            .select('job_id,started_at,stopped_at,start_lat,start_lng,start_accuracy')
+            .in('job_id', jobIds)
         : Promise.resolve({ data: [], error: null } as any),
     ])
 
@@ -253,6 +260,7 @@ export async function GET(req: NextRequest) {
     if (logsRes.error) return NextResponse.json({ error: logsRes.error.message }, { status: 400 })
 
     const sitesData = (sitesRes.data || []) as any[]
+
     const photosBySite = new Map<string, SitePhoto[]>()
     const allPhotoPaths: string[] = []
 
@@ -278,7 +286,19 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const siteInfo = new Map<string, any>()
+    const siteInfo = new Map<
+      string,
+      {
+        name: string | null
+        address: string | null
+        lat: number | null
+        lng: number | null
+        radius: number | null
+        photos: SitePhoto[]
+        thumb_url: string | null
+      }
+    >()
+
     for (const s of sitesData) {
       const sid = String(s.id)
       const photos = photosBySite.get(sid) || []
@@ -295,6 +315,7 @@ export async function GET(req: NextRequest) {
       })
     }
 
+    // logs aggregate
     const logAgg = new Map<string, any>()
     for (const l of (logsRes.data || []) as any[]) {
       const id = String(l.job_id)
