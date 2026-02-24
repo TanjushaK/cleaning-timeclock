@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import Image from 'next/image'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -424,14 +424,14 @@ function MapMini(props: { lat: number | null; lng: number | null; onClick: () =>
   const { lat, lng } = props
   if (lat == null || lng == null) {
     return (
-      <div className="flex h-[92px] w-[150px] items-center justify-center rounded-2xl border border-yellow-400/10 bg-black/20 text-[11px] text-yellow-100/40">
+      <div className="flex h-[92px] w-full sm:w-[150px] items-center justify-center rounded-2xl border border-yellow-400/10 bg-black/20 text-[11px] text-yellow-100/40">
         Нет координат
       </div>
     )
   }
 
   return (
-    <div className="relative h-[92px] w-[150px] overflow-hidden rounded-2xl border border-yellow-400/20 bg-black/20">
+    <div className="relative h-[92px] w-full sm:w-[150px] overflow-hidden rounded-2xl border border-yellow-400/20 bg-black/20">
       <iframe src={osmEmbedUrl(lat, lng, 0.004)} className="h-full w-full" loading="lazy" />
       <button onClick={props.onClick} className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/0 to-black/0" title="Открыть навигацию" />
       <div className="absolute bottom-1 left-2 text-[10px] font-semibold text-yellow-100/90">Навигация</div>
@@ -2236,6 +2236,7 @@ const [editOpen, setEditOpen] = useState(false)
   function PlanWeekGrid() {
     return (
       <div className="mt-4 overflow-auto rounded-3xl border border-yellow-400/15 bg-black/15">
+        <div className="w-full overflow-x-auto">
         <div className="min-w-[980px]">
           <div className="grid" style={{ gridTemplateColumns: `320px repeat(${planDates.length}, minmax(220px, 1fr))` }}>
             <div className="sticky top-0 z-10 border-b border-yellow-400/10 bg-zinc-950/90 px-4 py-3 text-xs font-semibold text-zinc-200">
@@ -2317,6 +2318,7 @@ const [editOpen, setEditOpen] = useState(false)
             ))}
           </div>
         </div>
+        </div>
       </div>
     )
   }
@@ -2325,6 +2327,7 @@ const [editOpen, setEditOpen] = useState(false)
     const dayISO = dateFrom
     return (
       <div className="mt-4 overflow-auto rounded-3xl border border-yellow-400/15 bg-black/15">
+        <div className="w-full overflow-x-auto">
         <div className="min-w-[980px]">
           <div className="grid" style={{ gridTemplateColumns: `100px repeat(${planEntities.length}, minmax(220px, 1fr))` }}>
             <div className="sticky top-0 z-10 border-b border-yellow-400/10 bg-zinc-950/90 px-3 py-3 text-xs font-semibold text-zinc-200">
@@ -2397,6 +2400,7 @@ const [editOpen, setEditOpen] = useState(false)
             ))}
           </div>
         </div>
+        </div>
       </div>
     )
   }
@@ -2414,6 +2418,7 @@ const [editOpen, setEditOpen] = useState(false)
 
     return (
       <div className="mt-4 overflow-auto rounded-3xl border border-yellow-400/15 bg-black/15">
+        <div className="w-full overflow-x-auto">
         <div className="min-w-[980px] p-4">
           <div className="grid grid-cols-7 gap-3">
             {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((d) => (
@@ -2467,6 +2472,7 @@ const [editOpen, setEditOpen] = useState(false)
               )
             })}
           </div>
+        </div>
         </div>
       </div>
     )
@@ -2669,7 +2675,7 @@ const [editOpen, setEditOpen] = useState(false)
                               <select
                                 value={qaSite}
                                 onChange={(e) => setQaSite(e.target.value)}
-                                className="w-[260px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+                                className="w-full sm:w-[260px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                               >
                                 <option value="">Выбери объект…</option>
                                 {activeSites.map((s) => (
@@ -2685,7 +2691,7 @@ const [editOpen, setEditOpen] = useState(false)
                               <select
                                 value={qaWorker}
                                 onChange={(e) => setQaWorker(e.target.value)}
-                                className="w-[260px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+                                className="w-full sm:w-[260px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                               >
                                 <option value="">Выбери работника…</option>
                                 {workersForSelect.map((w) => (
@@ -2720,9 +2726,9 @@ const [editOpen, setEditOpen] = useState(false)
                               <div key={s.id} className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
                                 <div className="flex flex-wrap items-start justify-between gap-4">
                                   <div className="flex min-w-0 flex-1 flex-wrap items-start gap-4">
-                                    <div className="w-[150px] shrink-0">
+                                    <div className="w-full sm:w-[150px] shrink-0">
                                       {primaryUrl ? (
-                                        <div className="relative h-[92px] w-[150px] overflow-hidden rounded-2xl border border-yellow-400/20 bg-black/20">
+                                        <div className="relative h-[92px] w-full sm:w-[150px] overflow-hidden rounded-2xl border border-yellow-400/20 bg-black/20">
                                           {/* eslint-disable-next-line @next/next/no-img-element */}
                                           <img src={primaryUrl} alt="site" className="h-full w-full object-cover" loading="lazy" />
                                           <button
@@ -2853,7 +2859,7 @@ const [editOpen, setEditOpen] = useState(false)
                                           <select
                                             value={workerPickSite[s.id] || ''}
                                             onChange={(e) => setWorkerPickSite((p) => ({ ...p, [s.id]: e.target.value }))}
-                                            className="w-[240px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+                                            className="w-full sm:w-[240px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                                           >
                                             <option value="">Выбери работника…</option>
                                             {workersForSelect.map((w) => (
@@ -3206,7 +3212,7 @@ const [editOpen, setEditOpen] = useState(false)
                         onChange={(e) => setInviteEmail(e.target.value)}
                         type="text"
                         autoComplete="username"
-                        className="w-[260px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+                        className="w-full sm:w-[260px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                         placeholder="name@domain.com или +31612345678"
                       />
                     </label>
@@ -3253,7 +3259,7 @@ const [editOpen, setEditOpen] = useState(false)
                             )}
                           </div>
 
-                          <div className="min-w-[220px]">
+                          <div className="min-w-full sm:w-[220px]">
                             <div className="text-base font-semibold text-yellow-100">
                               <button onClick={() => openWorkerCard(w.id)} className="hover:text-yellow-100">
                                 {w.full_name || 'Без имени'}
@@ -3542,7 +3548,7 @@ const [editOpen, setEditOpen] = useState(false)
                       <select
                         value={filterSite}
                         onChange={(e) => setFilterSite(e.target.value)}
-                        className="w-[220px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+                        className="w-full sm:w-[220px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                       >
                         <option value="">Все</option>
                         {sites
@@ -3561,7 +3567,7 @@ const [editOpen, setEditOpen] = useState(false)
                       <select
                         value={filterWorker}
                         onChange={(e) => setFilterWorker(e.target.value)}
-                        className="w-[220px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+                        className="w-full sm:w-[220px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                       >
                         <option value="">Все</option>
                         {workers

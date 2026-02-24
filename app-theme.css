@@ -60,3 +60,6 @@
 }
 
 html, body { overflow-x: hidden; }
+
+/* mobile admin */
+.adminTabRow{display:flex;flex-wrap:wrap;gap:10px}
