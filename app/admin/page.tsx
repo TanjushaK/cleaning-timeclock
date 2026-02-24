@@ -3243,7 +3243,10 @@ const [editOpen, setEditOpen] = useState(false)
                     <div key={w.id} className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="flex items-start gap-3">
-                          <div className="relative mt-0.5 h-10 w-10 overflow-hidden rounded-full border border-yellow-400/20 bg-black/30 shadow-sm">
+                          <div className="relative mt-0.5 h-12 w-12 overflow-hidden rounded-full border border-yellow-300/35 bg-gradient-to-br from-yellow-400/10 via-black/40 to-black/70 shadow-sm">
+                            <div className="absolute inset-0 flex items-center justify-center text-sm font-bold text-yellow-100/90">
+                              {initials(w.full_name)}
+                            </div>
                             {workerPhotoMeta[w.id]?.thumb ? (
                               // eslint-disable-next-line @next/next/no-img-element
                               <img
@@ -3251,13 +3254,12 @@ const [editOpen, setEditOpen] = useState(false)
                                 alt="avatar"
                                 className="absolute inset-0 h-full w-full object-cover"
                                 loading="lazy"
+                                onError={(e) => {
+                                  ;(e.currentTarget as HTMLImageElement).style.display = 'none'
+                                }}
                               />
-                            ) : (
-                              <div className="flex h-full w-full items-center justify-center text-[12px] font-semibold text-yellow-100/80">
-                                {initials(w.full_name)}
-                              </div>
-                            )}
-                            <div className="absolute -bottom-1 -right-1 z-10 rounded-lg border border-yellow-400/25 bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-yellow-100/90">
+                            ) : null}
+                            <div className="absolute -bottom-1 -right-1 z-10 rounded-lg border border-yellow-400/25 bg-black/80 px-1.5 py-0.5 text-[10px] font-semibold text-yellow-100/95">
                               {workerPhotoMeta[w.id]?.count ?? '…'}/5
                             </div>
                           </div>
