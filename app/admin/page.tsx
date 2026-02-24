@@ -3243,24 +3243,27 @@ const [editOpen, setEditOpen] = useState(false)
                     <div key={w.id} className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="flex items-start gap-3">
-                          <div className="relative mt-0.5 h-12 w-12 overflow-hidden rounded-full border border-yellow-300/35 bg-gradient-to-br from-yellow-400/10 via-black/40 to-black/70 shadow-sm">
-                            <div className="absolute inset-0 flex items-center justify-center text-sm font-bold text-yellow-100/90">
-                              {initials(w.full_name)}
+                          <div className="relative mt-0.5 h-10 w-10">
+                            <div className="absolute inset-0 flex items-center justify-center rounded-full border border-yellow-400/25 bg-black/35 text-[12px] font-semibold text-yellow-100/85">
+                              {initials(w.full_name || w.id)}
                             </div>
                             {workerPhotoMeta[w.id]?.thumb ? (
                               // eslint-disable-next-line @next/next/no-img-element
                               <img
-                                src={workerPhotoMeta[w.id]?.thumb || ''}
+                                src={workerPhotoMeta[w.id]?.thumb || ""}
                                 alt="avatar"
-                                className="absolute inset-0 h-full w-full object-cover"
+                                className="absolute inset-0 h-full w-full rounded-full border border-yellow-400/20 object-cover shadow-sm"
                                 loading="lazy"
-                                onError={(e) => {
-                                  ;(e.currentTarget as HTMLImageElement).style.display = 'none'
-                                }}
+                                onError={() =>
+                                  setWorkerPhotoMeta((prev) => ({
+                                    ...prev,
+                                    [w.id]: { count: prev[w.id]?.count ?? 0 },
+                                  }))
+                                }
                               />
                             ) : null}
-                            <div className="absolute -bottom-1 -right-1 z-10 rounded-lg border border-yellow-400/25 bg-black/80 px-1.5 py-0.5 text-[10px] font-semibold text-yellow-100/95">
-                              {workerPhotoMeta[w.id]?.count ?? '…'}/5
+                            <div className="absolute -bottom-1 -right-1 rounded-lg border border-yellow-400/25 bg-black/80 px-1.5 py-0.5 text-[10px] font-semibold text-yellow-100/95">
+                              {workerPhotoMeta[w.id]?.count ?? 0}/5
                             </div>
                           </div>
 
