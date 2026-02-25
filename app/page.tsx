@@ -929,18 +929,29 @@ const loadAll = useCallback(async () => {
     <div className="appTheme min-h-screen flex flex-col">
       <main className="flex-1 bg-black text-zinc-100 p-6">
         <div className="max-w-6xl mx-auto">
-        <header className="flex items-center justify-between gap-3">
+        <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
             <div className={clsx("text-2xl font-semibold", gold)}>Cleaning Timeclock</div>
             <div className="text-sm opacity-70">Van Tanija BV Cleaning</div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-start sm:justify-end gap-2">
             {authed && (
               <>
-                <a className={btn} href="/me/profile">Профиль</a>
-                {isAdmin && <a className={btn} href="/admin">Админ</a>}
-                <button className={btn} onClick={doLogout} disabled={busy}>Выйти</button>
+                <a className={clsx(btn, "px-3 py-1.5 text-sm")} href="/me/profile" aria-label="Профиль">
+                  <span className="sm:hidden">👤</span>
+                  <span className="hidden sm:inline">Профиль</span>
+                </a>
+                {isAdmin && (
+                  <a className={clsx(btn, "px-3 py-1.5 text-sm")} href="/admin" aria-label="Админ">
+                    <span className="sm:hidden">⚙️</span>
+                    <span className="hidden sm:inline">Админ</span>
+                  </a>
+                )}
+                <button className={clsx(btn, "px-3 py-1.5 text-sm")} onClick={doLogout} disabled={busy} aria-label="Выйти">
+                  <span className="sm:hidden">⎋</span>
+                  <span className="hidden sm:inline">Выйти</span>
+                </button>
               </>
             )}
           </div>
