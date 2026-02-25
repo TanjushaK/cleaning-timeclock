@@ -925,8 +925,22 @@ export default function AdminPage() {
 
 
   const [busy, setBusy] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const refreshSeqRef = useRef(0)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+
+  // Safety-net: если UI залип на "Обновляю…" — отпускаем кнопку и показываем ошибку
+  useEffect(() => {
+    if (!refreshing) return
+    const seq = refreshSeqRef.current
+    const t = window.setTimeout(() => {
+      if (refreshSeqRef.current !== seq) return
+      setRefreshing(false)
+      setError('Обновление зависло. Обычно это сеть/таймаут. Нажми “Обновить данные” ещё раз.')
+    }, 25000)
+    return () => window.clearTimeout(t)
+  }, [refreshing])
 
   const [showArchivedSites, setShowArchivedSites] = useState(false)
 
@@ -1179,14 +1193,17 @@ const [editOpen, setEditOpen] = useState(false)
   }
 
   async function refreshAll() {
-    setBusy(true)
+    const seq = ++refreshSeqRef.current
+    setRefreshing(true)
     setError(null)
     try {
+      // Раньше было последовательно (core -> schedule) и в сумме могло переваливать за safety-net.
+      // Параллелим: максимум = один таймаут fetch, а не два подряд.
       await Promise.all([refreshCore(), refreshSchedule()])
     } catch (e: any) {
       setError(e?.message || 'Ошибка загрузки')
     } finally {
-      setBusy(false)
+      if (seq === refreshSeqRef.current) setRefreshing(false)
     }
   }
 
@@ -2562,15 +2579,15 @@ const [editOpen, setEditOpen] = useState(false)
           <div className="flex items-center gap-2">
             <button
               onClick={refreshAll}
-              disabled={busy}
+              disabled={busy || refreshing}
               className="rounded-xl border border-yellow-400/40 bg-black/40 px-4 py-2 text-sm text-yellow-100 transition hover:border-yellow-300/70 hover:bg-black/60 disabled:opacity-60"
             >
-              {busy ? 'Обновляю…' : 'Обновить данные'}
+              {refreshing ? 'Обновляю…' : 'Обновить данные'}
             </button>
 
             <button
               onClick={onLogout}
-              disabled={busy}
+              disabled={busy || refreshing}
               className="rounded-xl border border-yellow-400/25 bg-black/30 px-4 py-2 text-sm text-yellow-100/90 transition hover:border-yellow-300/60 hover:bg-black/50 disabled:opacity-60"
             >
               Выйти
@@ -4256,7 +4273,6 @@ const [editOpen, setEditOpen] = useState(false)
     </main>
   )
 }
-
 
 
 

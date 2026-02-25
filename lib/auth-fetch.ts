@@ -76,12 +76,6 @@ async function refreshViaApi(refreshToken: string): Promise<{ access_token: stri
 }
 
 export async function authFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  // Global in-flight counter (debug/guard for stuck UI spinners)
-  if (typeof window !== 'undefined') {
-    (window as any).__ct_inflight = ((window as any).__ct_inflight ?? 0) + 1;
-  }
-  try {
-
   const rt = getRefreshToken();
 
   let res: Response;
@@ -103,13 +97,6 @@ export async function authFetch(input: RequestInfo | URL, init?: RequestInit): P
   const res2 = await fetch(input, { ...init, headers: buildAuthHeaders(init?.headers, refreshed.access_token) });
   if (res2.status === 401) clearAuthTokens();
   return res2;
-  } finally {
-    if (typeof window !== 'undefined') {
-      const n = ((window as any).__ct_inflight ?? 1) - 1;
-      (window as any).__ct_inflight = n < 0 ? 0 : n;
-    }
-  }
-
 }
 
 export async function authFetchJson<T = AnyJson>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {

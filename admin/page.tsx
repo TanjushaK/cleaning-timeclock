@@ -926,26 +926,19 @@ export default function AdminPage() {
 
   const [busy, setBusy] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
-  const refreshPendingRef = useRef(0)
-  const refreshStartedAtRef = useRef<number | null>(null)
+  const refreshSeqRef = useRef(0)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
-  // Safety-net: если refresh завис — отпускаем "Обновляю…"
+  // Safety-net: если UI залип на "Обновляю…" — отпускаем кнопку и показываем ошибку
   useEffect(() => {
-    if (!refreshing) {
-      refreshStartedAtRef.current = null
-      return
-    }
-    if (!refreshStartedAtRef.current) refreshStartedAtRef.current = Date.now()
-
+    if (!refreshing) return
+    const seq = refreshSeqRef.current
     const t = window.setTimeout(() => {
-      // Если всё ещё "крутится" — считаем, что зависло, и отпускаем UI.
-      refreshPendingRef.current = 0
+      if (refreshSeqRef.current !== seq) return
       setRefreshing(false)
-      setError('Обновление зависло. Нажми “Обновить данные” ещё раз.')
-    }, 15000)
-
+      setError('Обновление зависло. Обычно это сеть/таймаут. Нажми “Обновить данные” ещё раз.')
+    }, 25000)
     return () => window.clearTimeout(t)
   }, [refreshing])
 
@@ -1198,21 +1191,21 @@ const [editOpen, setEditOpen] = useState(false)
   }
 
   async function refreshAll() {
-    refreshPendingRef.current += 1
+    const seq = ++refreshSeqRef.current
     setRefreshing(true)
     setError(null)
     try {
+      // Раньше было последовательно (core -> schedule) и в сумме могло переваливать за safety-net.
+      // Параллелим: максимум = один таймаут fetch, а не два подряд.
       await Promise.all([refreshCore(), refreshSchedule()])
     } catch (e: any) {
       setError(e?.message || 'Ошибка загрузки')
     } finally {
-      refreshPendingRef.current = Math.max(0, refreshPendingRef.current - 1)
-      if (refreshPendingRef.current === 0) setRefreshing(false)
+      if (seq === refreshSeqRef.current) setRefreshing(false)
     }
   }
 
-
-async function boot() {
+  async function boot() {
   setError(null)
   setSessionLoading(true)
   try {
@@ -4195,7 +4188,6 @@ async function boot() {
     </main>
   )
 }
-
 
 
 
