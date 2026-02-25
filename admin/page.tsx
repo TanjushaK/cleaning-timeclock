@@ -925,23 +925,29 @@ export default function AdminPage() {
 
 
   const [busy, setBusy] = useState(false)
-  const [busySeq, setBusySeq] = useState(0)
-  const refreshSeqRef = useRef(0)
+  const [refreshing, setRefreshing] = useState(false)
+  const refreshPendingRef = useRef(0)
+  const refreshStartedAtRef = useRef<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
-  // Safety-net: если UI залип на "Обновляю…" — отпускаем кнопку и показываем ошибку
-  // Важно: учитываем "поколение" обновления, чтобы не стрелять в ногу при параллельных refresh.
+  // Safety-net: если refresh завис — отпускаем "Обновляю…"
   useEffect(() => {
-    if (!busy) return
-    const seq = busySeq
+    if (!refreshing) {
+      refreshStartedAtRef.current = null
+      return
+    }
+    if (!refreshStartedAtRef.current) refreshStartedAtRef.current = Date.now()
+
     const t = window.setTimeout(() => {
-      if (refreshSeqRef.current !== seq) return
-      setBusy(false)
-      setError('Обновление зависло. Обычно это сеть/таймаут. Нажми “Обновить данные” ещё раз.')
-    }, 25000)
+      // Если всё ещё "крутится" — считаем, что зависло, и отпускаем UI.
+      refreshPendingRef.current = 0
+      setRefreshing(false)
+      setError('Обновление зависло. Нажми “Обновить данные” ещё раз.')
+    }, 15000)
+
     return () => window.clearTimeout(t)
-  }, [busy, busySeq])
+  }, [refreshing])
 
   const [showArchivedSites, setShowArchivedSites] = useState(false)
 
@@ -1192,22 +1198,21 @@ const [editOpen, setEditOpen] = useState(false)
   }
 
   async function refreshAll() {
-    const seq = ++refreshSeqRef.current
-    setBusySeq(seq)
-    setBusy(true)
+    refreshPendingRef.current += 1
+    setRefreshing(true)
     setError(null)
     try {
-      // Раньше было последовательно (core -> schedule) и в сумме могло переваливать за safety-net.
-      // Параллелим: максимум = один таймаут fetch, а не два подряд.
       await Promise.all([refreshCore(), refreshSchedule()])
     } catch (e: any) {
       setError(e?.message || 'Ошибка загрузки')
     } finally {
-      if (seq === refreshSeqRef.current) setBusy(false)
+      refreshPendingRef.current = Math.max(0, refreshPendingRef.current - 1)
+      if (refreshPendingRef.current === 0) setRefreshing(false)
     }
   }
 
-  async function boot() {
+
+async function boot() {
   setError(null)
   setSessionLoading(true)
   try {
@@ -2567,15 +2572,15 @@ const [editOpen, setEditOpen] = useState(false)
           <div className="flex items-center gap-2">
             <button
               onClick={refreshAll}
-              disabled={busy}
+              disabled={busy || refreshing}
               className="rounded-xl border border-yellow-400/40 bg-black/40 px-4 py-2 text-sm text-yellow-100 transition hover:border-yellow-300/70 hover:bg-black/60 disabled:opacity-60"
             >
-              {busy ? 'Обновляю…' : 'Обновить данные'}
+              {refreshing ? 'Обновляю…' : 'Обновить данные'}
             </button>
 
             <button
               onClick={onLogout}
-              disabled={busy}
+              disabled={busy || refreshing}
               className="rounded-xl border border-yellow-400/25 bg-black/30 px-4 py-2 text-sm text-yellow-100/90 transition hover:border-yellow-300/60 hover:bg-black/50 disabled:opacity-60"
             >
               Выйти
