@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "@/lib/supabase";
 import { authFetchJson, clearAuthTokens, getAccessToken, setAuthTokens } from "@/lib/auth-fetch";
 import AppFooter from "@/app/_components/AppFooter";
+import { OutboxEvent, outboxAdd, outboxCount as outboxCountDb, outboxList, outboxRemove, outboxUpdate } from "@/lib/offline/outbox";
 
 type Profile = {
   id: string;
@@ -51,6 +52,16 @@ type MeJobsResponse = {
     accuracy_m?: number | null;
     worker_note?: string | null;
   }>;
+};
+
+type TeamResponse = {
+  teams: Record<
+    string,
+    Array<{
+      id: string;
+      name: string;
+    }>
+  >;
 };
 
 type MyPhotosResponse = {
@@ -144,6 +155,23 @@ async function getGpsOnce(): Promise<{ lat: number; lng: number; accuracy: numbe
   });
 }
 
+function newEventId(): string {
+  try {
+    if (typeof crypto !== "undefined" && "randomUUID" in crypto) return (crypto as any).randomUUID();
+  } catch {}
+  // fallback
+  const s4 = () => Math.floor((1 + Math.random()) * 0x10000).toString(16).slice(1);
+  return `${s4()}${s4()}-${s4()}-${s4()}-${s4()}-${s4()}${s4()}${s4()}`;
+}
+
+function isOfflineishError(e: any): boolean {
+  try {
+    if (typeof navigator !== "undefined" && navigator && navigator.onLine === false) return true;
+  } catch {}
+  const msg = String(e?.message || e || "");
+  return /Failed to fetch|NetworkError|Load failed|fetch failed|The network connection was lost/i.test(msg);
+}
+
 function isE164(phone: string) {
   return /^\+\d{8,15}$/.test(phone);
 }
@@ -184,6 +212,12 @@ export default function AppPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  const [offline, setOffline] = useState(false);
+  const [outboxN, setOutboxN] = useState(0);
+  const [outboxItems, setOutboxItems] = useState<OutboxEvent[]>([]);
+  const [teamByJob, setTeamByJob] = useState<TeamResponse["teams"]>({});
+  const [syncing, setSyncing] = useState(false);
+
   // onboarding + photos
   const [fullName, setFullName] = useState("");
   const [profileEmail, setProfileEmail] = useState("");
@@ -211,7 +245,19 @@ export default function AppPage() {
     setAvatarPath(data.avatar_path || null);
   }, [bearerHeaders]);
 
-  const loadAll = useCallback(async () => {
+  
+  const loadTeams = useCallback(async () => {
+    try {
+      const res = await authFetchJson<any>("/api/me/jobs/team", { cache: "no-store" });
+      const teams = (res && typeof res === "object" && res.teams && typeof res.teams === "object") ? (res.teams as TeamResponse["teams"]) : {};
+      setTeamByJob(teams || {});
+    } catch {
+      // offline or not available
+      setTeamByJob({});
+    }
+  }, []);
+
+const loadAll = useCallback(async () => {
     const profile = await authFetchJson<MeProfileResponse>("/api/me/profile", { cache: "no-store" });
     setMe(profile);
     setFullName(profile?.profile?.full_name || "");
@@ -226,7 +272,83 @@ export default function AppPage() {
         ? jobsRes.items
         : [];
     setJobs(Array.isArray(list) ? list : []);
-  }, [loadPhotos]);
+    await loadTeams().catch(() => {});
+  }, [loadPhotos, loadTeams]);
+
+  const refreshOutbox = useCallback(async () => {
+    try {
+      const items = await outboxList();
+      setOutboxItems(Array.isArray(items) ? items : []);
+      setOutboxN(Array.isArray(items) ? items.length : 0);
+    } catch {
+      setOutboxItems([]);
+      setOutboxN(0);
+    }
+  }, []);
+
+  const syncOutbox = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!token) return;
+      if (syncing) return;
+
+      const online = typeof navigator !== "undefined" ? navigator.onLine !== false : true;
+      if (!online) {
+        await refreshOutbox();
+        return;
+      }
+
+      setSyncing(true);
+      try {
+        const items = await outboxList();
+        if (!items.length) {
+          await refreshOutbox();
+          return;
+        }
+
+        let sentAny = false;
+
+        for (const ev of items) {
+          try {
+            const endpoint = ev.kind === "start" ? "/api/me/jobs/start" : "/api/me/jobs/stop";
+            const res = await authFetchJson<any>(endpoint, {
+              method: "POST",
+              body: JSON.stringify({
+                id: ev.job_id,
+                event_id: ev.event_id,
+                lat: ev.lat,
+                lng: ev.lng,
+                accuracy: ev.accuracy,
+              }),
+            });
+
+            if (res?.error) throw new Error(String(res.error));
+
+            await outboxRemove(ev.event_id);
+            sentAny = true;
+            await refreshOutbox();
+          } catch (e: any) {
+            if (isOfflineishError(e)) {
+              await outboxUpdate(ev.event_id, { tries: (ev.tries || 0) + 1, last_error: "offline" });
+              await refreshOutbox();
+              break;
+            }
+            const msg = String(e?.message || e || "Ошибка синхронизации");
+            await outboxUpdate(ev.event_id, { tries: (ev.tries || 0) + 1, last_error: msg });
+            await refreshOutbox();
+            if (!opts?.silent) setError(msg);
+            break;
+          }
+        }
+
+        if (sentAny) {
+          await loadAll().catch(() => {});
+        }
+      } finally {
+        setSyncing(false);
+      }
+    },
+    [loadAll, refreshOutbox, syncing, token]
+  );
 
   useEffect(() => {
     const t = getAccessToken();
@@ -252,6 +374,54 @@ export default function AppPage() {
       }
     })();
   }, [loadAll]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const updateOnline = () => setOffline(navigator.onLine === false);
+    window.addEventListener("online", updateOnline);
+    window.addEventListener("offline", updateOnline);
+    updateOnline();
+
+    return () => {
+      window.removeEventListener("online", updateOnline);
+      window.removeEventListener("offline", updateOnline);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!token) {
+      setOutboxN(0);
+      return;
+    }
+    refreshOutbox().catch(() => {});
+    if (typeof navigator !== "undefined" && navigator.onLine !== false) {
+      syncOutbox({ silent: true }).catch(() => {});
+    }
+  }, [refreshOutbox, syncOutbox, token]);
+
+  useEffect(() => {
+    if (!token) return;
+    if (typeof document === "undefined") return;
+
+    const onVis = () => {
+      if (!document.hidden && (typeof navigator === "undefined" || navigator.onLine !== false)) {
+        syncOutbox({ silent: true }).catch(() => {});
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+
+    const timer = window.setInterval(() => {
+      if (document.hidden) return;
+      if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+      syncOutbox({ silent: true }).catch(() => {});
+    }, 15000);
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.clearInterval(timer);
+    };
+  }, [syncOutbox, token]);
 
   const doLogout = useCallback(async () => {
     setBusy(true);
@@ -568,49 +738,116 @@ export default function AppPage() {
     }
   }, [loadAll]);
 
-    const doStart = useCallback(async (jobId: string) => {
-    setBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const gps = await getGpsOnce();
-      const res = await authFetchJson<any>("/api/me/jobs/start", {
-        method: "POST",
-        body: JSON.stringify({ id: jobId, ...gps }),
-      });
-      if (res?.error) throw new Error(String(res.error));
-      await loadAll();
-      setNotice("Старт.");
-    } catch (e: any) {
-      setError(String(e?.message || e));
-    } finally {
-      setBusy(false);
-    }
-  }, [loadAll]);
+    const doStart = useCallback(
+    async (jobId: string) => {
+      setBusy(true);
+      setError(null);
+      setNotice(null);
+      const event_id = newEventId();
+      let gps: { lat: number; lng: number; accuracy: number } | null = null;
 
-    const doStop = useCallback(async (jobId: string) => {
-    setBusy(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const gps = await getGpsOnce();
-      const res = await authFetchJson<any>("/api/me/jobs/stop", {
-        method: "POST",
-        body: JSON.stringify({ id: jobId, ...gps }),
-      });
-      if (res?.error) throw new Error(String(res.error));
-      await loadAll();
-      setNotice("Стоп.");
-    } catch (e: any) {
-      setError(String(e?.message || e));
-    } finally {
-      setBusy(false);
-    }
-  }, [loadAll]);
+      try {
+        gps = await getGpsOnce();
+        const res = await authFetchJson<any>("/api/me/jobs/start", {
+          method: "POST",
+          body: JSON.stringify({ id: jobId, event_id, ...gps }),
+        });
+        if (res?.error) throw new Error(String(res.error));
+        await loadAll();
+        setNotice("Старт.");
+        if (outboxN > 0) syncOutbox({ silent: true }).catch(() => {});
+      } catch (e: any) {
+        if (isOfflineishError(e)) {
+          try {
+            if (!gps) gps = await getGpsOnce();
+            await outboxAdd({
+              event_id,
+              kind: "start",
+              job_id: jobId,
+              lat: gps.lat,
+              lng: gps.lng,
+              accuracy: gps.accuracy,
+              created_at: Date.now(),
+              tries: 0,
+              last_error: null,
+            });
+            await refreshOutbox();
+            setJobs((prev) => prev.map((x) => (x.id === jobId ? { ...x, status: "in_progress" } : x)));
+            setNotice("Нет сети. Старт в очереди.");
+          } catch (e2: any) {
+            setError(String(e2?.message || e2));
+          }
+        } else {
+          setError(String(e?.message || e));
+        }
+      } finally {
+        setBusy(false);
+      }
+    },
+    [loadAll, outboxN, refreshOutbox, syncOutbox]
+  );
+
+    const doStop = useCallback(
+    async (jobId: string) => {
+      setBusy(true);
+      setError(null);
+      setNotice(null);
+      const event_id = newEventId();
+      let gps: { lat: number; lng: number; accuracy: number } | null = null;
+
+      try {
+        gps = await getGpsOnce();
+        const res = await authFetchJson<any>("/api/me/jobs/stop", {
+          method: "POST",
+          body: JSON.stringify({ id: jobId, event_id, ...gps }),
+        });
+        if (res?.error) throw new Error(String(res.error));
+        await loadAll();
+        setNotice("Стоп.");
+        if (outboxN > 0) syncOutbox({ silent: true }).catch(() => {});
+      } catch (e: any) {
+        if (isOfflineishError(e)) {
+          try {
+            if (!gps) gps = await getGpsOnce();
+            await outboxAdd({
+              event_id,
+              kind: "stop",
+              job_id: jobId,
+              lat: gps.lat,
+              lng: gps.lng,
+              accuracy: gps.accuracy,
+              created_at: Date.now(),
+              tries: 0,
+              last_error: null,
+            });
+            await refreshOutbox();
+            setJobs((prev) => prev.map((x) => (x.id === jobId ? { ...x, status: "done" } : x)));
+            setNotice("Нет сети. Стоп в очереди.");
+          } catch (e2: any) {
+            setError(String(e2?.message || e2));
+          }
+        } else {
+          setError(String(e?.message || e));
+        }
+      } finally {
+        setBusy(false);
+      }
+    },
+    [loadAll, outboxN, refreshOutbox, syncOutbox]
+  );
 
   const workerIsActive = Boolean(me?.profile?.active);
   const isAdmin = me?.profile?.role === "admin";
   const tempPassword = Boolean(me?.user?.temp_password);
+
+
+  const pendingByJob = useMemo(() => {
+    const m: Record<string, OutboxEvent> = {};
+    for (const ev of outboxItems) {
+      if (ev && ev.job_id) m[ev.job_id] = ev;
+    }
+    return m;
+  }, [outboxItems]);
 
   const jobsSorted = useMemo(() => {
     const xs = [...jobs];
@@ -641,6 +878,21 @@ export default function AppPage() {
     "shadow-[0_10px_30px_rgba(245,158,11,0.25)]",
     "disabled:opacity-50 disabled:cursor-not-allowed"
   );
+
+  const btnStartSolid = clsx(
+    "rounded-xl px-4 py-2 font-semibold",
+    "bg-red-600 text-white hover:bg-red-700",
+    "shadow-[0_10px_30px_rgba(220,38,38,0.25)]",
+    "disabled:opacity-50 disabled:cursor-not-allowed"
+  );
+
+  const btnStopSolid = clsx(
+    "rounded-xl px-4 py-2 font-semibold",
+    "bg-emerald-600 text-white hover:bg-emerald-700",
+    "shadow-[0_10px_30px_rgba(16,185,129,0.25)]",
+    "disabled:opacity-50 disabled:cursor-not-allowed"
+  );
+
   const input = clsx(
     "w-full rounded-xl px-3 py-2 bg-zinc-950/60",
     border,
@@ -683,10 +935,25 @@ export default function AppPage() {
           </div>
         </header>
 
-        {(error || notice) && (
+        {(error || notice || offline || outboxN > 0 || syncing) && (
           <div className={clsx("mt-4", card, "p-4")}>
             {error && <div className="text-sm text-red-300">{error}</div>}
             {notice && <div className="text-sm text-emerald-200">{notice}</div>}
+            {offline && <div className="mt-2 text-sm text-amber-200">Офлайн. Действия уйдут при появлении сети.</div>}
+            {(outboxN > 0 || syncing) && (
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <div className="text-sm text-amber-200">
+                  Очередь: {outboxN}{syncing ? " • синхронизация…" : ""}
+                </div>
+                <button
+                  className={clsx(btn, "px-3 py-1.5 text-sm")}
+                  onClick={() => syncOutbox()}
+                  disabled={busy || syncing || offline || outboxN <= 0}
+                >
+                  Синхронизировать
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -874,9 +1141,11 @@ export default function AppPage() {
                   <div className="text-sm opacity-70">Пока нет заданий.</div>
                 ) : (
                   jobsSorted.map((j) => {
-                    const planned = j.status === "planned";
-                    const inProg = j.status === "in_progress";
-                    const done = j.status === "done";
+                    const pending = pendingByJob[j.id];
+                    const effStatus = pending ? (pending.kind === "start" ? "in_progress" : pending.kind === "stop" ? "done" : j.status) : j.status;
+                    const planned = effStatus === "planned";
+                    const inProg = effStatus === "in_progress";
+                    const done = effStatus === "done";
 
                     return (
                       <div key={j.id} className={clsx("rounded-2xl p-4", border, "bg-zinc-950/60")}>
@@ -909,11 +1178,22 @@ export default function AppPage() {
 
                             <div>
                               <div className="text-sm font-semibold">
-                                {formatDateRu(j.job_date)} • {formatTimeRu(j.scheduled_time)} • <span className={gold}>{statusRu(j.status)}</span>
+                                {formatDateRu(j.job_date)} • {formatTimeRu(j.scheduled_time)} • <span className={gold}>{statusRu(effStatus)}</span>
                               </div>
                               <div className="text-xs opacity-70 mt-1">
                                 {j.site_name || "Объект"} — {j.site_address || "—"}
                               </div>
+                              {(() => {
+                                const xs = teamByJob?.[j.id] || [];
+                                const myId = me?.user?.id || "";
+                                const others = xs.filter((x) => x && x.id && x.id !== myId);
+                                const line = others.map((x) => x.name).filter(Boolean).join(", ");
+                                return line ? (
+                                  <div className="text-xs opacity-70 mt-1">
+                                    Смена вместе с: <span className="text-amber-100">{line}</span>
+                                  </div>
+                                ) : null;
+                              })()}
                               <div className="mt-2">
                                 <button
                                   type="button"
@@ -933,13 +1213,13 @@ export default function AppPage() {
                               </button>
                             )}
                             {inProg && (
-                              <button className={btnSolid} onClick={() => doStop(j.id)} disabled={busy}>
-                                Стоп
+                              <button className={btnStopSolid} onClick={() => doStop(j.id)} disabled={busy}>
+                                {pending && pending.kind === "stop" ? "Стоп (в очереди)" : "Стоп"}
                               </button>
                             )}
                             {planned && !Boolean(j.can_accept) && (
-                              <button className={btn} onClick={() => doStart(j.id)} disabled={busy}>
-                                Старт
+                              <button className={btnStartSolid} onClick={() => doStart(j.id)} disabled={busy}>
+                                {pending && pending.kind === "start" ? "Старт (в очереди)" : "Старт"}
                               </button>
                             )}
                           </div>
