@@ -927,6 +927,7 @@ export default function AdminPage() {
   const [busy, setBusy] = useState(false)
   const [busySeq, setBusySeq] = useState(0)
   const refreshSeqRef = useRef(0)
+  const busyStartRef = useRef<number>(0)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
@@ -941,6 +942,24 @@ export default function AdminPage() {
       setError('Обновление зависло. Обычно это сеть/таймаут. Нажми “Обновить данные” ещё раз.')
     }, 25000)
     return () => window.clearTimeout(t)
+  }, [busy, busySeq])
+
+
+  // Guard: иногда спиннер "Обновляю…" может залипнуть после деплоя/кэша.
+  // Если сетевых запросов уже нет — отпускаем busy, чтобы UI не выглядел "вечным".
+  useEffect(() => {
+    if (!busy) return
+    const seq = busySeq
+    const t = window.setInterval(() => {
+      if (refreshSeqRef.current !== seq) return
+      const inflight = (window as any).__ct_inflight ?? 0
+      const elapsed = Date.now() - (busyStartRef.current || 0)
+      if (inflight <= 0 && elapsed > 1200) {
+        setBusy(false)
+        window.clearInterval(t)
+      }
+    }, 500)
+    return () => window.clearInterval(t)
   }, [busy, busySeq])
 
   const [showArchivedSites, setShowArchivedSites] = useState(false)
@@ -1196,6 +1215,7 @@ const [editOpen, setEditOpen] = useState(false)
   async function refreshAll() {
     const seq = ++refreshSeqRef.current
     setBusySeq(seq)
+    busyStartRef.current = Date.now()
     setBusy(true)
     setError(null)
     try {
