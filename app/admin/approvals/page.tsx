@@ -335,7 +335,7 @@ export default function AdminApprovalsPage() {
                           <div className="text-sm font-semibold">{w.full_name || '—'}</div>
                           <div className="text-xs text-amber-200/70 mt-1">
                             {w.phone ? `📞 ${w.phone}` : ''} {w.email ? ` • ✉️ ${w.email}` : ''}{' '}
-                            {w.email ? (w.email_confirmed_at ? ' • email OK' : ' • email НЕ подтверждён') : ''}
+                            {w.email ? (w.email_confirmed_at ? ' • email подтверждён' : ' • email НЕ подтверждён') : ''}
                           </div>
                           <div className="text-xs text-amber-200/60 mt-1">Заявка: {fmtDT(w.onboarding_submitted_at)}</div>
                           <div className="text-[10px] text-amber-200/40 mt-1">ID: {w.id}</div>
@@ -347,7 +347,7 @@ export default function AdminApprovalsPage() {
                           Активировать
                         </button>
                         <button className={BTN} disabled={busy} onClick={() => activate(w.id, true)}>
-                          Force
+                          Принудительно
                         </button>
                       </div>
                     </div>

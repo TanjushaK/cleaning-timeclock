@@ -1,7 +1,9 @@
-﻿"use client";
+"use client";
+
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 
 export type Lang = "uk" | "ru";
+
 type Dict = Record<string, string>;
 
 const DICTS: Record<Lang, Dict> = {
@@ -53,8 +55,6 @@ function detectInitialLang(): Lang {
   if (typeof window === "undefined") return "uk";
   const saved = window.localStorage.getItem("ct_lang");
   if (saved === "uk" || saved === "ru") return saved;
-  const nav = String(navigator.language || "").toLowerCase();
-  if (nav.startsWith("ru")) return "ru";
   return "uk";
 }
 
@@ -65,9 +65,20 @@ export default function I18nProvider({ children }: { children: React.ReactNode }
     setLangState(detectInitialLang());
   }, []);
 
+  useEffect(() => {
+    try {
+      document.documentElement.lang = lang;
+    } catch {}
+  }, [lang]);
+
   const setLang = (l: Lang) => {
     setLangState(l);
-    try { window.localStorage.setItem("ct_lang", l); } catch {}
+    try {
+      window.localStorage.setItem("ct_lang", l);
+    } catch {}
+    try {
+      document.documentElement.lang = l;
+    } catch {}
   };
 
   const t = useMemo(() => {
@@ -88,7 +99,7 @@ export function useI18n() {
     return {
       lang: "uk" as Lang,
       setLang: (_l: Lang) => {},
-      t: (k: string) => (DICTS.uk[k] ?? k),
+      t: (k: string) => DICTS.uk[k] ?? k,
     };
   }
   return ctx;
