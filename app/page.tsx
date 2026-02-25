@@ -4,7 +4,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "@/lib/supabase";
 import { authFetchJson, clearAuthTokens, getAccessToken, setAuthTokens } from "@/lib/auth-fetch";
 import AppFooter from "@/app/_components/AppFooter";
-import { outboxAdd, outboxCount as outboxCountDb, outboxList, outboxRemove, outboxUpdate } from "@/lib/offline/outbox";
 
 type Profile = {
   id: string;
@@ -145,23 +144,6 @@ async function getGpsOnce(): Promise<{ lat: number; lng: number; accuracy: numbe
   });
 }
 
-function newEventId(): string {
-  try {
-    if (typeof crypto !== "undefined" && "randomUUID" in crypto) return (crypto as any).randomUUID();
-  } catch {}
-  // fallback
-  const s4 = () => Math.floor((1 + Math.random()) * 0x10000).toString(16).slice(1);
-  return `${s4()}${s4()}-${s4()}-${s4()}-${s4()}-${s4()}${s4()}${s4()}`;
-}
-
-function isOfflineishError(e: any): boolean {
-  try {
-    if (typeof navigator !== "undefined" && navigator && navigator.onLine === false) return true;
-  } catch {}
-  const msg = String(e?.message || e || "");
-  return /Failed to fetch|NetworkError|Load failed|fetch failed|The network connection was lost/i.test(msg);
-}
-
 function isE164(phone: string) {
   return /^\+\d{8,15}$/.test(phone);
 }
@@ -201,10 +183,6 @@ export default function AppPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-
-  const [offline, setOffline] = useState(false);
-  const [outboxN, setOutboxN] = useState(0);
-  const [syncing, setSyncing] = useState(false);
 
   // onboarding + photos
   const [fullName, setFullName] = useState("");
@@ -250,79 +228,6 @@ export default function AppPage() {
     setJobs(Array.isArray(list) ? list : []);
   }, [loadPhotos]);
 
-  const refreshOutbox = useCallback(async () => {
-    try {
-      const n = await outboxCountDb();
-      setOutboxN(Number.isFinite(n) ? n : 0);
-    } catch {
-      setOutboxN(0);
-    }
-  }, []);
-
-  const syncOutbox = useCallback(
-    async (opts?: { silent?: boolean }) => {
-      if (!token) return;
-      if (syncing) return;
-
-      const online = typeof navigator !== "undefined" ? navigator.onLine !== false : true;
-      if (!online) {
-        await refreshOutbox();
-        return;
-      }
-
-      setSyncing(true);
-      try {
-        const items = await outboxList();
-        if (!items.length) {
-          await refreshOutbox();
-          return;
-        }
-
-        let sentAny = false;
-
-        for (const ev of items) {
-          try {
-            const endpoint = ev.kind === "start" ? "/api/me/jobs/start" : "/api/me/jobs/stop";
-            const res = await authFetchJson<any>(endpoint, {
-              method: "POST",
-              body: JSON.stringify({
-                id: ev.job_id,
-                event_id: ev.event_id,
-                lat: ev.lat,
-                lng: ev.lng,
-                accuracy: ev.accuracy,
-              }),
-            });
-
-            if (res?.error) throw new Error(String(res.error));
-
-            await outboxRemove(ev.event_id);
-            sentAny = true;
-            await refreshOutbox();
-          } catch (e: any) {
-            if (isOfflineishError(e)) {
-              await outboxUpdate(ev.event_id, { tries: (ev.tries || 0) + 1, last_error: "offline" });
-              await refreshOutbox();
-              break;
-            }
-            const msg = String(e?.message || e || "Ошибка синхронизации");
-            await outboxUpdate(ev.event_id, { tries: (ev.tries || 0) + 1, last_error: msg });
-            await refreshOutbox();
-            if (!opts?.silent) setError(msg);
-            break;
-          }
-        }
-
-        if (sentAny) {
-          await loadAll().catch(() => {});
-        }
-      } finally {
-        setSyncing(false);
-      }
-    },
-    [loadAll, refreshOutbox, syncing, token]
-  );
-
   useEffect(() => {
     const t = getAccessToken();
     setToken(t);
@@ -347,54 +252,6 @@ export default function AppPage() {
       }
     })();
   }, [loadAll]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const updateOnline = () => setOffline(navigator.onLine === false);
-    window.addEventListener("online", updateOnline);
-    window.addEventListener("offline", updateOnline);
-    updateOnline();
-
-    return () => {
-      window.removeEventListener("online", updateOnline);
-      window.removeEventListener("offline", updateOnline);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!token) {
-      setOutboxN(0);
-      return;
-    }
-    refreshOutbox().catch(() => {});
-    if (typeof navigator !== "undefined" && navigator.onLine !== false) {
-      syncOutbox({ silent: true }).catch(() => {});
-    }
-  }, [refreshOutbox, syncOutbox, token]);
-
-  useEffect(() => {
-    if (!token) return;
-    if (typeof document === "undefined") return;
-
-    const onVis = () => {
-      if (!document.hidden && (typeof navigator === "undefined" || navigator.onLine !== false)) {
-        syncOutbox({ silent: true }).catch(() => {});
-      }
-    };
-    document.addEventListener("visibilitychange", onVis);
-
-    const timer = window.setInterval(() => {
-      if (document.hidden) return;
-      if (typeof navigator !== "undefined" && navigator.onLine === false) return;
-      syncOutbox({ silent: true }).catch(() => {});
-    }, 15000);
-
-    return () => {
-      document.removeEventListener("visibilitychange", onVis);
-      window.clearInterval(timer);
-    };
-  }, [syncOutbox, token]);
 
   const doLogout = useCallback(async () => {
     setBusy(true);
@@ -711,101 +568,45 @@ export default function AppPage() {
     }
   }, [loadAll]);
 
-    const doStart = useCallback(
-    async (jobId: string) => {
-      setBusy(true);
-      setError(null);
-      setNotice(null);
-      const event_id = newEventId();
-      let gps: { lat: number; lng: number; accuracy: number } | null = null;
+    const doStart = useCallback(async (jobId: string) => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const gps = await getGpsOnce();
+      const res = await authFetchJson<any>("/api/me/jobs/start", {
+        method: "POST",
+        body: JSON.stringify({ id: jobId, ...gps }),
+      });
+      if (res?.error) throw new Error(String(res.error));
+      await loadAll();
+      setNotice("Старт.");
+    } catch (e: any) {
+      setError(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  }, [loadAll]);
 
-      try {
-        gps = await getGpsOnce();
-        const res = await authFetchJson<any>("/api/me/jobs/start", {
-          method: "POST",
-          body: JSON.stringify({ id: jobId, event_id, ...gps }),
-        });
-        if (res?.error) throw new Error(String(res.error));
-        await loadAll();
-        setNotice("Старт.");
-        if (outboxN > 0) syncOutbox({ silent: true }).catch(() => {});
-      } catch (e: any) {
-        if (isOfflineishError(e)) {
-          try {
-            if (!gps) gps = await getGpsOnce();
-            await outboxAdd({
-              event_id,
-              kind: "start",
-              job_id: jobId,
-              lat: gps.lat,
-              lng: gps.lng,
-              accuracy: gps.accuracy,
-              created_at: new Date().toISOString(),
-              tries: 0,
-              last_error: null,
-            });
-            await refreshOutbox();
-            setNotice("Нет сети. Старт в очереди.");
-          } catch (e2: any) {
-            setError(String(e2?.message || e2));
-          }
-        } else {
-          setError(String(e?.message || e));
-        }
-      } finally {
-        setBusy(false);
-      }
-    },
-    [loadAll, outboxN, refreshOutbox, syncOutbox]
-  );
-
-    const doStop = useCallback(
-    async (jobId: string) => {
-      setBusy(true);
-      setError(null);
-      setNotice(null);
-      const event_id = newEventId();
-      let gps: { lat: number; lng: number; accuracy: number } | null = null;
-
-      try {
-        gps = await getGpsOnce();
-        const res = await authFetchJson<any>("/api/me/jobs/stop", {
-          method: "POST",
-          body: JSON.stringify({ id: jobId, event_id, ...gps }),
-        });
-        if (res?.error) throw new Error(String(res.error));
-        await loadAll();
-        setNotice("Стоп.");
-        if (outboxN > 0) syncOutbox({ silent: true }).catch(() => {});
-      } catch (e: any) {
-        if (isOfflineishError(e)) {
-          try {
-            if (!gps) gps = await getGpsOnce();
-            await outboxAdd({
-              event_id,
-              kind: "stop",
-              job_id: jobId,
-              lat: gps.lat,
-              lng: gps.lng,
-              accuracy: gps.accuracy,
-              created_at: new Date().toISOString(),
-              tries: 0,
-              last_error: null,
-            });
-            await refreshOutbox();
-            setNotice("Нет сети. Стоп в очереди.");
-          } catch (e2: any) {
-            setError(String(e2?.message || e2));
-          }
-        } else {
-          setError(String(e?.message || e));
-        }
-      } finally {
-        setBusy(false);
-      }
-    },
-    [loadAll, outboxN, refreshOutbox, syncOutbox]
-  );
+    const doStop = useCallback(async (jobId: string) => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const gps = await getGpsOnce();
+      const res = await authFetchJson<any>("/api/me/jobs/stop", {
+        method: "POST",
+        body: JSON.stringify({ id: jobId, ...gps }),
+      });
+      if (res?.error) throw new Error(String(res.error));
+      await loadAll();
+      setNotice("Стоп.");
+    } catch (e: any) {
+      setError(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  }, [loadAll]);
 
   const workerIsActive = Boolean(me?.profile?.active);
   const isAdmin = me?.profile?.role === "admin";
@@ -882,25 +683,10 @@ export default function AppPage() {
           </div>
         </header>
 
-        {(error || notice || offline || outboxN > 0 || syncing) && (
+        {(error || notice) && (
           <div className={clsx("mt-4", card, "p-4")}>
             {error && <div className="text-sm text-red-300">{error}</div>}
             {notice && <div className="text-sm text-emerald-200">{notice}</div>}
-            {offline && <div className="mt-2 text-sm text-amber-200">Офлайн. Действия уйдут при появлении сети.</div>}
-            {(outboxN > 0 || syncing) && (
-              <div className="mt-2 flex items-center justify-between gap-3">
-                <div className="text-sm text-amber-200">
-                  Очередь: {outboxN}{syncing ? " • синхронизация…" : ""}
-                </div>
-                <button
-                  className={clsx(btn, "px-3 py-1.5 text-sm")}
-                  onClick={() => syncOutbox()}
-                  disabled={busy || syncing || offline || outboxN <= 0}
-                >
-                  Синхронизировать
-                </button>
-              </div>
-            )}
           </div>
         )}
 
