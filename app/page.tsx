@@ -265,6 +265,14 @@ const loadAll = useCallback(async () => {
 
     await loadPhotos().catch(() => {});
 
+    const role = String(profile?.profile?.role || "");
+    const isActive = Boolean((profile as any)?.profile?.active);
+    if (role !== "worker" || !isActive) {
+      setJobs([]);
+      setTeamByJob({});
+      return;
+    }
+
     const jobsRes = await authFetchJson<any>("/api/me/jobs", { cache: "no-store" });
     const list = Array.isArray(jobsRes?.jobs)
       ? jobsRes.jobs
@@ -297,13 +305,14 @@ const loadAll = useCallback(async () => {
         return;
       }
 
+      const items = await outboxList();
+      if (!items.length) {
+        await refreshOutbox();
+        return;
+      }
+
       setSyncing(true);
       try {
-        const items = await outboxList();
-        if (!items.length) {
-          await refreshOutbox();
-          return;
-        }
 
         let sentAny = false;
 
@@ -405,6 +414,7 @@ const loadAll = useCallback(async () => {
     if (typeof document === "undefined") return;
 
     const onVis = () => {
+      if (outboxN <= 0) return;
       if (!document.hidden && (typeof navigator === "undefined" || navigator.onLine !== false)) {
         syncOutbox({ silent: true }).catch(() => {});
       }
@@ -412,6 +422,7 @@ const loadAll = useCallback(async () => {
     document.addEventListener("visibilitychange", onVis);
 
     const timer = window.setInterval(() => {
+      if (outboxN <= 0) return;
       if (document.hidden) return;
       if (typeof navigator !== "undefined" && navigator.onLine === false) return;
       syncOutbox({ silent: true }).catch(() => {});
@@ -421,7 +432,7 @@ const loadAll = useCallback(async () => {
       document.removeEventListener("visibilitychange", onVis);
       window.clearInterval(timer);
     };
-  }, [syncOutbox, token]);
+  }, [syncOutbox, token, outboxN]);
 
   const doLogout = useCallback(async () => {
     setBusy(true);
@@ -943,12 +954,12 @@ const loadAll = useCallback(async () => {
             {(outboxN > 0 || syncing) && (
               <div className="mt-2 flex items-center justify-between gap-3">
                 <div className="text-sm text-amber-200">
-                  Очередь: {outboxN}{syncing ? " • синхронизация…" : ""}
+                  Очередь: {outboxN}{syncing && outboxN > 0 ? " • синхронизация…" : ""}
                 </div>
                 <button
-                  className={clsx(btn, "px-3 py-1.5 text-sm")}
-                  onClick={() => syncOutbox()}
+                  className={clsx(btn, "px-3 py-1.5 text-sm", (busy || syncing || offline || outboxN <= 0) && "opacity-50 cursor-not-allowed")}
                   disabled={busy || syncing || offline || outboxN <= 0}
+                  onClick={() => syncOutbox()}
                 >
                   Синхронизировать
                 </button>
