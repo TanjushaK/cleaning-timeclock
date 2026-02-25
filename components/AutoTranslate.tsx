@@ -3,11 +3,35 @@
 import { useEffect, useMemo } from "react";
 import { useI18n } from "./I18nProvider";
 
-type Map = Record<string, string>;
+type Dict = Record<string, string>;
 
 type Rule = { re: RegExp; replace: string };
 
-const RU_TO_UK_PHRASES: Map = {
+const ORIG_TEXT = new WeakMap<Node, string>();
+const ORIG_ATTRS = new WeakMap<Element, Map<string, string>>();
+
+function getOrigText(node: Node): string {
+  const cur = String(node.nodeValue ?? "");
+  const prev = ORIG_TEXT.get(node);
+  if (prev !== undefined) return prev;
+  ORIG_TEXT.set(node, cur);
+  return cur;
+}
+
+function getOrigAttr(el: Element, attr: string, cur: string): string {
+  let m = ORIG_ATTRS.get(el);
+  if (!m) {
+    m = new Map<string, string>();
+    ORIG_ATTRS.set(el, m);
+  }
+  const prev = m.get(attr);
+  if (prev !== undefined) return prev;
+  m.set(attr, cur);
+  return cur;
+}
+
+
+const RU_TO_UK_PHRASES: Dict = {
   // базовые
   "Чисто. Чётко. По времени.": "Чисто. Чітко. Вчасно.",
   "Загрузка…": "Завантаження…",
@@ -159,7 +183,7 @@ const RU_TO_UK_PHRASES: Map = {
   "Сессия истекла. Войдите снова.": "Сесія закінчилась. Увійдіть знову.",
 };
 
-const RU_TO_UK_WORDS: Map = {
+const RU_TO_UK_WORDS: Dict = {
   "Админ": "Адмін",
   "админ": "адмін",
   "Активен": "Активний",
@@ -260,16 +284,16 @@ const RU_TO_UK_PATTERNS: Rule[] = [
   { re: /^(\d+)м$/g, replace: "$1хв" },
 ];
 
-function reverseMap(map: Map): Map {
-  const out: Map = {};
+function reverseMap(map: Dict): Dict {
+  const out: Dict = {};
   for (const [k, v] of Object.entries(map)) {
     if (!out[v]) out[v] = k;
   }
   return out;
 }
 
-const UK_TO_RU_PHRASES: Map = reverseMap(RU_TO_UK_PHRASES);
-const UK_TO_RU_WORDS: Map = reverseMap(RU_TO_UK_WORDS);
+const UK_TO_RU_PHRASES: Dict = reverseMap(RU_TO_UK_PHRASES);
+const UK_TO_RU_WORDS: Dict = reverseMap(RU_TO_UK_WORDS);
 
 const UK_TO_RU_PATTERNS: Rule[] = [
   { re: /\bНе вдалося\b/g, replace: "Не удалось" },
@@ -286,7 +310,7 @@ const UK_TO_RU_PATTERNS: Rule[] = [
   { re: /^(\d+)хв$/g, replace: "$1м" },
 ];
 
-function replaceExactWithSpaces(src: string, map: Map): string {
+function replaceExactWithSpaces(src: string, map: Dict): string {
   const trimmed = src.trim();
   const hit = map[trimmed];
   if (!hit) return src;
@@ -297,7 +321,7 @@ function replaceExactWithSpaces(src: string, map: Map): string {
 
 const TOKEN_RE = /[A-Za-zА-Яа-яЁёІіЇїЄє]+/g;
 
-function translateFreeText(src: string, phrases: Map, words: Map, rules: Rule[]): string {
+function translateFreeText(src: string, phrases: Dict, words: Dict, rules: Rule[]): string {
   // exact phrase first
   const exact = replaceExactWithSpaces(src, phrases);
   if (exact !== src) return exact;
@@ -315,45 +339,39 @@ function translateFreeText(src: string, phrases: Map, words: Map, rules: Rule[])
   return lead + core + tail;
 }
 
-function translateTextNodes(root: HTMLElement, phrases: Map, words: Map, rules: Rule[]) {
+function translateTextNodes(root: HTMLElement, lang: "uk" | "ru", phrases: Dict, words: Dict, rules: Rule[]) {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   let node: Node | null = walker.nextNode();
   while (node) {
     const parent = (node as any).parentElement as HTMLElement | null;
     if (parent && !["SCRIPT", "STYLE", "NOSCRIPT"].includes(parent.tagName)) {
-      const v = String(node.nodeValue ?? "");
-      const nv = translateFreeText(v, phrases, words, rules);
-      if (nv !== v) node.nodeValue = nv;
+      const base = getOrigText(node);
+      const target = lang === "uk" ? translateFreeText(base, phrases, words, rules) : base;
+      const cur = String(node.nodeValue ?? "");
+      if (target !== cur) node.nodeValue = target;
     }
     node = walker.nextNode();
   }
 }
 
-function translateAttributes(root: HTMLElement, phrases: Map, words: Map, rules: Rule[]) {
+function translateAttributes(root: HTMLElement, lang: "uk" | "ru", phrases: Dict, words: Dict, rules: Rule[]) {
   const attrs = ["placeholder", "title", "aria-label", "alt"]; // value НЕ трогаем
   const all = root.querySelectorAll<HTMLElement>("*");
   for (const el of Array.from(all)) {
     for (const a of attrs) {
-      const v = el.getAttribute(a);
-      if (!v) continue;
-      const nv = translateFreeText(v, phrases, words, rules);
-      if (nv !== v) el.setAttribute(a, nv);
+      const cur = el.getAttribute(a);
+      if (!cur) continue;
+      const base = getOrigAttr(el, a, cur);
+      const target = lang === "uk" ? translateFreeText(base, phrases, words, rules) : base;
+      if (target !== cur) el.setAttribute(a, target);
     }
   }
 }
 
 function applyTranslation(lang: "uk" | "ru") {
   const root = document.body as HTMLElement;
-
-  // baseline -> RU
-  translateTextNodes(root, UK_TO_RU_PHRASES, UK_TO_RU_WORDS, UK_TO_RU_PATTERNS);
-  translateAttributes(root, UK_TO_RU_PHRASES, UK_TO_RU_WORDS, UK_TO_RU_PATTERNS);
-
-  // target -> UK
-  if (lang === "uk") {
-    translateTextNodes(root, RU_TO_UK_PHRASES, RU_TO_UK_WORDS, RU_TO_UK_PATTERNS);
-    translateAttributes(root, RU_TO_UK_PHRASES, RU_TO_UK_WORDS, RU_TO_UK_PATTERNS);
-  }
+  translateTextNodes(root, lang, RU_TO_UK_PHRASES, RU_TO_UK_WORDS, RU_TO_UK_PATTERNS);
+  translateAttributes(root, lang, RU_TO_UK_PHRASES, RU_TO_UK_WORDS, RU_TO_UK_PATTERNS);
 }
 
 export default function AutoTranslate() {
