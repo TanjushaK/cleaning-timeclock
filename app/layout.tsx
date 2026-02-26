@@ -6,6 +6,7 @@ import './app-theme.css'
 import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import ClientSessionWarmup from '@/lib/client-session-warmup'
+import SWRegister from "@/app/sw-register"
 
 const inter = Inter({ subsets: ['latin', 'cyrillic'], weight: ['400', '500', '600', '700'] })
 
@@ -28,9 +29,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ru">
       <body className={inter.className}>
         <ClientSessionWarmup />
+        <SWRegister />
         <I18nProvider><LanguageSwitch /><AutoTranslate />{children}</I18nProvider>
       </body>
     </html>
   )
 }
-
