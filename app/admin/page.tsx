@@ -660,30 +660,30 @@ function ReportsPanel() {
           </div>
         </div>
   
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
           <button
             type="button"
             onClick={() => setReportPickerOpen(true)}
-            className="rounded-2xl border border-yellow-400/25 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/50"
+            className="w-full sm:w-auto rounded-2xl border border-yellow-400/25 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/50"
           >
             Выбрать период
           </button>
 
           <a
             href="/admin/fact"
-            className="rounded-2xl border border-yellow-400/25 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/50"
+            className="w-full sm:w-auto rounded-2xl border border-yellow-400/25 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/50"
           >
             Правка факта
           </a>
 
 <a
-  className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10"
+  className="w-full sm:w-auto rounded-2xl border border-yellow-400/25 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/50"
   href="/admin/approvals"
 >
   Активации
 </a>
 			
-          <div className="flex items-center gap-2 rounded-2xl border border-yellow-400/10 bg-black/25 p-1">
+          <div className="flex w-full sm:w-auto items-center gap-2 rounded-2xl border border-yellow-400/10 bg-black/25 p-1">
             <button
               type="button"
               onClick={() => setReportsView('workers')}
@@ -750,7 +750,7 @@ function ReportsPanel() {
             return (
               <div
                 key={id}
-                className="flex items-center justify-between gap-3 border-b border-yellow-400/5 px-4 py-3 last:border-b-0"
+                className="flex flex-col gap-3 border-b border-yellow-400/5 px-4 py-3 last:border-b-0 sm:flex-row sm:items-center sm:justify-between"
               >
                 <div className="flex items-center gap-3">
                   <div className="relative h-10 w-10 overflow-hidden rounded-2xl border border-yellow-400/15 bg-black/40">
@@ -769,14 +769,14 @@ function ReportsPanel() {
                   </div>
                 </div>
   
-                <div className="flex items-center gap-2">
-                <div className="shrink-0 rounded-2xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-sm font-semibold text-yellow-100">
+                <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center">
+                <div className="w-full shrink-0 rounded-2xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-center text-sm font-semibold text-yellow-100 sm:w-auto">
                   {fmtMinutesHM(Number(x.minutes) || 0)}
                 </div>
                 {reportsView === 'workers' ? (
                   <a
                     href={`/admin/hours?worker_id=${encodeURIComponent(id)}&from=${encodeURIComponent(reportFrom)}&to=${encodeURIComponent(reportTo)}`}
-                    className="rounded-2xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/40"
+                    className="w-full rounded-2xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-center text-xs font-semibold text-zinc-200 hover:border-yellow-300/40 sm:w-auto"
                     title="Открыть часы"
                   >
                     Открыть часы
@@ -810,7 +810,7 @@ function ReportsPanel() {
           </div>
   
           <div className="px-5 pt-4">
-            <div className="flex items-center gap-2 rounded-2xl border border-yellow-400/10 bg-black/25 p-1">
+            <div className="flex w-full sm:w-auto items-center gap-2 rounded-2xl border border-yellow-400/10 bg-black/25 p-1">
               <button
                 type="button"
                 onClick={() => setReportPickerTab('payroll')}
@@ -2139,7 +2139,7 @@ const [editOpen, setEditOpen] = useState(false)
   function PlanToolbar() {
     return (
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-yellow-400/15 bg-black/20 p-4">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
           <button
             onClick={() => {
               setPlanView('day')
@@ -2199,7 +2199,7 @@ const [editOpen, setEditOpen] = useState(false)
           </button>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
           <label className="grid gap-1">
             <span className="text-[11px] text-zinc-300">Дата</span>
             <input
@@ -2773,7 +2773,7 @@ const [editOpen, setEditOpen] = useState(false)
                                     </div>
 
                                     <div className="min-w-0 flex-1">
-                                      <div className="flex flex-wrap items-center gap-2">
+                                      <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
                                         <button
                                           onClick={() => openSiteCard(s)}
                                           className="truncate text-left text-base font-semibold text-yellow-100 hover:underline"
@@ -3690,7 +3690,7 @@ const [editOpen, setEditOpen] = useState(false)
                               <td className="px-4 py-3">{fmtD(j.job_date)}</td>
                               <td className="px-4 py-3">{timeRangeHHMM(j.scheduled_time, j.scheduled_end_time)}</td>
                               <td className="px-4 py-3">
-                                <div className="flex items-center gap-2">
+                                <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center">
                                   {(() => {
                                     const ss = j.site_id ? sitesById.get(j.site_id) : null
                                     const photos = ss && Array.isArray((ss as any).photos) ? ((ss as any).photos as any[]) : []

@@ -105,6 +105,17 @@ function formatDateTimeRu(iso: string | null | undefined) {
   return `${dd}-${mm}-${yyyy} ${hh}:${mi}`;
 }
 
+function formatHMS(ms: number) {
+  const total = Math.max(0, Math.floor((ms || 0) / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const sec = total % 60;
+  const hh = String(h).padStart(2, '0');
+  const mm = String(m).padStart(2, '0');
+  const ss = String(sec).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
+}
+
 function statusRu(s: string | null | undefined) {
   const v = String(s || "").toLowerCase();
   if (v === "planned") return "запланировано";
@@ -218,6 +229,9 @@ export default function AppPage() {
   const [teamByJob, setTeamByJob] = useState<TeamResponse["teams"]>({});
   const [syncing, setSyncing] = useState(false);
 
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  const [localStartMs, setLocalStartMs] = useState<Record<string, number>>({});
+
   // onboarding + photos
   const [fullName, setFullName] = useState("");
   const [profileEmail, setProfileEmail] = useState("");
@@ -226,6 +240,12 @@ export default function AppPage() {
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const authed = !!token;
+
+  useEffect(() => {
+    if (!authed) return;
+    const t = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [authed]);
 
   const bearerHeaders = useCallback((): Record<string, string> => {
     const t = getAccessToken();
@@ -280,6 +300,23 @@ const loadAll = useCallback(async () => {
         ? jobsRes.items
         : [];
     setJobs(Array.isArray(list) ? list : []);
+
+    setLocalStartMs((prev) => {
+      const next: Record<string, number> = { ...prev };
+      const arr = Array.isArray(list) ? list : [];
+      const ids = new Set(arr.map((x: any) => x?.id).filter(Boolean));
+      for (const id of Object.keys(next)) {
+        if (!ids.has(id)) delete next[id];
+      }
+      for (const j of arr as any[]) {
+        if (!j || !j.id) continue;
+        if (j.started_at || j.stopped_at) {
+          delete next[j.id];
+        }
+      }
+      return next;
+    });
+
     await loadTeams().catch(() => {});
   }, [loadPhotos, loadTeams]);
 
@@ -749,12 +786,23 @@ const loadAll = useCallback(async () => {
     }
   }, [loadAll]);
 
-    const doStart = useCallback(
+  const doStart = useCallback(
     async (jobId: string) => {
       setBusy(true);
       setError(null);
       setNotice(null);
       const event_id = newEventId();
+
+      const startedLocal = Date.now();
+      setLocalStartMs((p) => ({ ...p, [jobId]: startedLocal }));
+      setJobs((prev) =>
+        prev.map((x) =>
+          x.id === jobId
+            ? { ...x, status: "in_progress", started_at: x.started_at ?? new Date(startedLocal).toISOString() }
+            : x
+        )
+      );
+
       let gps: { lat: number; lng: number; accuracy: number } | null = null;
 
       try {
@@ -798,12 +846,27 @@ const loadAll = useCallback(async () => {
     [loadAll, outboxN, refreshOutbox, syncOutbox]
   );
 
-    const doStop = useCallback(
+  const doStop = useCallback(
     async (jobId: string) => {
       setBusy(true);
       setError(null);
       setNotice(null);
       const event_id = newEventId();
+
+      const stoppedLocal = Date.now();
+      setLocalStartMs((p) => {
+        const n: Record<string, number> = { ...p };
+        delete n[jobId];
+        return n;
+      });
+      setJobs((prev) =>
+        prev.map((x) =>
+          x.id === jobId
+            ? { ...x, status: "done", stopped_at: x.stopped_at ?? new Date(stoppedLocal).toISOString() }
+            : x
+        )
+      );
+
       let gps: { lat: number; lng: number; accuracy: number } | null = null;
 
       try {
@@ -846,6 +909,7 @@ const loadAll = useCallback(async () => {
     },
     [loadAll, outboxN, refreshOutbox, syncOutbox]
   );
+
 
   const workerIsActive = Boolean(me?.profile?.active);
   const isAdmin = me?.profile?.role === "admin";
@@ -1158,6 +1222,10 @@ const loadAll = useCallback(async () => {
                     const inProg = effStatus === "in_progress";
                     const done = effStatus === "done";
 
+                    const baseStart = (localStartMs as any)[j.id] ?? (j.started_at ? new Date(j.started_at).getTime() : null);
+                    const elapsedMs = inProg && baseStart ? Math.max(0, nowMs - baseStart) : null;
+                    const elapsedStr = elapsedMs != null ? formatHMS(elapsedMs) : null;
+
                     return (
                       <div key={j.id} className={clsx("rounded-2xl p-4", border, "bg-zinc-950/60")}>
                         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -1235,11 +1303,18 @@ const loadAll = useCallback(async () => {
                             )}
                           </div>
                         </div>
-
                         <div className="mt-3 grid grid-cols-1 gap-2 text-xs opacity-80 md:grid-cols-2">
                           <div>Старт: {formatDateTimeRu(j.started_at)}</div>
                           <div>Стоп: {formatDateTimeRu(j.stopped_at)}</div>
                         </div>
+
+                        {inProg && elapsedStr ? (
+                          <div className="mt-2 text-xs">
+                            <span className="opacity-70">Секундомер: </span>
+                            <span className={clsx("font-semibold", gold)}>{elapsedStr}</span>
+                          </div>
+                        ) : null}
+
 
                         {(j.distance_m != null || j.accuracy_m != null) ? (
                           <div className="mt-2 text-xs opacity-70">
