@@ -259,6 +259,36 @@ export default function AdminFactPage() {
     [refresh]
   )
 
+  const deleteJob = useCallback(
+    async (jobId: string) => {
+      if (!confirm('Удалить смену полностью? Это удалит смену и все часы.')) return
+      const code = String(prompt('Введите DELETE для подтверждения удаления смены', '') || '').trim()
+      if (code !== 'DELETE') return
+      setBusy(true)
+      setError(null)
+      setNotice(null)
+      try {
+        await authFetchJson('/api/admin/jobs/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ job_id: jobId }),
+        })
+        setEditHM((p) => {
+          const n: any = { ...p }
+          delete n[jobId]
+          return n
+        })
+        setNotice('Смена удалена.')
+        await refresh()
+      } catch (e: any) {
+        setError(String(e?.message || e || 'Ошибка удаления смены'))
+      } finally {
+        setBusy(false)
+      }
+    },
+    [refresh]
+  )
+
   if (booting) {
     return (
       <div className="min-h-screen bg-zinc-950 text-amber-100 flex items-center justify-center">
@@ -437,6 +467,15 @@ export default function AdminFactPage() {
                       className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-100 hover:bg-red-500/15 disabled:opacity-60"
                     >
                       🗑
+                    </button>
+                    <button
+                      onClick={() => deleteJob(j.id)}
+                      disabled={busy}
+                      title="Удалить смену"
+                      aria-label="Удалить смену"
+                      className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-100 hover:bg-red-500/15 disabled:opacity-60"
+                    >
+                      ✖
                     </button>
                   </div>
                 </div>
