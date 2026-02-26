@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server'
 import { requireAdmin, toErrorResponse } from '@/lib/supabase-server'
 
+function truthy(v: string | undefined | null) {
+  if (!v) return false
+  return ['1', 'true', 'yes', 'on'].includes(String(v).toLowerCase())
+}
+
 function asDateISO(d: Date) {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
@@ -62,6 +67,10 @@ export async function GET(req: Request) {
     const from = (url.searchParams.get('from') || url.searchParams.get('date_from') || '').trim()
     const to = (url.searchParams.get('to') || url.searchParams.get('date_to') || '').trim()
 
+    const workerIdFilter = (url.searchParams.get('worker_id') || url.searchParams.get('workerId') || '').trim()
+    const siteIdFilter = (url.searchParams.get('site_id') || url.searchParams.get('siteId') || '').trim()
+    const wantByDay = truthy(url.searchParams.get('by_day') || url.searchParams.get('byDay'))
+
     const fromD = parseDateISO(from)
     const toD = parseDateISO(to)
     if (!fromD || !toD) {
@@ -77,11 +86,16 @@ export async function GET(req: Request) {
     const fromISO = asDateISO(fromD)
     const toISO = asDateISO(toD)
 
-    const jobsRes = await sb
+    let jobsQ = sb
       .from('jobs')
       .select('id, worker_id, site_id, job_date')
       .gte('job_date', fromISO)
       .lte('job_date', toISO)
+
+    if (workerIdFilter) jobsQ = jobsQ.eq('worker_id', workerIdFilter)
+    if (siteIdFilter) jobsQ = jobsQ.eq('site_id', siteIdFilter)
+
+    const jobsRes = await jobsQ
 
     if (jobsRes.error) {
       return NextResponse.json({ error: jobsRes.error.message }, { status: 500 })
@@ -132,9 +146,11 @@ export async function GET(req: Request) {
 
     type WorkerAgg = { worker_id: string; minutes: number; jobs_count: number; logged_jobs: number }
     type SiteAgg = { site_id: string; minutes: number; jobs_count: number; logged_jobs: number }
+    type DayAgg = { date: string; minutes: number; jobs_count: number; logged_jobs: number }
 
     const workerAgg = new Map<string, WorkerAgg>()
     const siteAgg = new Map<string, SiteAgg>()
+    const dayAgg = new Map<string, DayAgg>()
 
     let totalMinutes = 0
 
@@ -143,6 +159,7 @@ export async function GET(req: Request) {
       const w = String(j.worker_id)
       const s = String(j.site_id)
       const mins = minutesByJob.get(jobId) || 0
+      const day = String(j.job_date || '')
 
       totalMinutes += mins
 
@@ -157,6 +174,14 @@ export async function GET(req: Request) {
       sa.jobs_count += 1
       if (mins > 0) sa.logged_jobs += 1
       siteAgg.set(s, sa)
+
+      if (wantByDay && /^\d{4}-\d{2}-\d{2}$/.test(day)) {
+        const da = dayAgg.get(day) || { date: day, minutes: 0, jobs_count: 0, logged_jobs: 0 }
+        da.minutes += mins
+        da.jobs_count += 1
+        if (mins > 0) da.logged_jobs += 1
+        dayAgg.set(day, da)
+      }
     }
 
     const workerIds = Array.from(workerAgg.keys())
@@ -241,6 +266,27 @@ export async function GET(req: Request) {
       })
       .sort((a, b) => b.minutes - a.minutes || String(a.site_name || '').localeCompare(String(b.site_name || '')))
 
+    const by_day = wantByDay
+      ? Array.from(dayAgg.values()).sort((a, b) => String(a.date).localeCompare(String(b.date)))
+      : undefined
+
+    const by_job = wantByDay
+      ? (jobs as any[])
+          .map((j) => {
+            const jobId = String(j.id)
+            const siteId = String(j.site_id)
+            const site = siteById.get(siteId)
+            return {
+              job_id: jobId,
+              job_date: String(j.job_date),
+              site_id: siteId,
+              site_name: site?.name ?? null,
+              minutes: minutesByJob.get(jobId) || 0,
+            }
+          })
+          .sort((a, b) => String(a.job_date).localeCompare(String(b.job_date)) || (b.minutes - a.minutes))
+      : undefined
+
     const entries: any[] = []
     for (const j of jobs as any[]) {
       const jobId = String(j.id)
@@ -273,6 +319,8 @@ export async function GET(req: Request) {
       total_minutes: totalMinutes,
       by_worker,
       by_site,
+      by_day,
+      by_job,
       entries,
     })
   } catch (err) {

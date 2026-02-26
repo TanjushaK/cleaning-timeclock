@@ -231,6 +231,34 @@ export default function AdminFactPage() {
     [editHM, refresh]
   )
 
+  const clearActual = useCallback(
+    async (jobId: string) => {
+      if (!confirm('Удалить все отработанные часы по этой смене?')) return
+      setBusy(true)
+      setError(null)
+      setNotice(null)
+      try {
+        await authFetchJson('/api/admin/jobs/clear-actual', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ job_id: jobId }),
+        })
+        setEditHM((p) => {
+          const n: any = { ...p }
+          delete n[jobId]
+          return n
+        })
+        setNotice('Часы удалены.')
+        await refresh()
+      } catch (e: any) {
+        setError(String(e?.message || e || 'Ошибка удаления'))
+      } finally {
+        setBusy(false)
+      }
+    },
+    [refresh]
+  )
+
   if (booting) {
     return (
       <div className="min-h-screen bg-zinc-950 text-amber-100 flex items-center justify-center">
@@ -400,6 +428,15 @@ export default function AdminFactPage() {
                       className="rounded-xl border border-amber-500/30 px-3 py-2 text-xs hover:bg-amber-500/10 disabled:opacity-60"
                     >
                       Сохранить
+                    </button>
+                    <button
+                      onClick={() => clearActual(j.id)}
+                      disabled={busy}
+                      title="Удалить часы"
+                      aria-label="Удалить часы"
+                      className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-100 hover:bg-red-500/15 disabled:opacity-60"
+                    >
+                      🗑
                     </button>
                   </div>
                 </div>
