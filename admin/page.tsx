@@ -2,6 +2,7 @@
 
 import Image from 'next/image'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { getAccessToken, setAuthTokens, clearAuthTokens } from '@/lib/auth-fetch'
 
 // Token (localStorage)
@@ -261,11 +262,41 @@ async function authFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 
 
 function Modal(props: { open: boolean; title: string; onClose: () => void; children: React.ReactNode }) {
-  if (!props.open) return null
-  return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center px-4 py-6 overflow-y-auto">
+  const boxRef = useRef<HTMLDivElement | null>(null)
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+    return () => setMounted(false)
+  }, [])
+
+  useEffect(() => {
+    if (!props.open) return
+    const prevBody = document.body.style.overflow
+    const prevHtml = document.documentElement.style.overflow
+    document.body.style.overflow = 'hidden'
+    document.documentElement.style.overflow = 'hidden'
+    requestAnimationFrame(() => {
+      try {
+        boxRef.current?.focus()
+      } catch {}
+    })
+    return () => {
+      document.body.style.overflow = prevBody
+      document.documentElement.style.overflow = prevHtml
+    }
+  }, [props.open])
+
+  if (!props.open || !mounted) return null
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-start justify-center overflow-y-auto px-4 py-6">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={props.onClose} />
-      <div className="relative flex w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-yellow-400/20 bg-zinc-950/90 p-5 shadow-[0_25px_90px_rgba(0,0,0,0.75)] max-h-[calc(100vh-3rem)]">
+      <div
+        ref={boxRef}
+        tabIndex={-1}
+        className="relative flex w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-yellow-400/20 bg-zinc-950/90 p-5 shadow-[0_25px_90px_rgba(0,0,0,0.75)] max-h-[calc(100vh-3rem)] outline-none"
+      >
         <div className="flex items-center justify-between gap-3">
           <div className="text-sm font-semibold text-yellow-100">{props.title}</div>
           <button
@@ -277,7 +308,8 @@ function Modal(props: { open: boolean; title: string; onClose: () => void; child
         </div>
         <div className="mt-4 flex-1 overflow-y-auto pr-1">{props.children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 
@@ -829,6 +861,7 @@ function ReportsPanel() {
                     С
                     <input
                       type="date"
+                      onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
                       value={reportFrom}
                       onChange={(e) => setReportFrom(e.target.value)}
                       className="w-full rounded-2xl border border-yellow-400/15 bg-black/35 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-yellow-300/40"
@@ -838,6 +871,7 @@ function ReportsPanel() {
                     До
                     <input
                       type="date"
+                      onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
                       value={reportTo}
                       onChange={(e) => setReportTo(e.target.value)}
                       className="w-full rounded-2xl border border-yellow-400/15 bg-black/35 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-yellow-300/40"
@@ -1404,7 +1438,6 @@ const [editOpen, setEditOpen] = useState(false)
   }
 
   function openSiteCard(s: Site) {
-    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
     fillSiteCardFromSite(s)
     setSiteCardOpen(true)
   }
@@ -1883,7 +1916,6 @@ const [editOpen, setEditOpen] = useState(false)
   }
 
   async function openWorkerCard(workerId: string) {
-    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
     setWorkerCardId(workerId)
     setWorkerCardOpen(true)
     setWorkerCardItems([])
@@ -2034,9 +2066,9 @@ const [editOpen, setEditOpen] = useState(false)
         onDragStart={(e) => dragSet(e, { job_id: j.id })}
         onClick={() => openEditForJob(j)}
         className={cn(
-          'group cursor-pointer select-none rounded-2xl border bg-black/35 px-3 py-2 shadow-[0_10px_35px_rgba(0,0,0,0.55)]',
+          'group cursor-pointer select-none rounded-2xl border bg-black/35 shadow-[0_10px_35px_rgba(0,0,0,0.55)]',
           'border-yellow-400/15 hover:border-yellow-300/40',
-          compact ? 'text-[11px]' : 'text-xs'
+          compact ? 'text-[9px] px-2 py-1 leading-tight' : 'text-xs px-3 py-2'
         )}
       >
         <div className="flex items-start justify-between gap-2">
@@ -2049,12 +2081,12 @@ const [editOpen, setEditOpen] = useState(false)
                   const url = photos?.[0]?.url || null
                   if (!url) {
                     return (
-                      <div className="flex h-6 w-6 items-center justify-center rounded-full border border-yellow-400/15 bg-black/30 text-[10px] font-semibold text-yellow-100/70">🏠</div>
+                      <div className="flex h-5 w-5 items-center justify-center rounded-full border border-yellow-400/15 bg-black/30 text-[9px] font-semibold text-yellow-100/70">🏠</div>
                     )
                   }
                   return (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={url} alt="" className="h-6 w-6 rounded-full border border-yellow-400/15 object-cover" loading="lazy" />
+                    <img src={url} alt="" className="h-5 w-5 rounded-full border border-yellow-400/15 object-cover" loading="lazy" />
                   )
                 }
 
@@ -2062,16 +2094,16 @@ const [editOpen, setEditOpen] = useState(false)
                 const thumb = wid ? workerPhotoMeta[wid]?.thumb || null : null
                 if (!thumb) {
                   return (
-                    <div className="flex h-6 w-6 items-center justify-center rounded-full border border-yellow-400/15 bg-black/30 text-[10px] font-semibold text-yellow-100/70">{initials(left)}</div>
+                    <div className="flex h-5 w-5 items-center justify-center rounded-full border border-yellow-400/15 bg-black/30 text-[9px] font-semibold text-yellow-100/70">{initials(left)}</div>
                   )
                 }
                 return (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={thumb} alt="" className="h-6 w-6 rounded-full border border-yellow-400/15 object-cover" loading="lazy" />
+                  <img src={thumb} alt="" className="h-5 w-5 rounded-full border border-yellow-400/15 object-cover" loading="lazy" />
                 )
               })()}
               <div className="flex min-w-0 items-center gap-2">
-              {planMode === 'sites' && j.worker_id && workerPhotoMeta[j.worker_id]?.thumb ? (
+              {planMode === 'sites' && !compact && j.worker_id && workerPhotoMeta[j.worker_id]?.thumb ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={workerPhotoMeta[j.worker_id]?.thumb || ''}
@@ -2086,32 +2118,34 @@ const [editOpen, setEditOpen] = useState(false)
             <div className="mt-0.5 text-zinc-300">{right}</div>
           </div>
 
-          <div className="flex flex-col items-end gap-1">
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                setCancelJobId(j.id)
-                setCancelOpen(true)
-              }}
-              className="rounded-xl border border-yellow-400/10 bg-black/25 px-2 py-1 text-[10px] text-zinc-200 hover:border-yellow-300/30"
-            >
-              отменить
-            </button>
-
-            {planMode === 'workers' ? (
+          {compact ? null : (
+            <div className="flex flex-col items-end gap-1">
               <button
                 onClick={(e) => {
                   e.stopPropagation()
-                  setMoveJobId(j.id)
-                  setMoveJobTargetWorker(j.worker_id || '')
-                  setMoveJobOpen(true)
+                  setCancelJobId(j.id)
+                  setCancelOpen(true)
                 }}
-                className="rounded-xl border border-yellow-400/10 bg-black/25 px-2 py-1 text-[10px] text-zinc-200 hover:border-yellow-300/30"
+                className="rounded-xl border border-yellow-400/10 bg-black/25 px-2 py-1 text-[9px] text-zinc-200 hover:border-yellow-300/30"
               >
-                перенести
+                отменить
               </button>
-            ) : null}
-          </div>
+
+              {planMode === 'workers' ? (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setMoveJobId(j.id)
+                    setMoveJobTargetWorker(j.worker_id || '')
+                    setMoveJobOpen(true)
+                  }}
+                  className="rounded-xl border border-yellow-400/10 bg-black/25 px-2 py-1 text-[9px] text-zinc-200 hover:border-yellow-300/30"
+                >
+                  перенести
+                </button>
+              ) : null}
+            </div>
+          )}
         </div>
       </div>
     )
@@ -2185,6 +2219,7 @@ const [editOpen, setEditOpen] = useState(false)
             <span className="text-[11px] text-zinc-300">Дата</span>
             <input
               type="date"
+                      onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
               value={anchorDate}
               onChange={(e) => {
                 const v = e.target.value
@@ -2226,8 +2261,8 @@ const [editOpen, setEditOpen] = useState(false)
   function PlanWeekGrid() {
     return (
       <div className="mt-4 overflow-auto rounded-3xl border border-yellow-400/15 bg-black/15">
-        <div className="min-w-[980px]">
-          <div className="grid" style={{ gridTemplateColumns: `320px repeat(${planDates.length}, minmax(220px, 1fr))` }}>
+        <div className="min-w-[760px]">
+          <div className="grid" style={{ gridTemplateColumns: `200px repeat(${planDates.length}, minmax(130px, 1fr))` }}>
             <div className="sticky top-0 z-10 border-b border-yellow-400/10 bg-zinc-950/90 px-4 py-3 text-xs font-semibold text-zinc-200">
               {planMode === 'workers' ? 'Работник' : 'Объект'}
             </div>
@@ -2315,8 +2350,8 @@ const [editOpen, setEditOpen] = useState(false)
     const dayISO = dateFrom
     return (
       <div className="mt-4 overflow-auto rounded-3xl border border-yellow-400/15 bg-black/15">
-        <div className="min-w-[980px]">
-          <div className="grid" style={{ gridTemplateColumns: `100px repeat(${planEntities.length}, minmax(220px, 1fr))` }}>
+        <div className="min-w-[760px]">
+          <div className="grid" style={{ gridTemplateColumns: `70px repeat(${planEntities.length}, minmax(130px, 1fr))` }}>
             <div className="sticky top-0 z-10 border-b border-yellow-400/10 bg-zinc-950/90 px-3 py-3 text-xs font-semibold text-zinc-200">
               Время
             </div>
@@ -2404,7 +2439,7 @@ const [editOpen, setEditOpen] = useState(false)
 
     return (
       <div className="mt-4 overflow-auto rounded-3xl border border-yellow-400/15 bg-black/15">
-        <div className="min-w-[980px] p-4">
+        <div className="min-w-[760px] p-4">
           <div className="grid grid-cols-7 gap-3">
             {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((d) => (
               <div key={d} className="text-xs font-semibold text-zinc-300">
@@ -3411,6 +3446,7 @@ const [editOpen, setEditOpen] = useState(false)
                     <span className="text-[11px] text-zinc-300">Дата</span>
                     <input
                       type="date"
+                      onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
                       value={newDate}
                       onChange={(e) => setNewDate(e.target.value)}
                       className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
@@ -3431,6 +3467,7 @@ const [editOpen, setEditOpen] = useState(false)
                     <span className="text-[11px] text-zinc-300">Конец</span>
                     <input
                       type="time"
+                      onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
                       value={newTimeTo}
                       onChange={(e) => setNewTimeTo(e.target.value)}
                       className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
@@ -3512,6 +3549,7 @@ const [editOpen, setEditOpen] = useState(false)
                       <span className="text-[11px] text-zinc-300">С</span>
                       <input
                         type="date"
+                      onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
                         value={dateFrom}
                         onChange={(e) => setDateFrom(e.target.value)}
                         className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
@@ -3521,6 +3559,7 @@ const [editOpen, setEditOpen] = useState(false)
                       <span className="text-[11px] text-zinc-300">По</span>
                       <input
                         type="date"
+                      onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
                         value={dateTo}
                         onChange={(e) => setDateTo(e.target.value)}
                         className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
@@ -3753,6 +3792,7 @@ const [editOpen, setEditOpen] = useState(false)
               <span className="text-[11px] text-zinc-300">Дата</span>
               <input
                 type="date"
+                      onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
                 value={editDate}
                 onChange={(e) => setEditDate(e.target.value)}
                 className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
@@ -3771,6 +3811,7 @@ const [editOpen, setEditOpen] = useState(false)
               <span className="text-[11px] text-zinc-300">Конец</span>
               <input
                 type="time"
+                      onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
                 value={editTimeTo}
                 onChange={(e) => setEditTimeTo(e.target.value)}
                 className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
@@ -4109,6 +4150,7 @@ const [editOpen, setEditOpen] = useState(false)
             <span className="text-[11px] text-zinc-300">Дата</span>
             <input
               type="date"
+                      onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
               value={moveDayDate}
               onChange={(e) => setMoveDayDate(e.target.value)}
               className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
