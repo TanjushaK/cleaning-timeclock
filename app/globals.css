@@ -20,6 +20,23 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* iOS PWA safe-area: keep UI controls below the status bar / notch */
+:root {
+  --ct-safe-top: env(safe-area-inset-top, 0px);
+  --ct-safe-right: env(safe-area-inset-right, 0px);
+  --ct-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --ct-safe-left: env(safe-area-inset-left, 0px);
+}
+
+@media (display-mode: standalone) {
+  body {
+    padding-top: var(--ct-safe-top);
+    padding-right: var(--ct-safe-right);
+    padding-bottom: var(--ct-safe-bottom);
+    padding-left: var(--ct-safe-left);
+  }
+}
+
 /* Mobile ergonomics */
 :where(button, a, [role="button"], input, select, textarea) {
   -webkit-tap-highlight-color: transparent;
