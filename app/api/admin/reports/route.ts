@@ -103,6 +103,23 @@ export async function GET(req: Request) {
 
     const jobs = (jobsRes.data || []).filter((j: any) => !!j?.id && !!j?.worker_id && !!j?.site_id)
 
+    // For coworker display: when filtering by worker, we still want to know who else worked on the same site/date/time.
+    let groupSourceJobs: any[] = jobs as any[]
+    if (workerIdFilter) {
+      const siteIdsForCow = Array.from(new Set((jobs as any[]).map((j) => String(j.site_id || '')).filter(Boolean)))
+      if (siteIdsForCow.length) {
+        const sibRes = await sb
+          .from('jobs')
+          .select('id, worker_id, site_id, job_date, scheduled_time, scheduled_end_time')
+          .gte('job_date', fromISO)
+          .lte('job_date', toISO)
+          .in('site_id', siteIdsForCow)
+        if (!sibRes.error && Array.isArray(sibRes.data)) {
+          groupSourceJobs = sibRes.data as any[]
+        }
+      }
+    }
+
     if (jobs.length === 0) {
       return NextResponse.json({
         from: fromISO,
@@ -188,7 +205,7 @@ export async function GET(req: Request) {
     const siteIds = Array.from(siteAgg.keys())
 
     const [profilesPack, sitesRes] = await Promise.all([
-      fetchProfiles(sb, workerIds),
+      fetchProfiles(sb, Array.from(new Set([...workerIds, ...Array.from(new Set((groupSourceJobs as any[]).map((j) => String(j.worker_id || '')).filter(Boolean))) ]))),
       sb.from('sites').select('id, name').in('id', siteIds),
     ])
 
@@ -270,6 +287,47 @@ export async function GET(req: Request) {
       ? Array.from(dayAgg.values()).sort((a, b) => String(a.date).localeCompare(String(b.date)))
       : undefined
 
+    const groupWorkers = new Map<string, Set<string>>()
+    for (const j of groupSourceJobs as any[]) {
+      const siteId = String(j.site_id || '')
+      const day = String(j.job_date || '')
+      const st = String(j.scheduled_time || '')
+      const en = String(j.scheduled_end_time || '')
+      if (!siteId || !day) continue
+      const key = `${siteId}|${day}|${st}|${en}`
+      const set = groupWorkers.get(key) || new Set<string>()
+      const wid = String(j.worker_id || '')
+      if (wid) set.add(wid)
+      groupWorkers.set(key, set)
+    }
+
+    const job_details = (jobs as any[])
+      .map((j) => {
+        const jobId = String(j.id)
+        const siteId = String(j.site_id)
+        const workerId = String(j.worker_id)
+        const site = siteById.get(siteId)
+        const worker = profById.get(workerId)
+        const st = String(j.scheduled_time || '')
+        const en = String(j.scheduled_end_time || '')
+        const key = `${siteId}|${String(j.job_date)}|${st}|${en}`
+        const coworkerIds = Array.from(groupWorkers.get(key) || new Set<string>()).filter((x) => x !== workerId)
+        return {
+          job_id: jobId,
+          job_date: String(j.job_date),
+          scheduled_time: st || null,
+          scheduled_end_time: en || null,
+          worker_id: workerId,
+          worker_name: worker?.full_name ?? null,
+          site_id: siteId,
+          site_name: site?.name ?? null,
+          minutes: minutesByJob.get(jobId) || 0,
+          logs: (logsByJob.get(jobId) || []).slice().sort((a, b) => String(a.started_at).localeCompare(String(b.started_at))),
+          coworkers: coworkerIds.map((id) => ({ worker_id: id, worker_name: profById.get(id)?.full_name ?? null })),
+        }
+      })
+      .sort((a, b) => String(a.job_date).localeCompare(String(b.job_date)) || String(a.scheduled_time || '').localeCompare(String(b.scheduled_time || '')))
+
     const by_job = wantByDay
       ? (jobs as any[])
           .map((j) => {
@@ -281,6 +339,8 @@ export async function GET(req: Request) {
               job_date: String(j.job_date),
               site_id: siteId,
               site_name: site?.name ?? null,
+              scheduled_time: String((j as any).scheduled_time || '') || null,
+              scheduled_end_time: String((j as any).scheduled_end_time || '') || null,
               minutes: minutesByJob.get(jobId) || 0,
             }
           })
@@ -288,7 +348,7 @@ export async function GET(req: Request) {
       : undefined
 
     const entries: any[] = []
-    for (const j of jobs as any[]) {
+    for (const j of groupSourceJobs as any[]) {
       const jobId = String(j.id)
       const logs = logsByJob.get(jobId) || []
       if (logs.length === 0) continue
@@ -321,6 +381,7 @@ export async function GET(req: Request) {
       by_site,
       by_day,
       by_job,
+      job_details,
       entries,
     })
   } catch (err) {

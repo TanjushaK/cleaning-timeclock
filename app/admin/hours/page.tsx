@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { authFetchJson, clearAuthTokens, getAccessToken, setAuthTokens } from '@/lib/auth-fetch'
 
 type WorkerRow = {
@@ -25,12 +25,38 @@ type ReportJob = {
   minutes: number
 }
 
+type ReportLog = {
+  started_at: string
+  stopped_at: string
+  minutes: number
+}
+
+type ReportCoworker = {
+  worker_id: string
+  worker_name: string | null
+}
+
+type ReportJobDetail = {
+  job_id: string
+  job_date: string
+  scheduled_time: string | null
+  scheduled_end_time: string | null
+  worker_id: string
+  worker_name: string | null
+  site_id: string
+  site_name: string | null
+  minutes: number
+  logs: ReportLog[]
+  coworkers: ReportCoworker[]
+}
+
 type ReportResp = {
   from: string
   to: string
   total_minutes: number
   by_day?: ReportDay[]
   by_job?: ReportJob[]
+  job_details?: ReportJobDetail[]
 }
 
 function pad2(n: number) {
@@ -92,6 +118,9 @@ export default function AdminHoursPage() {
   const initialWeek = useMemo(() => weekRangeToday(), [])
   const [dateFrom, setDateFrom] = useState(initialWeek.from)
   const [dateTo, setDateTo] = useState(initialWeek.to)
+
+  const dateFromRef = useRef<HTMLInputElement | null>(null)
+  const dateToRef = useRef<HTMLInputElement | null>(null)
 
   const [workers, setWorkers] = useState<WorkerRow[]>([])
   const [workerId, setWorkerId] = useState('')
@@ -313,27 +342,59 @@ export default function AdminHoursPage() {
 
           <label className="grid gap-1">
             <span className="text-xs opacity-80">Дата с</span>
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => {
-                setDateFrom(e.target.value)
-                setData(null)
-              }}
-              className="rounded-xl border border-amber-500/20 bg-zinc-900/40 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-            />
+            <div className="flex items-center gap-2">
+              <input
+                ref={dateFromRef}
+                type="date"
+                value={dateFrom}
+                onChange={(e) => {
+                  setDateFrom(e.target.value)
+                  setData(null)
+                }}
+                className="rounded-xl border border-amber-500/20 bg-zinc-900/40 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const el = dateFromRef.current as any
+                  if (el?.showPicker) el.showPicker()
+                  else dateFromRef.current?.focus()
+                }}
+                className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10"
+                aria-label="Открыть календарь"
+                title="Календарь"
+              >
+                📅
+              </button>
+            </div>
           </label>
           <label className="grid gap-1">
             <span className="text-xs opacity-80">Дата по</span>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => {
-                setDateTo(e.target.value)
-                setData(null)
-              }}
-              className="rounded-xl border border-amber-500/20 bg-zinc-900/40 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-            />
+            <div className="flex items-center gap-2">
+              <input
+                ref={dateToRef}
+                type="date"
+                value={dateTo}
+                onChange={(e) => {
+                  setDateTo(e.target.value)
+                  setData(null)
+                }}
+                className="rounded-xl border border-amber-500/20 bg-zinc-900/40 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const el = dateToRef.current as any
+                  if (el?.showPicker) el.showPicker()
+                  else dateToRef.current?.focus()
+                }}
+                className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10"
+                aria-label="Открыть календарь"
+                title="Календарь"
+              >
+                📅
+              </button>
+            </div>
           </label>
 
           <div className="flex flex-wrap gap-2">
@@ -416,6 +477,57 @@ export default function AdminHoursPage() {
                   <div className="col-span-3 text-right font-semibold">{fmtMinutesHM(d.minutes)}</div>
                 </div>
               ))
+            )}
+          </div>
+
+
+          <div className="rounded-2xl border border-amber-500/20 bg-zinc-950/60 overflow-hidden">
+            <div className="border-b border-amber-500/10 bg-black/20 px-4 py-3 text-xs text-zinc-200">По объектам / сменам</div>
+            {!data?.job_details?.length ? (
+              <div className="px-4 py-6 text-sm opacity-70">—</div>
+            ) : (
+              <div className="w-full overflow-x-auto">
+                <table className="min-w-[960px] w-full text-left text-sm">
+                  <thead>
+                    <tr className="text-xs text-zinc-300">
+                      <th className="px-4 py-3">Дата</th>
+                      <th className="px-4 py-3">Время</th>
+                      <th className="px-4 py-3">Объект</th>
+                      <th className="px-4 py-3">С кем</th>
+                      <th className="px-4 py-3">Логи</th>
+                      <th className="px-4 py-3 text-right">Итого</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.job_details.map((j) => (
+                      <tr key={j.job_id} className="border-t border-amber-500/10">
+                        <td className="px-4 py-3 whitespace-nowrap">{fmtD(j.job_date)}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          {j.scheduled_time ? j.scheduled_time.slice(0, 5) : '—'}
+                          {j.scheduled_end_time ? `–${j.scheduled_end_time.slice(0, 5)}` : ''}
+                        </td>
+                        <td className="px-4 py-3">{j.site_name || j.site_id}</td>
+                        <td className="px-4 py-3">
+                          {!j.coworkers?.length ? '—' : j.coworkers.map((c) => c.worker_name || c.worker_id).join(', ')}
+                        </td>
+                        <td className="px-4 py-3">
+                          {!j.logs?.length
+                            ? '—'
+                            : j.logs
+                                .map((l) => {
+                                  const st = new Date(l.started_at)
+                                  const sp = new Date(l.stopped_at)
+                                  const hhmm = (d: Date) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+                                  return `${hhmm(st)}–${hhmm(sp)} (${fmtMinutesHM(l.minutes)})`
+                                })
+                                .join(' · ')}
+                        </td>
+                        <td className="px-4 py-3 text-right font-semibold whitespace-nowrap">{fmtMinutesHM(j.minutes)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </div>
