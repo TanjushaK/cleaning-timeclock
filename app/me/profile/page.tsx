@@ -260,19 +260,21 @@ export default function WorkerProfilePage() {
   return (
     <div className="appTheme min-h-screen flex flex-col p-6">
       <div className="mx-auto max-w-4xl flex-1 w-full">
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
           <div>
             <div className="text-2xl font-semibold">Профиль работника</div>
             <div className="text-sm opacity-80 mt-1">
               {me?.profile?.role || 'worker'} • active: {me?.profile?.active === true ? 'да' : 'нет'}
             </div>
           </div>
-          <div className="flex gap-2">
-            <a className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10" href="/">
-              Назад
+          <div className="flex flex-wrap items-center justify-start sm:justify-end gap-2">
+            <a className="rounded-xl border border-amber-500/30 px-3 py-1.5 text-sm hover:bg-amber-500/10 whitespace-nowrap" href="/" aria-label="Назад">
+              <span className="sm:hidden">←</span>
+              <span className="hidden sm:inline">Назад</span>
             </a>
-            <button className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10" onClick={logout}>
-              Выйти
+            <button className="rounded-xl border border-amber-500/30 px-3 py-1.5 text-sm hover:bg-amber-500/10 whitespace-nowrap" onClick={logout} aria-label="Выйти">
+              <span className="sm:hidden">⎋</span>
+              <span className="hidden sm:inline">Выйти</span>
             </button>
           </div>
         </div>
