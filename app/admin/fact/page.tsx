@@ -259,6 +259,35 @@ export default function AdminFactPage() {
     [refresh]
   )
 
+  const deleteJob = useCallback(
+    async (jobId: string) => {
+      if (!confirm('Удалить смену НАВСЕГДА? Это удалит смену и все связанные часы.')) return
+      const code = prompt('Введите DELETE чтобы подтвердить удаление смены:')
+      if (String(code || '').trim().toUpperCase() !== 'DELETE') return
+
+      setBusy(true)
+      setError(null)
+      setNotice(null)
+      try {
+        await authFetchJson(`/api/admin/jobs/${encodeURIComponent(jobId)}`, {
+          method: 'DELETE',
+        })
+        setEditHM((p) => {
+          const n: any = { ...p }
+          delete n[jobId]
+          return n
+        })
+        setNotice('Смена удалена.')
+        await refresh()
+      } catch (e: any) {
+        setError(String(e?.message || e || 'Ошибка удаления смены'))
+      } finally {
+        setBusy(false)
+      }
+    },
+    [refresh]
+  )
+
   if (booting) {
     return (
       <div className="min-h-screen bg-zinc-950 text-amber-100 flex items-center justify-center">
@@ -390,11 +419,11 @@ export default function AdminFactPage() {
         <div className="mt-6 rounded-2xl border border-amber-500/20 bg-zinc-950/60 overflow-hidden">
           <div className="grid grid-cols-12 gap-0 border-b border-amber-500/10 bg-black/20 px-4 py-3 text-xs text-zinc-200">
             <div className="col-span-2">Дата</div>
-            <div className="col-span-3">Объект</div>
+            <div className="col-span-2">Объект</div>
             <div className="col-span-2">Работник</div>
             <div className="col-span-2">План</div>
             <div className="col-span-1">Факт</div>
-            <div className="col-span-2">Правка</div>
+            <div className="col-span-3">Правка</div>
           </div>
 
           {doneItems.length === 0 ? (
@@ -411,16 +440,16 @@ export default function AdminFactPage() {
               return (
                 <div key={j.id} className="grid grid-cols-12 items-center gap-0 border-t border-amber-500/10 px-4 py-3 text-sm">
                   <div className="col-span-2 opacity-90">{fmtD(j.job_date)}</div>
-                  <div className="col-span-3 font-semibold">{j.site_name || '—'}</div>
+                  <div className="col-span-2 font-semibold">{j.site_name || '—'}</div>
                   <div className="col-span-2 opacity-90">{j.worker_name || '—'}</div>
                   <div className="col-span-2 text-xs opacity-80">{planStr}</div>
                   <div className="col-span-1 text-xs opacity-80">{factStr}</div>
-                  <div className="col-span-2 flex items-center gap-2">
+                  <div className="col-span-3 flex items-center gap-2">
                     <input
                       value={editHM[j.id] ?? ''}
                       onChange={(e) => setEditHM((p) => ({ ...p, [j.id]: e.target.value }))}
                       placeholder="H:MM"
-                      className="w-24 rounded-xl border border-amber-500/20 bg-zinc-900/40 px-3 py-2 text-xs outline-none focus:border-amber-400/50"
+                      className="w-20 rounded-xl border border-amber-500/20 bg-zinc-900/40 px-3 py-2 text-xs outline-none focus:border-amber-400/50"
                     />
                     <button
                       onClick={() => saveFact(j.id)}
@@ -437,6 +466,16 @@ export default function AdminFactPage() {
                       className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-100 hover:bg-red-500/15 disabled:opacity-60"
                     >
                       🗑
+                    </button>
+
+                    <button
+                      onClick={() => deleteJob(j.id)}
+                      disabled={busy}
+                      title="Удалить смену"
+                      aria-label="Удалить смену"
+                      className="rounded-xl border border-zinc-500/30 bg-zinc-900/30 px-3 py-2 text-xs text-zinc-100 hover:bg-zinc-900/50 disabled:opacity-60"
+                    >
+                      ✖
                     </button>
                   </div>
                 </div>
