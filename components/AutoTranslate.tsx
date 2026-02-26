@@ -1,22 +1,71 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo } from "react";
 import { useI18n } from "./I18nProvider";
 
-type Map = Record<string, string>;
+type Dict = Record<string, string>;
 
-const RU_TO_UK: Map = {
+const RU_TO_UK: Dict = {
+  // common
   "Админ-панель": "Адмін-панель",
   "Панель администратора": "Панель адміністратора",
   "Обновить данные": "Оновити дані",
+  "Обновить": "Оновити",
+  "Обновляю…": "Оновлюю…",
   "Выйти": "Вийти",
+  "Вы вышли.": "Ви вийшли.",
 
+  // tabs
   "Объекты": "Об’єкти",
   "Работники": "Працівники",
   "Смены": "Зміни",
   "График": "Графік",
   "Отчёты": "Звіти",
 
+  // reports
+  "Контроль рабочего времени": "Контроль робочого часу",
+  "Период:": "Період:",
+  "Выбрать период": "Обрати період",
+  "Правка факта": "Правка факту",
+  "По работникам": "За працівниками",
+  "По объектам": "За об’єктами",
+  "Итог периода": "Підсумок періоду",
+  "Поиск": "Пошук",
+  "Имя работника / объект": "Ім’я працівника / об’єкт",
+  "Считаю…": "Рахую…",
+  "Готово": "Готово",
+  "Нет данных за выбранный период": "Немає даних за обраний період",
+  "Период отчёта": "Період звіту",
+  "Платёжный период": "Платіжний період",
+  "Пользовательские даты": "Довільні дати",
+  "Закрыть": "Закрити",
+
+  // hours page
+  "Часы": "Години",
+  "Часы работника": "Години працівника",
+  "Открыть часы": "Відкрити години",
+  "Выбери работника": "Обери працівника",
+  "Показать": "Показати",
+  "День": "День",
+  "Неделя": "Тиждень",
+  "Месяц": "Місяць",
+  "Период": "Період",
+  "Итого": "Разом",
+  "По дням": "За днями",
+  "Список смен": "Список змін",
+
+  // fact page
+  "Tanija • Admin • Факт": "Tanija • Admin • Факт",
+  "Редактирование фактически отработанного времени": "Редагування фактично відпрацьованого часу",
+  "Сохранить": "Зберегти",
+  "Факт": "Факт",
+  "Правка": "Правка",
+  "Нет завершённых смен в выбранном диапазоне.": "Немає завершених змін у вибраному діапазоні.",
+  "Факт обновлён.": "Факт оновлено.",
+  "Часы удалены.": "Години видалено.",
+  "Удалить часы": "Видалити години",
+
+  // misc ui
   "Создать смену": "Створити зміну",
   "Фильтры": "Фільтри",
   "Расписание": "Розклад",
@@ -30,7 +79,6 @@ const RU_TO_UK: Map = {
   "Категория": "Категорія",
   "Без категории": "Без категорії",
   "Заметки": "Нотатки",
-  "Закрыть": "Закрити",
   "Создать": "Створити",
   "Отмена": "Скасувати",
   "Например: Дом, офис, объект №1": "Наприклад: Дім, офіс, об’єкт №1",
@@ -53,11 +101,9 @@ const RU_TO_UK: Map = {
   "Язык": "Мова",
 };
 
-const UK_TO_RU: Map = Object.fromEntries(
-  Object.entries(RU_TO_UK).map(([ru, uk]) => [uk, ru])
-);
+const UK_TO_RU: Dict = Object.fromEntries(Object.entries(RU_TO_UK).map(([ru, uk]) => [uk, ru]));
 
-function replaceExactWithSpaces(src: string, map: Map): string {
+function replaceExactWithSpaces(src: string, map: Dict): string {
   const trimmed = src.trim();
   const hit = map[trimmed];
   if (!hit) return src;
@@ -66,7 +112,7 @@ function replaceExactWithSpaces(src: string, map: Map): string {
   return lead + hit + tail;
 }
 
-function translateTextNodes(root: HTMLElement, map: Map) {
+function translateTextNodes(root: HTMLElement, map: Dict) {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   let node: Node | null = walker.nextNode();
   while (node) {
@@ -80,7 +126,7 @@ function translateTextNodes(root: HTMLElement, map: Map) {
   }
 }
 
-function translateAttributes(root: HTMLElement, map: Map) {
+function translateAttributes(root: HTMLElement, map: Dict) {
   const attrs = ["placeholder", "title", "aria-label", "alt", "value"];
   const all = root.querySelectorAll<HTMLElement>("*");
   for (const el of Array.from(all)) {

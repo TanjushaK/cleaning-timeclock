@@ -769,9 +769,20 @@ function ReportsPanel() {
                   </div>
                 </div>
   
+                <div className="flex items-center gap-2">
                 <div className="shrink-0 rounded-2xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-sm font-semibold text-yellow-100">
                   {fmtMinutesHM(Number(x.minutes) || 0)}
                 </div>
+                {reportsView === 'workers' ? (
+                  <a
+                    href={`/admin/hours?worker_id=${encodeURIComponent(id)}&from=${encodeURIComponent(reportFrom)}&to=${encodeURIComponent(reportTo)}`}
+                    className="rounded-2xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/40"
+                    title="Открыть часы"
+                  >
+                    Открыть часы
+                  </a>
+                ) : null}
+              </div>
               </div>
             )
           })}
