@@ -6,6 +6,7 @@ import './app-theme.css'
 import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import ClientSessionWarmup from '@/lib/client-session-warmup'
+import SWRegister from "@/app/sw-register"
 
 const inter = Inter({ subsets: ['latin', 'cyrillic'], weight: ['400', '500', '600', '700'] })
 
@@ -17,10 +18,15 @@ export const viewport: Viewport = {
 }
 
 export const metadata: Metadata = {
-  title: 'Van Tanija BV Cleaning вЂў Timeclock',
-  description: 'Van Tanija BV Cleaning вЂ” Cleaning Timeclock',
+  title: 'Van Tanija BV Cleaning • Timeclock',
+  description: 'Van Tanija BV Cleaning — Cleaning Timeclock',
   icons: { icon: '/tanija-logo.png', apple: '/apple-touch-icon.png' },
   manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'Timeclock',
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -28,9 +34,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ru">
       <body className={inter.className}>
         <ClientSessionWarmup />
+        <SWRegister />
         <I18nProvider><LanguageSwitch /><AutoTranslate />{children}</I18nProvider>
       </body>
     </html>
   )
 }
-

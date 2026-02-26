@@ -20,6 +20,18 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* iOS PWA fullscreen: keep UI out of the notch / home indicator */
+@supports (padding: env(safe-area-inset-top)) {
+  @media (display-mode: standalone) {
+    body {
+      padding-top: env(safe-area-inset-top);
+      padding-left: env(safe-area-inset-left);
+      padding-right: env(safe-area-inset-right);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+  }
+}
+
 /* Mobile ergonomics */
 :where(button, a, [role="button"], input, select, textarea) {
   -webkit-tap-highlight-color: transparent;

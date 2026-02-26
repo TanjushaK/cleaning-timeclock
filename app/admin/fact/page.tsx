@@ -409,7 +409,7 @@ export default function AdminFactPage() {
         </div>
 
         <div className="mt-4 text-xs opacity-70">
-          Формат правки: <span className="font-semibold">H:MM</span> (например <span className="font-semibold">3:15</span>). Меняет <span className="font-semibold">stopped_at</span> первого time_log (started_at + длительность).
+          Формат правки: <span className="font-semibold">H:MM</span> (например <span className="font-semibold">3:15</span>). Перезаписывает факт смены: оставляет один time_log с нужной длительностью.
         </div>
       </div>
     </div>

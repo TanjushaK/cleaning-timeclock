@@ -676,6 +676,13 @@ function ReportsPanel() {
             Правка факта
           </a>
 
+          <a
+            href="/admin/hours"
+            className="rounded-2xl border border-yellow-400/25 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/50"
+          >
+            Часы
+          </a>
+
 <a
   className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10"
   href="/admin/approvals"

@@ -5,7 +5,7 @@ import { useI18n } from "./I18nProvider";
 export default function LanguageSwitch() {
   const { lang, setLang } = useI18n();
   return (
-    <div className="fixed top-4 right-4 z-50 flex items-center gap-2 rounded-full border border-amber-400/40 bg-black/40 px-3 py-1 text-xs backdrop-blur">
+    <div className="fixed z-50 flex items-center gap-2 rounded-full border border-amber-400/40 bg-black/40 px-3 py-1 text-xs backdrop-blur top-[calc(env(safe-area-inset-top)+1rem)] right-[calc(env(safe-area-inset-right)+1rem)]">
       <button type="button" onClick={() => setLang("uk")} className={lang === "uk" ? "text-amber-300" : "text-zinc-300 hover:text-amber-200"}>
         UA
       </button>
