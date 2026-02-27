@@ -4,7 +4,7 @@ on:
   push:
     branches: ["main"]
 jobs:
-  build:
+  CI:
     runs-on: ubuntu-latest
     env:
       NEXT_TELEMETRY_DISABLED: "1"
