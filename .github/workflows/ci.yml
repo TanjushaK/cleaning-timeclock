@@ -6,6 +6,11 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co"
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: "dummy_ci_anon_key"
+      SUPABASE_SERVICE_ROLE_KEY: "dummy_ci_service_role_key"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
