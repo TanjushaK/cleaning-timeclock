@@ -108,6 +108,16 @@ function isISODate(s: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(s)
 }
 
+function parseHM(s: string): number | null {
+  const m = /^(\d{1,3}):(\d{2})$/.exec(String(s || '').trim())
+  if (!m) return null
+  const hh = parseInt(m[1], 10)
+  const mm = parseInt(m[2], 10)
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null
+  if (hh < 0 || mm < 0 || mm > 59) return null
+  return hh * 60 + mm
+}
+
 export default function AdminHoursPage() {
   const [booting, setBooting] = useState(true)
   const [token, setToken] = useState<string | null>(null)
@@ -126,6 +136,7 @@ export default function AdminHoursPage() {
   const [workerId, setWorkerId] = useState('')
 
   const [data, setData] = useState<ReportResp | null>(null)
+  const [editHM, setEditHM] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -156,6 +167,12 @@ export default function AdminHoursPage() {
       )}&by_day=1`
       const res = await authFetchJson<ReportResp>(url, { cache: 'no-store' })
       setData(res)
+      const next: Record<string, string> = {}
+      for (const j of (res?.job_details || []) as any[]) {
+        const id = String((j as any).job_id || '')
+        if (id) next[id] = fmtMinutesHM(Number((j as any).minutes) || 0)
+      }
+      setEditHM(next)
     } catch (e: any) {
       setData(null)
       setError(String(e?.message || e || 'Ошибка'))
@@ -246,6 +263,59 @@ export default function AdminHoursPage() {
     setData(null)
     setNotice('Вы вышли.')
   }, [])
+
+  const saveFact = useCallback(
+    async (jobId: string) => {
+      setBusy(true)
+      setError(null)
+      setNotice(null)
+      try {
+        const hm = String(editHM[jobId] || '').trim()
+        const mins = parseHM(hm)
+        if (mins == null) throw new Error('Факт должен быть в формате H:MM (например 3:15)')
+        await authFetchJson('/api/admin/jobs/set-actual', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ job_id: jobId, hm }),
+        })
+        setNotice('Факт обновлён.')
+        await load()
+      } catch (e: any) {
+        setError(String(e?.message || e || 'Ошибка сохранения'))
+      } finally {
+        setBusy(false)
+      }
+    },
+    [editHM, load]
+  )
+
+  const clearActual = useCallback(
+    async (jobId: string) => {
+      if (!confirm('Удалить все отработанные часы по этой смене?')) return
+      setBusy(true)
+      setError(null)
+      setNotice(null)
+      try {
+        await authFetchJson('/api/admin/jobs/clear-actual', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ job_id: jobId }),
+        })
+        setEditHM((p) => {
+          const n: any = { ...p }
+          delete n[jobId]
+          return n
+        })
+        setNotice('Часы удалены.')
+        await load()
+      } catch (e: any) {
+        setError(String(e?.message || e || 'Ошибка удаления'))
+      } finally {
+        setBusy(false)
+      }
+    },
+    [load]
+  )
 
   if (booting) {
     return (
@@ -522,7 +592,33 @@ export default function AdminHoursPage() {
                                 })
                                 .join(' · ')}
                         </td>
-                        <td className="px-4 py-3 text-right font-semibold whitespace-nowrap">{fmtMinutesHM(j.minutes)}</td>
+                        <td className="px-4 py-3 text-right whitespace-nowrap">
+                          <div className="font-semibold">{fmtMinutesHM(j.minutes)}</div>
+                          <div className="mt-2 flex flex-wrap justify-end gap-2">
+                            <input
+                              value={editHM[j.job_id] ?? ''}
+                              onChange={(e) => setEditHM((p) => ({ ...p, [j.job_id]: e.target.value }))}
+                              placeholder="H:MM"
+                              className="w-20 rounded-xl border border-amber-500/20 bg-zinc-900/40 px-3 py-2 text-xs outline-none focus:border-amber-400/50"
+                            />
+                            <button
+                              onClick={() => saveFact(j.job_id)}
+                              disabled={busy || loading}
+                              className="rounded-xl border border-amber-500/30 px-3 py-2 text-xs hover:bg-amber-500/10 disabled:opacity-60"
+                            >
+                              Сохранить
+                            </button>
+                            <button
+                              onClick={() => clearActual(j.job_id)}
+                              disabled={busy || loading}
+                              title="Удалить часы"
+                              aria-label="Удалить часы"
+                              className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-100 hover:bg-red-500/15 disabled:opacity-60"
+                            >
+                              🗑
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

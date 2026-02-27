@@ -16,6 +16,19 @@ type ScheduleItem = {
   started_at: string | null
   stopped_at: string | null
 }
+type WorkerRow = {
+  id: string
+  full_name: string | null
+  role: string | null
+  active: boolean | null
+}
+
+type SiteRow = {
+  id: string
+  name: string | null
+  archived_at?: string | null
+}
+
 
 function pad2(n: number) {
   return String(n).padStart(2, '0')
@@ -117,6 +130,10 @@ export default function AdminFactPage() {
   })
 
   const [items, setItems] = useState<ScheduleItem[]>([])
+  const [workers, setWorkers] = useState<WorkerRow[]>([])
+  const [sites, setSites] = useState<SiteRow[]>([])
+  const [filterWorkerId, setFilterWorkerId] = useState('')
+  const [filterSiteId, setFilterSiteId] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -128,7 +145,10 @@ export default function AdminFactPage() {
   const refresh = useCallback(async () => {
     setError(null)
     setNotice(null)
-    const url = `/api/admin/schedule?date_from=${encodeURIComponent(dateFrom)}&date_to=${encodeURIComponent(dateTo)}`
+    const qp = new URLSearchParams({ date_from: dateFrom, date_to: dateTo })
+    if (filterWorkerId) qp.set('worker_id', filterWorkerId)
+    if (filterSiteId) qp.set('site_id', filterSiteId)
+    const url = `/api/admin/schedule?${qp.toString()}`
     const res = await authFetchJson<{ items: ScheduleItem[] }>(url, { cache: 'no-store' })
     const list = Array.isArray(res?.items) ? res.items : []
     setItems(list)
@@ -138,14 +158,42 @@ export default function AdminFactPage() {
       if (am != null) next[j.id] = fmtHM(am)
     }
     setEditHM((prev) => ({ ...next, ...prev }))
-  }, [dateFrom, dateTo])
+  }, [dateFrom, dateTo, filterWorkerId, filterSiteId])
 
+  const loadFilters = useCallback(async () => {
+    try {
+      const [wRes, sRes] = await Promise.all([
+        authFetchJson<{ workers: WorkerRow[] }>('/api/admin/workers/list', { cache: 'no-store' }),
+        authFetchJson<{ sites: SiteRow[] }>('/api/admin/sites/list', { cache: 'no-store' }),
+      ])
+
+      const wList = Array.isArray((wRes as any)?.workers) ? ((wRes as any).workers as WorkerRow[]) : []
+      const sList = Array.isArray((sRes as any)?.sites) ? ((sRes as any).sites as SiteRow[]) : []
+
+      const filteredWorkers = wList
+        .filter((w) => String((w as any).role || '') === 'worker')
+        .filter((w) => (w as any).active !== false)
+        .sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || '')))
+
+      const filteredSites = sList
+        .filter((s) => !(s as any).archived_at)
+        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+
+      setWorkers(filteredWorkers)
+      setSites(filteredSites)
+    } catch {
+      // тихо: фильтры не критичны
+    }
+  }, [])
   useEffect(() => {
     ;(async () => {
       try {
         const t = getAccessToken()
         setToken(t)
-        if (t) await refresh()
+        if (t) {
+          await refresh()
+          await loadFilters()
+        }
       } catch (e: any) {
         const msg = String(e?.message || e || 'Ошибка')
         if (msg.includes('401') || /токен|unauthorized/i.test(msg)) {
@@ -158,7 +206,7 @@ export default function AdminFactPage() {
         setBooting(false)
       }
     })()
-  }, [refresh])
+  }, [refresh, loadFilters])
 
   const doLogin = useCallback(async () => {
     setBusy(true)
@@ -176,6 +224,7 @@ export default function AdminFactPage() {
       const t = getAccessToken()
       setToken(t)
       await refresh()
+      await loadFilters()
       setNotice('Вход выполнен.')
     } catch (e: any) {
       setError(String(e?.message || e || 'Ошибка входа'))
@@ -183,14 +232,25 @@ export default function AdminFactPage() {
       setBusy(false)
       setBooting(false)
     }
-  }, [email, password, refresh])
+  }, [email, password, refresh, loadFilters])
 
   const doLogout = useCallback(() => {
     clearAuthTokens()
     setToken(null)
     setItems([])
+    setWorkers([])
+    setSites([])
+    setFilterWorkerId('')
+    setFilterSiteId('')
     setNotice('Вы вышли.')
   }, [])
+
+  // Auto-refresh on filters
+  useEffect(() => {
+    if (!authed) return
+    void refresh()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterWorkerId, filterSiteId])
 
   const doneItems = useMemo(() => {
     return items
@@ -406,6 +466,39 @@ export default function AdminFactPage() {
           >
             {busy ? 'Обновляю…' : 'Обновить'}
           </button>
+
+
+          <label className="grid gap-1">
+            <span className="text-xs opacity-80">Работник</span>
+            <select
+              value={filterWorkerId}
+              onChange={(e) => setFilterWorkerId(e.target.value)}
+              className="rounded-xl border border-amber-500/20 bg-zinc-900/40 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
+            >
+              <option value="">Все</option>
+              {workers.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.full_name || w.id}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="grid gap-1">
+            <span className="text-xs opacity-80">Объект</span>
+            <select
+              value={filterSiteId}
+              onChange={(e) => setFilterSiteId(e.target.value)}
+              className="rounded-xl border border-amber-500/20 bg-zinc-900/40 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
+            >
+              <option value="">Все</option>
+              {sites.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name || s.id}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
 
         {error ? (
