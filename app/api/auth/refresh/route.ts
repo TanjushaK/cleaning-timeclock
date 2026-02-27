@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 export const runtime = 'nodejs'
@@ -26,7 +26,7 @@ function json(status: number, data: any) {
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json().catch(() => ({}))
+    const body = await req.json().catch(() => ({} as any))
     const refresh_token = String(body?.refresh_token || '').trim()
     if (!refresh_token) return json(400, { error: 'refresh_token обязателен' })
 
@@ -37,7 +37,6 @@ export async function POST(req: Request) {
       auth: { persistSession: false, autoRefreshToken: false },
     })
 
-    // NOTE: Supabase JS v2 supports refreshSession({ refresh_token })
     const { data, error } = await (supabase as any).auth.refreshSession({ refresh_token })
     if (error || !data?.session) return json(401, { error: error?.message || 'Не удалось обновить сессию' })
 
@@ -47,8 +46,8 @@ export async function POST(req: Request) {
       user: data.user,
     })
   } catch (e: any) {
-    return json(500, { error: String(e?.message || e) })
+    console.error('[api/auth/refresh] error:', e)
+    const msg = process.env.NODE_ENV === 'production' ? 'Internal Server Error' : String(e?.message || e)
+    return json(500, { error: msg })
   }
 }
-
-
