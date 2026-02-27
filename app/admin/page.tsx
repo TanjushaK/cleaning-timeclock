@@ -2341,8 +2341,7 @@ const [editOpen, setEditOpen] = useState(false)
 
   function PlanWeekGrid() {
     return (
-      <div className="mt-4 overflow-auto rounded-3xl border border-yellow-400/15 bg-black/15">
-        <div className="w-full overflow-x-auto">
+      <div className="mt-4 overflow-auto overscroll-contain rounded-3xl border border-yellow-400/15 bg-black/15 touch-pan-x touch-pan-y">
         <div className="min-w-[760px]">
           <div className="grid" style={{ gridTemplateColumns: `200px repeat(${planDates.length}, minmax(130px, 1fr))` }}>
             <div className="sticky top-0 z-10 border-b border-yellow-400/10 bg-zinc-950/90 px-4 py-3 text-xs font-semibold text-zinc-200">
@@ -2424,7 +2423,6 @@ const [editOpen, setEditOpen] = useState(false)
             ))}
           </div>
         </div>
-        </div>
       </div>
     )
   }
@@ -2432,8 +2430,7 @@ const [editOpen, setEditOpen] = useState(false)
   function PlanDayGrid() {
     const dayISO = dateFrom
     return (
-      <div className="mt-4 overflow-auto rounded-3xl border border-yellow-400/15 bg-black/15">
-        <div className="w-full overflow-x-auto">
+      <div className="mt-4 overflow-auto overscroll-contain rounded-3xl border border-yellow-400/15 bg-black/15 touch-pan-x touch-pan-y">
         <div className="min-w-[760px]">
           <div className="grid" style={{ gridTemplateColumns: `70px repeat(${planEntities.length}, minmax(130px, 1fr))` }}>
             <div className="sticky top-0 z-10 border-b border-yellow-400/10 bg-zinc-950/90 px-3 py-3 text-xs font-semibold text-zinc-200">
@@ -2506,7 +2503,6 @@ const [editOpen, setEditOpen] = useState(false)
             ))}
           </div>
         </div>
-        </div>
       </div>
     )
   }
@@ -2523,8 +2519,7 @@ const [editOpen, setEditOpen] = useState(false)
     const days = enumerateDates(toISODate(start), toISODate(end))
 
     return (
-      <div className="mt-4 overflow-auto rounded-3xl border border-yellow-400/15 bg-black/15">
-        <div className="w-full overflow-x-auto">
+      <div className="mt-4 overflow-auto overscroll-contain rounded-3xl border border-yellow-400/15 bg-black/15 touch-pan-x touch-pan-y">
         <div className="min-w-[760px] p-4">
           <div className="grid grid-cols-7 gap-3">
             {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((d) => (
@@ -2578,7 +2573,6 @@ const [editOpen, setEditOpen] = useState(false)
               )
             })}
           </div>
-        </div>
         </div>
       </div>
     )
