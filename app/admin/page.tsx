@@ -4,6 +4,7 @@ import Image from 'next/image'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { getAccessToken, setAuthTokens, clearAuthTokens } from '@/lib/auth-fetch'
+import { SearchableSelect } from '@/app/_components/SearchableSelect'
 
 // Token (localStorage)
 function getAccessTokenOrNull(): string | null {
@@ -2714,21 +2715,17 @@ const [editOpen, setEditOpen] = useState(false)
                           </div>
 
                           <div className="mt-4 flex flex-wrap items-end gap-2">
-                            <label className="grid gap-1">
-                              <span className="text-[11px] text-zinc-300">Быстрое назначение: объект</span>
-                              <select
+                            <div className="w-full sm:w-[260px]">
+                              <SearchableSelect
+                                label="Быстрое назначение: объект"
                                 value={qaSite}
-                                onChange={(e) => setQaSite(e.target.value)}
-                                className="w-full sm:w-[260px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
-                              >
-                                <option value="">Выбери объект…</option>
-                                {activeSites.map((s) => (
-                                  <option key={s.id} value={s.id}>
-                                    {s.name || s.id}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
+                                onChange={setQaSite}
+                                disabled={busy}
+                                placeholder="Выбери объект…"
+                                items={activeSites.map((s) => ({ id: s.id, label: s.name || s.id }))}
+                                inputClassName="w-full rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+                              />
+                            </div>
 
                             <label className="grid gap-1">
                               <span className="text-[11px] text-zinc-300">Быстрое назначение: работник</span>
