@@ -221,24 +221,32 @@ function fmtHMS(ms: number) {
   return `${pad2(h)}:${pad2(m)}:${pad2(s)}`
 }
 
-function StatusPill({
-  status,
-  startedAt,
-  nowMs,
-}: {
-  status: string
-  startedAt?: string | null
-  nowMs?: number
-}) {
+function useNowMs(enabled: boolean, intervalMs: number = 1000) {
+  const [nowMs, setNowMs] = useState<number>(() => Date.now())
+  useEffect(() => {
+    if (!enabled) return
+    setNowMs(Date.now())
+    const t = window.setInterval(() => setNowMs(Date.now()), intervalMs)
+    return () => window.clearInterval(t)
+  }, [enabled, intervalMs])
+  return nowMs
+}
+
+function ElapsedSince({ startedAt, className }: { startedAt: string | null | undefined; className?: string }) {
+  const since = startedAt ? new Date(startedAt).getTime() : null
+  const nowMs = useNowMs(since != null)
+  if (since == null) return null
+  return <span className={className || 'text-[11px] text-zinc-300'}>⏱ {fmtHMS(nowMs - since)}</span>
+}
+
+function StatusPill({ status, startedAt }: { status: string; startedAt?: string | null }) {
   const st = String(status || '')
-  const started = st === 'in_progress' && startedAt ? new Date(startedAt).getTime() : null
-  const elapsed = started != null && typeof nowMs === 'number' ? fmtHMS(nowMs - started) : null
   return (
     <div className="flex flex-wrap items-center gap-2">
       <span className={cn('inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold', statusPillClasses(st))}>
         {statusRu(st)}
       </span>
-      {elapsed ? <span className="text-[11px] text-zinc-300">⏱ {elapsed}</span> : null}
+      {st === 'in_progress' && startedAt ? <ElapsedSince startedAt={startedAt} /> : null}
     </div>
   )
 }
@@ -1019,12 +1027,6 @@ export default function AdminPage() {
 
 
   const [busy, setBusy] = useState(false)
-  const [nowMs, setNowMs] = useState<number>(() => Date.now())
-  useEffect(() => {
-    const t = window.setInterval(() => setNowMs(Date.now()), 1000)
-    return () => window.clearInterval(t)
-  }, [])
-
   const [refreshing, setRefreshing] = useState(false)
   const refreshSeqRef = useRef(0)
   const [error, setError] = useState<string | null>(null)
@@ -2194,7 +2196,7 @@ const [editOpen, setEditOpen] = useState(false)
               <span>{timeText}</span>
               <StatusTag status={st} />
               {st === 'in_progress' && j.started_at ? (
-                <span className="text-[11px] text-zinc-300">⏱ {fmtHMS(nowMs - new Date(j.started_at).getTime())}</span>
+                <ElapsedSince startedAt={j.started_at} />
               ) : null}
             </div>
           </div>
@@ -3857,7 +3859,7 @@ const [editOpen, setEditOpen] = useState(false)
                               </td>
                               <td className="px-4 py-3">
                                 <div className="grid gap-1">
-                                  <StatusPill status={String(j.status || '')} startedAt={j.started_at} nowMs={nowMs} />
+                                  <StatusPill status={String(j.status || '')} startedAt={j.started_at} />
                                   {String(j.status || '') === 'planned' && j.worker_id ? (
                                     <div className="text-[11px] font-semibold text-yellow-100/80">Принято</div>
                                   ) : null}
@@ -4254,7 +4256,7 @@ const [editOpen, setEditOpen] = useState(false)
                           })()}
                           <span>{j.site_name || '—'}</span>
                         </span> • <StatusTag status={String(j.status || '')} />
-                        <div className="mt-1 text-[11px] text-zinc-400">Начал: {fmtDT(j.started_at)} • Закончил: {fmtDT(j.stopped_at)}{String(j.status || '') === 'in_progress' && j.started_at ? (<span> • ⏱ {fmtHMS(nowMs - new Date(j.started_at).getTime())}</span>) : null}</div>
+                        <div className="mt-1 text-[11px] text-zinc-400">Начал: {fmtDT(j.started_at)} • Закончил: {fmtDT(j.stopped_at)}{String(j.status || '') === 'in_progress' && j.started_at ? (<span> • <ElapsedSince startedAt={j.started_at} className="text-[11px] text-zinc-400" /></span>) : null}</div>
                       </div>
                       <button
                         onClick={() => openEditForJob(j)}

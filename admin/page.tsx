@@ -91,6 +91,24 @@ function fmtHMS(ms: number) {
   const s = x % 60
   return `${pad2(h)}:${pad2(m)}:${pad2(s)}`
 }
+
+function useNowMs(enabled: boolean, intervalMs: number = 1000) {
+  const [nowMs, setNowMs] = useState<number>(() => Date.now())
+  useEffect(() => {
+    if (!enabled) return
+    setNowMs(Date.now())
+    const t = window.setInterval(() => setNowMs(Date.now()), intervalMs)
+    return () => window.clearInterval(t)
+  }, [enabled, intervalMs])
+  return nowMs
+}
+
+function ElapsedSince({ startedAt, className }: { startedAt: string | null | undefined; className?: string }) {
+  const since = startedAt ? new Date(startedAt).getTime() : null
+  const nowMs = useNowMs(since != null)
+  if (since == null) return null
+  return <span className={className || 'text-[11px] text-zinc-300'}>⏱ {fmtHMS(nowMs - since)}</span>
+}
 function fmtDT(v?: string | null) {
   if (!v) return '—'
   const d = new Date(v)
@@ -986,12 +1004,6 @@ export default function AdminPage() {
 
 
   const [busy, setBusy] = useState(false)
-  
-  const [nowMs, setNowMs] = useState<number>(() => Date.now())
-  useEffect(() => {
-    const t = window.setInterval(() => setNowMs(Date.now()), 1000)
-    return () => window.clearInterval(t)
-  }, [])
 const [refreshing, setRefreshing] = useState(false)
   const refreshSeqRef = useRef(0)
   const [error, setError] = useState<string | null>(null)
@@ -2153,7 +2165,7 @@ const [editOpen, setEditOpen] = useState(false)
               <span>{timeText}</span>
               <StatusTag status={st} />
               {st === 'in_progress' && j.started_at ? (
-                <span className="text-[11px] text-zinc-300">⏱ {fmtHMS(nowMs - new Date(j.started_at).getTime())}</span>
+                <ElapsedSince startedAt={j.started_at} />
               ) : null}
             </div>
           </div>
