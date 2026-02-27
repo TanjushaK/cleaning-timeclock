@@ -1,13 +1,13 @@
-﻿import type { CapacitorConfig } from "@capacitor/cli";
+import type { CapacitorConfig } from '@capacitor/cli'
 
 const config: CapacitorConfig = {
-  appId: "nl.tanjusha.timeclock",
-  appName: "Cleaning Timeclock",
-  webDir: "out",
+  appId: 'nl.tanjusha.timeclock',
+  appName: 'Cleaning Timeclock',
+  webDir: 'out',
   server: {
-    url: "https://timeclock.tanjusha.nl",
-    cleartext: true
+    url: 'https://timeclock.tanjusha.nl',
+    cleartext: false
   }
-};
+}
 
-export default config;
+export default config
