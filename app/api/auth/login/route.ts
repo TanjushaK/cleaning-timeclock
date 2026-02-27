@@ -1,13 +1,11 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 function cleanEnv(v: string | undefined | null): string {
-  // Убираем BOM (U+FEFF) и лишние пробелы — частая причина ByteString ошибок после copy/paste в Vercel
   const s = String(v ?? '').replace(/^\uFEFF/, '').trim()
-  // Иногда Vercel/копипаст оставляет кавычки
   if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
     return s.slice(1, -1).trim()
   }
@@ -38,8 +36,6 @@ function json(status: number, data: any) {
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({} as any))
-
-    // Back-compat: раньше слали {email,password}. Теперь принимаем {identifier,password} и {phone,password}.
     const identifier = String(body?.identifier ?? body?.email ?? body?.phone ?? '').trim()
     const password = String(body?.password || '').trim()
 
@@ -53,11 +49,16 @@ export async function POST(req: Request) {
     })
 
     const looksEmail = identifier.includes('@')
-
     if (looksEmail) {
       if (!isEmail(identifier)) return json(400, { error: 'Неверный email' })
-      const { data, error } = await supabase.auth.signInWithPassword({ email: identifier.toLowerCase(), password })
+
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: identifier.toLowerCase(),
+        password,
+      })
+
       if (error || !data?.session) return json(401, { error: error?.message || 'Неверный логин/пароль' })
+
       return json(200, {
         access_token: data.session.access_token,
         refresh_token: data.session.refresh_token,
@@ -67,7 +68,11 @@ export async function POST(req: Request) {
 
     if (!isE164(identifier)) return json(400, { error: 'Телефон нужен в формате E.164, например +31612345678' })
 
-    const { data, error } = await supabase.auth.signInWithPassword({ phone: identifier, password })
+    const { data, error } = await supabase.auth.signInWithPassword({
+      phone: identifier,
+      password,
+    })
+
     if (error || !data?.session) return json(401, { error: error?.message || 'Неверный логин/пароль' })
 
     return json(200, {
@@ -76,7 +81,8 @@ export async function POST(req: Request) {
       user: data.user,
     })
   } catch (e: any) {
-    // важный момент: отдаём реальную причину, иначе сложно дебажить Vercel env
-    return json(500, { error: String(e?.message || e) })
+    console.error('[api/auth/login] error:', e)
+    const msg = process.env.NODE_ENV === 'production' ? 'Internal Server Error' : String(e?.message || e)
+    return json(500, { error: msg })
   }
 }
