@@ -204,54 +204,6 @@ function cn(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(' ')
 }
 
-
-function statusPillClasses(s: string) {
-  if (s === 'in_progress') return 'border-emerald-400/30 bg-emerald-500/15 text-emerald-200'
-  if (s === 'planned') return 'border-rose-400/30 bg-rose-500/15 text-rose-200'
-  if (s === 'done') return 'border-sky-400/30 bg-sky-500/15 text-sky-200'
-  if (s === 'cancelled') return 'border-zinc-400/20 bg-zinc-500/10 text-zinc-300'
-  return 'border-yellow-400/20 bg-yellow-400/10 text-yellow-100/85'
-}
-
-function fmtHMS(ms: number) {
-  const x = Math.max(0, Math.floor((ms || 0) / 1000))
-  const h = Math.floor(x / 3600)
-  const m = Math.floor((x % 3600) / 60)
-  const s = x % 60
-  return `${pad2(h)}:${pad2(m)}:${pad2(s)}`
-}
-
-function StatusPill({
-  status,
-  startedAt,
-  nowMs,
-}: {
-  status: string
-  startedAt?: string | null
-  nowMs?: number
-}) {
-  const st = String(status || '')
-  const started = st === 'in_progress' && startedAt ? new Date(startedAt).getTime() : null
-  const elapsed = started != null && typeof nowMs === 'number' ? fmtHMS(nowMs - started) : null
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className={cn('inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold', statusPillClasses(st))}>
-        {statusRu(st)}
-      </span>
-      {elapsed ? <span className="text-[11px] text-zinc-300">⏱ {elapsed}</span> : null}
-    </div>
-  )
-}
-
-function StatusTag({ status }: { status: string }) {
-  const st = String(status || '')
-  return (
-    <span className={cn('inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold', statusPillClasses(st))}>
-      {statusRu(st)}
-    </span>
-  )
-}
-
 function initials(name?: string | null) {
   const raw = String(name || '').trim()
   if (!raw) return '—'
@@ -1019,12 +971,6 @@ export default function AdminPage() {
 
 
   const [busy, setBusy] = useState(false)
-  const [nowMs, setNowMs] = useState<number>(() => Date.now())
-  useEffect(() => {
-    const t = window.setInterval(() => setNowMs(Date.now()), 1000)
-    return () => window.clearInterval(t)
-  }, [])
-
   const [refreshing, setRefreshing] = useState(false)
   const refreshSeqRef = useRef(0)
   const [error, setError] = useState<string | null>(null)
@@ -2769,7 +2715,6 @@ const [editOpen, setEditOpen] = useState(false)
                           </div>
 
                           <div className="mt-4 flex flex-wrap items-end gap-2">
-                            
                             <div className="w-full sm:w-[260px]">
                               <SearchableSelect
                                 label="Быстрое назначение: объект"
@@ -3723,7 +3668,7 @@ const [editOpen, setEditOpen] = useState(false)
                             <div className="text-sm font-semibold text-zinc-100">
                               {fmtD(j.job_date)} • {timeRangeHHMM(j.scheduled_time, j.scheduled_end_time)}
                             </div>
-                            <div className="text-xs"><StatusTag status={String(j.status || '')} /></div>
+                            <div className="text-xs text-zinc-300">{statusRu(String(j.status || ''))}</div>
                           </div>
 
                           {String(j.status || '') === 'planned' && j.worker_id ? (
@@ -3850,7 +3795,7 @@ const [editOpen, setEditOpen] = useState(false)
                               </td>
                               <td className="px-4 py-3">
                                 <div className="grid gap-1">
-                                  <StatusPill status={String(j.status || '')} startedAt={j.started_at} nowMs={nowMs} />
+                                  <div>{statusRu(String(j.status || ''))}</div>
                                   {String(j.status || '') === 'planned' && j.worker_id ? (
                                     <div className="text-[11px] font-semibold text-yellow-100/80">Принято</div>
                                   ) : null}
@@ -4246,8 +4191,8 @@ const [editOpen, setEditOpen] = useState(false)
                             )
                           })()}
                           <span>{j.site_name || '—'}</span>
-                        </span> • <StatusTag status={String(j.status || '')} />
-                        <div className="mt-1 text-[11px] text-zinc-400">Начал: {fmtDT(j.started_at)} • Закончил: {fmtDT(j.stopped_at)}{String(j.status || '') === 'in_progress' && j.started_at ? (<span> • ⏱ {fmtHMS(nowMs - new Date(j.started_at).getTime())}</span>) : null}</div>
+                        </span> • <span className="text-zinc-500">{statusRu(String(j.status || ''))}</span>
+                        <div className="mt-1 text-[11px] text-zinc-400">Начал: {fmtDT(j.started_at)} • Закончил: {fmtDT(j.stopped_at)}</div>
                       </div>
                       <button
                         onClick={() => openEditForJob(j)}
