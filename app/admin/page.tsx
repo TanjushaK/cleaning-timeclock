@@ -4,6 +4,7 @@ import Image from 'next/image'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { getAccessToken, setAuthTokens, clearAuthTokens } from '@/lib/auth-fetch'
+import { SearchableSelect } from '@/app/_components/SearchableSelect'
 
 // Token (localStorage)
 function getAccessTokenOrNull(): string | null {
@@ -201,6 +202,54 @@ function statusRu(s: string) {
 
 function cn(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(' ')
+}
+
+
+function statusPillClasses(s: string) {
+  if (s === 'in_progress') return 'border-emerald-400/30 bg-emerald-500/15 text-emerald-200'
+  if (s === 'planned') return 'border-rose-400/30 bg-rose-500/15 text-rose-200'
+  if (s === 'done') return 'border-sky-400/30 bg-sky-500/15 text-sky-200'
+  if (s === 'cancelled') return 'border-zinc-400/20 bg-zinc-500/10 text-zinc-300'
+  return 'border-yellow-400/20 bg-yellow-400/10 text-yellow-100/85'
+}
+
+function fmtHMS(ms: number) {
+  const x = Math.max(0, Math.floor((ms || 0) / 1000))
+  const h = Math.floor(x / 3600)
+  const m = Math.floor((x % 3600) / 60)
+  const s = x % 60
+  return `${pad2(h)}:${pad2(m)}:${pad2(s)}`
+}
+
+function StatusPill({
+  status,
+  startedAt,
+  nowMs,
+}: {
+  status: string
+  startedAt?: string | null
+  nowMs?: number
+}) {
+  const st = String(status || '')
+  const started = st === 'in_progress' && startedAt ? new Date(startedAt).getTime() : null
+  const elapsed = started != null && typeof nowMs === 'number' ? fmtHMS(nowMs - started) : null
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className={cn('inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold', statusPillClasses(st))}>
+        {statusRu(st)}
+      </span>
+      {elapsed ? <span className="text-[11px] text-zinc-300">⏱ {elapsed}</span> : null}
+    </div>
+  )
+}
+
+function StatusTag({ status }: { status: string }) {
+  const st = String(status || '')
+  return (
+    <span className={cn('inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold', statusPillClasses(st))}>
+      {statusRu(st)}
+    </span>
+  )
 }
 
 function initials(name?: string | null) {
@@ -970,6 +1019,12 @@ export default function AdminPage() {
 
 
   const [busy, setBusy] = useState(false)
+  const [nowMs, setNowMs] = useState<number>(() => Date.now())
+  useEffect(() => {
+    const t = window.setInterval(() => setNowMs(Date.now()), 1000)
+    return () => window.clearInterval(t)
+  }, [])
+
   const [refreshing, setRefreshing] = useState(false)
   const refreshSeqRef = useRef(0)
   const [error, setError] = useState<string | null>(null)
@@ -2077,7 +2132,8 @@ const [editOpen, setEditOpen] = useState(false)
 
   function jobCard(j: ScheduleItem, compact: boolean) {
     const left = planMode === 'workers' ? (j.site_name || 'Объект') : (j.worker_name || 'Работник')
-    const right = `${timeRangeHHMM(j.scheduled_time, j.scheduled_end_time)} • ${statusRu(String(j.status || ''))}`
+    const st = String(j.status || '')
+    const timeText = timeRangeHHMM(j.scheduled_time, j.scheduled_end_time)
     return (
       <div
         key={j.id}
@@ -2134,7 +2190,13 @@ const [editOpen, setEditOpen] = useState(false)
               <div className="truncate font-semibold text-yellow-100">{left}</div>
             </div>
             </div>
-            <div className="mt-0.5 text-zinc-300">{right}</div>
+            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-zinc-300">
+              <span>{timeText}</span>
+              <StatusTag status={st} />
+              {st === 'in_progress' && j.started_at ? (
+                <span className="text-[11px] text-zinc-300">⏱ {fmtHMS(nowMs - new Date(j.started_at).getTime())}</span>
+              ) : null}
+            </div>
           </div>
 
           {compact ? null : (
@@ -2714,21 +2776,25 @@ const [editOpen, setEditOpen] = useState(false)
                           </div>
 
                           <div className="mt-4 flex flex-wrap items-end gap-2">
-                            <label className="grid gap-1">
-                              <span className="text-[11px] text-zinc-300">Быстрое назначение: объект</span>
-                              <select
+                            
+                            <div className="w-full sm:w-[260px]">
+                              <SearchableSelect
+                                label="Быстрое назначение: объект"
                                 value={qaSite}
-                                onChange={(e) => setQaSite(e.target.value)}
-                                className="w-full sm:w-[260px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
-                              >
-                                <option value="">Выбери объект…</option>
-                                {activeSites.map((s) => (
-                                  <option key={s.id} value={s.id}>
-                                    {s.name || s.id}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
+                                onChange={setQaSite}
+                                disabled={busy}
+                                placeholder="Выбери объект…"
+                                items={activeSites.map((s) => {
+                                  const meta = siteCategoryMeta(s.category)
+                                  const name = String(s.name || '').trim()
+                                  const addr = String(s.address || '').trim()
+                                  const label = name || addr || `Объект ${String(s.id).slice(0, 6)}`
+                                  const hint = name && addr ? addr : undefined
+                                  return { id: s.id, label, hint, dotClass: meta.dotClass }
+                                })}
+                                inputClassName="w-full rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+                              />
+                            </div>
 
                             <label className="grid gap-1">
                               <span className="text-[11px] text-zinc-300">Быстрое назначение: работник</span>
@@ -3664,7 +3730,7 @@ const [editOpen, setEditOpen] = useState(false)
                             <div className="text-sm font-semibold text-zinc-100">
                               {fmtD(j.job_date)} • {timeRangeHHMM(j.scheduled_time, j.scheduled_end_time)}
                             </div>
-                            <div className="text-xs text-zinc-300">{statusRu(String(j.status || ''))}</div>
+                            <div className="text-xs"><StatusTag status={String(j.status || '')} /></div>
                           </div>
 
                           {String(j.status || '') === 'planned' && j.worker_id ? (
@@ -3791,7 +3857,7 @@ const [editOpen, setEditOpen] = useState(false)
                               </td>
                               <td className="px-4 py-3">
                                 <div className="grid gap-1">
-                                  <div>{statusRu(String(j.status || ''))}</div>
+                                  <StatusPill status={String(j.status || '')} startedAt={j.started_at} nowMs={nowMs} />
                                   {String(j.status || '') === 'planned' && j.worker_id ? (
                                     <div className="text-[11px] font-semibold text-yellow-100/80">Принято</div>
                                   ) : null}
@@ -4187,8 +4253,8 @@ const [editOpen, setEditOpen] = useState(false)
                             )
                           })()}
                           <span>{j.site_name || '—'}</span>
-                        </span> • <span className="text-zinc-500">{statusRu(String(j.status || ''))}</span>
-                        <div className="mt-1 text-[11px] text-zinc-400">Начал: {fmtDT(j.started_at)} • Закончил: {fmtDT(j.stopped_at)}</div>
+                        </span> • <StatusTag status={String(j.status || '')} />
+                        <div className="mt-1 text-[11px] text-zinc-400">Начал: {fmtDT(j.started_at)} • Закончил: {fmtDT(j.stopped_at)}{String(j.status || '') === 'in_progress' && j.started_at ? (<span> • ⏱ {fmtHMS(nowMs - new Date(j.started_at).getTime())}</span>) : null}</div>
                       </div>
                       <button
                         onClick={() => openEditForJob(j)}

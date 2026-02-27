@@ -4,6 +4,7 @@ import Image from 'next/image'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { getAccessToken, setAuthTokens, clearAuthTokens } from '@/lib/auth-fetch'
+import { SearchableSelect } from '@/app/_components/SearchableSelect'
 
 // Token (localStorage)
 function getAccessTokenOrNull(): string | null {
@@ -82,15 +83,6 @@ function pad2(n: number) {
   return String(n).padStart(2, '0')
 }
 
-
-
-function fmtHMS(ms: number) {
-  const x = Math.max(0, Math.floor((ms || 0) / 1000))
-  const h = Math.floor(x / 3600)
-  const m = Math.floor((x % 3600) / 60)
-  const s = x % 60
-  return `${pad2(h)}:${pad2(m)}:${pad2(s)}`
-}
 function fmtDT(v?: string | null) {
   if (!v) return '—'
   const d = new Date(v)
@@ -206,24 +198,6 @@ function statusRu(s: string) {
   if (s === 'done') return 'Завершено'
   if (s === 'cancelled') return 'Отменено'
   return s || '—'
-}
-
-function statusPillClasses(s: string) {
-  const st = String(s || '')
-  if (st === 'in_progress') return 'border-emerald-400/30 bg-emerald-500/15 text-emerald-200'
-  if (st === 'planned') return 'border-rose-400/30 bg-rose-500/15 text-rose-200'
-  if (st === 'done') return 'border-sky-400/30 bg-sky-500/15 text-sky-200'
-  if (st === 'cancelled') return 'border-zinc-400/20 bg-zinc-500/10 text-zinc-300'
-  return 'border-yellow-400/20 bg-yellow-400/10 text-yellow-100/85'
-}
-
-function StatusTag({ status }: { status: string }) {
-  const st = String(status || '')
-  return (
-    <span className={cn('inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold', statusPillClasses(st))}>
-      {statusRu(st)}
-    </span>
-  )
 }
 
 function cn(...xs: Array<string | false | null | undefined>) {
@@ -483,14 +457,14 @@ function MapMini(props: { lat: number | null; lng: number | null; onClick: () =>
   const { lat, lng } = props
   if (lat == null || lng == null) {
     return (
-      <div className="flex h-[92px] w-[150px] items-center justify-center rounded-2xl border border-yellow-400/10 bg-black/20 text-[11px] text-yellow-100/40">
+      <div className="flex h-[92px] w-full sm:w-[150px] items-center justify-center rounded-2xl border border-yellow-400/10 bg-black/20 text-[11px] text-yellow-100/40">
         Нет координат
       </div>
     )
   }
 
   return (
-    <div className="relative h-[92px] w-[150px] overflow-hidden rounded-2xl border border-yellow-400/20 bg-black/20">
+    <div className="relative h-[92px] w-full sm:w-[150px] overflow-hidden rounded-2xl border border-yellow-400/20 bg-black/20">
       <iframe src={osmEmbedUrl(lat, lng, 0.004)} className="h-full w-full" loading="lazy" />
       <button onClick={props.onClick} className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/0 to-black/0" title="Открыть навигацию" />
       <div className="absolute bottom-1 left-2 text-[10px] font-semibold text-yellow-100/90">Навигация</div>
@@ -719,30 +693,30 @@ function ReportsPanel() {
           </div>
         </div>
   
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
           <button
             type="button"
             onClick={() => setReportPickerOpen(true)}
-            className="rounded-2xl border border-yellow-400/25 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/50"
+            className="w-full sm:w-auto rounded-2xl border border-yellow-400/25 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/50"
           >
             Выбрать период
           </button>
 
           <a
             href="/admin/fact"
-            className="rounded-2xl border border-yellow-400/25 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/50"
+            className="w-full sm:w-auto rounded-2xl border border-yellow-400/25 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/50"
           >
             Правка факта
           </a>
 
 <a
-  className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10"
+  className="w-full sm:w-auto rounded-2xl border border-yellow-400/25 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/50"
   href="/admin/approvals"
 >
   Активации
 </a>
 			
-          <div className="flex items-center gap-2 rounded-2xl border border-yellow-400/10 bg-black/25 p-1">
+          <div className="flex w-full sm:w-auto items-center gap-2 rounded-2xl border border-yellow-400/10 bg-black/25 p-1">
             <button
               type="button"
               onClick={() => setReportsView('workers')}
@@ -809,7 +783,7 @@ function ReportsPanel() {
             return (
               <div
                 key={id}
-                className="flex items-center justify-between gap-3 border-b border-yellow-400/5 px-4 py-3 last:border-b-0"
+                className="flex flex-col gap-3 border-b border-yellow-400/5 px-4 py-3 last:border-b-0 sm:flex-row sm:items-center sm:justify-between"
               >
                 <div className="flex items-center gap-3">
                   <div className="relative h-10 w-10 overflow-hidden rounded-2xl border border-yellow-400/15 bg-black/40">
@@ -828,9 +802,20 @@ function ReportsPanel() {
                   </div>
                 </div>
   
-                <div className="shrink-0 rounded-2xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-sm font-semibold text-yellow-100">
+                <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center">
+                <div className="w-full shrink-0 rounded-2xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-center text-sm font-semibold text-yellow-100 sm:w-auto">
                   {fmtMinutesHM(Number(x.minutes) || 0)}
                 </div>
+                {reportsView === 'workers' ? (
+                  <a
+                    href={`/admin/hours?worker_id=${encodeURIComponent(id)}&from=${encodeURIComponent(reportFrom)}&to=${encodeURIComponent(reportTo)}`}
+                    className="w-full rounded-2xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-center text-xs font-semibold text-zinc-200 hover:border-yellow-300/40 sm:w-auto"
+                    title="Открыть часы"
+                  >
+                    Открыть часы
+                  </a>
+                ) : null}
+              </div>
               </div>
             )
           })}
@@ -858,7 +843,7 @@ function ReportsPanel() {
           </div>
   
           <div className="px-5 pt-4">
-            <div className="flex items-center gap-2 rounded-2xl border border-yellow-400/10 bg-black/25 p-1">
+            <div className="flex w-full sm:w-auto items-center gap-2 rounded-2xl border border-yellow-400/10 bg-black/25 p-1">
               <button
                 type="button"
                 onClick={() => setReportPickerTab('payroll')}
@@ -986,13 +971,7 @@ export default function AdminPage() {
 
 
   const [busy, setBusy] = useState(false)
-  
-  const [nowMs, setNowMs] = useState<number>(() => Date.now())
-  useEffect(() => {
-    const t = window.setInterval(() => setNowMs(Date.now()), 1000)
-    return () => window.clearInterval(t)
-  }, [])
-const [refreshing, setRefreshing] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
   const refreshSeqRef = useRef(0)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -1085,6 +1064,8 @@ const [editOpen, setEditOpen] = useState(false)
 
   const [workerCardFullName, setWorkerCardFullName] = useState('')
   const [workerCardNotes, setWorkerCardNotes] = useState('')
+  const [workerCardEmail, setWorkerCardEmail] = useState('')
+  const [workerCardPhone, setWorkerCardPhone] = useState('')
   const [workerCardAvatarPath, setWorkerCardAvatarPath] = useState<string | null>(null)
 
   // worker photos meta prefetch (list badge + mini-avatar): cached + concurrency-limited
@@ -1849,6 +1830,8 @@ const [editOpen, setEditOpen] = useState(false)
         setWorkerProfileById((prev) => ({ ...prev, [workerId]: w }))
         setWorkerCardFullName(String(w.full_name || ''))
         setWorkerCardNotes(String(w.notes || ''))
+        setWorkerCardEmail(String(w.email || ''))
+        setWorkerCardPhone(String(w.phone || ''))
         setWorkerCardAvatarPath(w.avatar_path ?? null)
       }
     } finally {
@@ -1862,6 +1845,8 @@ const [editOpen, setEditOpen] = useState(false)
     try {
       const payload = {
         full_name: workerCardFullName.trim() || null,
+        email: workerCardEmail.trim() || null,
+        phone: workerCardPhone.trim() || null,
         notes: workerCardNotes || null,
         avatar_path: workerCardAvatarPath || null,
       }
@@ -1958,6 +1943,8 @@ const [editOpen, setEditOpen] = useState(false)
     const core = workersById.get(workerId)
     setWorkerCardFullName(String(workerProfileById?.[workerId]?.full_name ?? core?.full_name ?? ''))
     setWorkerCardNotes(String(workerProfileById?.[workerId]?.notes ?? ''))
+    setWorkerCardEmail(String(workerProfileById?.[workerId]?.email ?? ''))
+    setWorkerCardPhone(String(workerProfileById?.[workerId]?.phone ?? ''))
     setWorkerCardAvatarPath(workerProfileById?.[workerId]?.avatar_path ?? null)
 
     try {
@@ -2091,8 +2078,7 @@ const [editOpen, setEditOpen] = useState(false)
 
   function jobCard(j: ScheduleItem, compact: boolean) {
     const left = planMode === 'workers' ? (j.site_name || 'Объект') : (j.worker_name || 'Работник')
-    const st = String(j.status || '')
-    const timeText = timeRangeHHMM(j.scheduled_time, j.scheduled_end_time)
+    const right = `${timeRangeHHMM(j.scheduled_time, j.scheduled_end_time)} • ${statusRu(String(j.status || ''))}`
     return (
       <div
         key={j.id}
@@ -2149,13 +2135,7 @@ const [editOpen, setEditOpen] = useState(false)
               <div className="truncate font-semibold text-yellow-100">{left}</div>
             </div>
             </div>
-            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-zinc-300">
-              <span>{timeText}</span>
-              <StatusTag status={st} />
-              {st === 'in_progress' && j.started_at ? (
-                <span className="text-[11px] text-zinc-300">⏱ {fmtHMS(nowMs - new Date(j.started_at).getTime())}</span>
-              ) : null}
-            </div>
+            <div className="mt-0.5 text-zinc-300">{right}</div>
           </div>
 
           {compact ? null : (
@@ -2194,14 +2174,14 @@ const [editOpen, setEditOpen] = useState(false)
   function PlanToolbar() {
     return (
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-yellow-400/15 bg-black/20 p-4">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
           <button
             onClick={() => {
               setPlanView('day')
               recalcRange('day', anchorDate)
             }}
             className={cn(
-              'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
+              'rounded-2xl border px-4 py-2 text-xs font-semibold transition flex-1 text-center sm:flex-none',
               planView === 'day' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
             )}
           >
@@ -2213,7 +2193,7 @@ const [editOpen, setEditOpen] = useState(false)
               recalcRange('week', anchorDate)
             }}
             className={cn(
-              'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
+              'rounded-2xl border px-4 py-2 text-xs font-semibold transition flex-1 text-center sm:flex-none',
               planView === 'week' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
             )}
           >
@@ -2225,7 +2205,7 @@ const [editOpen, setEditOpen] = useState(false)
               recalcRange('month', anchorDate)
             }}
             className={cn(
-              'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
+              'rounded-2xl border px-4 py-2 text-xs font-semibold transition flex-1 text-center sm:flex-none',
               planView === 'month' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
             )}
           >
@@ -2237,7 +2217,7 @@ const [editOpen, setEditOpen] = useState(false)
           <button
             onClick={() => setPlanMode('workers')}
             className={cn(
-              'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
+              'rounded-2xl border px-4 py-2 text-xs font-semibold transition flex-1 text-center sm:flex-none',
               planMode === 'workers' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
             )}
           >
@@ -2246,7 +2226,7 @@ const [editOpen, setEditOpen] = useState(false)
           <button
             onClick={() => setPlanMode('sites')}
             className={cn(
-              'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
+              'rounded-2xl border px-4 py-2 text-xs font-semibold transition flex-1 text-center sm:flex-none',
               planMode === 'sites' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
             )}
           >
@@ -2254,7 +2234,7 @@ const [editOpen, setEditOpen] = useState(false)
           </button>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
           <label className="grid gap-1">
             <span className="text-[11px] text-zinc-300">Дата</span>
             <input
@@ -2301,6 +2281,7 @@ const [editOpen, setEditOpen] = useState(false)
   function PlanWeekGrid() {
     return (
       <div className="mt-4 overflow-auto rounded-3xl border border-yellow-400/15 bg-black/15">
+        <div className="w-full overflow-x-auto">
         <div className="min-w-[760px]">
           <div className="grid" style={{ gridTemplateColumns: `200px repeat(${planDates.length}, minmax(130px, 1fr))` }}>
             <div className="sticky top-0 z-10 border-b border-yellow-400/10 bg-zinc-950/90 px-4 py-3 text-xs font-semibold text-zinc-200">
@@ -2382,6 +2363,7 @@ const [editOpen, setEditOpen] = useState(false)
             ))}
           </div>
         </div>
+        </div>
       </div>
     )
   }
@@ -2390,6 +2372,7 @@ const [editOpen, setEditOpen] = useState(false)
     const dayISO = dateFrom
     return (
       <div className="mt-4 overflow-auto rounded-3xl border border-yellow-400/15 bg-black/15">
+        <div className="w-full overflow-x-auto">
         <div className="min-w-[760px]">
           <div className="grid" style={{ gridTemplateColumns: `70px repeat(${planEntities.length}, minmax(130px, 1fr))` }}>
             <div className="sticky top-0 z-10 border-b border-yellow-400/10 bg-zinc-950/90 px-3 py-3 text-xs font-semibold text-zinc-200">
@@ -2462,6 +2445,7 @@ const [editOpen, setEditOpen] = useState(false)
             ))}
           </div>
         </div>
+        </div>
       </div>
     )
   }
@@ -2479,6 +2463,7 @@ const [editOpen, setEditOpen] = useState(false)
 
     return (
       <div className="mt-4 overflow-auto rounded-3xl border border-yellow-400/15 bg-black/15">
+        <div className="w-full overflow-x-auto">
         <div className="min-w-[760px] p-4">
           <div className="grid grid-cols-7 gap-3">
             {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((d) => (
@@ -2532,6 +2517,7 @@ const [editOpen, setEditOpen] = useState(false)
               )
             })}
           </div>
+        </div>
         </div>
       </div>
     )
@@ -2658,13 +2644,13 @@ const [editOpen, setEditOpen] = useState(false)
 
         <div className="rounded-3xl border border-yellow-400/20 bg-zinc-950/50 p-6 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="adminTabRow">
+            <div className="adminTabRow flex flex-wrap items-center gap-2">
               {(['sites', 'workers', 'jobs', 'plan', 'reports'] as TabKey[]).map((k) => (
                 <button
                   key={k}
                   onClick={() => setTab(k)}
                   className={cn(
-                    'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
+                    'rounded-2xl border px-4 py-2 text-xs font-semibold transition flex-1 text-center sm:flex-none',
                     tab === k ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
                   )}
                 >
@@ -2729,28 +2715,31 @@ const [editOpen, setEditOpen] = useState(false)
                           </div>
 
                           <div className="mt-4 flex flex-wrap items-end gap-2">
-                            <label className="grid gap-1">
-                              <span className="text-[11px] text-zinc-300">Быстрое назначение: объект</span>
-                              <select
+                            <div className="w-full sm:w-[260px]">
+                              <SearchableSelect
+                                label="Быстрое назначение: объект"
                                 value={qaSite}
-                                onChange={(e) => setQaSite(e.target.value)}
-                                className="w-[260px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
-                              >
-                                <option value="">Выбери объект…</option>
-                                {activeSites.map((s) => (
-                                  <option key={s.id} value={s.id}>
-                                    {s.name || s.id}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
+                                onChange={setQaSite}
+                                disabled={busy}
+                                placeholder="Выбери объект…"
+                                items={activeSites.map((s) => {
+                                  const meta = siteCategoryMeta(s.category)
+                                  const name = String(s.name || '').trim()
+                                  const addr = String(s.address || '').trim()
+                                  const label = name || addr || `Объект ${String(s.id).slice(0, 6)}`
+                                  const hint = name && addr ? addr : undefined
+                                  return { id: s.id, label, hint, dotClass: meta.dotClass }
+                                })}
+                                inputClassName="w-full rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+                              />
+                            </div>
 
                             <label className="grid gap-1">
                               <span className="text-[11px] text-zinc-300">Быстрое назначение: работник</span>
                               <select
                                 value={qaWorker}
                                 onChange={(e) => setQaWorker(e.target.value)}
-                                className="w-[260px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+                                className="w-full sm:w-[260px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                               >
                                 <option value="">Выбери работника…</option>
                                 {workersForSelect.map((w) => (
@@ -2785,9 +2774,9 @@ const [editOpen, setEditOpen] = useState(false)
                               <div key={s.id} className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
                                 <div className="flex flex-wrap items-start justify-between gap-4">
                                   <div className="flex min-w-0 flex-1 flex-wrap items-start gap-4">
-                                    <div className="w-[150px] shrink-0">
+                                    <div className="w-full sm:w-[150px] shrink-0">
                                       {primaryUrl ? (
-                                        <div className="relative h-[92px] w-[150px] overflow-hidden rounded-2xl border border-yellow-400/20 bg-black/20">
+                                        <div className="relative h-[92px] w-full sm:w-[150px] overflow-hidden rounded-2xl border border-yellow-400/20 bg-black/20">
                                           {/* eslint-disable-next-line @next/next/no-img-element */}
                                           <img src={primaryUrl} alt="site" className="h-full w-full object-cover" loading="lazy" />
                                           <button
@@ -2823,7 +2812,7 @@ const [editOpen, setEditOpen] = useState(false)
                                     </div>
 
                                     <div className="min-w-0 flex-1">
-                                      <div className="flex flex-wrap items-center gap-2">
+                                      <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
                                         <button
                                           onClick={() => openSiteCard(s)}
                                           className="truncate text-left text-base font-semibold text-yellow-100 hover:underline"
@@ -2918,7 +2907,7 @@ const [editOpen, setEditOpen] = useState(false)
                                           <select
                                             value={workerPickSite[s.id] || ''}
                                             onChange={(e) => setWorkerPickSite((p) => ({ ...p, [s.id]: e.target.value }))}
-                                            className="w-[240px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+                                            className="w-full sm:w-[240px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                                           >
                                             <option value="">Выбери работника…</option>
                                             {workersForSelect.map((w) => (
@@ -3271,7 +3260,7 @@ const [editOpen, setEditOpen] = useState(false)
                         onChange={(e) => setInviteEmail(e.target.value)}
                         type="text"
                         autoComplete="username"
-                        className="w-[260px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+                        className="w-full sm:w-[260px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                         placeholder="name@domain.com или +31612345678"
                       />
                     </label>
@@ -3302,23 +3291,30 @@ const [editOpen, setEditOpen] = useState(false)
                     <div key={w.id} className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="flex items-start gap-3">
-                          <div className="relative mt-0.5">
+                          <div className="relative mt-0.5 h-10 w-10">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-yellow-400/15 bg-black/30 text-[12px] font-semibold text-yellow-100/80">
+                              {initials(w.full_name)}
+                            </div>
                             {workerPhotoMeta[w.id]?.thumb ? (
                               // eslint-disable-next-line @next/next/no-img-element
                               <img
                                 src={workerPhotoMeta[w.id]?.thumb || ''}
                                 alt="avatar"
-                                className="h-10 w-10 rounded-full border border-yellow-400/20 object-cover shadow-sm"
+                                className="absolute inset-0 h-10 w-10 rounded-full border border-yellow-400/20 object-cover shadow-sm"
                                 loading="lazy"
+                                onError={(e) => {
+                                  try {
+                                    ;(e.currentTarget as HTMLImageElement).style.display = 'none'
+                                  } catch {}
+                                }}
                               />
-                            ) : (
-                              <div className="flex h-10 w-10 items-center justify-center rounded-full border border-yellow-400/15 bg-black/30 text-[12px] font-semibold text-yellow-100/80">
-                                {initials(w.full_name)}
-                              </div>
-                            )}
+                            ) : null}
+                            <div className="absolute -bottom-1 -right-1 rounded-xl border border-yellow-400/20 bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-yellow-100">
+                              {(workerPhotoMeta[w.id]?.count ?? '…')}/5
+                            </div>
                           </div>
 
-                          <div className="min-w-[220px]">
+                          <div className="min-w-full sm:w-[220px]">
                             <div className="text-base font-semibold text-yellow-100">
                               <button onClick={() => openWorkerCard(w.id)} className="hover:text-yellow-100">
                                 {w.full_name || 'Без имени'}
@@ -3337,9 +3333,6 @@ const [editOpen, setEditOpen] = useState(false)
                                 отключён
                               </span>
                             ) : null}
-                            <span className="ml-2 rounded-xl border border-yellow-400/15 bg-black/30 px-2 py-1 text-[11px] text-zinc-200">
-                              фото: {workerPhotoMeta[w.id]?.count ?? '…'}/5
-                            </span>
                           </div>
 
                           <div className="mt-3 text-xs text-zinc-300">Объекты:</div>
@@ -3456,7 +3449,7 @@ const [editOpen, setEditOpen] = useState(false)
                 <div className="text-sm font-semibold text-yellow-100">Создать смену</div>
                 <div className="mt-1 text-xs text-zinc-300">Объект + дата + время + несколько работников.</div>
 
-                <div className="mt-4 grid gap-3 lg:grid-cols-[1.3fr_1.7fr_0.8fr_0.7fr_0.7fr_auto]">
+                <div className="mt-4 grid gap-3 lg:grid-cols-2 2xl:grid-cols-[1.3fr_1.7fr_0.8fr_0.7fr_0.7fr_auto]">
                   <label className="grid gap-1">
                     <span className="text-[11px] text-zinc-300">Объект</span>
                     <select
@@ -3518,17 +3511,17 @@ const [editOpen, setEditOpen] = useState(false)
                   <button
                     onClick={createJobs}
                     disabled={busy || !newSiteId || newWorkers.length === 0}
-                    className="mt-5 w-full rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-center text-sm font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:cursor-not-allowed disabled:border-yellow-400/15 disabled:bg-black/30 disabled:text-zinc-400 disabled:opacity-100"
+                    className="w-full rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-center text-sm font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:cursor-not-allowed disabled:opacity-60 lg:mt-5 lg:w-auto"
                   >
-                    Создать смену
+                    {busy ? 'Создаю…' : !newSiteId ? 'Выбери объект' : newWorkers.length === 0 ? 'Выбери работников' : 'Создать смену'}
                   </button>
                 </div>
 
-                <div className="mt-4 flex flex-wrap items-center gap-2">
+                <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
                   <button
                     onClick={() => setJobsView('table')}
                     className={cn(
-                      'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
+                      'rounded-2xl border px-4 py-2 text-xs font-semibold transition flex-1 text-center sm:flex-none',
                       jobsView === 'table' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
                     )}
                   >
@@ -3537,14 +3530,14 @@ const [editOpen, setEditOpen] = useState(false)
                   <button
                     onClick={() => setJobsView('board')}
                     className={cn(
-                      'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
+                      'rounded-2xl border px-4 py-2 text-xs font-semibold transition flex-1 text-center sm:flex-none',
                       jobsView === 'board' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
                     )}
                   >
                     Доска
                   </button>
 
-                  <div className="ml-auto flex flex-wrap items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
                     <button
                       onClick={() => {
                         setAnchorDate(toISODate(new Date()))
@@ -3584,7 +3577,7 @@ const [editOpen, setEditOpen] = useState(false)
                 <div className="flex flex-wrap items-end justify-between gap-3">
                   <div className="text-sm font-semibold text-yellow-100">Фильтры</div>
 
-                  <div className="flex flex-wrap items-end gap-2">
+                  <div className="mt-4 grid w-full gap-3 lg:grid-cols-4">
                     <label className="grid gap-1">
                       <span className="text-[11px] text-zinc-300">С</span>
                       <input
@@ -3611,7 +3604,7 @@ const [editOpen, setEditOpen] = useState(false)
                       <select
                         value={filterSite}
                         onChange={(e) => setFilterSite(e.target.value)}
-                        className="w-[220px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+                        className="w-full rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                       >
                         <option value="">Все</option>
                         {sites
@@ -3630,7 +3623,7 @@ const [editOpen, setEditOpen] = useState(false)
                       <select
                         value={filterWorker}
                         onChange={(e) => setFilterWorker(e.target.value)}
-                        className="w-[220px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+                        className="w-full rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                       >
                         <option value="">Все</option>
                         {workers
@@ -3664,7 +3657,60 @@ const [editOpen, setEditOpen] = useState(false)
                     ))}
                   </div>
                 ) : (
-                  <div className="mt-5 overflow-auto rounded-3xl border border-yellow-400/10 bg-black/20">
+                  <div className="mt-5">
+                    <div className="grid gap-2 lg:hidden">
+                    {scheduleFiltered
+                      .slice()
+                      .sort((a, b) => `${a.job_date || ''} ${timeHHMM(a.scheduled_time)}`.localeCompare(`${b.job_date || ''} ${timeHHMM(b.scheduled_time)}`))
+                      .map((j) => (
+                        <div key={j.id} className="rounded-3xl border border-yellow-400/10 bg-black/20 p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="text-sm font-semibold text-zinc-100">
+                              {fmtD(j.job_date)} • {timeRangeHHMM(j.scheduled_time, j.scheduled_end_time)}
+                            </div>
+                            <div className="text-xs text-zinc-300">{statusRu(String(j.status || ''))}</div>
+                          </div>
+
+                          {String(j.status || '') === 'planned' && j.worker_id ? (
+                            <div className="mt-1 text-[11px] font-semibold text-yellow-100/80">Принято</div>
+                          ) : null}
+
+                          <div className="mt-3 grid gap-2 text-xs text-zinc-200">
+                            <div className="flex gap-2">
+                              <span className="text-zinc-400">Объект:</span>
+                              <span className="truncate">{j.site_name || '—'}</span>
+                            </div>
+                            <div className="flex gap-2">
+                              <span className="text-zinc-400">Работник:</span>
+                              <span className="truncate">{j.worker_name || '—'}</span>
+                            </div>
+                            <div className="flex gap-2">
+                              <span className="text-zinc-400">Начал:</span>
+                              <span>{fmtDT(j.started_at)}</span>
+                            </div>
+                            <div className="flex gap-2">
+                              <span className="text-zinc-400">Закончил:</span>
+                              <span>{fmtDT(j.stopped_at)}</span>
+                            </div>
+                          </div>
+
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <button
+                              onClick={() => openEditForJob(j)}
+                              className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/40"
+                            >
+                              Править
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    {scheduleFiltered.length === 0 ? (
+                      <div className="rounded-3xl border border-yellow-400/10 bg-black/20 p-6 text-center text-xs text-zinc-500">Нет смен</div>
+                    ) : null}
+                  </div>
+
+                    <div className="hidden lg:block">
+                      <div className="overflow-auto rounded-3xl border border-yellow-400/10 bg-black/20">
                     <table className="min-w-[920px] w-full text-left text-sm">
                       <thead className="bg-black/30 text-xs text-zinc-300">
                         <tr>
@@ -3687,7 +3733,7 @@ const [editOpen, setEditOpen] = useState(false)
                               <td className="px-4 py-3">{fmtD(j.job_date)}</td>
                               <td className="px-4 py-3">{timeRangeHHMM(j.scheduled_time, j.scheduled_end_time)}</td>
                               <td className="px-4 py-3">
-                                <div className="flex items-center gap-2">
+                                <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center">
                                   {(() => {
                                     const ss = j.site_id ? sitesById.get(j.site_id) : null
                                     const photos = ss && Array.isArray((ss as any).photos) ? ((ss as any).photos as any[]) : []
@@ -3747,7 +3793,14 @@ const [editOpen, setEditOpen] = useState(false)
                                   '—'
                                 )}
                               </td>
-                              <td className="px-4 py-3">{statusRu(String(j.status || ''))}</td>
+                              <td className="px-4 py-3">
+                                <div className="grid gap-1">
+                                  <div>{statusRu(String(j.status || ''))}</div>
+                                  {String(j.status || '') === 'planned' && j.worker_id ? (
+                                    <div className="text-[11px] font-semibold text-yellow-100/80">Принято</div>
+                                  ) : null}
+                                </div>
+                              </td>
                               <td className="px-4 py-3">{fmtDT(j.started_at)}</td>
                               <td className="px-4 py-3">{fmtDT(j.stopped_at)}</td>
                               <td className="px-4 py-3">
@@ -3755,7 +3808,7 @@ const [editOpen, setEditOpen] = useState(false)
                                   onClick={() => openEditForJob(j)}
                                   className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40"
                                 >
-                                  править
+                                  Править
                                 </button>
                               </td>
                             </tr>
@@ -3769,6 +3822,8 @@ const [editOpen, setEditOpen] = useState(false)
                         ) : null}
                       </tbody>
                     </table>
+                  </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -3956,15 +4011,20 @@ const [editOpen, setEditOpen] = useState(false)
 
                         <div className="grid gap-1">
                           <div className="text-[11px] text-zinc-400">Контакты</div>
-                          <div className="rounded-xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-xs text-zinc-200">
-                            <div>
-                              <span className="text-zinc-500">Email:</span>{' '}
-                              <span className="text-zinc-200">{workerProfileById?.[workerCardId]?.email || '—'}</span>
-                            </div>
-                            <div className="mt-1">
-                              <span className="text-zinc-500">Тел:</span>{' '}
-                              <span className="text-zinc-200">{workerProfileById?.[workerCardId]?.phone || '—'}</span>
-                            </div>
+                          <div className="grid gap-2">
+                            <input
+                              value={workerCardEmail}
+                              onChange={(e) => setWorkerCardEmail(e.target.value)}
+                              placeholder="Email (логин)"
+                              autoComplete="email"
+                              className="w-full rounded-xl border border-yellow-400/10 bg-black/30 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-yellow-300/40"
+                            />
+                            <input
+                              value={workerCardPhone}
+                              onChange={(e) => setWorkerCardPhone(e.target.value)}
+                              placeholder="Телефон для SMS (например +31612345678)"
+                              className="w-full rounded-xl border border-yellow-400/10 bg-black/30 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-yellow-300/40"
+                            />
                           </div>
                         </div>
                       </div>
@@ -4270,6 +4330,8 @@ const [editOpen, setEditOpen] = useState(false)
     </main>
   )
 }
+
+
 
 
 

@@ -63,3 +63,26 @@ body {
     animation-iteration-count: 1 !important;
   }
 }
+
+
+/* Premium selects (native dropdowns have limited theming, but control stays premium) */
+select {
+  background-color: rgba(0,0,0,0.40);
+  border: 1px solid rgba(250, 204, 21, 0.20);
+  border-radius: 16px;
+  padding: 8px 12px;
+  color: #e4e4e7;
+}
+select:focus {
+  outline: none;
+  border-color: rgba(253, 224, 71, 0.60);
+  box-shadow: 0 0 0 3px rgba(234, 179, 8, 0.15);
+}
+select:disabled {
+  opacity: 0.55;
+}
+select option {
+  background-color: #0b0b0b;
+  color: #e4e4e7;
+}
+
