@@ -6,9 +6,7 @@ export const dynamic = 'force-dynamic'
 
 function cleanEnv(v: string | undefined | null): string {
   const s = String(v ?? '').replace(/^\uFEFF/, '').trim()
-  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
-    return s.slice(1, -1).trim()
-  }
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) return s.slice(1, -1).trim()
   return s
 }
 
@@ -57,7 +55,7 @@ export async function POST(req: Request) {
         password,
       })
 
-      if (error || !data?.session) return json(401, { error: error?.message || 'Неверный логин/пароль' })
+      if (error || !data?.session) return json(401, { error: 'Неверный логин/пароль' })
 
       return json(200, {
         access_token: data.session.access_token,
@@ -73,7 +71,7 @@ export async function POST(req: Request) {
       password,
     })
 
-    if (error || !data?.session) return json(401, { error: error?.message || 'Неверный логин/пароль' })
+    if (error || !data?.session) return json(401, { error: 'Неверный логин/пароль' })
 
     return json(200, {
       access_token: data.session.access_token,
@@ -82,7 +80,6 @@ export async function POST(req: Request) {
     })
   } catch (e: any) {
     console.error('[api/auth/login] error:', e)
-    const msg = process.env.NODE_ENV === 'production' ? 'Internal Server Error' : String(e?.message || e)
-    return json(500, { error: msg })
+    return json(500, { error: 'Internal Server Error' })
   }
 }
