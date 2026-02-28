@@ -17,7 +17,13 @@ type ProfileRow = {
 }
 
 type UserGuard = {
+  // Для совместимости: `supabase` используется в роутах.
+  // В admin-роутах это service-role (без RLS), в /api/me/* по флагу может быть anon+Bearer (с RLS).
   supabase: SupabaseClient
+  // Явно оставляем доступ к service-role (для admin и внутренних проверок).
+  service: SupabaseClient
+  // Клиент под пользователем (anon + Authorization Bearer <JWT>), для RLS-режима.
+  userSupabase: SupabaseClient
   token: string
   user: User
   userId: string
@@ -47,6 +53,7 @@ function mustEnv(name: string): string {
 }
 
 let _service: SupabaseClient | null = null
+let _anon: SupabaseClient | null = null
 
 export function supabaseService(): SupabaseClient {
   if (_service) return _service
@@ -56,6 +63,30 @@ export function supabaseService(): SupabaseClient {
     auth: { persistSession: false, autoRefreshToken: false },
   })
   return _service
+}
+
+export function supabaseAnon(): SupabaseClient {
+  if (_anon) return _anon
+  const url = mustEnv('NEXT_PUBLIC_SUPABASE_URL')
+  const key = mustEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY')
+  _anon = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
+  return _anon
+}
+
+export function supabaseUser(token: string): SupabaseClient {
+  const url = mustEnv('NEXT_PUBLIC_SUPABASE_URL')
+  const key = mustEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY')
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { headers: { Authorization: `Bearer ${token}` } },
+  })
+}
+
+function envFlag(name: string): boolean {
+  const v = cleanEnv(process.env[name] || '').toLowerCase()
+  return v === '1' || v === 'true' || v === 'yes' || v === 'on'
 }
 
 // JWT должен быть ASCII (ByteString). Иногда BOM/мусор ломает заголовки.
@@ -80,20 +111,27 @@ export async function requireUser(reqOrHeaders: Request | Headers): Promise<User
     throw new ApiError(401, 'Нет токена (Authorization: Bearer ...)')
   }
 
-  const supabase = supabaseService()
-  const { data, error } = await supabase.auth.getUser(token)
+  const service = supabaseService()
+  const userSupabase = supabaseUser(token)
+  const { data, error } = await service.auth.getUser(token)
 
   if (error || !data?.user) {
     throw new ApiError(401, 'Токен неверный/просрочен (перелогинься)')
   }
 
-  return { supabase, token, user: data.user, userId: data.user.id }
+  // По умолчанию оставляем старое поведение (service-role) для /api/me/*,
+  // чтобы не сломать прод пока не готовы RLS-политики.
+  // Включать только на Preview до полной проверки: ME_USE_RLS=1.
+  const useRls = envFlag('ME_USE_RLS')
+  const supabase = useRls ? userSupabase : service
+
+  return { supabase, service, userSupabase, token, user: data.user, userId: data.user.id }
 }
 
 export async function requireAdmin(reqOrHeaders: Request | Headers): Promise<AdminGuard> {
   const guard = await requireUser(reqOrHeaders)
 
-  const { data: prof, error: profErr } = await guard.supabase
+  const { data: prof, error: profErr } = await guard.service
     .from('profiles')
     .select('id, role, active')
     .eq('id', guard.userId)
@@ -102,14 +140,15 @@ export async function requireAdmin(reqOrHeaders: Request | Headers): Promise<Adm
   if (profErr || !prof) throw new ApiError(403, 'Нет профиля (profiles) или нет доступа')
   if (prof.role !== 'admin' || prof.active !== true) throw new ApiError(403, 'Нужна роль admin и active=true')
 
-  return { ...guard, profile: prof as ProfileRow }
+  // В admin-роутах хотим гарантированно service-role.
+  return { ...guard, supabase: guard.service, profile: prof as ProfileRow }
 }
 
 
 export async function requireActiveWorker(reqOrHeaders: Request | Headers): Promise<WorkerGuard> {
   const guard = await requireUser(reqOrHeaders)
 
-  const { data: prof, error: profErr } = await guard.supabase
+  const { data: prof, error: profErr } = await guard.service
     .from('profiles')
     .select('id, role, active')
     .eq('id', guard.userId)
@@ -118,6 +157,7 @@ export async function requireActiveWorker(reqOrHeaders: Request | Headers): Prom
   if (profErr || !prof) throw new ApiError(403, 'Нет профиля (profiles) или нет доступа')
   if (prof.role !== 'worker' || prof.active !== true) throw new ApiError(403, 'Нужна роль worker и active=true')
 
+  // В /api/me/* клиент выбирается в requireUser() по флагу ME_USE_RLS.
   return { ...guard, profile: prof as ProfileRow }
 }
 

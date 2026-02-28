@@ -90,6 +90,12 @@ async function resolveAssignmentsTable(supabase: any): Promise<string | null> {
     }
     const msg = String(error?.message || '')
     const missing = msg.includes('Could not find the table') || msg.includes('does not exist') || msg.includes('relation')
+    const low = msg.toLowerCase()
+    const forbidden = low.includes('permission denied') || low.includes('row level security') || low.includes('rls')
+    if (forbidden) {
+      // Таблица существует, но в RLS-режиме недоступна — пробуем следующий кандидат.
+      continue
+    }
     if (!missing) {
       ASSIGN_TABLE = t
       return t
