@@ -15,7 +15,7 @@ async function emailMap(supabase: any): Promise<Record<string, string>> {
   let page = 1
   const perPage = 1000
 
-  // eslint-disable-next-line no-constant-condition
+   
   while (true) {
     const { data, error } = await supabase.auth.admin.listUsers({ page, perPage })
     if (error) throw new ApiError(400, error.message)

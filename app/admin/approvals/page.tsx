@@ -325,7 +325,7 @@ export default function AdminApprovalsPage() {
                       <div className="flex gap-3">
                         <div className="h-14 w-14 rounded-2xl overflow-hidden border border-amber-500/20 bg-black/30 flex items-center justify-center">
                           {w.avatar_url ? (
-                            // eslint-disable-next-line @next/next/no-img-element
+                             
                             <img src={w.avatar_url} className="h-full w-full object-cover" />
                           ) : (
                             <div className="text-xs opacity-60">—</div>
