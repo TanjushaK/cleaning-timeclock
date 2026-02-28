@@ -844,7 +844,7 @@ function ReportsPanel() {
                 <div className="flex items-center gap-3">
                   <div className="relative h-10 w-10 overflow-hidden rounded-2xl border border-yellow-400/15 bg-black/40">
                     {avatarUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
+                       
                       <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-zinc-200">
@@ -2162,7 +2162,7 @@ const [editOpen, setEditOpen] = useState(false)
                     )
                   }
                   return (
-                    // eslint-disable-next-line @next/next/no-img-element
+                     
                     <img src={url} alt="" className="h-5 w-5 rounded-full border border-yellow-400/15 object-cover" loading="lazy" />
                   )
                 }
@@ -2175,13 +2175,13 @@ const [editOpen, setEditOpen] = useState(false)
                   )
                 }
                 return (
-                  // eslint-disable-next-line @next/next/no-img-element
+                   
                   <img src={thumb} alt="" className="h-5 w-5 rounded-full border border-yellow-400/15 object-cover" loading="lazy" />
                 )
               })()}
               <div className="flex min-w-0 items-center gap-2">
               {planMode === 'sites' && !compact && j.worker_id && workerPhotoMeta[j.worker_id]?.thumb ? (
-                // eslint-disable-next-line @next/next/no-img-element
+                 
                 <img
                   src={workerPhotoMeta[j.worker_id]?.thumb || ''}
                   alt=""
@@ -2369,7 +2369,7 @@ const [editOpen, setEditOpen] = useState(false)
                     <div className="min-w-0">
                       <div className="flex min-w-0 items-center gap-2">
                       {planMode === 'workers' && workerPhotoMeta[ent.id]?.thumb ? (
-                        // eslint-disable-next-line @next/next/no-img-element
+                         
                         <img
                           src={workerPhotoMeta[ent.id]?.thumb || ''}
                           alt=""
@@ -2448,7 +2448,7 @@ const [editOpen, setEditOpen] = useState(false)
                   <div className="min-w-0">
                     <div className="flex min-w-0 items-center gap-2">
                     {planMode === 'workers' && workerPhotoMeta[ent.id]?.thumb ? (
-                      // eslint-disable-next-line @next/next/no-img-element
+                       
                       <img
                         src={workerPhotoMeta[ent.id]?.thumb || ''}
                         alt=""
@@ -2841,7 +2841,7 @@ const [editOpen, setEditOpen] = useState(false)
                                     <div className="w-full sm:w-[150px] shrink-0">
                                       {primaryUrl ? (
                                         <div className="relative h-[92px] w-full sm:w-[150px] overflow-hidden rounded-2xl border border-yellow-400/20 bg-black/20">
-                                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                                          { }
                                           <img src={primaryUrl} alt="site" className="h-full w-full object-cover" loading="lazy" />
                                           <button
                                             type="button"
@@ -3256,7 +3256,7 @@ const [editOpen, setEditOpen] = useState(false)
                                   <div className="grid grid-cols-2 gap-2">
                                     {siteCardPhotos.map((p, idx) => (
                                       <div key={p.path} className="relative overflow-hidden rounded-2xl border border-yellow-400/10 bg-black/20">
-                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        { }
                                         <img src={p.url || ""} alt="site" className="h-36 w-full object-cover" loading="lazy" />
 
                                         <div className="absolute left-2 top-2 rounded-xl border border-yellow-400/15 bg-black/50 px-2 py-1 text-[11px] text-yellow-100/80">{idx === 0 ? 'главное' : ''}</div>
@@ -3360,7 +3360,7 @@ const [editOpen, setEditOpen] = useState(false)
                               {initials(w.full_name)}
                             </div>
                             {workerPhotoMeta[w.id]?.thumb ? (
-                              // eslint-disable-next-line @next/next/no-img-element
+                               
                               <img
                                 src={workerPhotoMeta[w.id]?.thumb || ''}
                                 alt="avatar"
@@ -3824,7 +3824,7 @@ const [editOpen, setEditOpen] = useState(false)
                                         )}
                                         title={canNav ? 'Открыть навигацию' : 'Фото объекта'}
                                       >
-                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                        { }
                                         <img src={url} alt="" className="h-full w-full object-cover" loading="lazy" />
                                       </button>
                                     )
@@ -3839,7 +3839,7 @@ const [editOpen, setEditOpen] = useState(false)
                                     className="flex items-center gap-2 text-yellow-100 hover:text-yellow-50"
                                   >
                                     {workerPhotoMeta[j.worker_id!]?.thumb ? (
-                                      // eslint-disable-next-line @next/next/no-img-element
+                                       
                                       <img
                                         src={workerPhotoMeta[j.worker_id!]?.thumb || ''}
                                         alt=""
@@ -4166,7 +4166,7 @@ const [editOpen, setEditOpen] = useState(false)
                     <div className="grid grid-cols-2 gap-2">
                       {workerCardPhotos.map((p) => (
                         <div key={p.path} className="relative overflow-hidden rounded-2xl border border-yellow-400/10 bg-black/20">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          { }
                           <img src={p.url || ''} alt="worker" className="h-36 w-full object-cover" loading="lazy" />
 
                           <div className="absolute right-2 top-2">
@@ -4249,7 +4249,7 @@ const [editOpen, setEditOpen] = useState(false)
                                 )}
                                 title={canNav ? 'Открыть навигацию' : 'Фото объекта'}
                               >
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                { }
                                 <img src={url} alt="" className="h-full w-full object-cover" loading="lazy" />
                               </button>
                             )

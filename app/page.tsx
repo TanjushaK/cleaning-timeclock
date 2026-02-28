@@ -1249,7 +1249,7 @@ const loadAll = useCallback(async () => {
                                 {(j.site_name || "—").trim().slice(0, 1).toUpperCase() || "•"}
                               </div>
                               {j.site_photo_url ? (
-                                // eslint-disable-next-line @next/next/no-img-element
+                                 
                                 <img
                                   src={j.site_photo_url}
                                   alt="site"
@@ -1340,7 +1340,7 @@ const loadAll = useCallback(async () => {
             <div className={clsx(card, "p-6 xl:col-span-1")}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  { }
                   <img src="/tanija-logo.png" alt="Tanija" className="h-6 w-auto" />
                   <div className="text-lg font-semibold">Профиль</div>
                 </div>
@@ -1397,7 +1397,7 @@ const loadAll = useCallback(async () => {
                       <div key={p.path} className={clsx("rounded-xl overflow-hidden", border, "bg-zinc-950/60")}>
                         <div className="aspect-[4/3] bg-zinc-900/30 flex items-center justify-center">
                           {p.url ? (
-                            // eslint-disable-next-line @next/next/no-img-element
+                             
                             <img src={p.url} alt="photo" className="w-full h-full object-cover" />
                           ) : (
                             <div className="text-xs opacity-60">нет превью</div>
