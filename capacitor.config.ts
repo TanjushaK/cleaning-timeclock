@@ -4,9 +4,8 @@ const config: CapacitorConfig = {
   appId: 'nl.tanjusha.timeclock',
   appName: 'Cleaning Timeclock',
   webDir: 'out',
-  bundledWebRuntime: false,
   server: {
-    url: 'https://clock.tanjusha.nl',
+    url: 'https://timeclock.tanjusha.nl',
     cleartext: false
   }
 }
