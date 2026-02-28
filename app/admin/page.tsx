@@ -404,6 +404,17 @@ function siteCategoryMeta(category: number | null | undefined) {
   return c || ({ id: 0, label: 'Без категории', dotClass: 'bg-zinc-500' } as SiteCategory)
 }
 
+
+function siteToSelectItem(s: Site) {
+  const meta = siteCategoryMeta(s.category ?? null)
+  const name = String(s.name || '').trim()
+  const addr = String(s.address || '').trim()
+  const label = name || addr || `Объект ${String(s.id).slice(0, 6)}`
+  const hint = name && addr ? addr : undefined
+  return { id: s.id, label, hint, dotClass: meta.dotClass }
+}
+
+
 function googleNavUrl(lat: number, lng: number) {
   const dest = `${lat},${lng}`
   return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}`
@@ -2786,14 +2797,7 @@ const [editOpen, setEditOpen] = useState(false)
                                 onChange={setQaSite}
                                 disabled={busy}
                                 placeholder="Выбери объект…"
-                                items={activeSites.map((s) => {
-                                  const meta = siteCategoryMeta(s.category)
-                                  const name = String(s.name || '').trim()
-                                  const addr = String(s.address || '').trim()
-                                  const label = name || addr || `Объект ${String(s.id).slice(0, 6)}`
-                                  const hint = name && addr ? addr : undefined
-                                  return { id: s.id, label, hint, dotClass: meta.dotClass }
-                                })}
+                                items={activeSites.map(siteToSelectItem)}
                                 inputClassName="w-full rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                               />
                             </div>
@@ -3469,21 +3473,18 @@ const [editOpen, setEditOpen] = useState(false)
 
                           {!isAdmin ? (
                             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-end">
-                              <label className="grid w-full gap-1 sm:w-auto">
-                                <span className="text-[11px] text-zinc-300">Добавить объект</span>
-                                <select
-                                  value={pick}
-                                  onChange={(e) => setWorkerPickSite((p) => ({ ...p, [w.id]: e.target.value }))}
-                                  className="w-full rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
-                                >
-                                  <option value="">Выбери объект…</option>
-                                  {activeSites.map((s) => (
-                                    <option key={s.id} value={s.id}>
-                                      {s.name || s.id}
-                                    </option>
-                                  ))}
-                                </select>
-                              </label>
+                              
+<div className="grid w-full gap-1 sm:w-auto">
+  <SearchableSelect
+    label="Добавить объект"
+    value={pick}
+    onChange={(id) => setWorkerPickSite((p) => ({ ...p, [w.id]: id }))}
+    items={activeSites.map(siteToSelectItem)}
+    placeholder="Выбери объект…"
+    disabled={busy}
+    inputClassName="w-full rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+  />
+</div>
 
                               <button
                                 onClick={() => pick && assign(pick, w.id)}
@@ -3514,25 +3515,21 @@ const [editOpen, setEditOpen] = useState(false)
                 <div className="mt-1 text-xs text-zinc-300">Объект + дата + время + несколько работников.</div>
 
                 <div className="mt-4 grid gap-3 lg:grid-cols-2 2xl:grid-cols-[1.3fr_1.7fr_0.8fr_0.7fr_0.7fr_auto]">
-                  <label className="grid gap-1">
-                    <span className="text-[11px] text-zinc-300">Объект</span>
-                    <select
-                      value={newSiteId}
-                      onChange={(e) => {
-                        const v = e.target.value
-                        setNewSiteId(v)
-                        setNewWorkers([])
-                      }}
-                      className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
-                    >
-                      <option value="">Выбери объект…</option>
-                      {activeSites.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name || s.id}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  
+<div className="grid gap-1">
+  <SearchableSelect
+    label="Объект"
+    value={newSiteId}
+    onChange={(v) => {
+      setNewSiteId(v)
+      setNewWorkers([])
+    }}
+    items={activeSites.map(siteToSelectItem)}
+    placeholder="Выбери объект…"
+    disabled={busy}
+    inputClassName="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
+  />
+</div>
 
                   <label className="grid gap-1">
                     <span className="text-[11px] text-zinc-300">Работники (можно несколько)</span>
@@ -3663,24 +3660,17 @@ const [editOpen, setEditOpen] = useState(false)
                       />
                     </label>
 
-                    <label className="grid gap-1">
-                      <span className="text-[11px] text-zinc-300">Объект</span>
-                      <select
-                        value={filterSite}
-                        onChange={(e) => setFilterSite(e.target.value)}
-                        className="w-full rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
-                      >
-                        <option value="">Все</option>
-                        {sites
-                          .slice()
-                          .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-                          .map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.name || s.id}
-                            </option>
-                          ))}
-                      </select>
-                    </label>
+                    
+<div className="grid gap-1">
+  <SearchableSelect
+    label="Объект"
+    value={filterSite}
+    onChange={(v) => setFilterSite(v)}
+    items={sites.slice().map(siteToSelectItem)}
+    placeholder="Все"
+    inputClassName="w-full rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+  />
+</div>
 
                     <label className="grid gap-1">
                       <span className="text-[11px] text-zinc-300">Работник</span>
@@ -3914,21 +3904,17 @@ const [editOpen, setEditOpen] = useState(false)
       {/* МОДАЛКА: ПРАВКА СМЕНЫ */}
       <Modal open={editOpen} title="Правка смены" onClose={() => setEditOpen(false)}>
         <div className="grid gap-3">
-          <div className="grid gap-1">
-            <span className="text-[11px] text-zinc-300">Объект</span>
-            <select
-              value={editSiteId}
-              onChange={(e) => setEditSiteId(e.target.value)}
-              className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
-            >
-              <option value="">—</option>
-              {activeSites.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name || s.id}
-                </option>
-              ))}
-            </select>
-          </div>
+          
+<div className="grid gap-1">
+  <SearchableSelect
+    label="Объект"
+    value={editSiteId}
+    onChange={(v) => setEditSiteId(v)}
+    items={[{ id: '', label: '—', dotClass: 'bg-zinc-500' }, ...activeSites.map(siteToSelectItem)]}
+    placeholder="—"
+    inputClassName="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
+  />
+</div>
 
           <div className="grid gap-1">
             <span className="text-[11px] text-zinc-300">Работник</span>
