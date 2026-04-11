@@ -306,6 +306,10 @@ for (const item of PHRASES) {
 const PATTERNS: Record<Lang, PatternRule[]> = {
   ru: [],
   uk: [
+    {
+      re: /^Объекты: (\d+) • Работники: (\d+) • Смены: (\d+)$/,
+      make: (a, b, c) => `Об'єкти: ${a} • Працівники: ${b} • Зміни: ${c}`,
+    },
     { re: /^Категория (\d{1,2})$/, make: (n) => `Категорія ${n}` },
     { re: /^Категория должна быть от (\d+) до (\d+)$/, make: (a, b) => `Категорія має бути від ${a} до ${b}` },
     { re: /^Объект (.+)$/, make: (x) => `Об’єкт ${x}` },
@@ -319,6 +323,10 @@ const PATTERNS: Record<Lang, PatternRule[]> = {
     { re: /^Создано\. Логин: (.+)\. Временный пароль: (.+) \(при первом входе попросим сменить\)\.$/, make: (login, pw) => `Створено. Логін: ${login}. Тимчасовий пароль: ${pw} (при першому вході попросимо змінити).` },
   ],
   en: [
+    {
+      re: /^Объекты: (\d+) • Работники: (\d+) • Смены: (\d+)$/,
+      make: (a, b, c) => `Sites: ${a} • Workers: ${b} • Shifts: ${c}`,
+    },
     { re: /^Категория (\d{1,2})$/, make: (n) => `Category ${n}` },
     { re: /^Категория должна быть от (\d+) до (\d+)$/, make: (a, b) => `Category must be from ${a} to ${b}` },
     { re: /^Объект (.+)$/, make: (x) => `Site ${x}` },
@@ -332,6 +340,10 @@ const PATTERNS: Record<Lang, PatternRule[]> = {
     { re: /^Создано\. Логин: (.+)\. Временный пароль: (.+) \(при первом входе попросим сменить\)\.$/, make: (login, pw) => `Created. Login: ${login}. Temporary password: ${pw} (you will be asked to change it on first sign-in).` },
   ],
   nl: [
+    {
+      re: /^Объекты: (\d+) • Работники: (\d+) • Смены: (\d+)$/,
+      make: (a, b, c) => `Locaties: ${a} • Medewerkers: ${b} • Diensten: ${c}`,
+    },
     { re: /^Категория (\d{1,2})$/, make: (n) => `Categorie ${n}` },
     { re: /^Категория должна быть от (\d+) до (\d+)$/, make: (a, b) => `Categorie moet van ${a} tot ${b} zijn` },
     { re: /^Объект (.+)$/, make: (x) => `Locatie ${x}` },
@@ -401,6 +413,15 @@ function runWithoutObservingMutations(fn: () => void) {
   }
 }
 
+/** Language codes (UA|RU|EN|NL) must never go through AutoTranslate / DeepL */
+function isUnderNoTranslate(el: HTMLElement | null): boolean {
+  while (el) {
+    if (el.hasAttribute("data-no-translate")) return true;
+    el = el.parentElement;
+  }
+  return false;
+}
+
 function deepLCacheKey(lang: Lang, trimmed: string) {
   return `${lang}::${trimmed}`;
 }
@@ -411,6 +432,7 @@ const DEEPL_SKIP =
 function shouldSendToDeepL(trimmed: string, lang: Lang): boolean {
   if (lang === "ru") return false;
   if (trimmed.length < 2) return false;
+  if (/^(UA|RU|EN|NL)$/.test(trimmed)) return false;
   if (DEEPL_SKIP.test(trimmed)) return false;
   const t = translateTrimmed(trimmed, lang);
   return t === trimmed;
@@ -425,7 +447,11 @@ function collectDeepLKeys(lang: Lang): string[] {
   let node: Node | null = walker.nextNode();
   while (node) {
     const parent = (node as any).parentElement as HTMLElement | null;
-    if (parent && !["SCRIPT", "STYLE", "NOSCRIPT"].includes(parent.tagName)) {
+    if (
+      parent &&
+      !["SCRIPT", "STYLE", "NOSCRIPT"].includes(parent.tagName) &&
+      !isUnderNoTranslate(parent)
+    ) {
       const original = textOriginal.get(node) ?? String(node.nodeValue ?? "");
       const normalized = normalizeToRu(original);
       const trimmed = normalized.trim();
@@ -439,6 +465,7 @@ function collectDeepLKeys(lang: Lang): string[] {
   const attrs = ["placeholder", "title", "aria-label", "alt", "value"];
   const all = root.querySelectorAll<HTMLElement>("*");
   for (const el of Array.from(all)) {
+    if (isUnderNoTranslate(el)) continue;
     for (const attr of attrs) {
       const state = attrState.get(el);
       const original = state?.original[attr] ?? el.getAttribute(attr);
@@ -470,7 +497,11 @@ function applyDeepLOverlay(lang: Lang) {
   let node: Node | null = walker.nextNode();
   while (node) {
     const parent = (node as any).parentElement as HTMLElement | null;
-    if (parent && !["SCRIPT", "STYLE", "NOSCRIPT"].includes(parent.tagName)) {
+    if (
+      parent &&
+      !["SCRIPT", "STYLE", "NOSCRIPT"].includes(parent.tagName) &&
+      !isUnderNoTranslate(parent)
+    ) {
       const original = textOriginal.get(node) ?? String(node.nodeValue ?? "");
       const normalized = normalizeToRu(original);
       const trimmed = normalized.trim();
@@ -489,6 +520,7 @@ function applyDeepLOverlay(lang: Lang) {
   const attrs = ["placeholder", "title", "aria-label", "alt", "value"];
   const all = root.querySelectorAll<HTMLElement>("*");
   for (const el of Array.from(all)) {
+    if (isUnderNoTranslate(el)) continue;
     for (const attr of attrs) {
       const state = attrState.get(el);
       const original = state?.original[attr] ?? el.getAttribute(attr);
@@ -516,6 +548,11 @@ function applyDeepLOverlay(lang: Lang) {
 }
 
 function processTextNode(node: Node, lang: Lang) {
+  const parent = (node as any).parentElement as HTMLElement | null;
+  if (parent && (["SCRIPT", "STYLE", "NOSCRIPT"].includes(parent.tagName) || isUnderNoTranslate(parent))) {
+    return;
+  }
+
   const current = String(node.nodeValue ?? "");
   const previousOriginal = textOriginal.get(node);
   const previousLast = textLast.get(node);
@@ -545,6 +582,8 @@ function processTextNode(node: Node, lang: Lang) {
 }
 
 function processAttribute(el: HTMLElement, attr: string, lang: Lang) {
+  if (isUnderNoTranslate(el)) return;
+
   const current = el.getAttribute(attr);
   if (current == null) return;
 

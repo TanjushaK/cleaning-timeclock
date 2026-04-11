@@ -13,7 +13,10 @@ export default function LanguageSwitch() {
   const { lang, setLang } = useI18n();
 
   return (
-    <div className="fixed top-[max(0.5rem,calc(env(safe-area-inset-top)-0.5rem))] right-[calc(env(safe-area-inset-right)+0.75rem)] z-50 flex items-center gap-1 rounded-full border border-amber-400/40 bg-black/40 px-2 py-[2px] text-[12px] backdrop-blur">
+    <div
+      data-no-translate="true"
+      className="fixed top-[max(0.5rem,calc(env(safe-area-inset-top)-0.5rem))] right-[calc(env(safe-area-inset-right)+0.75rem)] z-50 flex items-center gap-1 rounded-full border border-amber-400/40 bg-black/40 px-2 py-[2px] text-[12px] backdrop-blur"
+    >
       {ITEMS.map((item, idx) => (
         <React.Fragment key={item.value}>
           {idx > 0 ? <span className="text-zinc-500">|</span> : null}

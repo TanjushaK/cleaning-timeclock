@@ -2747,7 +2747,7 @@ const [editOpen, setEditOpen] = useState(false)
               ) : null}
 
               <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-[11px] text-zinc-200">
-                Объекты: {sites.length} • Работники: {workers.length} • Смены: {schedule.length}
+                {`Объекты: ${sites.length} • Работники: ${workers.length} • Смены: ${schedule.length}`}
               </div>
             </div>
           </div>
