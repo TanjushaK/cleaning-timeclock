@@ -9,6 +9,7 @@ import { cookies } from "next/headers";
 import { DEFAULT_LANG, LANG_STORAGE_KEY, parseLang } from "@/lib/i18n-config";
 import ClientSessionWarmup from "@/lib/client-session-warmup";
 import SWRegister from "@/app/sw-register";
+import CapacitorBridge from "@/components/CapacitorBridge";
 
 const inter = Inter({ subsets: ["latin", "cyrillic"], weight: ["400", "500", "600", "700"] });
 
@@ -46,6 +47,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang={htmlLang}>
       <body className={inter.className}>
         <ClientSessionWarmup />
+        <CapacitorBridge />
         <SWRegister />
         <I18nProvider>
           <LanguageSwitch />
