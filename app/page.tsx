@@ -562,7 +562,7 @@ const loadAll = useCallback(async () => {
 
       setAuthTokens(String(payload.access_token), payload.refresh_token ? String(payload.refresh_token) : null);
 
-      // Синхронизируем сессию Supabase-клиента, иначе supabase.auth.updateUser() не работает после /api/auth/login
+      // Sync Supabase client session so supabase.auth.updateUser() works after /api/auth/login
       try {
         if (payload.refresh_token) {
           await supabase.auth.setSession({
@@ -1405,7 +1405,7 @@ const loadAll = useCallback(async () => {
                   <input className={input} value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder={tr("profile.fullNamePlaceholder")} />
                 </div>
                 <div>
-                  <div className="text-xs opacity-70">Email (для контакта)</div>
+                  <div className="text-xs opacity-70">{tr("profile.contactEmail")}</div>
                   <input className={input} value={profileEmail} onChange={(e) => setProfileEmail(e.target.value)} placeholder={tr("auth.emailPlaceholder")} />
                 </div>
 
