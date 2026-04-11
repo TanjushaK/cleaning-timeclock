@@ -47,6 +47,13 @@ next build --webpack
 Переменные окружения те же, что в `.env.example`; секреты не коммитить.  
 Опционально задайте `GIT_COMMIT_SHA` или `DEPLOY_SHA` (7+ символов), чтобы в ответе `/api/pwa/sw-kill` была понятная метка релиза — иначе используется хэш из `.next/BUILD_ID`.
 
+### Обслуживание VPS (очистка и обновления системы)
+
+На Ubuntu уже обычно включён **`unattended-upgrades`** (автоустановка обновлений безопасности). Дополнительно в репозитории:
+
+- `scripts/vps-maintain.sh` — вручную: `sudo bash scripts/vps-maintain.sh` (полное обновление пакетов, `autoremove`, очистка кэша apt, сжатие журнала journal).
+- `scripts/vps-install-auto-cleanup.sh` — один раз: еженедельная лёгкая очистка (`/etc/cron.weekly/timeclock-cleanup`) и `APT::Periodic::AutocleanInterval` для apt.
+
 ## Локали (uk / ru / en / nl)
 
 - Переключатель в UI сохраняет язык в **`localStorage`** и **cookie** `ct_lang` (для SSR и корректного `lang` у `<html>`).
