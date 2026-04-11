@@ -236,7 +236,7 @@ export default function AppPage() {
       tr("jobs.gpsMetrics")
         .replace("{distance}", String(distance ?? tr("status.unknown")))
         .replace("{accuracy}", String(accuracy ?? tr("status.unknown"))),
-    [t]
+    [tr]
   );
 
   const gpsErrorMessages = useMemo(
@@ -246,7 +246,7 @@ export default function AppPage() {
       invalid: tr("errors.gpsInvalid"),
       failedPrefix: tr("errors.gpsFailedPrefix"),
     }),
-    [t]
+    [tr]
   );
   const [token, setToken] = useState<string | null>(null);
   const [me, setMe] = useState<MeProfileResponse | null>(null);
