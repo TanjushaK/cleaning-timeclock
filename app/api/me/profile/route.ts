@@ -1,0 +1,81 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { requireUser } from '@/lib/supabase-server'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+export async function GET(req: NextRequest) {
+  try {
+    const { supabase, user } = await requireUser(req)
+
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('id, role, active, full_name, phone, email, avatar_path, notes, onboarding_submitted_at')
+      .eq('id', user.id)
+      .maybeSingle()
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+
+    const uPhone = (user as any).phone ? String((user as any).phone) : null
+    const uEmail = user.email ? String(user.email) : null
+
+    const rawTemp = (user as any)?.user_metadata?.temp_password
+
+    const tempPassword = rawTemp === true || rawTemp === "true" || rawTemp === 1 || rawTemp === "1"
+
+    if (!profile) {
+      const { data: created, error: cErr } = await supabase
+        .from('profiles')
+        .insert({
+          id: user.id,
+          role: 'worker',
+          active: false,
+          full_name: null,
+          phone: uPhone,
+          email: uEmail,
+          avatar_path: null,
+          notes: '',
+          onboarding_submitted_at: null,
+        })
+        .select('id, role, active, full_name, phone, email, avatar_path, notes, onboarding_submitted_at')
+        .single()
+
+      if (cErr) return NextResponse.json({ error: cErr.message }, { status: 400 })
+
+      return NextResponse.json({
+        user: {
+          id: user.id,
+          email: user.email ?? null,
+          phone: (user as any).phone ?? null,
+          email_confirmed_at: (user as any).email_confirmed_at ?? null,
+          temp_password: tempPassword,
+        },
+        profile: created,
+      })
+    }
+
+    const patch: any = {}
+    if (uPhone && !profile.phone) patch.phone = uPhone
+    if (uEmail && !profile.email) patch.email = uEmail
+
+    if (Object.keys(patch).length) {
+      await supabase.from('profiles').update(patch).eq('id', user.id)
+      Object.assign(profile as any, patch)
+    }
+
+    return NextResponse.json({
+      user: {
+        id: user.id,
+        email: user.email ?? null,
+        phone: (user as any).phone ?? null,
+        email_confirmed_at: (user as any).email_confirmed_at ?? null,
+        temp_password: tempPassword,
+      },
+      profile,
+    })
+  } catch (e: any) {
+    const msg = e?.message || 'Ошибка'
+    const status = /Нет токена/i.test(msg) ? 401 : 400
+    return NextResponse.json({ error: msg }, { status })
+  }
+}
