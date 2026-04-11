@@ -5,7 +5,7 @@
    - Never cache /api/*
    - Supports kill/clear via client unregister + cache delete (ct-*)
 */
-const SW_VERSION = "ct-sw-v3";
+const SW_VERSION = "ct-sw-v4";
 const STATIC_CACHE = `ct-static-${SW_VERSION}`;
 const RUNTIME_CACHE = `ct-runtime-${SW_VERSION}`;
 
