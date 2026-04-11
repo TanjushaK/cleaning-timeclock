@@ -1,0 +1,10 @@
+---
+description: Deployment — never use Vercel for this project
+alwaysApply: true
+---
+
+# Hosting: no Vercel
+
+This project **must not** use Vercel for hosting, previews, or CI. Do not add `vercel.json`, Vercel env vars (`VERCEL_*`), or Vercel-specific tooling unless the user explicitly changes this rule.
+
+Deployment target: **self-hosted VPS** (e.g. systemd + Node) and **GitHub** for source control only.
