@@ -453,7 +453,7 @@ const loadAll = useCallback(async () => {
         if (t) await loadAll();
       } catch (e: any) {
         const msg = String(e?.message || e || "");
-        if (/401|Нет токена|token/i.test(msg)) {
+        if (/401|session|expired|unauthorized|login again|auth/i.test(msg)) {
           clearAuthTokens();
           setToken(null);
           setMe(null);
