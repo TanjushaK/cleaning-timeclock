@@ -23,7 +23,10 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   title: "Van Tanija BV Cleaning • Timeclock",
   description: "Van Tanija BV Cleaning — Cleaning Timeclock",
-  icons: { icon: "/tanija-logo.png", apple: "/apple-touch-icon.png" },
+  icons: {
+    icon: [{ url: "/favicon.ico", sizes: "any" }],
+    apple: "/apple-touch-icon.png",
+  },
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,

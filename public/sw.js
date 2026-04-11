@@ -5,13 +5,15 @@
    - Never cache /api/*
    - Supports kill/clear via client unregister + cache delete (ct-*)
 */
-const SW_VERSION = "ct-sw-v2";
+const SW_VERSION = "ct-sw-v3";
 const STATIC_CACHE = `ct-static-${SW_VERSION}`;
 const RUNTIME_CACHE = `ct-runtime-${SW_VERSION}`;
 
 const CORE = [
   "/offline",
   "/manifest.webmanifest",
+  "/favicon.ico",
+  "/tanija-logo.png",
   "/apple-touch-icon.png",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
