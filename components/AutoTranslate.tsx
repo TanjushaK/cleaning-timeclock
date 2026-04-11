@@ -355,6 +355,18 @@ function translateString(src: string, lang: Lang) {
 /** DeepL overlay: strings still in source language after static dictionaries */
 const deepLMemory = new Map<string, string>();
 
+/** Suppress MutationObserver while we mutate the DOM (avoids run↔DeepL feedback loop / flicker) */
+let translationMutationDepth = 0;
+
+function runWithoutObservingMutations(fn: () => void) {
+  translationMutationDepth += 1;
+  try {
+    fn();
+  } finally {
+    translationMutationDepth -= 1;
+  }
+}
+
 function deepLCacheKey(lang: Lang, trimmed: string) {
   return `${lang}::${trimmed}`;
 }
@@ -419,6 +431,7 @@ function applyDeepLOverlay(lang: Lang) {
   const root = document.body;
   if (!root) return;
 
+  runWithoutObservingMutations(() => {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   let node: Node | null = walker.nextNode();
   while (node) {
@@ -465,6 +478,7 @@ function applyDeepLOverlay(lang: Lang) {
   const tTrim = tNorm.trim();
   const tTr = deepLMemory.get(deepLCacheKey(lang, tTrim));
   if (tTr) document.title = withSpaces(tNorm, tTr);
+  });
 }
 
 function processTextNode(node: Node, lang: Lang) {
@@ -475,8 +489,19 @@ function processTextNode(node: Node, lang: Lang) {
   let original = previousOriginal;
   if (original == null) {
     original = current;
-  } else if (previousLast != null && current !== previousLast && current !== previousOriginal) {
-    original = current;
+  } else if (
+    previousLast != null &&
+    previousOriginal != null &&
+    current !== previousLast &&
+    current !== previousOriginal
+  ) {
+    const prevNorm = normalizeToRu(previousOriginal);
+    const prevTrim = prevNorm.trim();
+    const deepTr = deepLMemory.get(deepLCacheKey(lang, prevTrim));
+    const isDeepLOutput = Boolean(
+      deepTr !== undefined && withSpaces(prevNorm, deepTr) === current,
+    );
+    if (!isDeepLOutput) original = current;
   }
 
   const translated = translateString(original, lang);
@@ -496,7 +521,15 @@ function processAttribute(el: HTMLElement, attr: string, lang: Lang) {
   if (original == null) {
     original = current;
   } else if (prevLast != null && current !== prevLast && current !== original) {
-    original = current;
+    const prevNorm = normalizeToRu(original);
+    const prevTrim = prevNorm.trim();
+    const deepTr = deepLMemory.get(deepLCacheKey(lang, prevTrim));
+    if (deepTr) {
+      const expected = withSpaces(prevNorm, deepTr);
+      if (expected !== current) original = current;
+    } else {
+      original = current;
+    }
   }
 
   const translated = translateString(original, lang);
@@ -510,26 +543,28 @@ function processAttribute(el: HTMLElement, attr: string, lang: Lang) {
 function translateDocument(lang: Lang) {
   if (typeof document === "undefined") return;
 
-  const root = document.body as HTMLElement | null;
-  if (!root) return;
+  runWithoutObservingMutations(() => {
+    const root = document.body as HTMLElement | null;
+    if (!root) return;
 
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  let node: Node | null = walker.nextNode();
-  while (node) {
-    const parent = (node as any).parentElement as HTMLElement | null;
-    if (parent && !["SCRIPT", "STYLE", "NOSCRIPT"].includes(parent.tagName)) {
-      processTextNode(node, lang);
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let node: Node | null = walker.nextNode();
+    while (node) {
+      const parent = (node as any).parentElement as HTMLElement | null;
+      if (parent && !["SCRIPT", "STYLE", "NOSCRIPT"].includes(parent.tagName)) {
+        processTextNode(node, lang);
+      }
+      node = walker.nextNode();
     }
-    node = walker.nextNode();
-  }
 
-  const attrs = ["placeholder", "title", "aria-label", "alt", "value"];
-  const all = root.querySelectorAll<HTMLElement>("*");
-  for (const el of Array.from(all)) {
-    for (const attr of attrs) processAttribute(el, attr, lang);
-  }
+    const attrs = ["placeholder", "title", "aria-label", "alt", "value"];
+    const all = root.querySelectorAll<HTMLElement>("*");
+    for (const el of Array.from(all)) {
+      for (const attr of attrs) processAttribute(el, attr, lang);
+    }
 
-  document.title = translateString(document.title || "", lang);
+    document.title = translateString(document.title || "", lang);
+  });
 }
 
 export default function AutoTranslate() {
@@ -609,7 +644,10 @@ export default function AutoTranslate() {
     run();
     scheduleDeepL();
 
-    const obs = new MutationObserver(() => schedule());
+    const obs = new MutationObserver(() => {
+      if (translationMutationDepth > 0) return;
+      schedule();
+    });
     obs.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true });
 
     return () => {
