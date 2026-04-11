@@ -41,6 +41,7 @@
     "capacitor.config.ts",
     "capacitor.config.js",
     "android",
-    "ios"
+    "ios",
+    "var"
   ]
 }
