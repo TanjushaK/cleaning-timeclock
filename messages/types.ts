@@ -1,4 +1,4 @@
-﻿export type Messages = {
+export type Messages = {
   common: {
     language: string;
     loading: string;
@@ -62,6 +62,7 @@
     loadFailed: string;
   };
   auth: {
+    logout: string;
     loginTab: string;
     smsTab: string;
     emailTab: string;

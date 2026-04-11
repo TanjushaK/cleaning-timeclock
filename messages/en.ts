@@ -1,4 +1,4 @@
-﻿import type { Messages } from "./types";
+import type { Messages } from "./types";
 
 export const en: Messages = {
   common: {
@@ -64,6 +64,7 @@ export const en: Messages = {
     loadFailed: "Load error",
   },
   auth: {
+    logout: "Log out",
     loginTab: "Login",
     smsTab: "By SMS",
     emailTab: "By Email",

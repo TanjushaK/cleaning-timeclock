@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "@/lib/supabase";
 import { authFetchJson, clearAuthTokens, getAccessToken, setAuthTokens } from "@/lib/auth-fetch";
 import AppFooter from "@/app/_components/AppFooter";
+import { useI18n } from "@/components/I18nProvider";
 import { OutboxEvent, outboxAdd, outboxCount as outboxCountDb, outboxList, outboxRemove, outboxUpdate } from "@/lib/offline/outbox";
 
 type Profile = {
@@ -116,13 +117,7 @@ function formatHMS(ms: number) {
   return `${hh}:${mm}:${ss}`;
 }
 
-function statusRu(s: string | null | undefined) {
-  const v = String(s || "").toLowerCase();
-  if (v === "planned") return "запланировано";
-  if (v === "in_progress") return "в работе";
-  if (v === "done") return "завершено";
-  return s ? String(s) : "—";
-}
+
 
 function statusPillClasses(s: string | null | undefined) {
   const v = String(s || "").toLowerCase()
@@ -208,6 +203,23 @@ function makeWorkerEmailFromPhone(phoneE164: string) {
 type Tab = "login" | "sms" | "email";
 
 export default function AppPage() {
+  const { t } = useI18n();
+
+  const statusLabel = useCallback((s: string | null | undefined) => {
+    const v = String(s || "").toLowerCase();
+    if (v === "planned") return t("status.planned");
+    if (v === "in_progress") return t("status.inProgress");
+    if (v === "done") return t("status.done");
+    return s ? String(s) : t("status.unknown");
+  }, [t]);
+
+  const gpsMetricsLabel = useCallback(
+    (distance: number | null | undefined, accuracy: number | null | undefined) =>
+      t("jobs.gpsMetrics")
+        .replace("{distance}", String(distance ?? t("status.unknown")))
+        .replace("{accuracy}", String(accuracy ?? t("status.unknown"))),
+    [t]
+  );
   const [token, setToken] = useState<string | null>(null);
   const [me, setMe] = useState<MeProfileResponse | null>(null);
   const [jobs, setJobs] = useState<MeJobsResponse["jobs"]>([]);
@@ -989,8 +1001,8 @@ const loadAll = useCallback(async () => {
       <div className="appTheme min-h-screen flex flex-col">
         <main className="flex-1 bg-black text-zinc-100 flex items-center justify-center p-6">
           <div className={clsx(card, "p-6 w-full max-w-md")}>
-            <div className="text-lg font-semibold">Загрузка…</div>
-            <div className="mt-2 text-sm opacity-70">Поднимаю сессию и профиль.</div>
+            <div className="text-lg font-semibold">{t("home.loadingTitle")}</div>
+            <div className="mt-2 text-sm opacity-70">{t("home.loadingSubtitle")}</div>
           </div>
         </main>
         <AppFooter />
@@ -1011,9 +1023,9 @@ const loadAll = useCallback(async () => {
           <div className="flex items-center gap-2">
             {authed && (
               <>
-                <a className={btn} href="/me/profile">Профиль</a>
-                {isAdmin && <a className={btn} href="/admin">Админ</a>}
-                <button className={btn} onClick={doLogout} disabled={busy}>Выйти</button>
+                <a className={btn} href="/me/profile">{t("nav.profile")}</a>
+                {isAdmin && <a className={btn} href="/admin">{t("nav.adminPanel")}</a>}
+                <button className={btn} onClick={doLogout} disabled={busy}>{t("auth.logout")}</button>
               </>
             )}
           </div>
@@ -1023,18 +1035,18 @@ const loadAll = useCallback(async () => {
           <div className={clsx("mt-4", card, "p-4")}>
             {error && <div className="text-sm text-red-300">{error}</div>}
             {notice && <div className="text-sm text-emerald-200">{notice}</div>}
-            {offline && <div className="mt-2 text-sm text-amber-200">Офлайн. Действия уйдут при появлении сети.</div>}
+            {offline && <div className="mt-2 text-sm text-amber-200">{t("home.offlineNotice")}</div>}
             {(outboxN > 0 || syncing) && (
               <div className="mt-2 flex items-center justify-between gap-3">
                 <div className="text-sm text-amber-200">
-                  Очередь: {outboxN}{syncing && outboxN > 0 ? " • синхронизация…" : ""}
+                  {t("common.queue")}: {outboxN}{syncing && outboxN > 0 ? ` • ${t("common.loading")}` : ""}
                 </div>
                 <button
                   className={clsx(btn, "px-3 py-1.5 text-sm", (busy || syncing || offline || outboxN <= 0) && "opacity-50 cursor-not-allowed")}
                   disabled={busy || syncing || offline || outboxN <= 0}
                   onClick={() => syncOutbox()}
                 >
-                  Синхронизировать
+                  {t("home.syncNow")}
                 </button>
               </div>
             )}
@@ -1049,31 +1061,31 @@ const loadAll = useCallback(async () => {
                   className={clsx(btn, tab === "login" && "bg-amber-400/30")}
                   onClick={() => setTab("login")}
                 >
-                  Вход
+                  {t("auth.loginTab")}
                 </button>
                 <button
                   className={clsx(btn, tab === "sms" && "bg-amber-400/30")}
                   onClick={() => setTab("sms")}
                 >
-                  По SMS
+                  {t("auth.smsTab")}
                 </button>
                 <button
                   className={clsx(btn, tab === "email" && "bg-amber-400/30")}
                   onClick={() => setTab("email")}
                 >
-                  По Email
+                  {t("auth.emailTab")}
                 </button>
               </div>
 
               {tab === "login" && (
                 <div className="mt-5 space-y-3">
-                  <div className="text-sm opacity-80">Логин = email или телефон (+31…); вход по паролю.</div>
+                  <div className="text-sm opacity-80">{t("auth.loginHint")}</div>
 
                   <input
                     className={input}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="Email или телефон, например +31612345678"
+                    placeholder={t("auth.loginPlaceholder")}
                     autoComplete="username"
                   />
 
@@ -1081,41 +1093,41 @@ const loadAll = useCallback(async () => {
                     className={input}
                     value={emailPassword}
                     onChange={(e) => setEmailPassword(e.target.value)}
-                    placeholder="Пароль"
+                    placeholder={t("auth.passwordPlaceholder")}
                     type="password"
                     autoComplete="current-password"
                   />
 
                   <div className="flex items-center gap-2">
                     <button className={btnSolid} onClick={doEmailPasswordLogin} disabled={busy}>
-                      Войти
+                      {t("auth.loginButton")}
                     </button>
                     <a className="text-sm underline opacity-80 hover:opacity-100" href="/forgot-password">
-                      Забыл пароль (email)
+                      {t("auth.forgotPassword")}
                     </a>
                   </div>
 
                   <div className="text-xs opacity-60">
-                    Если у воркера нет email — логин будет вида <span className="font-mono">{makeWorkerEmailFromPhone("+31612345678")}</span>
+                    {t("auth.workerNoEmailHint")} <span className="font-mono">{makeWorkerEmailFromPhone("+31612345678")}</span>
                   </div>
                 </div>
               )}
 
               {tab === "sms" && (
                 <div className="mt-5 space-y-3">
-                  <div className="text-sm opacity-80">Восстановление пароля через SMS (если телефон привязан к аккаунту).</div>
+                  <div className="text-sm opacity-80">{t("auth.smsRecoveryHint")}</div>
 
                   <input
                     className={input}
                     value={smsPhone}
                     onChange={(e) => setSmsPhone(e.target.value)}
-                    placeholder="Телефон, например +31612345678"
+                    placeholder={t("auth.smsPhonePlaceholder")}
                     autoComplete="tel"
                   />
 
                   {smsStep === "enter_phone" && (
                     <button className={btnSolid} onClick={doSmsSend} disabled={busy}>
-                      Отправить код
+                      {t("auth.sendCode")}
                     </button>
                   )}
 
@@ -1125,12 +1137,12 @@ const loadAll = useCallback(async () => {
                         className={input}
                         value={smsOtp}
                         onChange={(e) => setSmsOtp(e.target.value)}
-                        placeholder="Код из SMS"
+                        placeholder={t("auth.smsCodePlaceholder")}
                         autoComplete="one-time-code"
                       />
                       <div className="flex gap-2">
                         <button className={btnSolid} onClick={doSmsVerify} disabled={busy}>
-                          Подтвердить
+                          {t("auth.confirm")}
                         </button>
                         <button
                           className={btn}
@@ -1140,7 +1152,7 @@ const loadAll = useCallback(async () => {
                           }}
                           disabled={busy}
                         >
-                          Назад
+                          {t("auth.back")}
                         </button>
                       </div>
                     </>
@@ -1152,52 +1164,52 @@ const loadAll = useCallback(async () => {
                         className={input}
                         value={smsNewPassword}
                         onChange={(e) => setSmsNewPassword(e.target.value)}
-                        placeholder="Новый пароль (мин. 6 символов)"
+                        placeholder={t("auth.newPasswordPlaceholder")}
                         type="password"
                         autoComplete="new-password"
                       />
                       <button className={btnSolid} onClick={doSmsSetPassword} disabled={busy}>
-                        Сохранить пароль
+                        {t("auth.savePassword")}
                       </button>
                     </>
                   )}
 
                   <div className="text-xs opacity-70">
-                    Если SMS “не находит” — значит телефон не привязан к аккаунту. Привязку делает админ в профиле воркера.
+                    {t("auth.smsMissingBindingHint")}
                   </div>
                 </div>
               )}
 
               {tab === "email" && (
                 <div className="mt-5 space-y-3">
-                  <div className="text-sm opacity-80">Резервное восстановление через письмо.</div>
+                  <div className="text-sm opacity-80">{t("auth.emailRecoveryHint")}</div>
                   <input
                     className={input}
                     value={emailRecover}
                     onChange={(e) => setEmailRecover(e.target.value)}
-                    placeholder="Email"
+                    placeholder={t("auth.emailPlaceholder")}
                     autoComplete="email"
                   />
                   <button className={btnSolid} onClick={doEmailRecovery} disabled={busy}>
-                    Отправить письмо
+                    {t("auth.sendEmail")}
                   </button>
                   <div className="text-xs opacity-60">
-                    Письмо ведёт на <span className="font-mono">/reset-password</span>.
+                    {t("auth.resetEmailHint")} <span className="font-mono">/reset-password</span>.
                   </div>
                 </div>
               )}
             </div>
 
             <div className={clsx(card, "p-6")}>
-              <div className="text-lg font-semibold">Как это теперь работает</div>
+              <div className="text-lg font-semibold">{t("auth.howItWorksTitle")}</div>
               <ul className="mt-3 space-y-2 text-sm opacity-80 list-disc pl-5">
-                <li>Админ создаёт воркера и выдаёт временный пароль.</li>
-                <li>Воркер заходит логин+пароль (без magic link).</li>
-                <li>Телефон — восстановление через SMS (если привязан к аккаунту).</li>
-                <li>Email — второе восстановление (страница /forgot-password или вкладка “По Email”).</li>
+                <li>{t("auth.howItWorksItem1")}</li>
+                <li>{t("auth.howItWorksItem2")}</li>
+                <li>{t("auth.howItWorksItem3")}</li>
+                <li>{t("auth.howItWorksItem4")}</li>
               </ul>
               <div className="mt-4 text-xs opacity-60">
-                Если ты админ — после входа тебя перекинет в /admin автоматически.
+                {t("auth.adminRedirectHint")}
               </div>
             </div>
           </section>
@@ -1205,24 +1217,24 @@ const loadAll = useCallback(async () => {
           <section className="mt-6 grid grid-cols-1 xl:grid-cols-3 gap-6">
             <div className={clsx(card, "p-6 xl:col-span-2")}>
               <div className="flex items-center justify-between">
-                <div className="text-lg font-semibold">Смены</div>
+                <div className="text-lg font-semibold">{t("jobs.title")}</div>
                 <button className={btn} onClick={() => loadAll().catch((e) => setError(String((e as any)?.message || e)))} disabled={busy}>
-                  Обновить
+                  {t("common.refresh")}
                 </button>
               </div>
 
               {!workerIsActive && !isAdmin && (
                 <div className={clsx("mt-4 p-3 rounded-xl", border, "bg-amber-400/10")}>
-                  <div className="text-sm font-semibold text-amber-200">Ожидание активации</div>
+                  <div className="text-sm font-semibold text-amber-200">{t("jobs.activationPendingTitle")}</div>
                   <div className="text-xs opacity-80 mt-1">
-                    Пока аккаунт не активирован админом, доступ к работам может быть ограничен.
+                    {t("jobs.activationPendingText")}
                   </div>
                 </div>
               )}
 
               <div className="mt-4 space-y-3">
                 {jobsSorted.length === 0 ? (
-                  <div className="text-sm opacity-70">Пока нет заданий.</div>
+                  <div className="text-sm opacity-70">{t("jobs.empty")}</div>
                 ) : (
                   jobsSorted.map((j) => {
                     const pending = pendingByJob[j.id];
@@ -1243,7 +1255,7 @@ const loadAll = useCallback(async () => {
                               type="button"
                               onClick={() => openNavToSite(j.site_lat, j.site_lng, j.site_address)}
                               className={clsx("relative h-12 w-12 overflow-hidden rounded-2xl", border, "bg-zinc-900/30", (j.site_lat != null && j.site_lng != null) || j.site_address ? "hover:bg-zinc-900/40" : "")}
-                              title="Навигация"
+                              title={t("jobs.navigation")}
                             >
                               <div className="absolute inset-0 flex items-center justify-center text-xs opacity-70">
                                 {(j.site_name || "—").trim().slice(0, 1).toUpperCase() || "•"}
@@ -1266,10 +1278,10 @@ const loadAll = useCallback(async () => {
 
                             <div>
                               <div className="text-sm font-semibold">
-                                {formatDateRu(j.job_date)} • {formatTimeRu(j.scheduled_time)} • <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClasses(effStatus)}`}>{statusRu(effStatus)}</span>
+                                {formatDateRu(j.job_date)} • {formatTimeRu(j.scheduled_time)} • <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClasses(effStatus)}`}>{statusLabel(effStatus)}</span>
                               </div>
                               <div className="text-xs opacity-70 mt-1">
-                                {j.site_name || "Объект"} — {j.site_address || "—"}
+                                {j.site_name || t("jobs.siteFallback")} — {j.site_address || t("status.unknown")}
                               </div>
                               {(() => {
                                 const xs = teamByJob?.[j.id] || [];
@@ -1278,7 +1290,7 @@ const loadAll = useCallback(async () => {
                                 const line = others.map((x) => x.name).filter(Boolean).join(", ");
                                 return line ? (
                                   <div className="text-xs opacity-70 mt-1">
-                                    Смена вместе с: <span className="text-amber-100">{line}</span>
+                                    {t("jobs.teamWith")}: <span className="text-amber-100">{line}</span>
                                   </div>
                                 ) : null;
                               })()}
@@ -1288,7 +1300,7 @@ const loadAll = useCallback(async () => {
                                   className={clsx(btn, "text-xs px-3 py-1") }
                                   onClick={() => openNavToSite(j.site_lat, j.site_lng, j.site_address)}
                                 >
-                                  Навигация
+                                  {t("jobs.navigation")}
                                 </button>
                               </div>
                             </div>
@@ -1297,29 +1309,29 @@ const loadAll = useCallback(async () => {
                           <div className="flex w-full flex-col gap-2 lg:w-auto lg:flex-row lg:items-center">
                             {planned && Boolean(j.can_accept) && (
                               <button className={btnSolid} onClick={() => doAccept(j.id)} disabled={busy}>
-                                Принять
+                                {t("jobs.accept")}
                               </button>
                             )}
                             {inProg && (
                               <button className={btnStopSolid} onClick={() => doStop(j.id)} disabled={busy}>
-                                {pending && pending.kind === "stop" ? "Стоп (в очереди)" : "Стоп"}
+                                {pending && pending.kind === "stop" ? t("jobs.stopQueued") : t("jobs.stop")}
                               </button>
                             )}
                             {planned && !Boolean(j.can_accept) && (
                               <button className={btnStartSolid} onClick={() => doStart(j.id)} disabled={busy}>
-                                {pending && pending.kind === "start" ? "Старт (в очереди)" : "Старт"}
+                                {pending && pending.kind === "start" ? t("jobs.startQueued") : t("jobs.start")}
                               </button>
                             )}
                           </div>
                         </div>
                         <div className="mt-3 grid grid-cols-1 gap-2 text-xs opacity-80 md:grid-cols-2">
-                          <div>Старт: {formatDateTimeRu(j.started_at)}</div>
-                          <div>Стоп: {formatDateTimeRu(j.stopped_at)}</div>
+                          <div>{t("jobs.startedAt")}: {formatDateTimeRu(j.started_at)}</div>
+                          <div>{t("jobs.stoppedAt")}: {formatDateTimeRu(j.stopped_at)}</div>
                         </div>
 
                         {inProg && elapsedStr ? (
                           <div className="mt-2 text-xs">
-                            <span className="opacity-70">Секундомер: </span>
+                            <span className="opacity-70">{t("jobs.timer")}: </span>
                             <span className={clsx("font-semibold", gold)}>{elapsedStr}</span>
                           </div>
                         ) : null}
@@ -1327,7 +1339,7 @@ const loadAll = useCallback(async () => {
 
                         {(j.distance_m != null || j.accuracy_m != null) ? (
                           <div className="mt-2 text-xs opacity-70">
-                            GPS: расстояние {j.distance_m ?? "—"} м • точность {j.accuracy_m ?? "—"} м
+                            {gpsMetricsLabel(j.distance_m, j.accuracy_m)}
                           </div>
                         ) : null}
                       </div>
@@ -1342,51 +1354,50 @@ const loadAll = useCallback(async () => {
                 <div className="flex items-center gap-2">
                   { }
                   <img src="/tanija-logo.png" alt="Tanija" className="h-6 w-auto" />
-                  <div className="text-lg font-semibold">Профиль</div>
+                  <div className="text-lg font-semibold">{t("profile.title")}</div>
                 </div>
                 <div className="text-xs opacity-70">
-                  Роль: <span className={gold}>{me?.profile?.role || "—"}</span> • Активен:{" "}
-                  <span className={gold}>{workerIsActive ? "да" : "нет"}</span>
+                  {t("profile.role")}: <span className={gold}>{me?.profile?.role || t("status.unknown")}</span> • {t("profile.active")}:{" "}
+                  <span className={gold}>{workerIsActive ? t("common.yes") : t("common.no")}</span>
                 </div>
               </div>
 
               {tempPassword && (
                 <div className={clsx("mt-4 p-3 rounded-xl", border, "bg-amber-400/10")}>
-                  <div className="text-sm font-semibold text-amber-200">Временный пароль</div>
+                  <div className="text-sm font-semibold text-amber-200">{t("profile.tempPasswordTitle")}</div>
                   <div className="text-xs opacity-80 mt-1">
-                    У тебя временный пароль от админа. Открой <span className="font-semibold">Профиль → Пароль</span> и задай свой.
-                    Если доступа к email нет — восстановление через SMS / Email.
+                    {t("profile.tempPasswordHint")}
                   </div>
                 </div>
               )}
 
               <div className="mt-4 space-y-3">
                 <div>
-                  <div className="text-xs opacity-70">Имя</div>
-                  <input className={input} value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="ФИО" />
+                  <div className="text-xs opacity-70">{t("profile.name")}</div>
+                  <input className={input} value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder={t("profile.fullNamePlaceholder")} />
                 </div>
                 <div>
                   <div className="text-xs opacity-70">Email (для контакта)</div>
-                  <input className={input} value={profileEmail} onChange={(e) => setProfileEmail(e.target.value)} placeholder="Email" />
+                  <input className={input} value={profileEmail} onChange={(e) => setProfileEmail(e.target.value)} placeholder={t("auth.emailPlaceholder")} />
                 </div>
 
                 <button className={btnSolid} onClick={doUpdateProfile} disabled={busy}>
-                  Сохранить профиль
+                  {t("profile.saveProfile")}
                 </button>
 
                 <div className="text-xs opacity-70">
-                  Телефон: {me?.user?.phone || me?.profile?.phone || "—"} • Email подтверждён:{" "}
-                  {me?.user?.email ? (me?.user?.email_confirmed_at ? "да" : "нет") : "—"}
+                  {t("profile.phone")}: {me?.user?.phone || me?.profile?.phone || t("status.unknown")} • {t("profile.emailConfirmed")}:{" "}
+                  {me?.user?.email ? (me?.user?.email_confirmed_at ? t("common.yes") : t("common.no")) : t("status.unknown")}
                 </div>
               </div>
 
               <div className="mt-6 border-t border-amber-500/15 pt-5">
-                <div className="text-lg font-semibold">Фото (до 5)</div>
+                <div className="text-lg font-semibold">{t("profile.photosTitle")}</div>
 
                 <div className="mt-3 flex gap-2 items-center">
                   <input ref={fileRef} className={clsx("text-xs", "w-full")} type="file" accept="image/png,image/jpeg,image/webp" />
                   <button className={btn} onClick={doUploadPhoto} disabled={busy}>
-                    Загрузить
+                    {t("profile.upload")}
                   </button>
                 </div>
 
@@ -1400,15 +1411,15 @@ const loadAll = useCallback(async () => {
                              
                             <img src={p.url} alt="photo" className="w-full h-full object-cover" />
                           ) : (
-                            <div className="text-xs opacity-60">нет превью</div>
+                            <div className="text-xs opacity-60">{t("profile.noPreview")}</div>
                           )}
                         </div>
                         <div className="p-2 flex gap-2">
                           <button className={clsx(btn, "text-xs px-2 py-1")} onClick={() => doMakePrimary(p.path)} disabled={busy}>
-                            {isPrimary ? "Аватар" : "Сделать аватаром"}
+                            {isPrimary ? t("profile.avatar") : t("profile.makeAvatar")}
                           </button>
                           <button className={clsx(btn, "text-xs px-2 py-1")} onClick={() => doDeletePhoto(p.path)} disabled={busy}>
-                            Удалить
+                            {t("profile.delete")}
                           </button>
                         </div>
                       </div>
@@ -1419,14 +1430,14 @@ const loadAll = useCallback(async () => {
                 {!workerIsActive && !isAdmin ? (
                   <div className="mt-4">
                     <button className={btnSolid} onClick={doSubmitForApproval} disabled={busy}>
-                      Отправить на активацию
+                      {t("profile.submitForActivation")}
                     </button>
                     <div className="text-xs opacity-60 mt-2">
-                      После отправки админ активирует тебя в /admin/approvals.
+                      {t("profile.submitForActivationHint")}
                     </div>
                   </div>
                 ) : (
-                  <div className="mt-4 text-xs opacity-70">Аккаунт активирован.</div>
+                  <div className="mt-4 text-xs opacity-70">{t("profile.activated")}</div>
                 )}
               </div>
             </div>
