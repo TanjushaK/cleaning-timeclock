@@ -3640,7 +3640,7 @@ const [editOpen, setEditOpen] = useState(false)
 
                   <div className="mt-4 grid w-full gap-3 lg:grid-cols-4">
                     <label className="grid gap-1">
-                      <span className="text-[11px] text-zinc-300">С</span>
+                      <span className="text-[11px] text-zinc-300">От</span>
                       <input
                         type="date"
                       onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
@@ -3650,7 +3650,7 @@ const [editOpen, setEditOpen] = useState(false)
                       />
                     </label>
                     <label className="grid gap-1">
-                      <span className="text-[11px] text-zinc-300">По</span>
+                      <span className="text-[11px] text-zinc-300">До</span>
                       <input
                         type="date"
                       onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
