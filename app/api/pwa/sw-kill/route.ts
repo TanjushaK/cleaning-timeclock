@@ -1,8 +1,31 @@
+import { existsSync, readFileSync } from "fs";
+import { join } from "path";
 import { NextResponse } from "next/server";
 
 function truthy(v: string | undefined | null) {
   if (!v) return false;
   return ["1", "true", "yes", "on"].includes(v.toLowerCase());
+}
+
+/** Метка сборки для PWA: env на сервере или хэш из `.next/BUILD_ID` после `next build`. */
+function buildLabel(): string {
+  const fromEnv =
+    process.env.DEPLOY_SHA || process.env.GIT_COMMIT_SHA || process.env.COMMIT_SHA;
+  if (fromEnv) {
+    const s = String(fromEnv).replace(/\s/g, "");
+    if (s.length >= 7) return s.slice(0, 7);
+    if (s.length) return s;
+  }
+  try {
+    const p = join(process.cwd(), ".next", "BUILD_ID");
+    if (existsSync(p)) {
+      const id = readFileSync(p, "utf8").trim();
+      if (id) return id.slice(0, 7);
+    }
+  } catch {
+    // ignore
+  }
+  return "local";
 }
 
 export const runtime = "nodejs";
@@ -15,10 +38,7 @@ export async function GET() {
   const enabled = truthy(enabledEnv);
   const kill = truthy(killEnv);
 
-  const build =
-    (process.env.VERCEL_GIT_COMMIT_SHA ? process.env.VERCEL_GIT_COMMIT_SHA.slice(0, 7) : undefined) ||
-    process.env.VERCEL_DEPLOYMENT_ID ||
-    "local";
+  const build = buildLabel();
 
   const res = NextResponse.json({ enabled, kill, build });
 

@@ -1,5 +1,6 @@
 ﻿import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { checkRateLimit, clientIpFromRequest } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -25,6 +26,11 @@ function json(status: number, data: any) {
 
 export async function POST(req: Request) {
   try {
+    const ip = clientIpFromRequest(req)
+    if (!checkRateLimit(`auth:refresh:${ip}`, 60, 60_000)) {
+      return json(429, { error: 'Слишком много запросов. Подождите минуту.' })
+    }
+
     const body = await req.json().catch(() => ({} as any))
     const refresh_token = String(body?.refresh_token || '').trim()
     if (!refresh_token) return json(400, { error: 'refresh_token обязателен' })

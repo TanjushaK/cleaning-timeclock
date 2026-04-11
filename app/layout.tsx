@@ -5,6 +5,8 @@ import "./globals.css";
 import "./app-theme.css";
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
+import { cookies } from "next/headers";
+import { DEFAULT_LANG, LANG_STORAGE_KEY, parseLang } from "@/lib/i18n-config";
 import ClientSessionWarmup from "@/lib/client-session-warmup";
 import SWRegister from "@/app/sw-register";
 
@@ -36,9 +38,12 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const jar = await cookies();
+  const htmlLang = parseLang(jar.get(LANG_STORAGE_KEY)?.value) ?? DEFAULT_LANG;
+
   return (
-    <html lang="ru">
+    <html lang={htmlLang}>
       <body className={inter.className}>
         <ClientSessionWarmup />
         <SWRegister />

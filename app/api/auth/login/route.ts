@@ -1,5 +1,6 @@
 ﻿import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { checkRateLimit, clientIpFromRequest } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -33,6 +34,11 @@ function json(status: number, data: any) {
 
 export async function POST(req: Request) {
   try {
+    const ip = clientIpFromRequest(req)
+    if (!checkRateLimit(`auth:login:${ip}`, 25, 60_000)) {
+      return json(429, { error: 'Слишком много попыток входа. Подождите минуту.' })
+    }
+
     const body = await req.json().catch(() => ({} as any))
     const identifier = String(body?.identifier ?? body?.email ?? body?.phone ?? '').trim()
     const password = String(body?.password || '').trim()

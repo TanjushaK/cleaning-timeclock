@@ -1,7 +1,16 @@
 ﻿"use client";
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import {
+  DEFAULT_LANG,
+  type Lang,
+  LANG_STORAGE_KEY,
+  langFromNavigatorLanguage,
+  parseLang,
+  SUPPORTED_LANGS,
+} from "@/lib/i18n-config";
 
-export type Lang = "uk" | "ru" | "en" | "nl";
+export type { Lang };
+
 type Dict = Record<string, string>;
 
 const DICTS: Record<Lang, Dict> = {
@@ -83,23 +92,59 @@ type Ctx = {
 
 const I18nContext = createContext<Ctx | null>(null);
 
+function readCookieLang(): Lang | null {
+  if (typeof document === "undefined") return null;
+  const parts = document.cookie.split(";");
+  for (const p of parts) {
+    const idx = p.indexOf("=");
+    if (idx === -1) continue;
+    const k = p.slice(0, idx).trim();
+    const v = p.slice(idx + 1).trim();
+    if (k === LANG_STORAGE_KEY) {
+      try {
+        return parseLang(decodeURIComponent(v));
+      } catch {
+        return parseLang(v);
+      }
+    }
+  }
+  return null;
+}
+
+function writeCookieLang(lang: Lang) {
+  if (typeof document === "undefined") return;
+  try {
+    const secure = typeof window !== "undefined" && window.location.protocol === "https:";
+    document.cookie = `${LANG_STORAGE_KEY}=${encodeURIComponent(lang)};path=/;max-age=${60 * 60 * 24 * 400};SameSite=Lax${secure ? ";Secure" : ""}`;
+  } catch {
+    // ignore
+  }
+}
+
 function detectInitialLang(): Lang {
-  if (typeof window === "undefined") return "uk";
-  const saved = window.localStorage.getItem("ct_lang");
-  if (saved === "uk" || saved === "ru" || saved === "en" || saved === "nl") return saved;
-  const nav = String(navigator.language || "").toLowerCase();
-  if (nav.startsWith("ru")) return "ru";
-  if (nav.startsWith("uk") || nav.startsWith("ua")) return "uk";
-  if (nav.startsWith("nl")) return "nl";
-  if (nav.startsWith("en")) return "en";
-  return "uk";
+  if (typeof window === "undefined") return DEFAULT_LANG;
+
+  const fromCookie = readCookieLang();
+  if (fromCookie) return fromCookie;
+
+  try {
+    const saved = window.localStorage.getItem(LANG_STORAGE_KEY);
+    const p = parseLang(saved);
+    if (p) return p;
+  } catch {
+    // ignore
+  }
+
+  return langFromNavigatorLanguage(navigator.language || "");
 }
 
 export default function I18nProvider({ children }: { children: React.ReactNode }) {
-  const [lang, setLangState] = useState<Lang>("uk");
+  const [lang, setLangState] = useState<Lang>(DEFAULT_LANG);
 
   useEffect(() => {
-    setLangState(detectInitialLang());
+    const next = detectInitialLang();
+    setLangState(next);
+    writeCookieLang(next);
   }, []);
 
   useEffect(() => {
@@ -108,15 +153,19 @@ export default function I18nProvider({ children }: { children: React.ReactNode }
   }, [lang]);
 
   const setLang = (l: Lang) => {
+    if (!SUPPORTED_LANGS.includes(l)) return;
     setLangState(l);
     try {
-      window.localStorage.setItem("ct_lang", l);
-    } catch {}
+      window.localStorage.setItem(LANG_STORAGE_KEY, l);
+    } catch {
+      // ignore
+    }
+    writeCookieLang(l);
   };
 
   const t = useMemo(() => {
     return (key: string) => {
-      const dict = DICTS[lang] || DICTS.uk;
+      const dict = DICTS[lang] || DICTS[DEFAULT_LANG];
       return dict[key] ?? key;
     };
   }, [lang]);
@@ -130,9 +179,9 @@ export function useI18n() {
   const ctx = useContext(I18nContext);
   if (!ctx) {
     return {
-      lang: "uk" as Lang,
+      lang: DEFAULT_LANG as Lang,
       setLang: (_l: Lang) => {},
-      t: (k: string) => DICTS.uk[k] ?? k,
+      t: (k: string) => DICTS[DEFAULT_LANG][k] ?? k,
     };
   }
   return ctx;

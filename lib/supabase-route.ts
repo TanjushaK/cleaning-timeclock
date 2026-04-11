@@ -1,9 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
 
 function cleanEnv(v: string | undefined | null): string {
-  // Убираем BOM (U+FEFF) и лишние пробелы — частая причина ByteString ошибок после copy/paste в Vercel
+  // Убираем BOM (U+FEFF) и лишние пробелы — частая причина ByteString ошибок после copy/paste в env
   const s = String(v ?? '').replace(/^\uFEFF/, '').trim()
-  // Иногда Vercel/копипаст оставляет кавычки
+  // Иногда хостинг/копипаст оставляет кавычки
   if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
     return s.slice(1, -1).trim()
   }

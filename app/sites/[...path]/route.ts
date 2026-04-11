@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server'
+import { assertSafePublicStorageSegments } from '@/lib/storage-redirect-path'
 
 /**
  * Proxy/redirect for legacy relative image URLs like:
@@ -21,6 +22,9 @@ export async function GET(
   if (!path || path.length === 0) {
     return new Response('Missing path', { status: 400 })
   }
+
+  const bad = assertSafePublicStorageSegments(path)
+  if (bad) return bad
 
   const objectPath = ['sites', ...path].join('/')
   const target = `${supabaseUrl.replace(/\/$/, '')}/storage/v1/object/public/site-photos/${encodeURI(
