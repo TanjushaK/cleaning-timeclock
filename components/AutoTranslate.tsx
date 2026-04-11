@@ -355,7 +355,10 @@ function translateString(src: string, lang: Lang) {
 /** DeepL overlay: strings still in source language after static dictionaries */
 const deepLMemory = new Map<string, string>();
 
-/** Suppress MutationObserver while we mutate the DOM (avoids run↔DeepL feedback loop / flicker) */
+/**
+ * Suppress MutationObserver while we mutate the DOM (avoids run↔DeepL feedback / flicker on uk/en/nl).
+ * Decrement after rAF: MutationObserver microtasks run before rAF, while depth is still positive.
+ */
 let translationMutationDepth = 0;
 
 function runWithoutObservingMutations(fn: () => void) {
@@ -363,7 +366,9 @@ function runWithoutObservingMutations(fn: () => void) {
   try {
     fn();
   } finally {
-    translationMutationDepth -= 1;
+    requestAnimationFrame(() => {
+      translationMutationDepth = Math.max(0, translationMutationDepth - 1);
+    });
   }
 }
 
@@ -638,7 +643,7 @@ export default function AutoTranslate() {
         t = null;
         run();
         scheduleDeepL();
-      }, 50);
+      }, 120);
     };
 
     run();
@@ -648,7 +653,8 @@ export default function AutoTranslate() {
       if (translationMutationDepth > 0) return;
       schedule();
     });
-    obs.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true });
+    // No characterData: our own text node updates must not re-trigger full re-translate (flicker on non-RU).
+    obs.observe(document.body, { childList: true, subtree: true, attributes: true });
 
     return () => {
       if (t) clearTimeout(t);
