@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Lang, useI18n } from "./I18nProvider";
 
 type Dict = Record<string, string>;
@@ -352,6 +352,121 @@ function translateString(src: string, lang: Lang) {
   return withSpaces(normalized, translated);
 }
 
+/** DeepL overlay: strings still in source language after static dictionaries */
+const deepLMemory = new Map<string, string>();
+
+function deepLCacheKey(lang: Lang, trimmed: string) {
+  return `${lang}::${trimmed}`;
+}
+
+const DEEPL_SKIP =
+  /^[\s\d.:+\-/,%€$−<>=#()[\]{}]*$|^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+
+function shouldSendToDeepL(trimmed: string, lang: Lang): boolean {
+  if (lang === "ru") return false;
+  if (trimmed.length < 2) return false;
+  if (DEEPL_SKIP.test(trimmed)) return false;
+  const t = translateTrimmed(trimmed, lang);
+  return t === trimmed;
+}
+
+function collectDeepLKeys(lang: Lang): string[] {
+  const set = new Set<string>();
+  const root = document.body;
+  if (!root) return [];
+
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let node: Node | null = walker.nextNode();
+  while (node) {
+    const parent = (node as any).parentElement as HTMLElement | null;
+    if (parent && !["SCRIPT", "STYLE", "NOSCRIPT"].includes(parent.tagName)) {
+      const original = textOriginal.get(node) ?? String(node.nodeValue ?? "");
+      const normalized = normalizeToRu(original);
+      const trimmed = normalized.trim();
+      if (shouldSendToDeepL(trimmed, lang) && !deepLMemory.has(deepLCacheKey(lang, trimmed))) {
+        set.add(trimmed);
+      }
+    }
+    node = walker.nextNode();
+  }
+
+  const attrs = ["placeholder", "title", "aria-label", "alt", "value"];
+  const all = root.querySelectorAll<HTMLElement>("*");
+  for (const el of Array.from(all)) {
+    for (const attr of attrs) {
+      const state = attrState.get(el);
+      const original = state?.original[attr] ?? el.getAttribute(attr);
+      if (original == null) continue;
+      const normalized = normalizeToRu(original);
+      const trimmed = normalized.trim();
+      if (shouldSendToDeepL(trimmed, lang) && !deepLMemory.has(deepLCacheKey(lang, trimmed))) {
+        set.add(trimmed);
+      }
+    }
+  }
+
+  const titleNorm = normalizeToRu(document.title || "");
+  const titleTrim = titleNorm.trim();
+  if (shouldSendToDeepL(titleTrim, lang) && !deepLMemory.has(deepLCacheKey(lang, titleTrim))) {
+    set.add(titleTrim);
+  }
+
+  return Array.from(set);
+}
+
+function applyDeepLOverlay(lang: Lang) {
+  if (lang === "ru") return;
+  const root = document.body;
+  if (!root) return;
+
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let node: Node | null = walker.nextNode();
+  while (node) {
+    const parent = (node as any).parentElement as HTMLElement | null;
+    if (parent && !["SCRIPT", "STYLE", "NOSCRIPT"].includes(parent.tagName)) {
+      const original = textOriginal.get(node) ?? String(node.nodeValue ?? "");
+      const normalized = normalizeToRu(original);
+      const trimmed = normalized.trim();
+      const tr = deepLMemory.get(deepLCacheKey(lang, trimmed));
+      if (tr) {
+        const next = withSpaces(normalized, tr);
+        if (String(node.nodeValue ?? "") !== next) {
+          node.nodeValue = next;
+          textLast.set(node, next);
+        }
+      }
+    }
+    node = walker.nextNode();
+  }
+
+  const attrs = ["placeholder", "title", "aria-label", "alt", "value"];
+  const all = root.querySelectorAll<HTMLElement>("*");
+  for (const el of Array.from(all)) {
+    for (const attr of attrs) {
+      const state = attrState.get(el);
+      const original = state?.original[attr] ?? el.getAttribute(attr);
+      if (original == null) continue;
+      const normalized = normalizeToRu(original);
+      const trimmed = normalized.trim();
+      const tr = deepLMemory.get(deepLCacheKey(lang, trimmed));
+      if (tr) {
+        const next = withSpaces(normalized, tr);
+        if (el.getAttribute(attr) !== next) {
+          el.setAttribute(attr, next);
+          const st = state ?? { original: {}, last: {} };
+          st.last[attr] = next;
+          attrState.set(el, st);
+        }
+      }
+    }
+  }
+
+  const tNorm = normalizeToRu(document.title || "");
+  const tTrim = tNorm.trim();
+  const tTr = deepLMemory.get(deepLCacheKey(lang, tTrim));
+  if (tTr) document.title = withSpaces(tNorm, tTr);
+}
+
 function processTextNode(node: Node, lang: Lang) {
   const current = String(node.nodeValue ?? "");
   const previousOriginal = textOriginal.get(node);
@@ -419,31 +534,91 @@ function translateDocument(lang: Lang) {
 
 export default function AutoTranslate() {
   const { lang } = useI18n();
+  const abortRef = useRef<AbortController | null>(null);
 
   const run = useMemo(() => {
     return () => translateDocument(lang);
   }, [lang]);
 
+  const runDeepL = useCallback(async () => {
+    if (lang === "ru") return;
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+    let meta: Response;
+    try {
+      meta = await fetch("/api/translate/deepl", { signal: ac.signal });
+    } catch {
+      return;
+    }
+    if (!meta.ok) return;
+    const { enabled } = (await meta.json()) as { enabled?: boolean };
+    if (!enabled) return;
+
+    const pending = collectDeepLKeys(lang);
+    if (pending.length === 0) {
+      applyDeepLOverlay(lang);
+      return;
+    }
+
+    for (let i = 0; i < pending.length; i += 50) {
+      const batch = pending.slice(i, i + 50);
+      let res: Response;
+      try {
+        res = await fetch("/api/translate/deepl", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ texts: batch, target_lang: lang }),
+          signal: ac.signal,
+        });
+      } catch {
+        return;
+      }
+      if (!res.ok) continue;
+      const data = (await res.json()) as { translations?: string[] };
+      const tr = data.translations ?? [];
+      batch.forEach((key, idx) => {
+        const out = tr[idx];
+        if (out && String(out).trim()) deepLMemory.set(deepLCacheKey(lang, key), String(out).trim());
+      });
+    }
+    applyDeepLOverlay(lang);
+  }, [lang]);
+
   useEffect(() => {
     let t: ReturnType<typeof setTimeout> | null = null;
+    let d: ReturnType<typeof setTimeout> | null = null;
+
+    const scheduleDeepL = () => {
+      if (d) clearTimeout(d);
+      d = setTimeout(() => {
+        d = null;
+        void runDeepL();
+      }, 450);
+    };
+
     const schedule = () => {
       if (t) return;
       t = setTimeout(() => {
         t = null;
         run();
+        scheduleDeepL();
       }, 50);
     };
 
     run();
+    scheduleDeepL();
 
     const obs = new MutationObserver(() => schedule());
     obs.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true });
 
     return () => {
       if (t) clearTimeout(t);
+      if (d) clearTimeout(d);
+      abortRef.current?.abort();
       obs.disconnect();
     };
-  }, [run]);
+  }, [run, runDeepL]);
 
   return null;
 }
