@@ -1,4 +1,4 @@
-import type { Messages } from "./types";
+﻿import type { Messages } from "./types";
 
 export const en: Messages = {
   common: {
@@ -9,6 +9,12 @@ export const en: Messages = {
     close: "Close",
     refresh: "Refresh",
     error: "Error",
+  },
+  languages: {
+    ru: "Russian",
+    uk: "Ukrainian",
+    en: "English",
+    nl: "Dutch",
   },
   auth: {
     login: "Sign in",

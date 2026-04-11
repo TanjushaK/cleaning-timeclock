@@ -1,4 +1,4 @@
-export type Messages = {
+﻿export type Messages = {
   common: {
     language: string;
     loading: string;
@@ -7,6 +7,12 @@ export type Messages = {
     close: string;
     refresh: string;
     error: string;
+  };
+  languages: {
+    ru: string;
+    uk: string;
+    en: string;
+    nl: string;
   };
   auth: {
     login: string;
