@@ -32,18 +32,11 @@ yarn-error.log*
 # env files
 .env*
 .env*.local
-
-# vercel
-.vercel
+!.env.example
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
 
+# локальные метаданные сторонних CLI (не коммитить)
 .vercel
-.env*.local
-
-.env.local
-
-.vercel
-.env*.local

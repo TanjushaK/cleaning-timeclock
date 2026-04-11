@@ -161,14 +161,21 @@ export async function requireActiveWorker(reqOrHeaders: Request | Headers): Prom
   return { ...guard, profile: prof as ProfileRow }
 }
 
+const GENERIC_500 = 'Внутренняя ошибка сервера'
+
 export function toErrorResponse(err: unknown): NextResponse {
   if (err instanceof ApiError) {
     return NextResponse.json({ error: err.message }, { status: err.status })
   }
+  const isProd = process.env.NODE_ENV === 'production'
   if (err instanceof Error) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
+    if (!isProd) {
+      return NextResponse.json({ error: err.message }, { status: 500 })
+    }
+    console.error('[api]', err)
+    return NextResponse.json({ error: GENERIC_500 }, { status: 500 })
   }
-  return NextResponse.json({ error: 'Unknown error' }, { status: 500 })
+  return NextResponse.json({ error: isProd ? GENERIC_500 : 'Unknown error' }, { status: 500 })
 }
 
 

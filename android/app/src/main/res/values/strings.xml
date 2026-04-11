@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Cleaning Timeclock</string>
+    <string name="title_activity_main">Cleaning Timeclock</string>
+    <string name="package_name">nl.tanjusha.timeclock</string>
+    <string name="custom_url_scheme">nl.tanjusha.timeclock</string>
+</resources>
