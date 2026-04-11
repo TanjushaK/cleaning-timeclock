@@ -62,6 +62,7 @@ export const en: Messages = {
     chooseFile: "Choose a file",
     syncFailed: "Sync error",
     loadFailed: "Load error",
+    sessionExpired: "Your session slipped away for a coffee break. Sign in once more and we are back in business.",
   },
   auth: {
     logout: "Log out",

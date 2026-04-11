@@ -62,6 +62,7 @@ export const uk: Messages = {
     chooseFile: "Виберіть файл",
     syncFailed: "Помилка синхронізації",
     loadFailed: "Помилка завантаження",
+    sessionExpired: "Сесія тихенько пішла на каву. Увійдіть ще раз — і поїхали далі.",
   },
   auth: {
     logout: "Вийти",

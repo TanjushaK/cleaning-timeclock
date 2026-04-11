@@ -60,6 +60,7 @@ export type Messages = {
     chooseFile: string;
     syncFailed: string;
     loadFailed: string;
+    sessionExpired: string;
   };
   auth: {
     logout: string;

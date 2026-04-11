@@ -62,6 +62,7 @@ export const nl: Messages = {
     chooseFile: "Kies een bestand",
     syncFailed: "Synchronisatiefout",
     loadFailed: "Laadfout",
+    sessionExpired: "Je sessie glipte even weg voor een koffiepauze. Log opnieuw in en we gaan weer verder.",
   },
   auth: {
     logout: "Uitloggen",

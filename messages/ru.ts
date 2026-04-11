@@ -62,6 +62,7 @@ export const ru: Messages = {
     chooseFile: "Выбери файл",
     syncFailed: "Ошибка синхронизации",
     loadFailed: "Ошибка загрузки",
+    sessionExpired: "Сессия тихо улизнула на кофе-брейк. Войди ещё раз — и поехали дальше.",
   },
   auth: {
     logout: "Выйти",
