@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { AdminApiErrorCode } from '@/lib/api-error-codes'
 import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
 
 export const runtime = 'nodejs'
@@ -30,33 +31,34 @@ export async function POST(req: Request) {
     const worker_id = String(body?.worker_id || body?.id || '').trim()
     const force = body?.force === true
 
-    if (!worker_id) throw new ApiError(400, 'worker_id обязателен')
+    if (!worker_id) throw new ApiError(400, 'worker_id is required', AdminApiErrorCode.ACTIVATE_ID_REQUIRED)
 
     const avatarKey = await resolveAvatarKey(sb)
     const sel = ['id, role, active, full_name, email, onboarding_submitted_at', avatarKey ? avatarKey : null].filter(Boolean).join(',')
 
     const { data: prof, error } = await sb.from('profiles').select(sel).eq('id', worker_id).maybeSingle()
-    if (error) throw new ApiError(400, error.message)
-    if (!prof) throw new ApiError(404, 'Профиль не найден')
-    if (String((prof as any).role) !== 'worker') throw new ApiError(400, 'Не worker')
+    if (error) throw new ApiError(400, error.message || 'Query failed', AdminApiErrorCode.DB_ERROR)
+    if (!prof) throw new ApiError(404, 'Profile not found', AdminApiErrorCode.PROFILE_NOT_FOUND)
+    if (String((prof as any).role) !== 'worker') throw new ApiError(400, 'Not a worker profile', AdminApiErrorCode.ACTIVATE_NOT_WORKER)
 
     const full = String((prof as any).full_name || '').trim()
     const submitted = !!(prof as any).onboarding_submitted_at
     const avatar = avatarKey ? String((prof as any)[avatarKey] || '').trim() : ''
 
-    if (!full && !force) throw new ApiError(400, 'Нет имени')
-    if (!submitted && !force) throw new ApiError(400, 'Не отправлено на активацию')
-    if (!avatar && !force) throw new ApiError(400, 'Нет аватара')
+    if (!full && !force) throw new ApiError(400, 'Activation requirements not met', AdminApiErrorCode.ACTIVATE_REQUIREMENTS_NOT_MET)
+    if (!submitted && !force) throw new ApiError(400, 'Activation requirements not met', AdminApiErrorCode.ACTIVATE_REQUIREMENTS_NOT_MET)
+    if (!avatar && !force) throw new ApiError(400, 'Activation requirements not met', AdminApiErrorCode.ACTIVATE_REQUIREMENTS_NOT_MET)
 
     const u = await sb.auth.admin.getUserById(worker_id)
     const authEmail = !u.error && u.data?.user?.email ? String(u.data.user.email) : ''
     const emailConfirmed = !u.error ? u.data?.user?.email_confirmed_at : null
     const email = String((prof as any).email || authEmail || '').trim()
 
-    if (email && !emailConfirmed && !force) throw new ApiError(400, 'Email не подтверждён')
+    if (email && !emailConfirmed && !force)
+      throw new ApiError(400, 'Email is not confirmed', AdminApiErrorCode.ACTIVATE_EMAIL_UNCONFIRMED)
 
     const { error: updErr } = await sb.from('profiles').update({ active: true }).eq('id', worker_id)
-    if (updErr) throw new ApiError(400, updErr.message)
+    if (updErr) throw new ApiError(400, updErr.message || 'Update failed', AdminApiErrorCode.PROFILE_UPDATE_FAILED)
 
     return NextResponse.json({ ok: true })
   } catch (e) {

@@ -1,224 +1,327 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { requireAdmin } from '@/lib/supabase-server'
+import { NextRequest, NextResponse } from "next/server";
+import { AdminApiErrorCode } from "@/lib/api-error-codes";
+import { fillMissingLocalesFromRu } from "@/lib/deepl-fill.server";
+import { parseLang, type Lang } from "@/lib/i18n-config";
+import { parseI18nJson, resolveI18nField, ruSourceText, setI18nLocale } from "@/lib/localized-records";
+import { requestLocale } from "@/lib/request-lang";
+import { ApiError, requireAdmin, toErrorResponse } from "@/lib/supabase-server";
 
-type NotesKey = 'notes' | 'extra_note' | 'note' | null
-type AvatarKey = 'avatar_path' | 'avatar_url' | 'photo_path' | null
+type NotesKey = "notes" | "extra_note" | "note" | null;
+type AvatarKey = "avatar_path" | "avatar_url" | "photo_path" | null;
 
-let NOTES_KEY: NotesKey = null
-let AVATAR_KEY: AvatarKey = null
+let NOTES_KEY: NotesKey = null;
+let AVATAR_KEY: AvatarKey = null;
 
-function errJson(message: string, status = 500, extra?: any) {
-  return NextResponse.json({ error: message, ...(extra ? { extra } : {}) }, { status })
-}
-
-async function resolveNotesKey(supabase: any): Promise<NotesKey> {
-  if (NOTES_KEY) return NOTES_KEY
-  const candidates: NotesKey[] = ['notes', 'extra_note', 'note']
+async function resolveNotesKey(supabase: { from: (t: string) => unknown }): Promise<NotesKey> {
+  if (NOTES_KEY) return NOTES_KEY;
+  const candidates: NotesKey[] = ["notes", "extra_note", "note"];
   for (const k of candidates) {
-    if (!k) continue
-    const { error } = await supabase.from('profiles').select(k).limit(1)
+    if (!k) continue;
+    const { error } = await (supabase.from("profiles") as any).select(k).limit(1);
     if (!error) {
-      NOTES_KEY = k
-      return k
+      NOTES_KEY = k;
+      return k;
     }
-    const msg = String((error as any)?.message || '')
-    if (msg.includes('column') && msg.includes('does not exist')) continue
+    const msg = String((error as { message?: string })?.message || "");
+    if (msg.includes("column") && msg.includes("does not exist")) continue;
   }
-  NOTES_KEY = 'notes'
-  return NOTES_KEY
+  NOTES_KEY = "notes";
+  return NOTES_KEY;
 }
 
-async function resolveAvatarKey(supabase: any): Promise<AvatarKey> {
-  if (AVATAR_KEY) return AVATAR_KEY
-  const candidates: AvatarKey[] = ['avatar_path', 'avatar_url', 'photo_path']
+async function resolveAvatarKey(supabase: { from: (t: string) => unknown }): Promise<AvatarKey> {
+  if (AVATAR_KEY) return AVATAR_KEY;
+  const candidates: AvatarKey[] = ["avatar_path", "avatar_url", "photo_path"];
   for (const k of candidates) {
-    if (!k) continue
-    const { error } = await supabase.from('profiles').select(k).limit(1)
+    if (!k) continue;
+    const { error } = await (supabase.from("profiles") as any).select(k).limit(1);
     if (!error) {
-      AVATAR_KEY = k
-      return k
+      AVATAR_KEY = k;
+      return k;
     }
-    const msg = String((error as any)?.message || '')
-    if (msg.includes('column') && msg.includes('does not exist')) continue
+    const msg = String((error as { message?: string })?.message || "");
+    if (msg.includes("column") && msg.includes("does not exist")) continue;
   }
-  AVATAR_KEY = 'avatar_path'
-  return AVATAR_KEY
+  AVATAR_KEY = "avatar_path";
+  return AVATAR_KEY;
 }
 
-function pick(obj: any, key: string): any {
-  return obj?.[key]
+function pick(obj: Record<string, unknown>, key: string): unknown {
+  return obj?.[key];
 }
 
-function normMaybeString(v: any): string | null {
-  if (v === null) return null
-  const s = String(v ?? '').trim()
-  return s ? s : null
+function normMaybeString(v: unknown): string | null {
+  if (v === null) return null;
+  const s = String(v ?? "").trim();
+  return s ? s : null;
+}
+
+function normTextField(v: unknown): string | null {
+  if (v == null) return null;
+  const s = String(v).trim();
+  return s || null;
+}
+
+function shapeWorker(
+  prof: Record<string, unknown>,
+  notesKey: NotesKey,
+  avatarKey: AvatarKey,
+  loc: ReturnType<typeof requestLocale>,
+) {
+  const fullNameI18n = parseI18nJson(prof.full_name_i18n);
+  const notesI18n = parseI18nJson(prof.notes_i18n);
+  const legacyNotes = notesKey ? pick(prof, notesKey) : null;
+
+  const out: Record<string, unknown> = {
+    id: prof.id,
+    full_name: resolveI18nField(fullNameI18n, loc, prof.full_name as string | null | undefined),
+    role: prof.role ?? null,
+    active: prof.active ?? null,
+    email: prof.email ?? null,
+    phone: prof.phone ?? null,
+    notes: notesKey ? resolveI18nField(notesI18n, loc, legacyNotes as string | null | undefined) : null,
+    avatar_path: avatarKey ? pick(prof, avatarKey) ?? null : null,
+    full_name_i18n: fullNameI18n,
+    notes_i18n: notesI18n,
+  };
+  return out;
 }
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const guard = await requireAdmin(req)
-    const supabase = (guard as any).supabase
+    const guard = await requireAdmin(req);
+    const supabase = (guard as { supabase: any }).supabase;
+    const loc = requestLocale(req);
 
-    const params = await ctx.params
-    const workerId = String(params?.id || '').trim()
-    if (!workerId) return errJson('id обязателен', 400)
+    const params = await ctx.params;
+    const workerId = String(params?.id || "").trim();
+    if (!workerId) throw new ApiError(400, "Worker id required", AdminApiErrorCode.WORKER_ID_REQUIRED);
 
-    const notesKey = await resolveNotesKey(supabase)
-    const avatarKey = await resolveAvatarKey(supabase)
+    const notesKey = await resolveNotesKey(supabase);
+    const avatarKey = await resolveAvatarKey(supabase);
 
-    const selectCols = ['id', 'full_name', 'role', 'active', 'phone', 'email']
-    if (notesKey) selectCols.push(notesKey)
-    if (avatarKey) selectCols.push(avatarKey)
+    const selectCols = ["id", "full_name", "role", "active", "phone", "email", "full_name_i18n", "notes_i18n"];
+    if (notesKey) selectCols.push(notesKey);
+    if (avatarKey) selectCols.push(avatarKey);
 
     const { data: prof, error: profErr } = await supabase
-      .from('profiles')
-      .select(selectCols.join(','))
-      .eq('id', workerId)
-      .maybeSingle()
+      .from("profiles")
+      .select(selectCols.join(","))
+      .eq("id", workerId)
+      .maybeSingle();
 
-    if (profErr) return errJson(profErr.message, 500)
-    if (!prof) return errJson('Профиль не найден', 404)
+    if (profErr) throw new ApiError(500, profErr.message || "Load failed", AdminApiErrorCode.PROFILE_LOAD_FAILED);
+    if (!prof) throw new ApiError(404, "Profile not found", AdminApiErrorCode.PROFILE_NOT_FOUND);
 
-    // email/phone — из Auth (если доступно)
-    let authEmail: string | null = null
-    let authPhone: string | null = null
+    let authEmail: string | null = null;
+    let authPhone: string | null = null;
     try {
-      const { data: u } = await supabase.auth.admin.getUserById(workerId)
-      authEmail = u?.user?.email ?? null
-      authPhone = (u?.user as any)?.phone ?? null
+      const { data: u } = await supabase.auth.admin.getUserById(workerId);
+      authEmail = u?.user?.email ?? null;
+      authPhone = (u?.user as { phone?: string | null })?.phone ?? null;
     } catch {
       // ignore
     }
 
-    const out: any = {
-      id: prof.id,
-      full_name: prof.full_name ?? null,
-      role: prof.role ?? null,
-      active: prof.active ?? null,
-      email: prof.email ?? authEmail ?? null,
-      phone: prof.phone ?? authPhone ?? null,
-      notes: notesKey ? pick(prof, notesKey) ?? null : null,
-      avatar_path: avatarKey ? pick(prof, avatarKey) ?? null : null,
-    }
+    const row = prof as Record<string, unknown>;
+    row.email = row.email ?? authEmail;
+    row.phone = row.phone ?? authPhone;
 
-    return NextResponse.json({ worker: out })
-  } catch (e: any) {
-    return errJson(e?.message || 'Unexpected error', 500)
+    return NextResponse.json({ worker: shapeWorker(row, notesKey, avatarKey, loc) });
+  } catch (e) {
+    return toErrorResponse(e);
   }
 }
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const guard = await requireAdmin(req)
-    const supabase = (guard as any).supabase
+    const guard = await requireAdmin(req);
+    const supabase = (guard as { supabase: any }).supabase;
+    const loc = requestLocale(req);
 
-    const params = await ctx.params
-    const workerId = String(params?.id || '').trim()
-    if (!workerId) return errJson('id обязателен', 400)
+    const params = await ctx.params;
+    const workerId = String(params?.id || "").trim();
+    if (!workerId) throw new ApiError(400, "Worker id required", AdminApiErrorCode.WORKER_ID_REQUIRED);
 
-    const body = await req.json().catch(() => ({} as any))
+    const body = await req.json().catch(() => ({}));
 
-    const notesKey = await resolveNotesKey(supabase)
-    const avatarKey = await resolveAvatarKey(supabase)
+    const notesKey = await resolveNotesKey(supabase);
+    const avatarKey = await resolveAvatarKey(supabase);
 
-    const profilePatch: any = {}
-    const authPatch: any = {}
+    if (body?.fillMissingTranslations === true) {
+      const apiKey = process.env.DEEPL_API_KEY?.trim();
+      if (!apiKey) throw new ApiError(503, "DeepL not configured", AdminApiErrorCode.DEEPL_NOT_CONFIGURED);
 
-    // profiles
-    if (Object.prototype.hasOwnProperty.call(body, 'full_name')) {
-      const v = body.full_name
-      profilePatch.full_name = v == null ? null : String(v)
-    }
+      const selectCols = ["id", "full_name", "full_name_i18n", "notes_i18n"];
+      if (notesKey) selectCols.push(notesKey);
 
-    if (notesKey && Object.prototype.hasOwnProperty.call(body, 'notes')) {
-      profilePatch[notesKey] = body.notes == null ? null : String(body.notes)
-    }
+      const { data: prof, error: profErr } = await supabase
+        .from("profiles")
+        .select(selectCols.join(","))
+        .eq("id", workerId)
+        .maybeSingle();
 
-    if (avatarKey && Object.prototype.hasOwnProperty.call(body, 'avatar_path')) {
-      profilePatch[avatarKey] = body.avatar_path == null ? null : String(body.avatar_path)
-    }
+      if (profErr) throw new ApiError(500, profErr.message || "Load failed", AdminApiErrorCode.PROFILE_LOAD_FAILED);
+      if (!prof) throw new ApiError(404, "Profile not found", AdminApiErrorCode.PROFILE_NOT_FOUND);
 
-    if (Object.prototype.hasOwnProperty.call(body, 'phone')) {
-      const phone = normMaybeString(body.phone)
-      profilePatch.phone = phone
-      authPatch.phone = phone
-      if (phone) authPatch.phone_confirm = true
-    }
+      const row = prof as Record<string, unknown>;
+      let fnI = parseI18nJson(row.full_name_i18n);
+      let nI = parseI18nJson(row.notes_i18n);
+      const ruFn = ruSourceText(fnI, row.full_name as string | null);
+      const legacyNotes = notesKey ? pick(row, notesKey) : null;
+      const ruNotes = ruSourceText(nI, legacyNotes as string | null);
 
-    if (Object.prototype.hasOwnProperty.call(body, 'email')) {
-      const email = normMaybeString(body.email)
-      profilePatch.email = email
-      authPatch.email = email
-      if (email) authPatch.email_confirm = true
-    }
-
-    if (Object.prototype.hasOwnProperty.call(body, 'password')) { const pw = String(body.password ?? '').trim(); if (pw) authPatch.password = pw }
-    if (Object.keys(profilePatch).length === 0 && Object.keys(authPatch).length === 0) {
-      return errJson('Нечего обновлять', 400)
-    }
-
-    // Update Auth user first (email/phone)
-    if (Object.keys(authPatch).length > 0) {
       try {
-        const { error: uErr } = await supabase.auth.admin.updateUserById(workerId, authPatch)
-        if (uErr) return errJson(uErr.message, 400)
-      } catch (e: any) {
-        return errJson(String(e?.message || 'Не удалось обновить Auth пользователя'), 400)
+        fnI = await fillMissingLocalesFromRu(ruFn, fnI, ["en", "uk", "nl"]);
+        if (ruNotes) nI = await fillMissingLocalesFromRu(ruNotes, nI, ["en", "uk", "nl"]);
+      } catch (e: unknown) {
+        if (e instanceof Error && e.message === "DEEPL_NOT_CONFIGURED") {
+          throw new ApiError(503, "DeepL not configured", AdminApiErrorCode.DEEPL_NOT_CONFIGURED);
+        }
+        throw e;
+      }
+
+      const patch: Record<string, unknown> = { full_name_i18n: fnI, notes_i18n: nI };
+
+      const { error: updErr } = await supabase.from("profiles").update(patch).eq("id", workerId);
+      if (updErr) throw new ApiError(500, updErr.message || "Update failed", AdminApiErrorCode.PROFILE_UPDATE_FAILED);
+
+      const avatarKey2 = await resolveAvatarKey(supabase);
+      const selectCols2 = ["id", "full_name", "role", "active", "phone", "email", "full_name_i18n", "notes_i18n"];
+      if (notesKey) selectCols2.push(notesKey);
+      if (avatarKey2) selectCols2.push(avatarKey2);
+
+      const { data: prof2, error: p2e } = await supabase
+        .from("profiles")
+        .select(selectCols2.join(","))
+        .eq("id", workerId)
+        .maybeSingle();
+
+      if (p2e) throw new ApiError(500, p2e.message || "Load failed", AdminApiErrorCode.PROFILE_LOAD_FAILED);
+
+      let authEmail: string | null = null;
+      let authPhone: string | null = null;
+      try {
+        const { data: u } = await supabase.auth.admin.getUserById(workerId);
+        authEmail = u?.user?.email ?? null;
+        authPhone = (u?.user as { phone?: string | null })?.phone ?? null;
+      } catch {
+        // ignore
+      }
+
+      const row2 = (prof2 || {}) as Record<string, unknown>;
+      row2.email = row2.email ?? authEmail;
+      row2.phone = row2.phone ?? authPhone;
+
+      return NextResponse.json({ worker: shapeWorker(row2, notesKey, avatarKey2, loc) });
+    }
+
+    const editLocale: Lang = parseLang(body?.editLocale) ?? "ru";
+
+    const { data: existing, error: exErr } = await supabase
+      .from("profiles")
+      .select(["id", "full_name", "full_name_i18n", "notes_i18n", notesKey, avatarKey].filter(Boolean).join(","))
+      .eq("id", workerId)
+      .maybeSingle();
+
+    if (exErr) throw new ApiError(500, exErr.message || "Load failed", AdminApiErrorCode.PROFILE_LOAD_FAILED);
+    if (!existing) throw new ApiError(404, "Profile not found", AdminApiErrorCode.PROFILE_NOT_FOUND);
+
+    const ex = existing as Record<string, unknown>;
+    let fnI = parseI18nJson(ex.full_name_i18n);
+    let nI = parseI18nJson(ex.notes_i18n);
+
+    const profilePatch: Record<string, unknown> = {};
+    const authPatch: Record<string, unknown> = {};
+
+    if (Object.prototype.hasOwnProperty.call(body, "full_name")) {
+      const v = normTextField(body.full_name);
+      fnI = setI18nLocale(fnI, editLocale, v);
+      profilePatch.full_name_i18n = fnI;
+      if (editLocale === "ru") {
+        profilePatch.full_name = v;
       }
     }
 
-    // Update profiles row
-    if (Object.keys(profilePatch).length > 0) {
-      const { data: updated, error: updErr } = await supabase
-        .from('profiles')
-        .update(profilePatch)
-        .eq('id', workerId)
-        .select('id,full_name,role,active,phone,email')
-        .maybeSingle()
-
-      if (updErr) return errJson(updErr.message, 500)
-      if (!updated) return errJson('Профиль не найден', 404)
+    if (notesKey && Object.prototype.hasOwnProperty.call(body, "notes")) {
+      const v = normTextField(body.notes);
+      nI = setI18nLocale(nI, editLocale, v);
+      profilePatch.notes_i18n = nI;
+      if (editLocale === "ru") {
+        profilePatch[notesKey] = v == null ? null : String(body.notes ?? "");
+      }
     }
 
-    // Return worker like GET
-    let authEmail: string | null = null
-    let authPhone: string | null = null
+    if (avatarKey && Object.prototype.hasOwnProperty.call(body, "avatar_path")) {
+      profilePatch[avatarKey] = body.avatar_path == null ? null : String(body.avatar_path);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "phone")) {
+      const phone = normMaybeString(body.phone);
+      profilePatch.phone = phone;
+      authPatch.phone = phone;
+      if (phone) authPatch.phone_confirm = true;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "email")) {
+      const email = normMaybeString(body.email);
+      profilePatch.email = email;
+      authPatch.email = email;
+      if (email) authPatch.email_confirm = true;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "password")) {
+      const pw = String(body.password ?? "").trim();
+      if (pw) authPatch.password = pw;
+    }
+
+    if (Object.keys(profilePatch).length === 0 && Object.keys(authPatch).length === 0) {
+      throw new ApiError(400, "Nothing to update", AdminApiErrorCode.NOTHING_TO_UPDATE);
+    }
+
+    if (Object.keys(authPatch).length > 0) {
+      try {
+        const { error: uErr } = await supabase.auth.admin.updateUserById(workerId, authPatch);
+        if (uErr) throw new ApiError(400, uErr.message || "Auth update failed", AdminApiErrorCode.AUTH_USER_UPDATE_FAILED);
+      } catch (e: unknown) {
+        if (e instanceof ApiError) throw e;
+        throw new ApiError(400, String((e as Error)?.message || "Auth update failed"), AdminApiErrorCode.AUTH_USER_UPDATE_FAILED);
+      }
+    }
+
+    if (Object.keys(profilePatch).length > 0) {
+      const { error: updErr } = await supabase.from("profiles").update(profilePatch).eq("id", workerId);
+      if (updErr) throw new ApiError(500, updErr.message || "Update failed", AdminApiErrorCode.PROFILE_UPDATE_FAILED);
+    }
+
+    const selectCols = ["id", "full_name", "role", "active", "phone", "email", "full_name_i18n", "notes_i18n"];
+    if (notesKey) selectCols.push(notesKey);
+    if (avatarKey) selectCols.push(avatarKey);
+
+    const { data: prof2, error: p2e } = await supabase
+      .from("profiles")
+      .select(selectCols.filter(Boolean).join(","))
+      .eq("id", workerId)
+      .maybeSingle();
+
+    if (p2e) throw new ApiError(500, p2e.message || "Load failed", AdminApiErrorCode.PROFILE_LOAD_FAILED);
+
+    let authEmail: string | null = null;
+    let authPhone: string | null = null;
     try {
-      const { data: u } = await supabase.auth.admin.getUserById(workerId)
-      authEmail = u?.user?.email ?? null
-      authPhone = (u?.user as any)?.phone ?? null
+      const { data: u } = await supabase.auth.admin.getUserById(workerId);
+      authEmail = u?.user?.email ?? null;
+      authPhone = (u?.user as { phone?: string | null })?.phone ?? null;
     } catch {
       // ignore
     }
 
-    const selectCols = ['id', 'full_name', 'role', 'active', 'phone', 'email']
-    if (notesKey) selectCols.push(notesKey)
-    if (avatarKey) selectCols.push(avatarKey)
+    const row = (prof2 || {}) as Record<string, unknown>;
+    row.email = row.email ?? authEmail;
+    row.phone = row.phone ?? authPhone;
 
-    const { data: prof2, error: profErr } = await supabase
-      .from('profiles')
-      .select(selectCols.filter(Boolean).join(','))
-      .eq('id', workerId)
-      .maybeSingle()
-
-    if (profErr) return errJson(profErr.message, 500)
-
-    const out: any = {
-      id: prof2?.id || workerId,
-      full_name: (prof2 as any)?.full_name ?? null,
-      role: (prof2 as any)?.role ?? null,
-      active: (prof2 as any)?.active ?? null,
-      email: (prof2 as any)?.email ?? authEmail ?? null,
-      phone: (prof2 as any)?.phone ?? authPhone ?? null,
-      notes: notesKey ? pick(prof2 || {}, notesKey) ?? null : null,
-      avatar_path: avatarKey ? pick(prof2 || {}, avatarKey) ?? null : null,
-    }
-
-    return NextResponse.json({ worker: out })
-  } catch (e: any) {
-    return errJson(e?.message || 'Unexpected error', 500)
+    return NextResponse.json({ worker: shapeWorker(row, notesKey, avatarKey, loc) });
+  } catch (e) {
+    return toErrorResponse(e);
   }
 }
-
-

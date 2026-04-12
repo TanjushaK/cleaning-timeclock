@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { AdminApiErrorCode } from '@/lib/api-error-codes'
 import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
 
 export const runtime = 'nodejs'
@@ -12,7 +13,7 @@ export async function GET(req: Request) {
       .from('jobs')
       .select('*')
 
-    if (error) throw new ApiError(500, `Не смог прочитать jobs: ${error.message}`)
+    if (error) throw new ApiError(500, error.message || 'Could not load jobs', AdminApiErrorCode.JOBS_LOAD_FAILED)
 
     return NextResponse.json({ jobs: data ?? [] }, { status: 200 })
   } catch (e) {

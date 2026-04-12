@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { requireAdmin, toErrorResponse } from '@/lib/supabase-server'
+import { AdminApiErrorCode } from '@/lib/api-error-codes'
+import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
 
 function truthy(v: string | undefined | null) {
   if (!v) return false
@@ -63,6 +64,9 @@ async function fetchProfiles(sb: any, workerIds: string[]) {
 
 export async function GET(req: Request) {
   try {
+    const admin = await requireAdmin(req)
+    const sb = admin.supabase
+
     const url = new URL(req.url)
     const from = (url.searchParams.get('from') || url.searchParams.get('date_from') || '').trim()
     const to = (url.searchParams.get('to') || url.searchParams.get('date_to') || '').trim()
@@ -74,14 +78,11 @@ export async function GET(req: Request) {
     const fromD = parseDateISO(from)
     const toD = parseDateISO(to)
     if (!fromD || !toD) {
-      return NextResponse.json({ error: 'Неверный период (ожидаю YYYY-MM-DD)' }, { status: 400 })
+      throw new ApiError(400, 'Invalid period (expected YYYY-MM-DD)', AdminApiErrorCode.REPORT_PERIOD_INVALID)
     }
     if (toD.getTime() < fromD.getTime()) {
-      return NextResponse.json({ error: 'Период неверный: to < from' }, { status: 400 })
+      throw new ApiError(400, 'Invalid period: to is before from', AdminApiErrorCode.REPORT_PERIOD_ORDER)
     }
-
-    const admin = await requireAdmin(req)
-    const sb = admin.supabase
 
     const fromISO = asDateISO(fromD)
     const toISO = asDateISO(toD)

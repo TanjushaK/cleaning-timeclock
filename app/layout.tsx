@@ -1,6 +1,5 @@
 import I18nProvider from "@/components/I18nProvider";
 import LanguageSwitch from "@/components/LanguageSwitch";
-import AutoTranslate from "@/components/AutoTranslate";
 import "./globals.css";
 import "./app-theme.css";
 import type { Metadata, Viewport } from "next";
@@ -51,7 +50,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <SWRegister />
         <I18nProvider>
           <LanguageSwitch />
-          <AutoTranslate />
           {children}
         </I18nProvider>
       </body>
