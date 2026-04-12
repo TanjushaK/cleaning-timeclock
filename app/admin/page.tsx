@@ -6,9 +6,11 @@ import { createPortal } from 'react-dom'
 import { getAccessToken, setAuthTokens, clearAuthTokens } from '@/lib/auth-fetch'
 import { SearchableSelect } from '@/app/_components/SearchableSelect'
 import { useI18n } from '@/components/I18nProvider'
+import type { Lang } from '@/lib/i18n-config'
 
 function mapAdminErr(e: unknown, t: (key: string, vars?: Record<string, string | number>) => string) {
   const m = String((e as { message?: string })?.message ?? '')
+  if (m.startsWith('admin.api.')) return t(m)
   if (/^(admin\.(main|common|approvals)\.|common\.)/.test(m)) return t(m)
   return m
 }
@@ -37,23 +39,28 @@ type WorkerPhotoMeta = { count: number; thumb?: string }
 type WorkerProfile = {
   id: string
   full_name?: string | null
+  full_name_i18n?: Partial<Record<Lang, string>> | null
   role?: string | null
   active?: boolean | null
   email?: string | null
   phone?: string | null
   notes?: string | null
+  notes_i18n?: Partial<Record<Lang, string>> | null
   avatar_path?: string | null
 }
 
 type Site = {
   id: string
   name?: string | null
+  name_i18n?: Partial<Record<Lang, string>> | null
   address?: string | null
+  address_i18n?: Partial<Record<Lang, string>> | null
   lat?: number | null
   lng?: number | null
   radius?: number | null
   category?: number | null
   notes?: string | null
+  notes_i18n?: Partial<Record<Lang, string>> | null
   photos?: SitePhoto[] | null
   archived_at?: string | null
 }
@@ -84,6 +91,38 @@ type ScheduleItem = {
   worker_name: string | null
   started_at: string | null
   stopped_at: string | null
+}
+
+type LocDraft = {
+  name: Partial<Record<Lang, string>>
+  address: Partial<Record<Lang, string>>
+  notes: Partial<Record<Lang, string>>
+}
+
+function emptyLocDraft(): LocDraft {
+  return { name: {}, address: {}, notes: {} }
+}
+
+function locDraftValue(d: Partial<Record<Lang, string>>, locale: Lang): string {
+  return d[locale] ?? d.ru ?? ''
+}
+
+function siteToLocDraft(s: Site): LocDraft {
+  const name = { ...(s.name_i18n || {}) } as Partial<Record<Lang, string>>
+  const address = { ...(s.address_i18n || {}) } as Partial<Record<Lang, string>>
+  const notes = { ...(s.notes_i18n || {}) } as Partial<Record<Lang, string>>
+  if (s.name && !name.ru) name.ru = s.name
+  if (s.address && !address.ru) address.ru = s.address
+  if (s.notes && !notes.ru) notes.ru = s.notes
+  return { name, address, notes }
+}
+
+function workerToLocDraft(w: WorkerProfile): LocDraft {
+  const name = { ...(w.full_name_i18n || {}) } as Partial<Record<Lang, string>>
+  const notes = { ...(w.notes_i18n || {}) } as Partial<Record<Lang, string>>
+  if (w.full_name && !name.ru) name.ru = w.full_name
+  if (w.notes && !notes.ru) notes.ru = w.notes
+  return { name, address: {}, notes }
 }
 
 function pad2(n: number) {
@@ -325,7 +364,11 @@ async function authFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
       clearAuthTokens()
       throw new Error('admin.main.errSessionExpired')
     }
-    if (!res.ok) throw new Error(payload?.error || `HTTP ${res.status}`)
+    if (!res.ok) {
+      const code = payload?.errorCode
+      if (code) throw new Error(`admin.api.${code}`)
+      throw new Error(payload?.error || `HTTP ${res.status}`)
+    }
     return payload as T
   } catch (e: any) {
     if (e?.name === 'AbortError') {
@@ -1056,7 +1099,7 @@ function ReportsPanel() {
 }
 
 export default function AdminPage() {
-  const { t } = useI18n()
+  const { t, lang } = useI18n()
   const [tab, setTab] = useState<TabKey>('jobs')
 
   const [sessionLoading, setSessionLoading] = useState(true)
@@ -1104,13 +1147,12 @@ export default function AdminPage() {
 
   const [siteCardOpen, setSiteCardOpen] = useState(false)
   const [siteCardId, setSiteCardId] = useState<string | null>(null)
-  const [siteCardName, setSiteCardName] = useState('')
-  const [siteCardAddress, setSiteCardAddress] = useState('')
+  const [siteCardLocale, setSiteCardLocale] = useState<Lang>('ru')
+  const [siteLocDraft, setSiteLocDraft] = useState<LocDraft>(() => emptyLocDraft())
   const [siteCardRadius, setSiteCardRadius] = useState('150')
   const [siteCardCategory, setSiteCardCategory] = useState<number | null>(null)
   const [siteCardLat, setSiteCardLat] = useState('')
   const [siteCardLng, setSiteCardLng] = useState('')
-  const [siteCardNotes, setSiteCardNotes] = useState('')
   const [siteCardPhotos, setSiteCardPhotos] = useState<SitePhoto[]>([])
 
 
@@ -1160,8 +1202,8 @@ const [editOpen, setEditOpen] = useState(false)
   const [workerProfileLoading, setWorkerProfileLoading] = useState(false)
   const [workerProfileSaving, setWorkerProfileSaving] = useState(false)
 
-  const [workerCardFullName, setWorkerCardFullName] = useState('')
-  const [workerCardNotes, setWorkerCardNotes] = useState('')
+  const [workerCardLocale, setWorkerCardLocale] = useState<Lang>('ru')
+  const [workerLocDraft, setWorkerLocDraft] = useState<LocDraft>(() => emptyLocDraft())
   const [workerCardEmail, setWorkerCardEmail] = useState('')
   const [workerCardPhone, setWorkerCardPhone] = useState('')
   const [workerCardAvatarPath, setWorkerCardAvatarPath] = useState<string | null>(null)
@@ -1551,13 +1593,12 @@ const [editOpen, setEditOpen] = useState(false)
 
   function fillSiteCardFromSite(s: Site) {
     setSiteCardId(s.id)
-    setSiteCardName(String(s.name || ''))
-    setSiteCardAddress(String(s.address || ''))
+    setSiteCardLocale('ru')
+    setSiteLocDraft(siteToLocDraft(s))
     setSiteCardRadius(String(s.radius ?? 150))
     setSiteCardCategory(s.category ?? null)
     setSiteCardLat(s.lat == null ? '' : String(s.lat))
     setSiteCardLng(s.lng == null ? '' : String(s.lng))
-    setSiteCardNotes(String(s.notes || ''))
     setSiteCardPhotos(Array.isArray(s.photos) ? (s.photos as any) : [])
     setPhotoUiError(null)
     setPhotoUiNotice(null)
@@ -1621,8 +1662,8 @@ const [editOpen, setEditOpen] = useState(false)
 
   async function saveSiteCard() {
     if (!siteCardId) return
-    const name = siteCardName.trim()
-    if (!name) return
+    const name = locDraftValue(siteLocDraft.name, siteCardLocale).trim()
+    if (siteCardLocale === 'ru' && !name) return
 
     const radiusNum = Number(siteCardRadius)
     const radius = Number.isFinite(radiusNum) ? radiusNum : 150
@@ -1640,18 +1681,38 @@ const [editOpen, setEditOpen] = useState(false)
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          editLocale: siteCardLocale,
           name,
-          address: siteCardAddress.trim() || null,
+          address: locDraftValue(siteLocDraft.address, siteCardLocale).trim() || null,
           radius,
           lat,
           lng,
           category: siteCardCategory,
-          notes: siteCardNotes || null,
+          notes: locDraftValue(siteLocDraft.notes, siteCardLocale) || null,
         }),
       })
 
       if (res?.site) applySiteUpdate(res.site)
       setSiteCardOpen(false)
+      await refreshCore()
+    } catch (e: unknown) {
+      setError(mapAdminErr(e, t))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function fillSiteCardI18nEmpty() {
+    if (!siteCardId) return
+    setBusy(true)
+    setError(null)
+    try {
+      const res = await authFetchJson<{ site: Site }>(`/api/admin/sites/${encodeURIComponent(siteCardId)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fillMissingTranslations: true }),
+      })
+      if (res?.site) applySiteUpdate(res.site)
       await refreshCore()
     } catch (e: unknown) {
       setError(mapAdminErr(e, t))
@@ -1948,8 +2009,7 @@ const [editOpen, setEditOpen] = useState(false)
       const w = res?.worker
       if (w?.id) {
         setWorkerProfileById((prev) => ({ ...prev, [workerId]: w }))
-        setWorkerCardFullName(String(w.full_name || ''))
-        setWorkerCardNotes(String(w.notes || ''))
+        setWorkerLocDraft(workerToLocDraft(w))
         setWorkerCardEmail(String(w.email || ''))
         setWorkerCardPhone(String(w.phone || ''))
         setWorkerCardAvatarPath(w.avatar_path ?? null)
@@ -1960,14 +2020,18 @@ const [editOpen, setEditOpen] = useState(false)
   }
 
   async function saveWorkerProfile(workerId: string) {
+    const fn = locDraftValue(workerLocDraft.name, workerCardLocale).trim()
+    if (workerCardLocale === 'ru' && !fn) return
+
     setWorkerProfileSaving(true)
     setError(null)
     try {
       const payload = {
-        full_name: workerCardFullName.trim() || null,
+        editLocale: workerCardLocale,
+        full_name: fn || null,
         email: workerCardEmail.trim() || null,
         phone: workerCardPhone.trim() || null,
-        notes: workerCardNotes || null,
+        notes: locDraftValue(workerLocDraft.notes, workerCardLocale) || null,
         avatar_path: workerCardAvatarPath || null,
       }
       const res = await authFetchJson<{ worker: WorkerProfile }>(`/api/admin/workers/${encodeURIComponent(workerId)}/profile`, {
@@ -2061,16 +2125,46 @@ const [editOpen, setEditOpen] = useState(false)
     setError(null)
 
     const core = workersById.get(workerId)
-    setWorkerCardFullName(String(workerProfileById?.[workerId]?.full_name ?? core?.full_name ?? ''))
-    setWorkerCardNotes(String(workerProfileById?.[workerId]?.notes ?? ''))
-    setWorkerCardEmail(String(workerProfileById?.[workerId]?.email ?? ''))
-    setWorkerCardPhone(String(workerProfileById?.[workerId]?.phone ?? ''))
-    setWorkerCardAvatarPath(workerProfileById?.[workerId]?.avatar_path ?? null)
+    const cached = workerProfileById?.[workerId]
+    setWorkerCardLocale('ru')
+    setWorkerLocDraft(
+      cached
+        ? workerToLocDraft(cached)
+        : workerToLocDraft({
+            id: workerId,
+            full_name: core?.full_name ?? null,
+            notes: null,
+          }),
+    )
+    setWorkerCardEmail(String(cached?.email ?? ''))
+    setWorkerCardPhone(String(cached?.phone ?? ''))
+    setWorkerCardAvatarPath(cached?.avatar_path ?? null)
 
     try {
       await Promise.all([loadWorkerCard(workerId), loadWorkerPhotos(workerId), loadWorkerProfile(workerId)])
     } catch (e: unknown) {
       setError(mapAdminErr(e, t))
+    }
+  }
+
+  async function fillWorkerCardI18nEmpty(workerId: string) {
+    setWorkerProfileSaving(true)
+    setError(null)
+    try {
+      const res = await authFetchJson<{ worker: WorkerProfile }>(`/api/admin/workers/${encodeURIComponent(workerId)}/profile`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fillMissingTranslations: true }),
+      })
+      const w = res?.worker
+      if (w?.id) {
+        setWorkerProfileById((prev) => ({ ...prev, [workerId]: w }))
+        setWorkerLocDraft(workerToLocDraft(w))
+      }
+    } catch (e: unknown) {
+      setError(mapAdminErr(e, t))
+    } finally {
+      setWorkerProfileSaving(false)
     }
   }
 
@@ -3158,17 +3252,58 @@ const [editOpen, setEditOpen] = useState(false)
                           </div>
                         </Modal>
 
-                        <Modal open={siteCardOpen} title={siteCardName || t('admin.main.siteCardModalTitle')} onClose={() => setSiteCardOpen(false)}>
+                        <Modal
+                          open={siteCardOpen}
+                          title={locDraftValue(siteLocDraft.name, lang) || t('admin.main.siteCardModalTitle')}
+                          onClose={() => setSiteCardOpen(false)}
+                        >
                           {!siteCardId ? (
                             <div className="text-sm text-zinc-300">{t('admin.main.noSite')}</div>
                           ) : (
                             <div className="grid gap-4">
+                              <div className="flex flex-wrap items-center gap-2">
+                                {(['ru', 'uk', 'en', 'nl'] as const).map((L) => (
+                                  <button
+                                    key={L}
+                                    type="button"
+                                    onClick={() => setSiteCardLocale(L)}
+                                    className={cn(
+                                      'rounded-xl border px-3 py-1.5 text-xs font-semibold transition',
+                                      siteCardLocale === L
+                                        ? 'border-yellow-300/50 bg-yellow-400/15 text-yellow-50'
+                                        : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/35',
+                                    )}
+                                  >
+                                    {L === 'ru'
+                                      ? t('languages.ru')
+                                      : L === 'uk'
+                                        ? t('languages.uk')
+                                        : L === 'en'
+                                          ? t('languages.en')
+                                          : t('languages.nl')}
+                                  </button>
+                                ))}
+                                <button
+                                  type="button"
+                                  onClick={() => void fillSiteCardI18nEmpty()}
+                                  disabled={busy || !siteCardId}
+                                  className="rounded-xl border border-sky-400/25 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-100/90 transition hover:border-sky-300/45 disabled:opacity-50"
+                                >
+                                  {t('admin.common.fillEmptyFromRu')}
+                                </button>
+                              </div>
+
                               <div className="grid gap-3 sm:grid-cols-2">
                                 <label className="grid gap-1 sm:col-span-2">
                                   <span className="text-[11px] text-zinc-300">{t('admin.main.fieldName')}</span>
                                   <input
-                                    value={siteCardName}
-                                    onChange={(e) => setSiteCardName(e.target.value)}
+                                    value={locDraftValue(siteLocDraft.name, siteCardLocale)}
+                                    onChange={(e) =>
+                                      setSiteLocDraft((prev) => ({
+                                        ...prev,
+                                        name: { ...prev.name, [siteCardLocale]: e.target.value },
+                                      }))
+                                    }
                                     className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
                                   />
                                 </label>
@@ -3176,8 +3311,13 @@ const [editOpen, setEditOpen] = useState(false)
                                 <label className="grid gap-1 sm:col-span-2">
                                   <span className="text-[11px] text-zinc-300">{t('admin.main.fieldAddress')}</span>
                                   <input
-                                    value={siteCardAddress}
-                                    onChange={(e) => setSiteCardAddress(e.target.value)}
+                                    value={locDraftValue(siteLocDraft.address, siteCardLocale)}
+                                    onChange={(e) =>
+                                      setSiteLocDraft((prev) => ({
+                                        ...prev,
+                                        address: { ...prev.address, [siteCardLocale]: e.target.value },
+                                      }))
+                                    }
                                     className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
                                   />
                                 </label>
@@ -3219,8 +3359,13 @@ const [editOpen, setEditOpen] = useState(false)
                                 <label className="grid gap-1 sm:col-span-2">
                                   <span className="text-[11px] text-zinc-300">{t('admin.main.notes')}</span>
                                   <textarea
-                                    value={siteCardNotes}
-                                    onChange={(e) => setSiteCardNotes(e.target.value)}
+                                    value={locDraftValue(siteLocDraft.notes, siteCardLocale)}
+                                    onChange={(e) =>
+                                      setSiteLocDraft((prev) => ({
+                                        ...prev,
+                                        notes: { ...prev.notes, [siteCardLocale]: e.target.value },
+                                      }))
+                                    }
                                     className="min-h-[120px] rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
                                   />
                                 </label>
@@ -3228,7 +3373,10 @@ const [editOpen, setEditOpen] = useState(false)
                                 <div className="sm:col-span-2 flex flex-wrap gap-2">
                                   <button
                                     onClick={saveSiteCard}
-                                    disabled={busy || !siteCardName.trim()}
+                                    disabled={
+                                      busy ||
+                                      (siteCardLocale === 'ru' && !locDraftValue(siteLocDraft.name, siteCardLocale).trim())
+                                    }
                                     className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-yellow-100 transition hover:border-yellow-200/70 disabled:opacity-60"
                                   >
                                     {t('common.save')}
@@ -4131,10 +4279,14 @@ const [editOpen, setEditOpen] = useState(false)
                         if (!workerCardId) return
                         void saveWorkerProfile(workerCardId)
                       }}
-                      disabled={workerProfileSaving || !workerCardId}
+                      disabled={
+                        workerProfileSaving ||
+                        !workerCardId ||
+                        (workerCardLocale === 'ru' && !locDraftValue(workerLocDraft.name, workerCardLocale).trim())
+                      }
                       className={cn(
                         'rounded-xl border border-yellow-300/35 bg-yellow-400/10 px-3 py-2 text-xs font-semibold text-yellow-100 hover:border-yellow-200/70',
-                        workerProfileSaving ? 'opacity-70' : ''
+                        workerProfileSaving ? 'opacity-70' : '',
                       )}
                     >
                       {workerProfileSaving ? t('admin.main.saving') : t('common.save')}
@@ -4147,12 +4299,52 @@ const [editOpen, setEditOpen] = useState(false)
                     </div>
                   ) : (
                     <div className="grid gap-2 rounded-3xl border border-yellow-400/10 bg-black/20 p-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {(['ru', 'uk', 'en', 'nl'] as const).map((L) => (
+                          <button
+                            key={L}
+                            type="button"
+                            onClick={() => setWorkerCardLocale(L)}
+                            className={cn(
+                              'rounded-xl border px-3 py-1.5 text-xs font-semibold transition',
+                              workerCardLocale === L
+                                ? 'border-yellow-300/50 bg-yellow-400/15 text-yellow-50'
+                                : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/35',
+                            )}
+                          >
+                            {L === 'ru'
+                              ? t('languages.ru')
+                              : L === 'uk'
+                                ? t('languages.uk')
+                                : L === 'en'
+                                  ? t('languages.en')
+                                  : t('languages.nl')}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!workerCardId) return
+                            void fillWorkerCardI18nEmpty(workerCardId)
+                          }}
+                          disabled={workerProfileSaving || !workerCardId}
+                          className="rounded-xl border border-sky-400/25 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-100/90 transition hover:border-sky-300/45 disabled:opacity-50"
+                        >
+                          {t('admin.common.fillEmptyFromRu')}
+                        </button>
+                      </div>
+
                       <div className="grid gap-2 md:grid-cols-2">
                         <div className="grid gap-1">
                           <div className="text-[11px] text-zinc-400">{t('admin.main.fio')}</div>
                           <input
-                            value={workerCardFullName}
-                            onChange={(e) => setWorkerCardFullName(e.target.value)}
+                            value={locDraftValue(workerLocDraft.name, workerCardLocale)}
+                            onChange={(e) =>
+                              setWorkerLocDraft((prev) => ({
+                                ...prev,
+                                name: { ...prev.name, [workerCardLocale]: e.target.value },
+                              }))
+                            }
                             placeholder={t('admin.main.workerNamePh')}
                             className="w-full rounded-xl border border-yellow-400/10 bg-black/30 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-yellow-300/40"
                           />
@@ -4181,8 +4373,13 @@ const [editOpen, setEditOpen] = useState(false)
                       <div className="grid gap-1">
                         <div className="text-[11px] text-zinc-400">{t('admin.main.notes')}</div>
                         <textarea
-                          value={workerCardNotes}
-                          onChange={(e) => setWorkerCardNotes(e.target.value)}
+                          value={locDraftValue(workerLocDraft.notes, workerCardLocale)}
+                          onChange={(e) =>
+                            setWorkerLocDraft((prev) => ({
+                              ...prev,
+                              notes: { ...prev.notes, [workerCardLocale]: e.target.value },
+                            }))
+                          }
                           placeholder={t('admin.main.notesPh')}
                           rows={4}
                           className="w-full resize-none rounded-2xl border border-yellow-400/10 bg-black/30 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-yellow-300/40"

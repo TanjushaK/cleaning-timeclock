@@ -3,10 +3,14 @@ import { createClient, type SupabaseClient, type User } from '@supabase/supabase
 
 export class ApiError extends Error {
   status: number
+  /** Machine-readable code for clients (e.g. admin UI maps via t(`admin.api.${code}`)). */
+  code?: string
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, code?: string) {
     super(message)
     this.status = status
+    this.code = code
+    this.name = 'ApiError'
   }
 }
 
@@ -161,11 +165,14 @@ export async function requireActiveWorker(reqOrHeaders: Request | Headers): Prom
   return { ...guard, profile: prof as ProfileRow }
 }
 
-const GENERIC_500 = 'Внутренняя ошибка сервера'
+const GENERIC_500 = 'Internal server error'
 
 export function toErrorResponse(err: unknown): NextResponse {
   if (err instanceof ApiError) {
-    return NextResponse.json({ error: err.message }, { status: err.status })
+    const body: Record<string, string> = {}
+    if (err.code) body.errorCode = err.code
+    if (err.message) body.error = err.message
+    return NextResponse.json(body, { status: err.status })
   }
   const isProd = process.env.NODE_ENV === 'production'
   if (err instanceof Error) {

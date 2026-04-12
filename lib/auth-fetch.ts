@@ -109,8 +109,10 @@ export async function authFetchJson<T = AnyJson>(input: RequestInfo | URL, init?
   else payload = await res.text().catch(() => null);
 
   if (!res.ok) {
+    const code = payload && (payload as { errorCode?: string }).errorCode;
     const msg =
-      (payload && (payload.error || payload.message)) ||
+      (code ? `admin.api.${code}` : null) ||
+      (payload && ((payload as { error?: string }).error || (payload as { message?: string }).message)) ||
       (typeof payload === 'string' && payload.trim()) ||
       `HTTP ${res.status}`;
     throw new Error(String(msg));

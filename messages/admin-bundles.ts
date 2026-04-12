@@ -1,6 +1,82 @@
 import type { Messages } from "./types";
 import { ADMIN_MAIN_EN, ADMIN_MAIN_NL, ADMIN_MAIN_RU, ADMIN_MAIN_UK } from "./admin-main";
 
+const ADMIN_API_RU: Messages["admin"]["api"] = {
+  SITE_ID_REQUIRED: "Не указан id объекта",
+  SITE_CATEGORY_INVALID: "Категория должна быть от 1 до 15",
+  SITE_NAME_REQUIRED: "Нужно название объекта",
+  SITE_NOT_FOUND: "Объект не найден",
+  SITE_UPDATE_FAILED: "Не удалось обновить объект",
+  SITE_CREATE_FAILED: "Не удалось создать объект",
+  SITE_DELETE_FAILED: "Не удалось удалить объект (возможны связанные данные)",
+  SITES_LOAD_FAILED: "Не удалось загрузить объекты",
+  WORKER_ID_REQUIRED: "Нужен id работника",
+  PROFILE_NOT_FOUND: "Профиль не найден",
+  PROFILE_LOAD_FAILED: "Не удалось загрузить профиль",
+  NOTHING_TO_UPDATE: "Нечего обновлять",
+  AUTH_USER_UPDATE_FAILED: "Не удалось обновить учётную запись",
+  PROFILE_UPDATE_FAILED: "Не удалось обновить профиль",
+  DEEPL_NOT_CONFIGURED: "Перевод недоступен: не настроен DeepL",
+  UNEXPECTED_ERROR: "Внутренняя ошибка",
+};
+
+const ADMIN_API_EN: Messages["admin"]["api"] = {
+  SITE_ID_REQUIRED: "Site id is missing",
+  SITE_CATEGORY_INVALID: "Category must be between 1 and 15",
+  SITE_NAME_REQUIRED: "Site name is required",
+  SITE_NOT_FOUND: "Site not found",
+  SITE_UPDATE_FAILED: "Could not update site",
+  SITE_CREATE_FAILED: "Could not create site",
+  SITE_DELETE_FAILED: "Could not delete site (related data may exist)",
+  SITES_LOAD_FAILED: "Could not load sites",
+  WORKER_ID_REQUIRED: "Worker id is required",
+  PROFILE_NOT_FOUND: "Profile not found",
+  PROFILE_LOAD_FAILED: "Could not load profile",
+  NOTHING_TO_UPDATE: "Nothing to update",
+  AUTH_USER_UPDATE_FAILED: "Could not update auth user",
+  PROFILE_UPDATE_FAILED: "Could not update profile",
+  DEEPL_NOT_CONFIGURED: "Translation unavailable: DeepL is not configured",
+  UNEXPECTED_ERROR: "Unexpected error",
+};
+
+const ADMIN_API_UK: Messages["admin"]["api"] = {
+  SITE_ID_REQUIRED: "Не вказано id об'єкта",
+  SITE_CATEGORY_INVALID: "Категорія має бути від 1 до 15",
+  SITE_NAME_REQUIRED: "Потрібна назва об'єкта",
+  SITE_NOT_FOUND: "Об'єкт не знайдено",
+  SITE_UPDATE_FAILED: "Не вдалося оновити об'єкт",
+  SITE_CREATE_FAILED: "Не вдалося створити об'єкт",
+  SITE_DELETE_FAILED: "Не вдалося видалити об'єкт (можливі пов'язані дані)",
+  SITES_LOAD_FAILED: "Не вдалося завантажити об'єкти",
+  WORKER_ID_REQUIRED: "Потрібен id працівника",
+  PROFILE_NOT_FOUND: "Профіль не знайдено",
+  PROFILE_LOAD_FAILED: "Не вдалося завантажити профіль",
+  NOTHING_TO_UPDATE: "Немає що оновлювати",
+  AUTH_USER_UPDATE_FAILED: "Не вдалося оновити обліковий запис",
+  PROFILE_UPDATE_FAILED: "Не вдалося оновити профіль",
+  DEEPL_NOT_CONFIGURED: "Переклад недоступний: DeepL не налаштовано",
+  UNEXPECTED_ERROR: "Внутрішня помилка",
+};
+
+const ADMIN_API_NL: Messages["admin"]["api"] = {
+  SITE_ID_REQUIRED: "Locatie-id ontbreekt",
+  SITE_CATEGORY_INVALID: "Categorie moet tussen 1 en 15 liggen",
+  SITE_NAME_REQUIRED: "Locatienaam is verplicht",
+  SITE_NOT_FOUND: "Locatie niet gevonden",
+  SITE_UPDATE_FAILED: "Locatie bijwerken mislukt",
+  SITE_CREATE_FAILED: "Locatie aanmaken mislukt",
+  SITE_DELETE_FAILED: "Locatie verwijderen mislukt (mogelijk gekoppelde gegevens)",
+  SITES_LOAD_FAILED: "Locaties laden mislukt",
+  WORKER_ID_REQUIRED: "Medewerker-id is verplicht",
+  PROFILE_NOT_FOUND: "Profiel niet gevonden",
+  PROFILE_LOAD_FAILED: "Profiel laden mislukt",
+  NOTHING_TO_UPDATE: "Niets bij te werken",
+  AUTH_USER_UPDATE_FAILED: "Auth-gebruiker bijwerken mislukt",
+  PROFILE_UPDATE_FAILED: "Profiel bijwerken mislukt",
+  DEEPL_NOT_CONFIGURED: "Vertaling niet beschikbaar: DeepL is niet geconfigureerd",
+  UNEXPECTED_ERROR: "Onverwachte fout",
+};
+
 /** Static admin UI only — keys referenced as admin.<namespace>.<key> */
 export const ADMIN_RU: Messages["admin"] = {
   common: {
@@ -21,6 +97,7 @@ export const ADMIN_RU: Messages["admin"] = {
     errorLogin: "Ошибка входа",
     noticeLogin: "Вход выполнен.",
     noticeLogout: "Вы вышли.",
+    fillEmptyFromRu: "Заполнить пустые из RU",
   },
   approvals: {
     title: "Tanija • Admin • Активации",
@@ -116,6 +193,7 @@ export const ADMIN_RU: Messages["admin"] = {
     errorLoad: "Ошибка",
   },
   main: ADMIN_MAIN_RU,
+  api: ADMIN_API_RU,
 };
 
 export const ADMIN_EN: Messages["admin"] = {
@@ -137,6 +215,7 @@ export const ADMIN_EN: Messages["admin"] = {
     errorLogin: "Login failed",
     noticeLogin: "Signed in.",
     noticeLogout: "You are signed out.",
+    fillEmptyFromRu: "Fill empty fields from RU",
   },
   approvals: {
     title: "Tanija • Admin • Activations",
@@ -232,6 +311,7 @@ export const ADMIN_EN: Messages["admin"] = {
     errorLoad: "Error",
   },
   main: ADMIN_MAIN_EN,
+  api: ADMIN_API_EN,
 };
 
 export const ADMIN_UK: Messages["admin"] = {
@@ -253,6 +333,7 @@ export const ADMIN_UK: Messages["admin"] = {
     errorLogin: "Помилка входу",
     noticeLogin: "Вхід виконано.",
     noticeLogout: "Ви вийшли.",
+    fillEmptyFromRu: "Заповнити порожні з RU",
   },
   approvals: {
     title: "Tanija • Admin • Активації",
@@ -348,6 +429,7 @@ export const ADMIN_UK: Messages["admin"] = {
     errorLoad: "Помилка",
   },
   main: ADMIN_MAIN_UK,
+  api: ADMIN_API_UK,
 };
 
 export const ADMIN_NL: Messages["admin"] = {
@@ -369,6 +451,7 @@ export const ADMIN_NL: Messages["admin"] = {
     errorLogin: "Inloggen mislukt",
     noticeLogin: "Ingelogd.",
     noticeLogout: "Je bent uitgelogd.",
+    fillEmptyFromRu: "Lege velden vanaf RU vullen",
   },
   approvals: {
     title: "Tanija • Admin • Activaties",
@@ -464,4 +547,5 @@ export const ADMIN_NL: Messages["admin"] = {
     errorLoad: "Fout",
   },
   main: ADMIN_MAIN_NL,
+  api: ADMIN_API_NL,
 };
