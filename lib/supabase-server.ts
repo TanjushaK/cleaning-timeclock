@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js'
 import { AdminApiErrorCode } from '@/lib/api-error-codes'
+import { AppApiErrorCodes } from '@/lib/app-error-codes'
 
 export class ApiError extends Error {
   status: number
@@ -53,7 +54,7 @@ function cleanEnv(v: string): string {
 function mustEnv(name: string): string {
   const raw = process.env[name]
   const v = cleanEnv(raw || '')
-  if (!v) throw new ApiError(500, `Missing env: ${name}`)
+  if (!v) throw new ApiError(500, `Missing env: ${name}`, AppApiErrorCodes.INTERNAL)
   return v
 }
 
@@ -113,7 +114,7 @@ export async function requireUser(reqOrHeaders: Request | Headers): Promise<User
   const token = getBearer(headers)
 
   if (!token) {
-    throw new ApiError(401, 'Authorization Bearer token required', AdminApiErrorCode.AUTH_BEARER_REQUIRED)
+    throw new ApiError(401, 'Authorization Bearer token required', AppApiErrorCodes.AUTH_BEARER_REQUIRED)
   }
 
   const service = supabaseService()
@@ -121,7 +122,7 @@ export async function requireUser(reqOrHeaders: Request | Headers): Promise<User
   const { data, error } = await service.auth.getUser(token)
 
   if (error || !data?.user) {
-    throw new ApiError(401, 'Invalid or expired token', AdminApiErrorCode.AUTH_TOKEN_INVALID)
+    throw new ApiError(401, 'Invalid or expired token', AppApiErrorCodes.AUTH_TOKEN_INVALID)
   }
 
   // По умолчанию оставляем старое поведение (service-role) для /api/me/*,
@@ -160,9 +161,9 @@ export async function requireActiveWorker(reqOrHeaders: Request | Headers): Prom
     .eq('id', guard.userId)
     .maybeSingle()
 
-  if (profErr || !prof) throw new ApiError(403, 'Profile not found or access denied', AdminApiErrorCode.AUTH_PROFILE_MISSING)
+  if (profErr || !prof) throw new ApiError(403, 'Profile not found or access denied', AppApiErrorCodes.AUTH_PROFILE_MISSING)
   if (prof.role !== 'worker' || prof.active !== true)
-    throw new ApiError(403, 'Worker role with active=true required', AdminApiErrorCode.AUTH_WORKER_ROLE_REQUIRED)
+    throw new ApiError(403, 'Worker role with active=true required', AppApiErrorCodes.WORKER_ROLE_OR_ACTIVE_REQUIRED)
 
   // В /api/me/* клиент выбирается в requireUser() по флагу ME_USE_RLS.
   return { ...guard, profile: prof as ProfileRow }
@@ -180,12 +181,18 @@ export function toErrorResponse(err: unknown): NextResponse {
   const isProd = process.env.NODE_ENV === 'production'
   if (err instanceof Error) {
     if (!isProd) {
-      return NextResponse.json({ error: err.message }, { status: 500 })
+      return NextResponse.json(
+        { error: err.message, errorCode: AppApiErrorCodes.INTERNAL },
+        { status: 500 },
+      )
     }
     console.error('[api]', err)
-    return NextResponse.json({ error: GENERIC_500 }, { status: 500 })
+    return NextResponse.json({ error: GENERIC_500, errorCode: AppApiErrorCodes.INTERNAL }, { status: 500 })
   }
-  return NextResponse.json({ error: isProd ? GENERIC_500 : 'Unknown error' }, { status: 500 })
+  return NextResponse.json(
+    { error: isProd ? GENERIC_500 : 'Unknown error', errorCode: AppApiErrorCodes.INTERNAL },
+    { status: 500 },
+  )
 }
 
 

@@ -1,5 +1,6 @@
 ﻿// app/api/me/photos/route.ts
 import { NextRequest, NextResponse } from 'next/server'
+import { AppApiErrorCodes } from '@/lib/app-error-codes'
 import { ApiError, requireUser, toErrorResponse } from '@/lib/supabase-server'
 
 export const runtime = 'nodejs'
@@ -19,7 +20,7 @@ const ALLOWED_IMAGE_TYPES = new Set([
   'image/jpeg',
   'image/png',
   'image/webp',
-  // iPhone С‡Р°СЃС‚Рѕ РѕС‚РґР°С‘С‚ HEIC/HEIF
+  // iPhone often serves HEIC/HEIF
   'image/heic',
   'image/heif',
   'image/heic-sequence',
@@ -111,10 +112,10 @@ function contentTypeFor(ext: string): string {
 }
 
 function validateImageFile(file: IncomingFile) {
-  if (file.size <= 0) throw new ApiError(400, 'Р¤Р°Р№Р» РїСѓСЃС‚РѕР№. Р’С‹Р±РµСЂРё С„РѕС‚Рѕ РµС‰С‘ СЂР°Р·.')
+  if (file.size <= 0) throw new ApiError(400, 'File is empty', AppApiErrorCodes.PHOTOS_FILE_EMPTY)
   if (file.size > MAX_UPLOAD_BYTES) {
     const mb = Math.round((MAX_UPLOAD_BYTES / 1024 / 1024) * 10) / 10
-    throw new ApiError(400, `Р¤РѕС‚Рѕ СЃР»РёС€РєРѕРј Р±РѕР»СЊС€РѕРµ. РњР°РєСЃРёРјСѓРј ${mb} MB.`)
+    throw new ApiError(400, `File too large (max ${mb} MB)`, AppApiErrorCodes.PHOTOS_FILE_TOO_LARGE)
   }
 
   const ext = fileExt(file)
@@ -123,7 +124,8 @@ function validateImageFile(file: IncomingFile) {
   const okByMime = mime ? ALLOWED_IMAGE_TYPES.has(mime) : false
   const okByExt = ALLOWED_EXT.has(ext)
 
-  if (!okByMime && !okByExt) throw new ApiError(400, 'Р¤РѕСЂРјР°С‚ РЅРµ РїРѕРґРґРµСЂР¶РёРІР°РµС‚СЃСЏ. РСЃРїРѕР»СЊР·СѓР№ JPG/PNG/WebP/HEIC/HEIF.')
+  if (!okByMime && !okByExt)
+    throw new ApiError(400, 'Unsupported image type', AppApiErrorCodes.PHOTOS_FILE_TYPE_NOT_ALLOWED)
 }
 
 async function resolveAvatarKey(sb: any): Promise<AvatarKey> {
@@ -144,7 +146,7 @@ async function listPhotos(sb: any, userId: string): Promise<Photo[]> {
     limit: 100,
     sortBy: { column: 'created_at', order: 'desc' },
   })
-  if (error) throw new ApiError(500, error.message)
+  if (error) throw new ApiError(500, error.message, AppApiErrorCodes.PHOTOS_LIST_FAILED)
 
   const items = (data || []).filter((x: any) => x?.name && x.name !== '.emptyFolderPlaceholder')
   const paths = items.map((it: any) => `${p}/${it.name}`)
@@ -188,11 +190,11 @@ export async function POST(req: NextRequest) {
     const { supabase, userId } = await requireUser(req)
 
     const current = await listPhotos(supabase, userId)
-    if (current.length >= 5) throw new ApiError(400, 'Р›РёРјРёС‚: 5 С„РѕС‚Рѕ. РЈРґР°Р»Рё РѕРґРЅРѕ Рё РїРѕРїСЂРѕР±СѓР№ СЃРЅРѕРІР°.')
+    if (current.length >= 5) throw new ApiError(400, 'Photo limit reached', AppApiErrorCodes.PHOTOS_LIMIT_REACHED)
 
     const form = await req.formData()
     const file = asIncomingFile(form.get('file'))
-    if (!file) throw new ApiError(400, 'Р’С‹Р±РµСЂРё С„РѕС‚Рѕ РґР»СЏ Р·Р°РіСЂСѓР·РєРё.')
+    if (!file) throw new ApiError(400, 'No file', AppApiErrorCodes.PHOTOS_FILE_REQUIRED)
 
     validateImageFile(file)
 
@@ -210,7 +212,7 @@ export async function POST(req: NextRequest) {
       contentType,
       upsert: false,
     })
-    if (upErr) throw new ApiError(500, upErr.message)
+    if (upErr) throw new ApiError(500, upErr.message, AppApiErrorCodes.PHOTOS_UPLOAD_FAILED)
 
     const avatarKey = await resolveAvatarKey(supabase)
     const { data: prof } = await supabase.from('profiles').select(avatarKey).eq('id', userId).maybeSingle()
@@ -236,13 +238,13 @@ export async function PATCH(req: NextRequest) {
 
     const action = String(body?.action || '')
     const path = String(body?.path || '').trim()
-    if (action !== 'make_primary') throw new ApiError(400, 'invalid_action')
-    if (!path) throw new ApiError(400, 'path_required')
-    if (!path.startsWith(`${pref(userId)}/`)) throw new ApiError(403, 'forbidden')
+    if (action !== 'make_primary') throw new ApiError(400, 'invalid action', AppApiErrorCodes.PHOTOS_INVALID_ACTION)
+    if (!path) throw new ApiError(400, 'path required', AppApiErrorCodes.PHOTOS_PATH_REQUIRED)
+    if (!path.startsWith(`${pref(userId)}/`)) throw new ApiError(403, 'forbidden', AppApiErrorCodes.PHOTOS_FORBIDDEN)
 
     const avatarKey = await resolveAvatarKey(supabase)
     const r = await supabase.from('profiles').update({ [avatarKey]: path }).eq('id', userId)
-    if (r.error) throw new ApiError(400, r.error.message)
+    if (r.error) throw new ApiError(400, r.error.message, AppApiErrorCodes.PHOTOS_UPDATE_FAILED)
 
     const photos = await listPhotos(supabase, userId)
     return NextResponse.json({ photos, avatar_path: path })
@@ -257,11 +259,11 @@ export async function DELETE(req: NextRequest) {
     const body = await req.json().catch(() => ({} as any))
 
     const path = String(body?.path || '').trim()
-    if (!path) throw new ApiError(400, 'path_required')
-    if (!path.startsWith(`${pref(userId)}/`)) throw new ApiError(403, 'forbidden')
+    if (!path) throw new ApiError(400, 'path required', AppApiErrorCodes.PHOTOS_PATH_REQUIRED)
+    if (!path.startsWith(`${pref(userId)}/`)) throw new ApiError(403, 'forbidden', AppApiErrorCodes.PHOTOS_FORBIDDEN)
 
     const { error: delErr } = await supabase.storage.from(BUCKET).remove([path])
-    if (delErr) throw new ApiError(500, delErr.message)
+    if (delErr) throw new ApiError(500, delErr.message, AppApiErrorCodes.PHOTOS_DELETE_FAILED)
 
     const avatarKey = await resolveAvatarKey(supabase)
     const photos = await listPhotos(supabase, userId)

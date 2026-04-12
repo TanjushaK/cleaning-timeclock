@@ -1,7 +1,11 @@
 import type { Messages } from "./types";
 import { ADMIN_UK } from "./admin-bundles";
+import { workerApiErrorsUk } from "./worker-api-errors";
 
 export const uk: Messages = {
+  error: {
+    generic: "Щось пішло не так. Спробуйте ще раз.",
+  },
   common: {
     language: "Мова",
     loading: "Завантаження…",
@@ -45,6 +49,7 @@ export const uk: Messages = {
     startedOfflineBlocked: "Немає мережі. Старт заборонено без перевірки GPS.",
     stopped: "Стоп.",
     stoppedQueued: "Немає мережі. Стоп у черзі.",
+    dataReloaded: "Оновлено.",
   },
   errors: {
     gpsUnavailable: "GPS недоступний.",
@@ -64,6 +69,22 @@ export const uk: Messages = {
     syncFailed: "Помилка синхронізації",
     loadFailed: "Помилка завантаження",
     sessionExpired: "Сесія тихенько пішла на каву. Увійдіть ще раз — і поїхали далі.",
+    passwordMin8: "Пароль має містити щонайменше 8 символів",
+    passwordMismatch: "Паролі не збігаються",
+    nameRequired: "Введіть ім’я",
+    api: workerApiErrorsUk,
+    supabase: {
+      invalid_credentials: "Невірний логін або пароль.",
+      email_not_confirmed: "Спочатку підтвердіть email.",
+      user_not_found: "Користувача не знайдено.",
+      session_not_found: "Сесію завершено. Увійдіть знову.",
+      weak_password: "Пароль занадто слабкий.",
+      same_password: "Оберіть інший пароль.",
+      over_request_rate_limit: "Забагато спроб. Спробуйте пізніше.",
+      invalid_grant: "Посилання для входу застаріло або недійсне.",
+      refresh_token_not_found: "Сесію завершено. Увійдіть знову.",
+      otp_expired: "Код прострочено. Запросіть новий.",
+    },
   },
   auth: {
     logout: "Вийти",
@@ -97,6 +118,7 @@ export const uk: Messages = {
     adminRedirectHint: "Якщо ви адміністратор — після входу вас автоматично перекине в /admin.",
   },
   nav: {
+    home: "На головну",
     jobs: "Зміни",
     profile: "Профіль",
     adminPanel: "Панель адміністратора",
@@ -149,6 +171,76 @@ export const uk: Messages = {
     submitForActivation: "Надіслати на активацію",
     submitForActivationHint: "Після надсилання адміністратор активує вас у /admin/approvals.",
     activated: "Акаунт активовано.",
+    workerPageTitle: "Профіль працівника",
+    needLoginTitle: "Потрібен вхід",
+    needLoginBody: "Відкрийте головну сторінку та увійдіть телефоном або email.",
+    dataCardTitle: "Дані",
+    notesPlaceholder: "Нотатки",
+    passwordMainHint:
+      "Основний вхід: Email + пароль. Телефон (SMS) залишається резервним варіантом.",
+    newPassword8Placeholder: "Новий пароль (мін. 8 символів)",
+    repeatPasswordPlaceholder: "Повторіть пароль",
+    setPasswordCta: "Встановити пароль",
+    savingProfile: "Зберігаю…",
+    refreshData: "Оновити",
+    refreshBusy: "…",
+    photosEmptyHint: "Завантажте фото та оберіть аватар.",
+    roleWorkerDefault: "worker",
+    activeLabelShort: "active",
+    passwordSectionTitle: "Пароль",
+    phoneContactPlaceholder: "Телефон (контактний)",
+    contactEmailMagicPlaceholder: "Email (контактний / для magic link)",
+  },
+  appFooter: {
+    tagline: "Чисто. Чітко. Вчасно.",
+  },
+  searchableSelect: {
+    empty: "Нічого не знайдено",
+  },
+  smartPickers: {
+    openCalendar: "Відкрити календар",
+    openTimePicker: "Відкрити вибір часу",
+  },
+  offlinePage: {
+    title: "Офлайн",
+    body: "Зараз немає інтернету. Інтерфейс відкриється, а дії START/STOP підуть після підключення.",
+    retry: "Оновити",
+  },
+  notFoundPage: {
+    title: "404 — Сторінку не знайдено",
+    description: "Схоже, такого посилання немає. Поверніться на головну.",
+    home: "На головну",
+  },
+  authCallback: {
+    loading: "Завершую вхід…",
+    loginError: "Помилка входу: {{detail}}",
+  },
+  forgotPassword: {
+    needEmail: "Введіть email",
+    success: "Посилання надіслано на email. Відкрийте лист і перейдіть за посиланням.",
+    title: "Відновлення пароля",
+    subtitle: "Ми надішлемо посилання на email",
+    emailLabel: "Email",
+    emailPlaceholder: "name@example.com",
+    sending: "Надсилаю…",
+    send: "Надіслати посилання",
+    backToLogin: "Назад до входу",
+    redirectHint: "Додайте цей Redirect URL у Supabase Auth:",
+  },
+  resetPassword: {
+    passRules: "Пароль мінімум 8 символів і має збігатися в обох полях",
+    success: "Пароль оновлено. Увійдіть знову.",
+    title: "Новий пароль",
+    subtitle: "Встановіть новий пароль для акаунта",
+    openFromEmail: "Відкрийте цю сторінку за посиланням з листа.",
+    newPasswordLabel: "Новий пароль",
+    minChars: "Мінімум 8 символів",
+    repeatLabel: "Повторіть пароль",
+    repeatPlaceholder: "Повторіть пароль",
+    saving: "Зберігаю…",
+    save: "Зберегти пароль",
+    home: "На головну",
+    sessionMissing: "Сесію не знайдено. Відкрийте сторінку за посиланням з листа.",
   },
   home: {
     loadingTitle: "Завантаження…",

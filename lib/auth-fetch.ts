@@ -1,5 +1,7 @@
 'use client';
 
+import { FetchApiError } from '@/lib/fetch-api-error';
+
 type AnyJson = Record<string, any>;
 
 const LS_ACCESS = 'ct_access_token';
@@ -109,13 +111,19 @@ export async function authFetchJson<T = AnyJson>(input: RequestInfo | URL, init?
   else payload = await res.text().catch(() => null);
 
   if (!res.ok) {
-    const code = payload && (payload as { errorCode?: string }).errorCode;
-    const msg =
-      (code ? `admin.api.${code}` : null) ||
-      (payload && ((payload as { error?: string }).error || (payload as { message?: string }).message)) ||
+    const obj =
+      payload && typeof payload === 'object'
+        ? (payload as { errorCode?: string; error?: string; message?: string })
+        : null;
+    const code = obj?.errorCode ? String(obj.errorCode) : '';
+    const fallback =
+      (obj?.error || obj?.message) ||
       (typeof payload === 'string' && payload.trim()) ||
       `HTTP ${res.status}`;
-    throw new Error(String(msg));
+    throw new FetchApiError(code ? `admin.api.${code}` : String(fallback), {
+      status: res.status,
+      errorCode: code || undefined,
+    });
   }
 
   return payload as T;

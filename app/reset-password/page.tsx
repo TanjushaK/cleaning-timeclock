@@ -1,88 +1,97 @@
-'use client'
+"use client";
 
-import { useEffect, useMemo, useState } from 'react'
-import { supabase } from '@/lib/supabase'
-import AppFooter from '@/app/_components/AppFooter'
+import { useEffect, useMemo, useState } from "react";
+import { supabase } from "@/lib/supabase";
+import { clientWorkerErrorMessage } from "@/lib/app-api-message";
+import { FetchApiError } from "@/lib/fetch-api-error";
+import AppFooter from "@/app/_components/AppFooter";
+import { useI18n } from "@/components/I18nProvider";
 
 export default function ResetPasswordPage() {
-  const [ready, setReady] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [pass1, setPass1] = useState('')
-  const [pass2, setPass2] = useState('')
-  const [msg, setMsg] = useState<string | null>(null)
-  const [err, setErr] = useState<string | null>(null)
+  const { t } = useI18n();
+  const [ready, setReady] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [pass1, setPass1] = useState("");
+  const [pass2, setPass2] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
-  const canSave = useMemo(() => pass1.length >= 8 && pass1 === pass2, [pass1, pass2])
+  const canSave = useMemo(() => pass1.length >= 8 && pass1 === pass2, [pass1, pass2]);
 
   useEffect(() => {
-    let unsub: { data: { subscription: { unsubscribe: () => void } } } | null = null
+    let unsub: { data: { subscription: { unsubscribe: () => void } } } | null = null;
 
-    ;(async () => {
+    void (async () => {
       try {
-        // Supabase recovery link чаще всего приходит как ?code=... (PKCE).
-        // Наша цель — гарантированно обменять code на сессию, иначе пароль «как бы сохранился», но вход не работает.
-        const url = new URL(window.location.href)
-        const code = url.searchParams.get('code')
+        const url = new URL(window.location.href);
+        const code = url.searchParams.get("code");
 
         if (code) {
-          const { error } = await supabase.auth.exchangeCodeForSession(code)
-          if (error) throw error
+          const { error } = await supabase.auth.exchangeCodeForSession(code);
+          if (error) throw error;
         } else {
-          // fallback на implicit flow (#access_token=...)
-          const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''))
-          const access_token = hash.get('access_token')
-          const refresh_token = hash.get('refresh_token')
+          const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+          const access_token = hash.get("access_token");
+          const refresh_token = hash.get("refresh_token");
           if (access_token && refresh_token) {
-            const { error } = await supabase.auth.setSession({ access_token, refresh_token })
-            if (error) throw error
+            const { error } = await supabase.auth.setSession({ access_token, refresh_token });
+            if (error) throw error;
           }
         }
 
-        const { data } = await supabase.auth.getSession()
-        if (data?.session) setReady(true)
+        const { data } = await supabase.auth.getSession();
+        if (data?.session) setReady(true);
       } catch {
-        // ignore — покажем «Открой по ссылке»
+        // show open-from-email hint
       }
-    })()
+    })();
 
     unsub = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') setReady(true)
-    })
+      if (event === "PASSWORD_RECOVERY") setReady(true);
+    });
 
     return () => {
-      unsub?.data?.subscription?.unsubscribe?.()
-    }
-  }, [])
+      unsub?.data?.subscription?.unsubscribe?.();
+    };
+  }, []);
 
   async function onSave() {
-    setErr(null)
-    setMsg(null)
+    setErr(null);
+    setMsg(null);
     if (!canSave) {
-      setErr('Пароль минимум 8 символов и должен совпадать')
-      return
+      setErr(t("resetPassword.passRules"));
+      return;
     }
 
-    setBusy(true)
+    setBusy(true);
     try {
-      const { data } = await supabase.auth.getSession()
-      const at = data?.session?.access_token ? String(data.session.access_token) : null
-      if (!at) throw new Error('Сессия не найдена. Открой страницу по ссылке из письма.')
+      const { data } = await supabase.auth.getSession();
+      const at = data?.session?.access_token ? String(data.session.access_token) : null;
+      if (!at) throw new Error(t("resetPassword.sessionMissing"));
 
-      const res = await fetch('/api/me/password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${at}` },
+      const res = await fetch("/api/me/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${at}` },
         body: JSON.stringify({ password: pass1 }),
-      })
-      const j = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(j?.error || `HTTP ${res.status}`)
+      });
+      const j = (await res.json().catch(() => ({}))) as { error?: string; errorCode?: string };
+      if (!res.ok) {
+        const code = j?.errorCode ? String(j.errorCode) : "";
+        if (code) {
+          throw new FetchApiError(`admin.api.${code}`, { status: res.status, errorCode: code });
+        }
+        throw new Error(j?.error || `HTTP ${res.status}`);
+      }
 
-      setMsg('Пароль обновлён. Теперь войди заново.')
-      await supabase.auth.signOut()
-      setTimeout(() => (window.location.href = '/'), 900)
-    } catch (e: any) {
-      setErr(e?.message || 'Ошибка обновления')
+      setMsg(t("resetPassword.success"));
+      await supabase.auth.signOut();
+      setTimeout(() => {
+        window.location.href = "/";
+      }, 900);
+    } catch (e: unknown) {
+      setErr(clientWorkerErrorMessage(t, e));
     } finally {
-      setBusy(false)
+      setBusy(false);
     }
   }
 
@@ -91,57 +100,51 @@ export default function ResetPasswordPage() {
       <div className="mx-auto max-w-md px-5 py-10 flex-1">
         <div className="rounded-3xl border border-amber-400/20 bg-gradient-to-b from-[#0b0b12] to-[#07070b] p-6 shadow-2xl">
           <div className="flex items-center gap-3">
-            <img src="/tanija-logo.png" alt="Tanija" className="h-10 w-10 rounded-xl" />
+            <img src="/tanija-logo.png" alt="" className="h-10 w-10 rounded-xl" />
             <div>
-              <div className="text-xl font-semibold tracking-tight text-amber-200">Новый пароль</div>
-              <div className="text-sm text-zinc-400">Установи новый пароль для аккаунта</div>
+              <div className="text-xl font-semibold tracking-tight text-amber-200">{t("resetPassword.title")}</div>
+              <div className="text-sm text-zinc-400">{t("resetPassword.subtitle")}</div>
             </div>
           </div>
 
           {!ready ? (
-            <div className="mt-6 rounded-2xl border border-amber-400/15 bg-amber-300/5 px-4 py-3 text-sm text-zinc-300">
-              Открой эту страницу по ссылке из письма.
-            </div>
+            <div className="mt-6 rounded-2xl border border-amber-400/15 bg-amber-300/5 px-4 py-3 text-sm text-zinc-300">{t("resetPassword.openFromEmail")}</div>
           ) : (
             <div className="mt-6 space-y-3">
-              <label className="block text-sm text-zinc-300">Новый пароль</label>
+              <label className="block text-sm text-zinc-300">{t("resetPassword.newPasswordLabel")}</label>
               <input
                 value={pass1}
                 onChange={(e) => setPass1(e.target.value)}
-                placeholder="Минимум 8 символов"
+                placeholder={t("resetPassword.minChars")}
                 type="password"
                 className="w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 text-zinc-100 outline-none transition focus:border-amber-300/60"
                 autoComplete="new-password"
               />
 
-              <label className="block text-sm text-zinc-300">Повтори пароль</label>
+              <label className="block text-sm text-zinc-300">{t("resetPassword.repeatLabel")}</label>
               <input
                 value={pass2}
                 onChange={(e) => setPass2(e.target.value)}
-                placeholder="Повтори пароль"
+                placeholder={t("resetPassword.repeatPlaceholder")}
                 type="password"
                 className="w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 text-zinc-100 outline-none transition focus:border-amber-300/60"
                 autoComplete="new-password"
               />
 
               <button
-                onClick={onSave}
+                onClick={() => void onSave()}
                 disabled={busy || !canSave}
                 className="mt-2 w-full rounded-2xl border border-amber-300/30 bg-amber-300/10 px-4 py-3 font-semibold text-amber-200 transition hover:bg-amber-300/15 disabled:opacity-50"
               >
-                {busy ? 'Сохраняю…' : 'Сохранить пароль'}
+                {busy ? t("resetPassword.saving") : t("resetPassword.save")}
               </button>
 
               {msg ? (
-                <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
-                  {msg}
-                </div>
+                <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">{msg}</div>
               ) : null}
 
               {err ? (
-                <div className="rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-                  {err}
-                </div>
+                <div className="rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">{err}</div>
               ) : null}
             </div>
           )}
@@ -150,11 +153,11 @@ export default function ResetPasswordPage() {
             href="/"
             className="mt-6 block text-center text-sm text-zinc-400 underline decoration-amber-300/40 underline-offset-4 hover:text-zinc-200"
           >
-            На главную
+            {t("resetPassword.home")}
           </a>
         </div>
       </div>
       <AppFooter />
     </div>
-  )
+  );
 }

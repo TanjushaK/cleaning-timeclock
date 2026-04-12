@@ -1,5 +1,7 @@
 // app/api/me/jobs/team/route.ts
 import { NextResponse } from "next/server";
+import { AppApiErrorCodes } from "@/lib/app-error-codes";
+import { workerApiErrorResponse } from "@/lib/worker-api-response";
 import { requireActiveWorker, toErrorResponse } from "@/lib/supabase-server";
 
 export const runtime = "nodejs";
@@ -46,12 +48,12 @@ export async function GET(req: Request) {
 
     // 1) Jobs, где worker_id = uid
     const { data: directJobs, error: directErr } = await supabase.from("jobs").select("id").eq("worker_id", uid);
-    if (directErr) return NextResponse.json({ error: directErr.message }, { status: 400 });
+    if (directErr) return workerApiErrorResponse(400, AppApiErrorCodes.JOB_TEAM_QUERY_FAILED, directErr.message);
     for (const j of (directJobs as Array<{ id: string }> | null) || []) jobIds.add(j.id);
 
     // 2) Jobs, где worker в job_workers
     const { data: links, error: linksErr } = await supabase.from("job_workers").select("job_id").eq("worker_id", uid);
-    if (linksErr) return NextResponse.json({ error: linksErr.message }, { status: 400 });
+    if (linksErr) return workerApiErrorResponse(400, AppApiErrorCodes.JOB_TEAM_QUERY_FAILED, linksErr.message);
     for (const r of (links as Array<{ job_id: string | null }> | null) || []) {
       if (r.job_id) jobIds.add(r.job_id);
     }
@@ -64,7 +66,7 @@ export async function GET(req: Request) {
     for (const id of ids) byJob[id] = new Set<string>();
 
     const { data: jobs, error: jobsErr } = await supabase.from("jobs").select("id,worker_id").in("id", ids);
-    if (jobsErr) return NextResponse.json({ error: jobsErr.message }, { status: 400 });
+    if (jobsErr) return workerApiErrorResponse(400, AppApiErrorCodes.JOB_TEAM_QUERY_FAILED, jobsErr.message);
     for (const j of (jobs as unknown as JobRow[] | null) || []) {
       if (j && j.id && j.worker_id) byJob[j.id]?.add(j.worker_id);
     }
@@ -73,7 +75,7 @@ export async function GET(req: Request) {
       .from("job_workers")
       .select("job_id,worker_id,accepted_at")
       .in("job_id", ids);
-    if (jwErr) return NextResponse.json({ error: jwErr.message }, { status: 400 });
+    if (jwErr) return workerApiErrorResponse(400, AppApiErrorCodes.JOB_TEAM_QUERY_FAILED, jwErr.message);
 
     for (const r of (jw as unknown as JobWorkerRow[] | null) || []) {
       if (!r || !r.job_id || !r.worker_id) continue;
@@ -89,7 +91,7 @@ export async function GET(req: Request) {
 
     for (const part of chunk(wids, 200)) {
       const { data: ps, error: pErr } = await supabase.from("profiles").select("id,full_name,email").in("id", part);
-      if (pErr) return NextResponse.json({ error: pErr.message }, { status: 400 });
+      if (pErr) return workerApiErrorResponse(400, AppApiErrorCodes.JOB_TEAM_QUERY_FAILED, pErr.message);
       for (const p of (ps as unknown as ProfileRow[] | null) || []) {
         if (p && p.id) profilesById[p.id] = p;
       }

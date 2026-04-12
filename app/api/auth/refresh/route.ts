@@ -1,5 +1,6 @@
 ﻿import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { AppApiErrorCodes } from '@/lib/app-error-codes'
 import { checkRateLimit, clientIpFromRequest } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
@@ -17,7 +18,7 @@ function mustEnv(name: string): string {
   return v
 }
 
-function json(status: number, data: any) {
+function json(status: number, data: Record<string, unknown>) {
   return new NextResponse(JSON.stringify(data), {
     status,
     headers: { 'content-type': 'application/json; charset=utf-8' },
@@ -28,12 +29,13 @@ export async function POST(req: Request) {
   try {
     const ip = clientIpFromRequest(req)
     if (!checkRateLimit(`auth:refresh:${ip}`, 60, 60_000)) {
-      return json(429, { error: 'Слишком много запросов. Подождите минуту.' })
+      return json(429, { errorCode: AppApiErrorCodes.AUTH_RATE_LIMITED, error: 'Too many refresh requests' })
     }
 
     const body = await req.json().catch(() => ({} as any))
     const refresh_token = String(body?.refresh_token || '').trim()
-    if (!refresh_token) return json(400, { error: 'refresh_token обязателен' })
+    if (!refresh_token)
+      return json(400, { errorCode: AppApiErrorCodes.AUTH_REFRESH_TOKEN_REQUIRED, error: 'refresh_token required' })
 
     const url = mustEnv('NEXT_PUBLIC_SUPABASE_URL')
     const anon = mustEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY')
@@ -43,7 +45,8 @@ export async function POST(req: Request) {
     })
 
     const { data, error } = await (supabase as any).auth.refreshSession({ refresh_token })
-    if (error || !data?.session) return json(401, { error: 'Не удалось обновить сессию' })
+    if (error || !data?.session)
+      return json(401, { errorCode: AppApiErrorCodes.AUTH_SESSION_REFRESH_FAILED, error: 'session refresh failed' })
 
     return json(200, {
       access_token: data.session.access_token,
@@ -52,6 +55,6 @@ export async function POST(req: Request) {
     })
   } catch (e: any) {
     console.error('[api/auth/refresh] error:', e)
-    return json(500, { error: 'Internal Server Error' })
+    return json(500, { errorCode: AppApiErrorCodes.INTERNAL, error: 'Internal Server Error' })
   }
 }

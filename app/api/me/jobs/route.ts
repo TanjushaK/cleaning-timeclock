@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireActiveWorker } from '@/lib/supabase-server'
+import { AppApiErrorCodes } from '@/lib/app-error-codes'
+import { requireActiveWorker, toErrorResponse } from '@/lib/supabase-server'
+import { workerApiErrorResponse } from '@/lib/worker-api-response'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -160,10 +162,10 @@ export async function GET(req: NextRequest) {
           .eq('worker_id', userId)
           .gte('job_date', dateFrom)
           .lte('job_date', dateTo)
-        if (e2) return NextResponse.json({ error: e2.message }, { status: 400 })
+        if (e2) return workerApiErrorResponse(400, AppApiErrorCodes.JOB_LIST_QUERY_FAILED, e2.message)
         jobsA = d2 || []
       } else {
-        if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+        if (error) return workerApiErrorResponse(400, AppApiErrorCodes.JOB_LIST_QUERY_FAILED, error.message)
         jobsA = data || []
       }
     }
@@ -185,10 +187,10 @@ export async function GET(req: NextRequest) {
           .in('id', jobIdsViaLink)
           .gte('job_date', dateFrom)
           .lte('job_date', dateTo)
-        if (e2) return NextResponse.json({ error: e2.message }, { status: 400 })
+        if (e2) return workerApiErrorResponse(400, AppApiErrorCodes.JOB_LIST_QUERY_FAILED, e2.message)
         jobsB = d2 || []
       } else {
-        if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+        if (error) return workerApiErrorResponse(400, AppApiErrorCodes.JOB_LIST_QUERY_FAILED, error.message)
         jobsB = data || []
       }
     }
@@ -214,10 +216,10 @@ export async function GET(req: NextRequest) {
           .in('site_id', siteIds)
           .gte('job_date', dateFrom)
           .lte('job_date', dateTo)
-        if (e2) return NextResponse.json({ error: e2.message }, { status: 400 })
+        if (e2) return workerApiErrorResponse(400, AppApiErrorCodes.JOB_LIST_QUERY_FAILED, e2.message)
         jobsC = d2 || []
       } else {
-        if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+        if (error) return workerApiErrorResponse(400, AppApiErrorCodes.JOB_LIST_QUERY_FAILED, error.message)
         jobsC = data || []
       }
     }
@@ -262,8 +264,10 @@ export async function GET(req: NextRequest) {
         : ({ data: [], error: null } as any)
     }
 
-    if (sitesRes.error) return NextResponse.json({ error: sitesRes.error.message }, { status: 400 })
-    if (logsRes.error) return NextResponse.json({ error: logsRes.error.message }, { status: 400 })
+    if (sitesRes.error)
+      return workerApiErrorResponse(400, AppApiErrorCodes.JOB_LIST_QUERY_FAILED, sitesRes.error.message)
+    if (logsRes.error)
+      return workerApiErrorResponse(400, AppApiErrorCodes.JOB_LIST_QUERY_FAILED, logsRes.error.message)
 
     const sitesData = (sitesRes.data || []) as any[]
 
@@ -403,9 +407,7 @@ export async function GET(req: NextRequest) {
     })
 
     return NextResponse.json({ jobs: items, items })
-  } catch (e: any) {
-    const msg = e?.message || 'Ошибка'
-    const status = /Нет токена/i.test(msg) ? 401 : 400
-    return NextResponse.json({ error: msg }, { status })
+  } catch (e: unknown) {
+    return toErrorResponse(e)
   }
 }

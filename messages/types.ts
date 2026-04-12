@@ -1,4 +1,7 @@
 export type Messages = {
+  error: {
+    generic: string;
+  };
   common: {
     language: string;
     loading: string;
@@ -42,6 +45,7 @@ export type Messages = {
     startedOfflineBlocked: string;
     stopped: string;
     stoppedQueued: string;
+    dataReloaded: string;
   };
   errors: {
     gpsUnavailable: string;
@@ -61,6 +65,11 @@ export type Messages = {
     syncFailed: string;
     loadFailed: string;
     sessionExpired: string;
+    passwordMin8: string;
+    passwordMismatch: string;
+    nameRequired: string;
+    api: Record<string, string>;
+    supabase: Record<string, string>;
   };
   auth: {
     logout: string;
@@ -94,6 +103,7 @@ export type Messages = {
     adminRedirectHint: string;
   };
   nav: {
+    home: string;
     jobs: string;
     profile: string;
     adminPanel: string;
@@ -146,6 +156,75 @@ export type Messages = {
     submitForActivation: string;
     submitForActivationHint: string;
     activated: string;
+    workerPageTitle: string;
+    needLoginTitle: string;
+    needLoginBody: string;
+    dataCardTitle: string;
+    notesPlaceholder: string;
+    passwordMainHint: string;
+    newPassword8Placeholder: string;
+    repeatPasswordPlaceholder: string;
+    setPasswordCta: string;
+    savingProfile: string;
+    refreshData: string;
+    refreshBusy: string;
+    photosEmptyHint: string;
+    roleWorkerDefault: string;
+    activeLabelShort: string;
+    passwordSectionTitle: string;
+    phoneContactPlaceholder: string;
+    contactEmailMagicPlaceholder: string;
+  };
+  appFooter: {
+    tagline: string;
+  };
+  searchableSelect: {
+    empty: string;
+  };
+  smartPickers: {
+    openCalendar: string;
+    openTimePicker: string;
+  };
+  offlinePage: {
+    title: string;
+    body: string;
+    retry: string;
+  };
+  notFoundPage: {
+    title: string;
+    description: string;
+    home: string;
+  };
+  authCallback: {
+    loading: string;
+    loginError: string;
+  };
+  forgotPassword: {
+    needEmail: string;
+    success: string;
+    title: string;
+    subtitle: string;
+    emailLabel: string;
+    emailPlaceholder: string;
+    sending: string;
+    send: string;
+    backToLogin: string;
+    redirectHint: string;
+  };
+  resetPassword: {
+    passRules: string;
+    success: string;
+    title: string;
+    subtitle: string;
+    openFromEmail: string;
+    newPasswordLabel: string;
+    minChars: string;
+    repeatLabel: string;
+    repeatPlaceholder: string;
+    saving: string;
+    save: string;
+    home: string;
+    sessionMissing: string;
   };
   home: {
     loadingTitle: string;

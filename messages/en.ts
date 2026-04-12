@@ -1,7 +1,11 @@
 import type { Messages } from "./types";
 import { ADMIN_EN } from "./admin-bundles";
+import { workerApiErrorsEn } from "./worker-api-errors";
 
 export const en: Messages = {
+  error: {
+    generic: "Something went wrong. Please try again.",
+  },
   common: {
     language: "Language",
     loading: "Loading…",
@@ -45,6 +49,7 @@ export const en: Messages = {
     startedOfflineBlocked: "No network. Start is blocked without GPS validation.",
     stopped: "Stopped.",
     stoppedQueued: "No network. Stop queued.",
+    dataReloaded: "Updated.",
   },
   errors: {
     gpsUnavailable: "GPS is unavailable.",
@@ -64,6 +69,22 @@ export const en: Messages = {
     syncFailed: "Sync error",
     loadFailed: "Load error",
     sessionExpired: "Your session slipped away for a coffee break. Sign in once more and we are back in business.",
+    passwordMin8: "Password must be at least 8 characters",
+    passwordMismatch: "Passwords do not match",
+    nameRequired: "Enter your name",
+    api: workerApiErrorsEn,
+    supabase: {
+      invalid_credentials: "Invalid login or password.",
+      email_not_confirmed: "Confirm your email first.",
+      user_not_found: "User not found.",
+      session_not_found: "Session expired. Sign in again.",
+      weak_password: "Password is too weak.",
+      same_password: "Choose a different password.",
+      over_request_rate_limit: "Too many attempts. Try again later.",
+      invalid_grant: "Sign-in link expired or invalid.",
+      refresh_token_not_found: "Session expired. Sign in again.",
+      otp_expired: "Code expired. Request a new one.",
+    },
   },
   auth: {
     logout: "Log out",
@@ -97,6 +118,7 @@ export const en: Messages = {
     adminRedirectHint: "If you are an admin, you will be redirected to /admin after sign-in.",
   },
   nav: {
+    home: "Home",
     jobs: "Shifts",
     profile: "Profile",
     adminPanel: "Admin panel",
@@ -149,6 +171,76 @@ export const en: Messages = {
     submitForActivation: "Submit for activation",
     submitForActivationHint: "After submission, the admin will activate you in /admin/approvals.",
     activated: "Account activated.",
+    workerPageTitle: "Worker profile",
+    needLoginTitle: "Sign in required",
+    needLoginBody: "Open the home page and sign in with phone or email.",
+    dataCardTitle: "Details",
+    notesPlaceholder: "Notes",
+    passwordMainHint:
+      "Primary sign-in: Email + password. Phone (SMS) remains a backup option.",
+    newPassword8Placeholder: "New password (min. 8 characters)",
+    repeatPasswordPlaceholder: "Repeat password",
+    setPasswordCta: "Set password",
+    savingProfile: "Saving…",
+    refreshData: "Refresh",
+    refreshBusy: "…",
+    photosEmptyHint: "Upload a photo and pick an avatar.",
+    roleWorkerDefault: "worker",
+    activeLabelShort: "active",
+    passwordSectionTitle: "Password",
+    phoneContactPlaceholder: "Phone (contact)",
+    contactEmailMagicPlaceholder: "Email (contact / for magic link)",
+  },
+  appFooter: {
+    tagline: "Clean. Clear. On time.",
+  },
+  searchableSelect: {
+    empty: "No results",
+  },
+  smartPickers: {
+    openCalendar: "Open calendar",
+    openTimePicker: "Open time picker",
+  },
+  offlinePage: {
+    title: "Offline",
+    body: "No connection. The app will open; START/STOP actions will send when you are back online.",
+    retry: "Retry",
+  },
+  notFoundPage: {
+    title: "404 — Page not found",
+    description: "This link does not exist. Go back to the home page.",
+    home: "Home",
+  },
+  authCallback: {
+    loading: "Completing sign-in…",
+    loginError: "Sign-in error: {{detail}}",
+  },
+  forgotPassword: {
+    needEmail: "Enter email",
+    success: "Link sent to email. Open the message and follow the link.",
+    title: "Reset password",
+    subtitle: "We will send a link to your email",
+    emailLabel: "Email",
+    emailPlaceholder: "name@example.com",
+    sending: "Sending…",
+    send: "Send link",
+    backToLogin: "Back to sign-in",
+    redirectHint: "Add this Redirect URL in Supabase Auth:",
+  },
+  resetPassword: {
+    passRules: "Password must be at least 8 characters and match in both fields",
+    success: "Password updated. Sign in again.",
+    title: "New password",
+    subtitle: "Set a new password for your account",
+    openFromEmail: "Open this page from the email link.",
+    newPasswordLabel: "New password",
+    minChars: "At least 8 characters",
+    repeatLabel: "Repeat password",
+    repeatPlaceholder: "Repeat password",
+    saving: "Saving…",
+    save: "Save password",
+    home: "Home",
+    sessionMissing: "Session not found. Open the page from the email link.",
   },
   home: {
     loadingTitle: "Loading…",
