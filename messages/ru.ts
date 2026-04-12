@@ -1,7 +1,11 @@
 import type { Messages } from "./types";
 import { ADMIN_RU } from "./admin-bundles";
+import { workerApiErrorsRu } from "./worker-api-errors";
 
 export const ru: Messages = {
+  error: {
+    generic: "Что-то пошло не так. Попробуйте ещё раз.",
+  },
   common: {
     language: "Язык",
     loading: "Загрузка…",
@@ -45,6 +49,7 @@ export const ru: Messages = {
     startedOfflineBlocked: "Нет сети. Старт запрещён без проверки GPS.",
     stopped: "Стоп.",
     stoppedQueued: "Нет сети. Стоп в очереди.",
+    dataReloaded: "Обновлено.",
   },
   errors: {
     gpsUnavailable: "GPS недоступен.",
@@ -64,6 +69,22 @@ export const ru: Messages = {
     syncFailed: "Ошибка синхронизации",
     loadFailed: "Ошибка загрузки",
     sessionExpired: "Сессия тихо улизнула на кофе-брейк. Войди ещё раз — и поехали дальше.",
+    passwordMin8: "Пароль должен быть минимум 8 символов",
+    passwordMismatch: "Пароли не совпадают",
+    nameRequired: "Укажи имя",
+    api: workerApiErrorsRu,
+    supabase: {
+      invalid_credentials: "Неверный логин или пароль.",
+      email_not_confirmed: "Сначала подтверди email.",
+      user_not_found: "Пользователь не найден.",
+      session_not_found: "Сессия истекла. Войди снова.",
+      weak_password: "Пароль слишком слабый.",
+      same_password: "Выбери другой пароль.",
+      over_request_rate_limit: "Слишком много попыток. Попробуй позже.",
+      invalid_grant: "Ссылка для входа устарела или недействительна.",
+      refresh_token_not_found: "Сессия истекла. Войди снова.",
+      otp_expired: "Код истёк. Запроси новый.",
+    },
   },
   auth: {
     logout: "Выйти",
@@ -97,6 +118,7 @@ export const ru: Messages = {
     adminRedirectHint: "Если ты админ — после входа тебя перекинет в /admin автоматически.",
   },
   nav: {
+    home: "На главную",
     jobs: "Смены",
     profile: "Профиль",
     adminPanel: "Панель администратора",
@@ -149,6 +171,76 @@ export const ru: Messages = {
     submitForActivation: "Отправить на активацию",
     submitForActivationHint: "После отправки админ активирует тебя в /admin/approvals.",
     activated: "Аккаунт активирован.",
+    workerPageTitle: "Профиль работника",
+    needLoginTitle: "Нужен вход",
+    needLoginBody: "Открой главную страницу и войди по телефону или email.",
+    dataCardTitle: "Данные",
+    notesPlaceholder: "Заметки",
+    passwordMainHint:
+      "Основной вход: Email + пароль. Телефон (SMS) остаётся резервным вариантом.",
+    newPassword8Placeholder: "Новый пароль (мин. 8 символов)",
+    repeatPasswordPlaceholder: "Повторить пароль",
+    setPasswordCta: "Установить пароль",
+    savingProfile: "Сохраняю…",
+    refreshData: "Обновить",
+    refreshBusy: "…",
+    photosEmptyHint: "Загрузи фото и выбери аватар.",
+    roleWorkerDefault: "worker",
+    activeLabelShort: "active",
+    passwordSectionTitle: "Пароль",
+    phoneContactPlaceholder: "Телефон (контактный)",
+    contactEmailMagicPlaceholder: "Email (контактный / для magic link)",
+  },
+  appFooter: {
+    tagline: "Чисто. Чётко. По времени.",
+  },
+  searchableSelect: {
+    empty: "Ничего не найдено",
+  },
+  smartPickers: {
+    openCalendar: "Открыть календарь",
+    openTimePicker: "Открыть выбор времени",
+  },
+  offlinePage: {
+    title: "Офлайн",
+    body: "Сейчас нет интернета. Интерфейс откроется, а действия START/STOP отправятся при следующем подключении.",
+    retry: "Обновить",
+  },
+  notFoundPage: {
+    title: "404 — Страница не найдена",
+    description: "Похоже, ссылки такой нет. Вернись на главную.",
+    home: "На главную",
+  },
+  authCallback: {
+    loading: "Завершаю вход…",
+    loginError: "Ошибка входа: {{detail}}",
+  },
+  forgotPassword: {
+    needEmail: "Введите email",
+    success: "Ссылка отправлена на email. Открой письмо и перейди по ссылке.",
+    title: "Восстановление пароля",
+    subtitle: "Мы пришлём ссылку на email",
+    emailLabel: "Email",
+    emailPlaceholder: "name@example.com",
+    sending: "Отправляю…",
+    send: "Отправить ссылку",
+    backToLogin: "Назад к входу",
+    redirectHint: "В Supabase Auth добавь Redirect URL:",
+  },
+  resetPassword: {
+    passRules: "Пароль минимум 8 символов и должен совпадать",
+    success: "Пароль обновлён. Теперь войди заново.",
+    title: "Новый пароль",
+    subtitle: "Установи новый пароль для аккаунта",
+    openFromEmail: "Открой эту страницу по ссылке из письма.",
+    newPasswordLabel: "Новый пароль",
+    minChars: "Минимум 8 символов",
+    repeatLabel: "Повтори пароль",
+    repeatPlaceholder: "Повтори пароль",
+    saving: "Сохраняю…",
+    save: "Сохранить пароль",
+    home: "На главную",
+    sessionMissing: "Сессия не найдена. Открой страницу по ссылке из письма.",
   },
   home: {
     loadingTitle: "Загрузка…",

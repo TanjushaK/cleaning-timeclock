@@ -1,5 +1,6 @@
 ﻿import { NextRequest, NextResponse } from 'next/server'
-import { requireUser } from '@/lib/supabase-server'
+import { ApiError, requireUser, toErrorResponse } from '@/lib/supabase-server'
+import { AppApiErrorCodes } from '@/lib/app-error-codes'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -14,7 +15,7 @@ export async function GET(req: NextRequest) {
       .eq('id', user.id)
       .maybeSingle()
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+    if (error) throw new ApiError(400, error.message, AppApiErrorCodes.PROFILE_LOAD_FAILED)
 
     const uPhone = (user as any).phone ? String((user as any).phone) : null
     const uEmail = user.email ? String(user.email) : null
@@ -38,7 +39,7 @@ export async function GET(req: NextRequest) {
         .select('id, role, active, full_name, phone, email, avatar_path, notes, onboarding_submitted_at')
         .single()
 
-      if (cErr) return NextResponse.json({ error: cErr.message }, { status: 400 })
+      if (cErr) throw new ApiError(400, cErr.message, AppApiErrorCodes.PROFILE_CREATE_FAILED)
 
       return NextResponse.json({
         user: {
@@ -71,10 +72,8 @@ export async function GET(req: NextRequest) {
       },
       profile,
     })
-  } catch (e: any) {
-    const msg = e?.message || 'Ошибка'
-    const status = /Нет токена/i.test(msg) ? 401 : 400
-    return NextResponse.json({ error: msg }, { status })
+  } catch (e: unknown) {
+    return toErrorResponse(e)
   }
 }
 

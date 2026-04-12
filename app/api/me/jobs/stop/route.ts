@@ -1,6 +1,7 @@
 // app/api/me/jobs/stop/route.ts
 import { NextResponse } from 'next/server';
-import { requireActiveWorker, toErrorResponse } from '@/lib/supabase-server';
+import { AppApiErrorCodes } from '@/lib/app-error-codes';
+import { ApiError, requireActiveWorker, toErrorResponse } from '@/lib/supabase-server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -53,14 +54,14 @@ export async function POST(req: Request) {
     const body: StopBody = await req.json().catch(() => ({} as StopBody));
     const jobId: string | null = body.jobId || body.job_id || body.id || null;
 
-    if (!jobId) return NextResponse.json({ error: 'Нужен id смены.' }, { status: 400 });
+    if (!jobId) throw new ApiError(400, 'job id required', AppApiErrorCodes.JOB_ID_REQUIRED);
 
     const lat = toNum(body.lat);
     const lng = toNum(body.lng);
     const acc = toNum(body.accuracy);
 
     if (lat === null || lng === null || acc === null) {
-      return NextResponse.json({ error: 'Нужны координаты и точность GPS.' }, { status: 400 });
+      throw new ApiError(400, 'GPS lat/lng/accuracy required', AppApiErrorCodes.GPS_LAT_LNG_ACCURACY_REQUIRED);
     }
 
     const { data: jobRaw, error: jobErr } = await supabase
@@ -69,13 +70,13 @@ export async function POST(req: Request) {
       .eq('id', jobId)
       .maybeSingle();
 
-    if (jobErr) return NextResponse.json({ error: jobErr.message }, { status: 400 });
-    if (!jobRaw) return NextResponse.json({ error: 'Смена не найдена.' }, { status: 404 });
+    if (jobErr) throw new ApiError(400, jobErr.message, AppApiErrorCodes.JOB_LIST_QUERY_FAILED);
+    if (!jobRaw) throw new ApiError(404, 'Job not found', AppApiErrorCodes.JOB_NOT_FOUND);
 
     const job: JobRow = jobRaw as unknown as JobRow;
 
     if (job.status !== 'in_progress') {
-      return NextResponse.json({ error: 'Стоп доступен только для смен в работе.' }, { status: 400 });
+      throw new ApiError(400, 'Invalid job status for stop', AppApiErrorCodes.JOB_STOP_STATUS_INVALID);
     }
 
     let allowed = job.worker_id === uid;
@@ -88,36 +89,38 @@ export async function POST(req: Request) {
         .eq('worker_id', uid)
         .maybeSingle();
 
-      if (linkErr) return NextResponse.json({ error: linkErr.message }, { status: 400 });
+      if (linkErr) throw new ApiError(400, linkErr.message, AppApiErrorCodes.JOB_LIST_QUERY_FAILED);
 
       const link: JobWorkerRow | null = (linkRaw as unknown as JobWorkerRow | null) ?? null;
       allowed = !!(link && link.job_id);
     }
 
-    if (!allowed) return NextResponse.json({ error: 'Нет доступа к этой смене.' }, { status: 403 });
+    if (!allowed) throw new ApiError(403, 'Job access denied', AppApiErrorCodes.JOB_ACCESS_DENIED);
 
     const site = job.site;
     if (!site || site.lat === null || site.lng === null) {
-      return NextResponse.json({ error: 'У объекта нет координат. Стоп запрещён.' }, { status: 400 });
+      throw new ApiError(400, 'Site coordinates missing', AppApiErrorCodes.SITE_COORDINATES_MISSING);
     }
 
     const radius = site.radius ?? 0;
     if (!radius || radius <= 0) {
-      return NextResponse.json({ error: 'У объекта не задан радиус. Стоп запрещён.' }, { status: 400 });
+      throw new ApiError(400, 'Site radius missing', AppApiErrorCodes.SITE_RADIUS_MISSING);
     }
 
     if (acc > 80) {
-      return NextResponse.json(
-        { error: `Точность GPS слишком низкая: ${Math.round(acc)} м (нужно ≤ 80 м).` },
-        { status: 400 }
+      throw new ApiError(
+        400,
+        `GPS accuracy too low: ${Math.round(acc)} m`,
+        AppApiErrorCodes.GPS_ACCURACY_TOO_LOW,
       );
     }
 
     const dist = haversineMeters(lat, lng, site.lat, site.lng);
     if (dist > radius) {
-      return NextResponse.json(
-        { error: `Вы далеко от объекта: ${Math.round(dist)} м (нужно ≤ ${Math.round(radius)} м).` },
-        { status: 400 }
+      throw new ApiError(
+        400,
+        `Too far from site: ${Math.round(dist)} m`,
+        AppApiErrorCodes.TOO_FAR_FROM_SITE,
       );
     }
 
@@ -131,8 +134,8 @@ export async function POST(req: Request) {
       .limit(1)
       .maybeSingle();
 
-    if (logErr) return NextResponse.json({ error: logErr.message }, { status: 400 });
-    if (!logRaw) return NextResponse.json({ error: 'Нет активного старта по этой смене.' }, { status: 400 });
+    if (logErr) throw new ApiError(400, logErr.message, AppApiErrorCodes.JOB_LIST_QUERY_FAILED);
+    if (!logRaw) throw new ApiError(400, 'No open time log', AppApiErrorCodes.TIME_LOG_NOT_OPEN);
 
     const log: TimeLogRow = logRaw as unknown as TimeLogRow;
 
@@ -148,10 +151,10 @@ export async function POST(req: Request) {
       })
       .eq('id', log.id);
 
-    if (updLogErr) return NextResponse.json({ error: updLogErr.message }, { status: 400 });
+    if (updLogErr) throw new ApiError(400, updLogErr.message, AppApiErrorCodes.JOB_ACCEPT_UPDATE_FAILED);
 
     const { error: updJobErr } = await supabase.from('jobs').update({ status: 'done' }).eq('id', jobId);
-    if (updJobErr) return NextResponse.json({ error: updJobErr.message }, { status: 400 });
+    if (updJobErr) throw new ApiError(400, updJobErr.message, AppApiErrorCodes.JOB_ACCEPT_UPDATE_FAILED);
 
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (err) {

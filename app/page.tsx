@@ -3,6 +3,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { authFetchJson, clearAuthTokens, getAccessToken, setAuthTokens } from "@/lib/auth-fetch";
+import { clientWorkerErrorMessage } from "@/lib/app-api-message";
+import { FetchApiError } from "@/lib/fetch-api-error";
+import { formatDateShort, formatDateTimeShort, formatWallTime } from "@/lib/locale-format";
 import AppFooter from "@/app/_components/AppFooter";
 import { useI18n } from "@/components/I18nProvider";
 import { OutboxEvent, outboxAdd, outboxCount as outboxCountDb, outboxList, outboxRemove, outboxUpdate } from "@/lib/offline/outbox";
@@ -72,38 +75,6 @@ type MyPhotosResponse = {
 
 function clsx(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(" ");
-}
-
-function formatDateRu(iso: string | null | undefined) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return String(iso);
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const yyyy = String(d.getFullYear());
-  return `${dd}-${mm}-${yyyy}`;
-}
-
-function formatTimeRu(time: string | null | undefined) {
-  if (!time) return "—";
-  const t = String(time);
-  const m = t.match(/^(\d{1,2}):(\d{2})/);
-  if (!m) return t;
-  const hh = String(m[1]).padStart(2, "0");
-  const mm = String(m[2]).padStart(2, "0");
-  return `${hh}:${mm}`;
-}
-
-function formatDateTimeRu(iso: string | null | undefined) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return String(iso);
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const yyyy = String(d.getFullYear());
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mi = String(d.getMinutes()).padStart(2, "0");
-  return `${dd}-${mm}-${yyyy} ${hh}:${mi}`;
 }
 
 function formatHMS(ms: number) {
@@ -221,7 +192,7 @@ function makeWorkerEmailFromPhone(phoneE164: string) {
 type Tab = "login" | "sms" | "email";
 
 export default function AppPage() {
-  const { t: tr } = useI18n();
+  const { t: tr, lang } = useI18n();
 
   const statusLabel = useCallback((s: string | null | undefined) => {
     const v = String(s || "").toLowerCase();
@@ -427,7 +398,7 @@ const loadAll = useCallback(async () => {
               await refreshOutbox();
               break;
             }
-            const msg = String(e?.message || e || tr("errors.syncFailed"));
+            const msg = clientWorkerErrorMessage(tr, e);
             await outboxUpdate(ev.event_id, { tries: (ev.tries || 0) + 1, last_error: msg });
             await refreshOutbox();
             if (!opts?.silent) setError(msg);
@@ -442,7 +413,7 @@ const loadAll = useCallback(async () => {
         setSyncing(false);
       }
     },
-    [loadAll, refreshOutbox, syncing, token]
+    [loadAll, refreshOutbox, syncing, token, tr]
   );
 
   useEffect(() => {
@@ -451,9 +422,13 @@ const loadAll = useCallback(async () => {
     (async () => {
       try {
         if (t) await loadAll();
-      } catch (e: any) {
-        const msg = String(e?.message || e || "");
-        if (/401|session|expired|unauthorized|login again|auth/i.test(msg)) {
+      } catch (e: unknown) {
+        const fe = e instanceof FetchApiError ? e : null;
+        const msg = fe ? fe.message : String((e as Error)?.message ?? "");
+        if (
+          fe?.status === 401 ||
+          /401|session|expired|unauthorized|login again|auth/i.test(msg)
+        ) {
           clearAuthTokens();
           setToken(null);
           setMe(null);
@@ -462,13 +437,13 @@ const loadAll = useCallback(async () => {
             await supabase.auth.signOut();
           } catch {}
         } else {
-          setError(msg || tr("errors.loadFailed"));
+          setError(clientWorkerErrorMessage(tr, e));
         }
       } finally {
         setLoading(false);
       }
     })();
-  }, [loadAll]);
+  }, [loadAll, tr]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -534,11 +509,11 @@ const loadAll = useCallback(async () => {
       } catch {}
       setNotice(tr("feedback.loggedOut"));
     } catch (e: any) {
-      setError(String(e?.message || e));
+      setError(clientWorkerErrorMessage(tr, e));
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [tr]);
 
   const doEmailPasswordLogin = useCallback(async () => {
     setBusy(true);
@@ -556,8 +531,19 @@ const loadAll = useCallback(async () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ identifier: em, password: pw }),
       });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(payload?.error || `HTTP ${res.status}`);
+      const payload = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        errorCode?: string;
+        access_token?: string;
+        refresh_token?: string;
+      };
+      if (!res.ok) {
+        const code = payload?.errorCode ? String(payload.errorCode) : "";
+        if (code) {
+          throw new FetchApiError(`admin.api.${code}`, { status: res.status, errorCode: code });
+        }
+        throw new Error(payload?.error || `HTTP ${res.status}`);
+      }
       if (!payload?.access_token) throw new Error(tr("errors.tokenMissing"));
 
       setAuthTokens(String(payload.access_token), payload.refresh_token ? String(payload.refresh_token) : null);
@@ -581,12 +567,12 @@ const loadAll = useCallback(async () => {
         const prof = await authFetchJson<MeProfileResponse>("/api/me/profile", { cache: "no-store" });
         if (prof?.profile?.role === "admin") window.location.href = "/admin";
       } catch {}
-    } catch (e: any) {
-      setError(String(e?.message || e || tr("errors.loginFailed")));
+    } catch (e: unknown) {
+      setError(clientWorkerErrorMessage(tr, e));
     } finally {
       setBusy(false);
     }
-  }, [email, emailPassword, loadAll]);
+  }, [email, emailPassword, loadAll, tr]);
 
   const doSmsSend = useCallback(async () => {
     setBusy(true);
@@ -608,11 +594,11 @@ const loadAll = useCallback(async () => {
       setSmsStep("enter_code");
       setNotice(tr("feedback.smsCodeSent"));
     } catch (e: any) {
-      setError(String(e?.message || e));
+      setError(clientWorkerErrorMessage(tr, e));
     } finally {
       setBusy(false);
     }
-  }, [smsPhone]);
+  }, [smsPhone, tr]);
 
   const doSmsVerify = useCallback(async () => {
     setBusy(true);
@@ -638,11 +624,11 @@ const loadAll = useCallback(async () => {
       setSmsStep("set_password");
       setNotice(tr("feedback.phoneConfirmed"));
     } catch (e: any) {
-      setError(String(e?.message || e));
+      setError(clientWorkerErrorMessage(tr, e));
     } finally {
       setBusy(false);
     }
-  }, [smsPhone, smsOtp]);
+  }, [smsPhone, smsOtp, tr]);
 
   const doSmsSetPassword = useCallback(async () => {
     setBusy(true);
@@ -665,11 +651,11 @@ const loadAll = useCallback(async () => {
       setSmsOtp("");
       setSmsNewPassword("");
     } catch (e: any) {
-      setError(String(e?.message || e));
+      setError(clientWorkerErrorMessage(tr, e));
     } finally {
       setBusy(false);
     }
-  }, [smsNewPassword, loadAll]);
+  }, [smsNewPassword, loadAll, tr]);
 
   const doEmailRecovery = useCallback(async () => {
     setBusy(true);
@@ -692,11 +678,11 @@ const loadAll = useCallback(async () => {
 
       setNotice(tr("feedback.recoveryEmailSent"));
     } catch (e: any) {
-      setError(String(e?.message || e));
+      setError(clientWorkerErrorMessage(tr, e));
     } finally {
       setBusy(false);
     }
-  }, [emailRecover]);
+  }, [emailRecover, tr]);
 
   const doUpdateProfile = useCallback(async () => {
     setBusy(true);
@@ -715,11 +701,11 @@ const loadAll = useCallback(async () => {
       await loadAll();
       setNotice(tr("feedback.profileUpdated"));
     } catch (e: any) {
-      setError(String(e?.message || e));
+      setError(clientWorkerErrorMessage(tr, e));
     } finally {
       setBusy(false);
     }
-  }, [fullName, profileEmail, loadAll]);
+  }, [fullName, profileEmail, loadAll, tr]);
 
   const doSubmitForApproval = useCallback(async () => {
     setBusy(true);
@@ -734,11 +720,11 @@ const loadAll = useCallback(async () => {
       await loadAll();
       setNotice(tr("feedback.approvalSubmitted"));
     } catch (e: any) {
-      setError(String(e?.message || e));
+      setError(clientWorkerErrorMessage(tr, e));
     } finally {
       setBusy(false);
     }
-  }, [loadAll]);
+  }, [loadAll, tr]);
 
   const doUploadPhoto = useCallback(async () => {
     setBusy(true);
@@ -762,11 +748,11 @@ const loadAll = useCallback(async () => {
       setNotice(tr("feedback.photoUploaded"));
       if (input) input.value = "";
     } catch (e: any) {
-      setError(String(e?.message || e));
+      setError(clientWorkerErrorMessage(tr, e));
     } finally {
       setBusy(false);
     }
-  }, [bearerHeaders, loadPhotos]);
+  }, [bearerHeaders, loadPhotos, tr]);
 
   const doMakePrimary = useCallback(
     async (path: string) => {
@@ -784,12 +770,12 @@ const loadAll = useCallback(async () => {
         await loadPhotos();
         setNotice(tr("feedback.avatarUpdated"));
       } catch (e: any) {
-        setError(String(e?.message || e));
+        setError(clientWorkerErrorMessage(tr, e));
       } finally {
         setBusy(false);
       }
     },
-    [bearerHeaders, loadPhotos]
+    [bearerHeaders, loadPhotos, tr]
   );
 
   const doDeletePhoto = useCallback(
@@ -808,12 +794,12 @@ const loadAll = useCallback(async () => {
         await loadPhotos();
         setNotice(tr("feedback.photoDeleted"));
       } catch (e: any) {
-        setError(String(e?.message || e));
+        setError(clientWorkerErrorMessage(tr, e));
       } finally {
         setBusy(false);
       }
     },
-    [bearerHeaders, loadPhotos]
+    [bearerHeaders, loadPhotos, tr]
   );
 
   const doAccept = useCallback(async (jobId: string) => {
@@ -829,11 +815,11 @@ const loadAll = useCallback(async () => {
       await loadAll();
       setNotice(tr("feedback.accepted"));
     } catch (e: any) {
-      setError(String(e?.message || e));
+      setError(clientWorkerErrorMessage(tr, e));
     } finally {
       setBusy(false);
     }
-  }, [loadAll]);
+  }, [loadAll, tr]);
 
   const doStart = useCallback(
     async (jobId: string) => {
@@ -883,16 +869,16 @@ const loadAll = useCallback(async () => {
             // Do not start locally while offline — START requires server GPS validation.
             setNotice(tr("feedback.startedOfflineBlocked"));
           } catch (e2: any) {
-            setError(String(e2?.message || e2));
+            setError(clientWorkerErrorMessage(tr, e2));
           }
         } else {
-          setError(String(e?.message || e));
+          setError(clientWorkerErrorMessage(tr, e));
         }
       } finally {
         setBusy(false);
       }
     },
-    [loadAll, outboxN, refreshOutbox, syncOutbox]
+    [gpsErrorMessages, loadAll, outboxN, refreshOutbox, syncOutbox, tr]
   );
 
   const doStop = useCallback(
@@ -947,16 +933,16 @@ const loadAll = useCallback(async () => {
             setJobs((prev) => prev.map((x) => (x.id === jobId ? { ...x, status: "done" } : x)));
             setNotice(tr("feedback.stoppedQueued"));
           } catch (e2: any) {
-            setError(String(e2?.message || e2));
+            setError(clientWorkerErrorMessage(tr, e2));
           }
         } else {
-          setError(String(e?.message || e));
+          setError(clientWorkerErrorMessage(tr, e));
         }
       } finally {
         setBusy(false);
       }
     },
-    [loadAll, outboxN, refreshOutbox, syncOutbox]
+    [gpsErrorMessages, loadAll, outboxN, refreshOutbox, syncOutbox, tr]
   );
 
 
@@ -1246,7 +1232,7 @@ const loadAll = useCallback(async () => {
             <div className={clsx(card, "p-6 xl:col-span-2")}>
               <div className="flex items-center justify-between">
                 <div className="text-lg font-semibold">{tr("jobs.title")}</div>
-                <button className={btn} onClick={() => loadAll().catch((e) => setError(String((e as any)?.message || e)))} disabled={busy}>
+                <button className={btn} onClick={() => loadAll().catch((e) => setError(clientWorkerErrorMessage(tr, e)))} disabled={busy}>
                   {tr("common.refresh")}
                 </button>
               </div>
@@ -1306,7 +1292,7 @@ const loadAll = useCallback(async () => {
 
                             <div>
                               <div className="text-sm font-semibold">
-                                {formatDateRu(j.job_date)} • {formatTimeRu(j.scheduled_time)} • <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClasses(effStatus)}`}>{statusLabel(effStatus)}</span>
+                                {formatDateShort(lang, j.job_date)} • {formatWallTime(lang, j.scheduled_time)} • <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClasses(effStatus)}`}>{statusLabel(effStatus)}</span>
                               </div>
                               <div className="text-xs opacity-70 mt-1">
                                 {j.site_name || tr("jobs.siteFallback")} — {j.site_address || tr("status.unknown")}
@@ -1353,8 +1339,8 @@ const loadAll = useCallback(async () => {
                           </div>
                         </div>
                         <div className="mt-3 grid grid-cols-1 gap-2 text-xs opacity-80 md:grid-cols-2">
-                          <div>{tr("jobs.startedAt")}: {formatDateTimeRu(j.started_at)}</div>
-                          <div>{tr("jobs.stoppedAt")}: {formatDateTimeRu(j.stopped_at)}</div>
+                          <div>{tr("jobs.startedAt")}: {formatDateTimeShort(lang, j.started_at)}</div>
+                          <div>{tr("jobs.stoppedAt")}: {formatDateTimeShort(lang, j.stopped_at)}</div>
                         </div>
 
                         {inProg && elapsedStr ? (

@@ -1,7 +1,11 @@
 import type { Messages } from "./types";
 import { ADMIN_NL } from "./admin-bundles";
+import { workerApiErrorsNl } from "./worker-api-errors";
 
 export const nl: Messages = {
+  error: {
+    generic: "Er ging iets mis. Probeer het opnieuw.",
+  },
   common: {
     language: "Taal",
     loading: "Laden…",
@@ -45,6 +49,7 @@ export const nl: Messages = {
     startedOfflineBlocked: "Geen netwerk. Start is geblokkeerd zonder GPS-validatie.",
     stopped: "Stop.",
     stoppedQueued: "Geen netwerk. Stop in wachtrij.",
+    dataReloaded: "Bijgewerkt.",
   },
   errors: {
     gpsUnavailable: "GPS is niet beschikbaar.",
@@ -64,6 +69,22 @@ export const nl: Messages = {
     syncFailed: "Synchronisatiefout",
     loadFailed: "Laadfout",
     sessionExpired: "Je sessie glipte even weg voor een koffiepauze. Log opnieuw in en we gaan weer verder.",
+    passwordMin8: "Wachtwoord moet minimaal 8 tekens bevatten",
+    passwordMismatch: "Wachtwoorden komen niet overeen",
+    nameRequired: "Voer je naam in",
+    api: workerApiErrorsNl,
+    supabase: {
+      invalid_credentials: "Ongeldige login of wachtwoord.",
+      email_not_confirmed: "Bevestig eerst je e-mail.",
+      user_not_found: "Gebruiker niet gevonden.",
+      session_not_found: "Sessie verlopen. Log opnieuw in.",
+      weak_password: "Wachtwoord is te zwak.",
+      same_password: "Kies een ander wachtwoord.",
+      over_request_rate_limit: "Te veel pogingen. Probeer het later opnieuw.",
+      invalid_grant: "Inloglink verlopen of ongeldig.",
+      refresh_token_not_found: "Sessie verlopen. Log opnieuw in.",
+      otp_expired: "Code verlopen. Vraag een nieuwe aan.",
+    },
   },
   auth: {
     logout: "Uitloggen",
@@ -97,6 +118,7 @@ export const nl: Messages = {
     adminRedirectHint: "Als je beheerder bent, word je na het inloggen automatisch doorgestuurd naar /admin.",
   },
   nav: {
+    home: "Home",
     jobs: "Diensten",
     profile: "Profiel",
     adminPanel: "Beheerpaneel",
@@ -149,6 +171,76 @@ export const nl: Messages = {
     submitForActivation: "Ter activatie verzenden",
     submitForActivationHint: "Na verzending activeert de beheerder je in /admin/approvals.",
     activated: "Account geactiveerd.",
+    workerPageTitle: "Medewerkerprofiel",
+    needLoginTitle: "Inloggen vereist",
+    needLoginBody: "Open de startpagina en log in met telefoon of e-mail.",
+    dataCardTitle: "Gegevens",
+    notesPlaceholder: "Notities",
+    passwordMainHint:
+      "Primaire login: e-mail + wachtwoord. Telefoon (SMS) blijft een reserve-optie.",
+    newPassword8Placeholder: "Nieuw wachtwoord (min. 8 tekens)",
+    repeatPasswordPlaceholder: "Herhaal wachtwoord",
+    setPasswordCta: "Wachtwoord instellen",
+    savingProfile: "Opslaan…",
+    refreshData: "Vernieuwen",
+    refreshBusy: "…",
+    photosEmptyHint: "Upload een foto en kies een avatar.",
+    roleWorkerDefault: "worker",
+    activeLabelShort: "active",
+    passwordSectionTitle: "Wachtwoord",
+    phoneContactPlaceholder: "Telefoon (contact)",
+    contactEmailMagicPlaceholder: "E-mail (contact / voor magic link)",
+  },
+  appFooter: {
+    tagline: "Schoon. Duidelijk. Op tijd.",
+  },
+  searchableSelect: {
+    empty: "Niets gevonden",
+  },
+  smartPickers: {
+    openCalendar: "Kalender openen",
+    openTimePicker: "Tijdkiezer openen",
+  },
+  offlinePage: {
+    title: "Offline",
+    body: "Geen verbinding. De app opent; START/STOP-acties worden verzonden zodra je weer online bent.",
+    retry: "Opnieuw proberen",
+  },
+  notFoundPage: {
+    title: "404 — Pagina niet gevonden",
+    description: "Deze link bestaat niet. Ga terug naar de startpagina.",
+    home: "Home",
+  },
+  authCallback: {
+    loading: "Inloggen voltooien…",
+    loginError: "Inlogfout: {{detail}}",
+  },
+  forgotPassword: {
+    needEmail: "Voer e-mail in",
+    success: "Link verzonden naar e-mail. Open het bericht en volg de link.",
+    title: "Wachtwoord resetten",
+    subtitle: "We sturen een link naar je e-mail",
+    emailLabel: "E-mail",
+    emailPlaceholder: "naam@voorbeeld.nl",
+    sending: "Verzenden…",
+    send: "Link verzenden",
+    backToLogin: "Terug naar inloggen",
+    redirectHint: "Voeg deze Redirect URL toe in Supabase Auth:",
+  },
+  resetPassword: {
+    passRules: "Wachtwoord minimaal 8 tekens en beide velden moeten overeenkomen",
+    success: "Wachtwoord bijgewerkt. Log opnieuw in.",
+    title: "Nieuw wachtwoord",
+    subtitle: "Stel een nieuw wachtwoord in voor je account",
+    openFromEmail: "Open deze pagina via de link in de e-mail.",
+    newPasswordLabel: "Nieuw wachtwoord",
+    minChars: "Minimaal 8 tekens",
+    repeatLabel: "Herhaal wachtwoord",
+    repeatPlaceholder: "Herhaal wachtwoord",
+    saving: "Opslaan…",
+    save: "Wachtwoord opslaan",
+    home: "Home",
+    sessionMissing: "Geen sessie. Open de pagina via de link in de e-mail.",
   },
   home: {
     loadingTitle: "Laden…",
