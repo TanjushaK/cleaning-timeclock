@@ -4,6 +4,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useI18n } from '@/components/I18nProvider'
 import { authFetchJson, clearAuthTokens, getAccessToken, setAuthTokens } from '@/lib/auth-fetch'
 
+function mapAdminErr(e: unknown, t: (key: string, vars?: Record<string, string | number>) => string) {
+  const m = String((e as { message?: string })?.message ?? '')
+  if (m.startsWith('admin.api.')) return t(m)
+  if (/^(admin\.(main|common|approvals)\.|common\.)/.test(m)) return t(m)
+  return m
+}
+
 type PendingWorker = {
   id: string
   full_name: string | null
@@ -86,7 +93,7 @@ export default function AdminApprovalsPage() {
         setToken(tok)
         if (tok) await refresh()
       } catch (e: unknown) {
-        const msg = String((e as { message?: string })?.message || e || t('admin.common.errorGeneric'))
+        const msg = mapAdminErr(e, t) || t('admin.common.errorGeneric')
         if (msg.includes('401') || /token|unauthorized/i.test(msg)) {
           clearAuthTokens()
           setToken(null)
@@ -138,7 +145,7 @@ export default function AdminApprovalsPage() {
         setNotice(t('admin.approvals.noticeActivated'))
         await refresh()
       } catch (e: unknown) {
-        setError(String((e as { message?: string })?.message || e || t('admin.approvals.errorActivation')))
+        setError(mapAdminErr(e, t) || t('admin.approvals.errorActivation'))
       } finally {
         setBusy(false)
       }
@@ -171,7 +178,7 @@ export default function AdminApprovalsPage() {
       setNotice(t('admin.approvals.inviteNotice', { login, password: pw }))
       await refresh().catch(() => null)
     } catch (e: unknown) {
-      setError(String((e as { message?: string })?.message || e || t('admin.approvals.errInvite')))
+      setError(mapAdminErr(e, t) || t('admin.approvals.errInvite'))
     } finally {
       setBusy(false)
     }
@@ -199,7 +206,7 @@ export default function AdminApprovalsPage() {
         setNotice(t('admin.approvals.noticeSaved'))
         await refresh()
       } catch (e: unknown) {
-        setError(String((e as { message?: string })?.message || e || t('admin.approvals.errSave')))
+        setError(mapAdminErr(e, t) || t('admin.approvals.errSave'))
       } finally {
         setBusy(false)
       }

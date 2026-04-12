@@ -4,6 +4,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useI18n } from '@/components/I18nProvider'
 import { authFetchJson, clearAuthTokens, getAccessToken, setAuthTokens } from '@/lib/auth-fetch'
 
+function mapAdminErr(e: unknown, t: (key: string, vars?: Record<string, string | number>) => string) {
+  const m = String((e as { message?: string })?.message ?? '')
+  if (m.startsWith('admin.api.')) return t(m)
+  if (/^(admin\.(main|common|approvals)\.|common\.)/.test(m)) return t(m)
+  return m
+}
+
 type WorkerRow = {
   id: string
   full_name: string | null
@@ -152,7 +159,7 @@ export default function AdminHoursPage() {
       setData(res)
     } catch (e: unknown) {
       setData(null)
-      setError(String((e as { message?: string })?.message || e || t('admin.hours.errorLoad')))
+      setError(mapAdminErr(e, t) || t('admin.hours.errorLoad'))
     } finally {
       setLoading(false)
     }
@@ -181,7 +188,7 @@ export default function AdminHoursPage() {
           await loadWorkers()
         }
       } catch (e: unknown) {
-        const msg = String((e as { message?: string })?.message || e || t('admin.common.errorGeneric'))
+        const msg = mapAdminErr(e, t) || t('admin.common.errorGeneric')
         if (msg.includes('401') || /token|unauthorized/i.test(msg)) {
           clearAuthTokens()
           setToken(null)

@@ -4,6 +4,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useI18n } from '@/components/I18nProvider'
 import { authFetchJson, clearAuthTokens, getAccessToken, setAuthTokens } from '@/lib/auth-fetch'
 
+function mapAdminErr(e: unknown, t: (key: string, vars?: Record<string, string | number>) => string) {
+  const m = String((e as { message?: string })?.message ?? '')
+  if (m.startsWith('admin.api.')) return t(m)
+  if (/^(admin\.(main|common|approvals)\.|common\.)/.test(m)) return t(m)
+  return m
+}
+
 type ScheduleItem = {
   id: string
   status: string
@@ -156,7 +163,7 @@ export default function AdminFactPage() {
         setToken(tok)
         if (tok) await refresh()
       } catch (e: unknown) {
-        const msg = String((e as { message?: string })?.message || e || t('admin.common.errorGeneric'))
+        const msg = mapAdminErr(e, t) || t('admin.common.errorGeneric')
         if (msg.includes('401') || /token|unauthorized/i.test(msg)) {
           clearAuthTokens()
           setToken(null)
@@ -232,7 +239,7 @@ export default function AdminFactPage() {
         setNotice(t('admin.fact.noticeFactUpdated'))
         await refresh()
       } catch (e: unknown) {
-        setError(String((e as { message?: string })?.message || e || t('admin.fact.errSave')))
+        setError(mapAdminErr(e, t) || t('admin.fact.errSave'))
       } finally {
         setBusy(false)
       }
@@ -260,7 +267,7 @@ export default function AdminFactPage() {
         setNotice(t('admin.fact.noticeHoursDeleted'))
         await refresh()
       } catch (e: unknown) {
-        setError(String((e as { message?: string })?.message || e || t('admin.fact.errDeleteHours')))
+        setError(mapAdminErr(e, t) || t('admin.fact.errDeleteHours'))
       } finally {
         setBusy(false)
       }
@@ -289,7 +296,7 @@ export default function AdminFactPage() {
         setNotice(t('admin.fact.noticeJobDeleted'))
         await refresh()
       } catch (e: unknown) {
-        setError(String((e as { message?: string })?.message || e || t('admin.fact.errDeleteJob')))
+        setError(mapAdminErr(e, t) || t('admin.fact.errDeleteJob'))
       } finally {
         setBusy(false)
       }
@@ -405,7 +412,7 @@ export default function AdminFactPage() {
                 await refresh()
                 setNotice(t('admin.common.noticeUpdated'))
               } catch (e: unknown) {
-                setError(String((e as { message?: string })?.message || e || t('admin.fact.errLoad')))
+                setError(mapAdminErr(e, t) || t('admin.fact.errLoad'))
               } finally {
                 setBusy(false)
               }
