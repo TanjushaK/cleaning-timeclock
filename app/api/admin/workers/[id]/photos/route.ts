@@ -1,5 +1,6 @@
 ﻿// app/api/admin/workers/[id]/photos/route.ts
 import { NextRequest, NextResponse } from 'next/server'
+import { AdminApiErrorCode } from '@/lib/api-error-codes'
 import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
 import sharp from 'sharp'
 
@@ -124,10 +125,10 @@ function contentTypeFor(ext: string): string {
 }
 
 function validateImageFile(file: IncomingFile) {
-  if (file.size <= 0) throw new ApiError(400, 'Файл пустой. Выбери фото ещё раз.')
+  if (file.size <= 0) throw new ApiError(400, 'File is empty', AdminApiErrorCode.PHOTO_EMPTY)
   if (file.size > MAX_UPLOAD_BYTES) {
     const mb = Math.round((MAX_UPLOAD_BYTES / 1024 / 1024) * 10) / 10
-    throw new ApiError(400, `Фото слишком большое. Максимум ${mb} MB.`)
+    throw new ApiError(400, `File is too large (max ${mb} MB)`, AdminApiErrorCode.PHOTO_TOO_LARGE)
   }
 
   const ext = fileExt(file)
@@ -136,7 +137,8 @@ function validateImageFile(file: IncomingFile) {
   const okByMime = mime ? ALLOWED_IMAGE_TYPES.has(mime) : false
   const okByExt = ALLOWED_EXT.has(ext)
 
-  if (!okByMime && !okByExt) throw new ApiError(400, 'Формат не поддерживается. Используй JPG/PNG/WebP/HEIC/HEIF.')
+  if (!okByMime && !okByExt)
+    throw new ApiError(400, 'Unsupported format (JPG/PNG/WebP/HEIC/HEIF)', AdminApiErrorCode.PHOTO_FORMAT_INVALID)
 }
 
 let AVATAR_KEY: AvatarKey | null = null
@@ -213,7 +215,7 @@ async function listPhotos(supabase: any, workerId: string): Promise<WorkerPhoto[
     .from(BUCKET)
     .list(pref, { limit: 100, sortBy: { column: 'created_at', order: 'desc' } })
 
-  if (listErr) throw new ApiError(500, listErr.message)
+  if (listErr) throw new ApiError(500, listErr.message, AdminApiErrorCode.DB_ERROR)
 
   let itemsRaw = (listed || []).filter((x: any) => x?.name && x.name !== '.emptyFolderPlaceholder')
   // HEIC/HEIF часто не отображаются в Chrome/Android WebView — конвертируем в JPEG автоматически
@@ -264,7 +266,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     const { id: workerId } = await ctx.params
     const headers = withCookieBearer(req)
     const admin = await requireAdmin(headers)
-    if (!workerId) throw new ApiError(400, 'Missing worker id')
+    if (!workerId) throw new ApiError(400, 'worker id is required', AdminApiErrorCode.WORKER_ID_REQUIRED)
 
     const photos = await listPhotos((admin as any).supabase, workerId)
     return NextResponse.json({ photos }, { status: 200 })
@@ -280,14 +282,14 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     const admin = await requireAdmin(headers)
     const sb = (admin as any).supabase
 
-    if (!workerId) throw new ApiError(400, 'Missing worker id')
+    if (!workerId) throw new ApiError(400, 'worker id is required', AdminApiErrorCode.WORKER_ID_REQUIRED)
 
     const current = await listPhotos(sb, workerId)
-    if (current.length >= 5) throw new ApiError(400, 'Лимит: 5 фото. Удали одно и попробуй снова.')
+    if (current.length >= 5) throw new ApiError(400, 'Photo limit reached (5)', AdminApiErrorCode.PHOTO_LIMIT_REACHED)
 
     const form = await req.formData()
     const file = asIncomingFile(form.get('file'))
-    if (!file) throw new ApiError(400, 'Выбери фото для загрузки.')
+    if (!file) throw new ApiError(400, 'Pick a photo to upload', AdminApiErrorCode.PHOTO_PICK_REQUIRED)
 
     validateImageFile(file)
 
@@ -310,7 +312,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       contentType,
       upsert: false,
     })
-    if (upErr) throw new ApiError(500, upErr.message)
+    if (upErr) throw new ApiError(500, upErr.message, AdminApiErrorCode.DB_ERROR)
 
     const avatarKey = await resolveAvatarKey(sb)
     const { data: prof } = await sb.from('profiles').select(avatarKey).eq('id', workerId).maybeSingle()
@@ -333,17 +335,17 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     const admin = await requireAdmin(headers)
     const sb = (admin as any).supabase
 
-    if (!workerId) throw new ApiError(400, 'Missing worker id')
+    if (!workerId) throw new ApiError(400, 'worker id is required', AdminApiErrorCode.WORKER_ID_REQUIRED)
 
     const body = await req.json().catch(() => ({} as any))
     const path = String(body?.path || '').trim()
-    if (!path) throw new ApiError(400, 'path_required')
+    if (!path) throw new ApiError(400, 'path is required', AdminApiErrorCode.PHOTO_PATH_REQUIRED)
 
     const pref = workerPrefix(workerId)
-    if (!path.startsWith(`${pref}/`)) throw new ApiError(403, 'Нельзя удалять чужие файлы')
+    if (!path.startsWith(`${pref}/`)) throw new ApiError(403, 'Cannot delete another user’s file', AdminApiErrorCode.PHOTO_DELETE_FORBIDDEN)
 
     const { error: delErr } = await sb.storage.from(BUCKET).remove([path])
-    if (delErr) throw new ApiError(500, delErr.message)
+    if (delErr) throw new ApiError(500, delErr.message, AdminApiErrorCode.DB_ERROR)
 
     const photos = await listPhotos(sb, workerId)
 

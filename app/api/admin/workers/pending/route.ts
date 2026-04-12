@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { AdminApiErrorCode } from '@/lib/api-error-codes'
 import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
 
 export const runtime = 'nodejs'
@@ -62,7 +63,7 @@ export async function GET(req: NextRequest) {
       .eq('active', false)
       .order('onboarding_submitted_at', { ascending: false, nullsFirst: false })
 
-    if (error) throw new ApiError(500, error.message)
+    if (error) throw new ApiError(500, error.message || 'Database error', AdminApiErrorCode.DB_ERROR)
 
     const rows = (data || []).map((p: any) => {
       const avatar_ref = avatarKey ? (p[avatarKey] ? String(p[avatarKey]) : null) : null

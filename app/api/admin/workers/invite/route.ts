@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { AdminApiErrorCode } from '@/lib/api-error-codes'
 import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
 import crypto from 'crypto'
 
@@ -21,7 +22,7 @@ function isE164(s: string): boolean {
 }
 
 function genTempPassword(): string {
-  // 14 chars: base64url-ish, easy to диктовать
+  // 14 chars: base64url-ish, easy to dictate
   const buf = crypto.randomBytes(16)
   return buf
     .toString('base64')
@@ -36,7 +37,7 @@ async function findUserIdByEmail(supabase: any, email: string): Promise<string |
 
   for (let i = 0; i < 60; i++) {
     const { data, error } = await supabase.auth.admin.listUsers({ page, perPage })
-    if (error) throw new ApiError(500, `Не смог прочитать auth users: ${error.message}`)
+    if (error) throw new ApiError(500, error.message || 'listUsers failed', AdminApiErrorCode.INVITE_USER_LOOKUP_FAILED)
 
     const users = data?.users ?? []
     const hit = users.find((u: any) => String(u.email ?? '').toLowerCase() === needle)
@@ -55,7 +56,7 @@ async function findUserIdByPhone(supabase: any, phone: string): Promise<string |
 
   for (let i = 0; i < 60; i++) {
     const { data, error } = await supabase.auth.admin.listUsers({ page, perPage })
-    if (error) throw new ApiError(500, `Не смог прочитать auth users: ${error.message}`)
+    if (error) throw new ApiError(500, error.message || 'listUsers failed', AdminApiErrorCode.INVITE_USER_LOOKUP_FAILED)
 
     const users = data?.users ?? []
     const hit = users.find((u: any) => String((u as any).phone ?? '').trim() === needle)
@@ -74,14 +75,15 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({} as any))
 
     const role = String(body?.role ?? 'worker').trim().toLowerCase()
-    if (role !== 'worker' && role !== 'admin') throw new ApiError(400, 'role должен быть worker или admin')
+    if (role !== 'worker' && role !== 'admin')
+      throw new ApiError(400, 'role must be worker or admin', AdminApiErrorCode.INVITE_ROLE_INVALID)
 
     const active = role === 'worker' ? false : Boolean(body?.active ?? true)
 
     // Back-compat: раньше отправляли {email}. Теперь принимаем {identifier|email|phone}
     const rawIdentifier = String(body?.identifier ?? body?.email ?? body?.phone ?? '').trim()
 
-    if (!rawIdentifier) throw new ApiError(400, 'Нужен email или телефон')
+    if (!rawIdentifier) throw new ApiError(400, 'Email or phone required', AdminApiErrorCode.INVITE_IDENTIFIER_REQUIRED)
 
     const looksEmail = rawIdentifier.includes('@')
     const email = looksEmail ? rawIdentifier.toLowerCase() : null
@@ -89,8 +91,9 @@ export async function POST(req: Request) {
     const phoneNorm = looksEmail ? null : normalizePhone(rawIdentifier)
     const phone = phoneNorm ? phoneNorm : null
 
-    if (email && !isEmail(email)) throw new ApiError(400, 'Неверный email')
-    if (phone && !isE164(phone)) throw new ApiError(400, 'Телефон нужен в формате E.164, например +31612345678')
+    if (email && !isEmail(email)) throw new ApiError(400, 'Invalid email', AdminApiErrorCode.INVITE_EMAIL_INVALID)
+    if (phone && !isE164(phone))
+      throw new ApiError(400, 'Phone must be E.164, e.g. +31612345678', AdminApiErrorCode.INVITE_PHONE_INVALID)
 
     const password = String(body?.password ?? '').trim() || genTempPassword()
 
@@ -108,7 +111,7 @@ export async function POST(req: Request) {
         user_metadata: { temp_password: true, created_by_admin: userId },
       })
 
-      if (error) throw new ApiError(400, error.message)
+      if (error) throw new ApiError(400, error.message || 'createUser failed', AdminApiErrorCode.INVITE_USER_CREATE_FAILED)
       user_id = data?.user?.id ?? null
     } catch (e: any) {
       const msg = String(e?.message || '')
@@ -119,7 +122,8 @@ export async function POST(req: Request) {
 
       if (email) user_id = await findUserIdByEmail(supabase, email)
       if (!user_id && phone) user_id = await findUserIdByPhone(supabase, phone)
-      if (!user_id) throw new ApiError(400, 'Пользователь уже существует, но не удалось найти его id')
+      if (!user_id)
+        throw new ApiError(400, 'User exists but id could not be resolved', AdminApiErrorCode.INVITE_USER_LOOKUP_FAILED)
 
       // merge metadata (не затираем старое)
       let prevMeta: Record<string, any> = {}
@@ -151,10 +155,10 @@ export async function POST(req: Request) {
       }
 
       const { error: uErr } = await supabase.auth.admin.updateUserById(user_id, authPatch)
-      if (uErr) throw new ApiError(400, uErr.message)
+      if (uErr) throw new ApiError(400, uErr.message || 'updateUser failed', AdminApiErrorCode.AUTH_USER_UPDATE_FAILED)
     }
 
-    if (!user_id) throw new ApiError(500, 'Не удалось создать пользователя')
+    if (!user_id) throw new ApiError(500, 'Could not create user', AdminApiErrorCode.INVITE_USER_CREATE_FAILED)
 
     // Ensure profile
     const { error: pErr } = await supabase
@@ -164,7 +168,8 @@ export async function POST(req: Request) {
         { onConflict: 'id' }
       )
 
-    if (pErr) throw new ApiError(500, `Не смог создать/обновить profile: ${pErr.message}`)
+    if (pErr)
+      throw new ApiError(500, pErr.message || 'profile upsert failed', AdminApiErrorCode.INVITE_PROFILE_FAILED)
 
     const login = email ?? phone ?? rawIdentifier
 

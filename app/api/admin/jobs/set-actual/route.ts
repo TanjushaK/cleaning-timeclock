@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { AdminApiErrorCode } from '@/lib/api-error-codes'
 import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
 
 export const runtime = 'nodejs'
@@ -42,7 +43,7 @@ export async function POST(req: Request) {
 
     const body = await req.json().catch(() => ({} as any))
     const jobId = String(body?.job_id || body?.jobId || '').trim()
-    if (!jobId) throw new ApiError(400, 'job_id обязателен')
+    if (!jobId) throw new ApiError(400, 'job_id is required', AdminApiErrorCode.JOB_ID_REQUIRED)
 
     let minutes: number | null = null
     if (body?.minutes != null) minutes = Math.max(0, Math.floor(Number(body.minutes) || 0))
@@ -50,7 +51,8 @@ export async function POST(req: Request) {
       const m = parseHM(String(body.hm))
       minutes = m == null ? null : Math.max(0, m)
     }
-    if (minutes == null) throw new ApiError(400, 'Нужен minutes (число) или hm (например "3:30")')
+    if (minutes == null)
+      throw new ApiError(400, 'minutes (number) or hm (e.g. "3:30") is required', AdminApiErrorCode.JOB_MINUTES_OR_HM_REQUIRED)
 
     // Берём все логи по смене.
     const { data: logs, error: logsErr } = await sb
@@ -59,7 +61,7 @@ export async function POST(req: Request) {
       .eq('job_id', jobId)
       .order('started_at', { ascending: true })
 
-    if (logsErr) throw new ApiError(400, logsErr.message)
+    if (logsErr) throw new ApiError(400, logsErr.message, AdminApiErrorCode.DB_ERROR)
 
     // Если логов нет — создаём "ручной" лог по расписанию смены.
     if (!logs || logs.length === 0) {
@@ -69,12 +71,13 @@ export async function POST(req: Request) {
         .eq('id', jobId)
         .maybeSingle()
 
-      if (jobErr) throw new ApiError(400, jobErr.message)
-      if (!job) throw new ApiError(404, 'Смена не найдена')
+      if (jobErr) throw new ApiError(400, jobErr.message, AdminApiErrorCode.DB_ERROR)
+      if (!job) throw new ApiError(404, 'Shift not found', AdminApiErrorCode.JOB_NOT_FOUND)
 
       const startedAt = startFromJob((job as any).job_date, (job as any).scheduled_time)
       const startMs = new Date(startedAt).getTime()
-      if (!Number.isFinite(startMs)) throw new ApiError(400, 'Не могу вычислить старт смены')
+      if (!Number.isFinite(startMs))
+        throw new ApiError(400, 'Could not compute shift start', AdminApiErrorCode.JOB_SCHEDULE_START_INVALID)
       const stoppedAt = new Date(startMs + minutes * 60000).toISOString()
 
       const { error: insErr } = await sb.from('time_logs').insert({
@@ -83,14 +86,14 @@ export async function POST(req: Request) {
         started_at: startedAt,
         stopped_at: stoppedAt,
       })
-      if (insErr) throw new ApiError(400, insErr.message)
+      if (insErr) throw new ApiError(400, insErr.message, AdminApiErrorCode.DB_ERROR)
 
       return NextResponse.json({ ok: true, created: true, started_at: startedAt, stopped_at: stoppedAt, minutes, logs_removed: 0 })
     }
 
     const first = logs[0] as any
     const keepId = String(first.id)
-    if (!keepId) throw new ApiError(400, 'time_logs.id пустой')
+    if (!keepId) throw new ApiError(400, 'time_logs.id is empty', AdminApiErrorCode.JOB_TIME_LOG_ID_MISSING)
 
     // Если у лога нет started_at — восстанавливаем из расписания.
     let startedAt = String(first.started_at || '').trim()
@@ -100,25 +103,26 @@ export async function POST(req: Request) {
         .select('id, job_date, scheduled_time')
         .eq('id', jobId)
         .maybeSingle()
-      if (jobErr) throw new ApiError(400, jobErr.message)
+      if (jobErr) throw new ApiError(400, jobErr.message, AdminApiErrorCode.DB_ERROR)
       startedAt = startFromJob((job as any)?.job_date, (job as any)?.scheduled_time)
       const { error: updStartErr } = await sb.from('time_logs').update({ started_at: startedAt }).eq('id', keepId)
-      if (updStartErr) throw new ApiError(400, updStartErr.message)
+      if (updStartErr) throw new ApiError(400, updStartErr.message, AdminApiErrorCode.DB_ERROR)
     }
 
     const startMs = new Date(startedAt).getTime()
-    if (!Number.isFinite(startMs)) throw new ApiError(400, 'started_at некорректный')
+    if (!Number.isFinite(startMs))
+      throw new ApiError(400, 'Invalid started_at', AdminApiErrorCode.TIME_LOG_STARTED_AT_INVALID)
 
     const stoppedAt = new Date(startMs + minutes * 60000).toISOString()
     const { error: updErr } = await sb.from('time_logs').update({ stopped_at: stoppedAt }).eq('id', keepId)
-    if (updErr) throw new ApiError(400, updErr.message)
+    if (updErr) throw new ApiError(400, updErr.message, AdminApiErrorCode.DB_ERROR)
 
     // Чтобы итог всегда был ровно тот, что выставил админ — убираем остальные логи.
     const otherIds = (logs as any[]).slice(1).map((x) => String(x.id)).filter(Boolean)
     let removed = 0
     if (otherIds.length) {
       const { error: delErr } = await sb.from('time_logs').delete().in('id', otherIds)
-      if (delErr) throw new ApiError(400, delErr.message)
+      if (delErr) throw new ApiError(400, delErr.message, AdminApiErrorCode.DB_ERROR)
       removed = otherIds.length
     }
 

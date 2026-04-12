@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { AdminApiErrorCode } from '@/lib/api-error-codes'
 import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
 
 export const runtime = 'nodejs'
@@ -27,8 +28,9 @@ function normalizeStatus(v: any): string | null {
   const s = pickStr(v)
   if (!s) return null
   if (s === 'planned' || s === 'in_progress' || s === 'done') return s
-  if (s === 'cancelled') throw new ApiError(400, 'Отмена делается кнопкой “Отменить смену”')
-  throw new ApiError(400, 'Недопустимый статус')
+  if (s === 'cancelled')
+    throw new ApiError(400, 'Use “Cancel shift” to cancel', AdminApiErrorCode.JOB_CANCEL_USE_ENDPOINT)
+  throw new ApiError(400, 'Invalid status', AdminApiErrorCode.JOB_STATUS_INVALID)
 }
 
 /**
@@ -54,7 +56,7 @@ export async function POST(req: Request) {
       pickStr(body?.id) ??
       pickStr(body?.job?.id)
 
-    if (!jobId) throw new ApiError(400, 'Missing job_id')
+    if (!jobId) throw new ApiError(400, 'job_id is required', AdminApiErrorCode.JOB_ID_REQUIRED)
 
     const patch: any = {}
 
@@ -64,7 +66,7 @@ export async function POST(req: Request) {
     const tFromRaw = hasOwn(body, 'scheduled_time') ? body.scheduled_time : (hasOwn(body, 'to_time') ? body.to_time : (hasOwn(body, 'toTime') ? body.toTime : (hasOwn(body, 'time') ? body.time : undefined)))
     if (tFromRaw !== undefined) {
       const t = normalizeTimeHHMM(tFromRaw)
-      if (!t) throw new ApiError(400, 'scheduled_time должен быть HH:MM')
+      if (!t) throw new ApiError(400, 'scheduled_time must be HH:MM', AdminApiErrorCode.JOB_TIME_INVALID)
       patch.scheduled_time = t
     }
 
@@ -74,7 +76,7 @@ export async function POST(req: Request) {
         patch.scheduled_end_time = null
       } else {
         const t = normalizeTimeHHMM(tToRaw)
-        if (!t) throw new ApiError(400, 'scheduled_end_time должен быть HH:MM')
+        if (!t) throw new ApiError(400, 'scheduled_end_time must be HH:MM', AdminApiErrorCode.JOB_TIME_INVALID)
         patch.scheduled_end_time = t
       }
     }
@@ -90,7 +92,7 @@ export async function POST(req: Request) {
       if (s) patch.status = s
     }
 
-    if (Object.keys(patch).length === 0) throw new ApiError(400, 'Nothing to update')
+    if (Object.keys(patch).length === 0) throw new ApiError(400, 'Nothing to update', AdminApiErrorCode.NOTHING_TO_UPDATE)
 
     const { data, error } = await guard.supabase
       .from('jobs')
@@ -99,8 +101,8 @@ export async function POST(req: Request) {
       .select('id,status,job_date,scheduled_time,scheduled_end_time,site_id,worker_id')
       .maybeSingle()
 
-    if (error) throw new ApiError(400, error.message)
-    if (!data) throw new ApiError(404, 'Job not found')
+    if (error) throw new ApiError(400, error.message, AdminApiErrorCode.DB_ERROR)
+    if (!data) throw new ApiError(404, 'Shift not found', AdminApiErrorCode.JOB_NOT_FOUND)
 
     return NextResponse.json({ ok: true, job: data })
   } catch (e: any) {

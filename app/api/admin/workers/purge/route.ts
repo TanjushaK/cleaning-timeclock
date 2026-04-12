@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { AdminApiErrorCode } from '@/lib/api-error-codes'
 import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
 
 export const runtime = 'nodejs'
@@ -19,7 +20,7 @@ async function tryDeleteIn(sb: any, table: string, col: string, ids: string[], o
   const r = await sb.from(table).delete().in(col, ids)
   if (r.error) {
     if (isMissingMsg(r.error.message)) out.warnings.push(`${table}: ${r.error.message}`)
-    else throw new ApiError(500, `${table}: ${r.error.message}`)
+    else throw new ApiError(500, `${table}: ${r.error.message}`, AdminApiErrorCode.DB_ERROR)
   }
 }
 
@@ -27,7 +28,7 @@ async function tryUpdateIn(sb: any, table: string, patch: any, col: string, ids:
   const r = await sb.from(table).update(patch).in(col, ids)
   if (r.error) {
     if (isMissingMsg(r.error.message)) out.warnings.push(`${table}: ${r.error.message}`)
-    else throw new ApiError(500, `${table}: ${r.error.message}`)
+    else throw new ApiError(500, `${table}: ${r.error.message}`, AdminApiErrorCode.DB_ERROR)
   }
 }
 
@@ -54,7 +55,7 @@ export async function POST(req: Request) {
 
     out.step = 'load_workers'
     const { data: workers, error: wErr } = await sb.from('profiles').select('id').eq('role', 'worker')
-    if (wErr) throw new ApiError(500, `profiles: ${wErr.message}`)
+    if (wErr) throw new ApiError(500, `profiles: ${wErr.message}`, AdminApiErrorCode.DB_ERROR)
 
     const ids = (workers || []).map((x: any) => String(x.id)).filter(Boolean)
     out.deleted_workers = ids.length
@@ -81,7 +82,7 @@ export async function POST(req: Request) {
 
     out.step = 'delete_profiles'
     const pRes = await sb.from('profiles').delete().in('id', ids)
-    if (pRes.error) throw new ApiError(500, `profiles delete: ${pRes.error.message}`)
+    if (pRes.error) throw new ApiError(500, `profiles delete: ${pRes.error.message}`, AdminApiErrorCode.DB_ERROR)
 
     out.step = 'delete_auth_users'
     let deletedAuth = 0

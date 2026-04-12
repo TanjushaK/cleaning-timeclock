@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js'
+import { AdminApiErrorCode } from '@/lib/api-error-codes'
 
 export class ApiError extends Error {
   status: number
@@ -112,7 +113,7 @@ export async function requireUser(reqOrHeaders: Request | Headers): Promise<User
   const token = getBearer(headers)
 
   if (!token) {
-    throw new ApiError(401, 'Нет токена (Authorization: Bearer ...)')
+    throw new ApiError(401, 'Authorization Bearer token required', AdminApiErrorCode.AUTH_BEARER_REQUIRED)
   }
 
   const service = supabaseService()
@@ -120,7 +121,7 @@ export async function requireUser(reqOrHeaders: Request | Headers): Promise<User
   const { data, error } = await service.auth.getUser(token)
 
   if (error || !data?.user) {
-    throw new ApiError(401, 'Токен неверный/просрочен (перелогинься)')
+    throw new ApiError(401, 'Invalid or expired token', AdminApiErrorCode.AUTH_TOKEN_INVALID)
   }
 
   // По умолчанию оставляем старое поведение (service-role) для /api/me/*,
@@ -141,8 +142,9 @@ export async function requireAdmin(reqOrHeaders: Request | Headers): Promise<Adm
     .eq('id', guard.userId)
     .maybeSingle()
 
-  if (profErr || !prof) throw new ApiError(403, 'Нет профиля (profiles) или нет доступа')
-  if (prof.role !== 'admin' || prof.active !== true) throw new ApiError(403, 'Нужна роль admin и active=true')
+  if (profErr || !prof) throw new ApiError(403, 'Profile not found or access denied', AdminApiErrorCode.AUTH_PROFILE_MISSING)
+  if (prof.role !== 'admin' || prof.active !== true)
+    throw new ApiError(403, 'Admin role with active=true required', AdminApiErrorCode.AUTH_ADMIN_REQUIRED)
 
   // В admin-роутах хотим гарантированно service-role.
   return { ...guard, supabase: guard.service, profile: prof as ProfileRow }
@@ -158,8 +160,9 @@ export async function requireActiveWorker(reqOrHeaders: Request | Headers): Prom
     .eq('id', guard.userId)
     .maybeSingle()
 
-  if (profErr || !prof) throw new ApiError(403, 'Нет профиля (profiles) или нет доступа')
-  if (prof.role !== 'worker' || prof.active !== true) throw new ApiError(403, 'Нужна роль worker и active=true')
+  if (profErr || !prof) throw new ApiError(403, 'Profile not found or access denied', AdminApiErrorCode.AUTH_PROFILE_MISSING)
+  if (prof.role !== 'worker' || prof.active !== true)
+    throw new ApiError(403, 'Worker role with active=true required', AdminApiErrorCode.AUTH_WORKER_ROLE_REQUIRED)
 
   // В /api/me/* клиент выбирается в requireUser() по флагу ME_USE_RLS.
   return { ...guard, profile: prof as ProfileRow }

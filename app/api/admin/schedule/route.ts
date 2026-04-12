@@ -1,72 +1,29 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { NextRequest, NextResponse } from "next/server";
+import { AdminApiErrorCode } from "@/lib/api-error-codes";
+import { ApiError, requireAdmin, toErrorResponse } from "@/lib/supabase-server";
 
-export const runtime = 'nodejs'
-export const dynamic = 'force-dynamic'
-
-function bearer(req: NextRequest) {
-  const h = req.headers.get('authorization') || ''
-  const m = /^Bearer\s+(.+)$/i.exec(h)
-  return m?.[1] || null
-}
-
-function cleanEnv(v: string | undefined | null): string {
-  const s = String(v ?? '').replace(/\uFEFF/g, '').trim()
-  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
-    return s.slice(1, -1).trim()
-  }
-  return s
-}
-
-function envOrThrow(name: string) {
-  const v = cleanEnv(process.env[name])
-  if (!v) throw new Error(`Missing env: ${name}`)
-  return v
-}
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 function isISODate(s: string) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(s)
-}
-
-async function assertAdmin(req: NextRequest) {
-  const token = bearer(req)
-  if (!token) return { ok: false as const, status: 401, error: 'Нет входа. Авторизуйся в админке.' }
-
-  const url = envOrThrow('NEXT_PUBLIC_SUPABASE_URL')
-  const anon = envOrThrow('NEXT_PUBLIC_SUPABASE_ANON_KEY')
-
-  const sb = createClient(url, anon, {
-    global: { headers: { Authorization: `Bearer ${token}` } },
-    auth: { persistSession: false, autoRefreshToken: false },
-  })
-
-  const { data: userData, error: userErr } = await sb.auth.getUser(token)
-  if (userErr || !userData?.user) return { ok: false as const, status: 401, error: 'Невалидный токен' }
-
-  const { data: prof, error: profErr } = await sb.from('profiles').select('id, role, active').eq('id', userData.user.id).single()
-  if (profErr || !prof) return { ok: false as const, status: 403, error: 'Профиль не найден' }
-  if (prof.role !== 'admin' || prof.active !== true) return { ok: false as const, status: 403, error: 'Доступ запрещён' }
-
-  return { ok: true as const }
+  return /^\d{4}-\d{2}-\d{2}$/.test(s);
 }
 
 export async function GET(req: NextRequest) {
   try {
-    const guard = await assertAdmin(req)
-    if (!guard.ok) return NextResponse.json({ error: guard.error }, { status: guard.status })
+    const { supabase: admin } = await requireAdmin(req);
 
-    const url = envOrThrow('NEXT_PUBLIC_SUPABASE_URL')
-    const service = envOrThrow('SUPABASE_SERVICE_ROLE_KEY')
-    const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } })
+    const sp = req.nextUrl.searchParams;
 
-    const sp = req.nextUrl.searchParams
+    const rawFrom = (sp.get("date_from") || sp.get("from") || "").trim();
+    const rawTo = (sp.get("date_to") || sp.get("to") || "").trim();
 
-    // Совместимость: UI может слать date_from/date_to, а старые версии — from/to.
-    const rawFrom = (sp.get('date_from') || sp.get('from') || '').trim()
-    const rawTo = (sp.get('date_to') || sp.get('to') || '').trim()
-
-    if (!rawFrom || !rawTo) return NextResponse.json({ error: 'from и to обязательны' }, { status: 400 })
-    if (!isISODate(rawFrom) || !isISODate(rawTo)) return NextResponse.json({ error: 'Неверный диапазон дат' }, { status: 400 })
+    if (!rawFrom || !rawTo) {
+      throw new ApiError(400, "from and to are required", AdminApiErrorCode.SCHEDULE_DATES_REQUIRED);
+    }
+    if (!isISODate(rawFrom) || !isISODate(rawTo)) {
+      throw new ApiError(400, "Invalid date range", AdminApiErrorCode.SCHEDULE_DATES_INVALID);
+    }
 
     const dateFrom = rawFrom
     const dateTo = rawTo
@@ -109,7 +66,7 @@ export async function GET(req: NextRequest) {
       ;({ data: jobs, error: jobsErr } = await q2)
     }
 
-    if (jobsErr) return NextResponse.json({ error: jobsErr.message }, { status: 500 })
+    if (jobsErr) throw new ApiError(500, jobsErr.message || "Query failed", AdminApiErrorCode.DB_ERROR)
 
     const jobIds = (jobs || []).map((j: any) => j.id)
     const siteIds = Array.from(new Set((jobs || []).map((j: any) => j.site_id).filter(Boolean)))
@@ -121,9 +78,9 @@ export async function GET(req: NextRequest) {
       jobIds.length ? admin.from('time_logs').select('job_id,started_at,stopped_at').in('job_id', jobIds) : Promise.resolve({ data: [], error: null } as any),
     ])
 
-    if (sitesRes.error) return NextResponse.json({ error: sitesRes.error.message }, { status: 500 })
-    if (workersRes.error) return NextResponse.json({ error: workersRes.error.message }, { status: 500 })
-    if (logsRes.error) return NextResponse.json({ error: logsRes.error.message }, { status: 500 })
+    if (sitesRes.error) throw new ApiError(500, sitesRes.error.message, AdminApiErrorCode.DB_ERROR)
+    if (workersRes.error) throw new ApiError(500, workersRes.error.message, AdminApiErrorCode.DB_ERROR)
+    if (logsRes.error) throw new ApiError(500, logsRes.error.message, AdminApiErrorCode.DB_ERROR)
 
     const siteName = new Map<string, string>()
     for (const s of (sitesRes.data || []) as any[]) siteName.set(s.id, s.name || '')
@@ -162,7 +119,7 @@ export async function GET(req: NextRequest) {
     })
 
     return NextResponse.json({ items })
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'Ошибка сервера' }, { status: 500 })
+  } catch (e) {
+    return toErrorResponse(e)
   }
 }
