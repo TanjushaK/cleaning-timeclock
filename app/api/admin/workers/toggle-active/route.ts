@@ -1,15 +1,21 @@
-import { NextResponse } from 'next/server';
-import { requireAdmin } from '@/lib/admin-auth';
-import { getSupabaseAdmin } from '@/lib/supabase-admin';
+import { NextResponse } from "next/server";
+import { ApiErrorCodes } from "@/lib/api-error-codes";
+import { ApiError, requireAdmin } from "@/lib/admin-auth";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 function toErr(e: any) {
-  const msg = String(e?.message || e || '');
-  if (msg === 'UNAUTHORIZED') return { status: 401, error: 'Нужно войти' };
-  if (msg === 'FORBIDDEN') return { status: 403, error: 'Нет доступа' };
-  return { status: 500, error: msg || 'Ошибка сервера' };
+  if (e instanceof ApiError && e.errorCode) {
+    return { status: e.status, error: e.message, errorCode: e.errorCode };
+  }
+  const msg = String(e?.message || e || "");
+  if (msg === "UNAUTHORIZED")
+    return { status: 401, error: "Sign in required", errorCode: ApiErrorCodes.ADMIN_SIGN_IN_REQUIRED };
+  if (msg === "FORBIDDEN")
+    return { status: 403, error: "Access denied", errorCode: ApiErrorCodes.ADMIN_NOT_ADMIN };
+  return { status: 500, error: msg || "Server error", errorCode: ApiErrorCodes.ADMIN_INTERNAL };
 }
 
 export async function POST(req: Request) {
@@ -17,27 +23,27 @@ export async function POST(req: Request) {
     await requireAdmin(req);
 
     const body = await req.json().catch(() => ({} as any));
-    const workerId = String(body?.worker_id || '').trim();
+    const workerId = String(body?.worker_id || "").trim();
     const active = Boolean(body?.active);
 
     if (!workerId) {
-      return NextResponse.json({ error: 'Нужен worker_id' }, { status: 400 });
+      return NextResponse.json(
+        { error: "worker_id is required", errorCode: ApiErrorCodes.WORKER_ID_REQUIRED },
+        { status: 400 },
+      );
     }
 
     const supabase = getSupabaseAdmin();
 
-    const { error } = await supabase
-      .from('profiles')
-      .update({ active })
-      .eq('id', workerId);
+    const { error } = await supabase.from("profiles").update({ active }).eq("id", workerId);
 
     if (error) {
-      throw new Error(`Не смог обновить worker: ${error.message}`);
+      throw new Error(`Could not update worker: ${error.message}`);
     }
 
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (e: any) {
     const r = toErr(e);
-    return NextResponse.json({ error: r.error }, { status: r.status });
+    return NextResponse.json({ error: r.error, errorCode: r.errorCode }, { status: r.status });
   }
 }

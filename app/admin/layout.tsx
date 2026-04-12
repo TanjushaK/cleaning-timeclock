@@ -1,6 +1,7 @@
 import './admin-theme.css'
 import type { ReactNode } from 'react'
 import AdminSessionWarmup from '@/lib/admin-session-warmup'
+import AdminFooterClient from './admin-footer-client'
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   return (
@@ -8,7 +9,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       <AdminSessionWarmup />
       <div className="adminChrome">{children}</div>
       <footer className="adminFooter">
-        Чисто. Чётко. По времени. <span className="adminFooterYear">© 2026</span>
+        <AdminFooterClient />
       </footer>
     </div>
   )

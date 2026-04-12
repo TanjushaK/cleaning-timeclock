@@ -1,9 +1,12 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { useI18n } from '@/components/I18nProvider'
+import { clientWorkerErrorMessage } from '@/lib/app-api-message'
 import { supabase } from '@/lib/supabase'
 
 export default function ForgotPasswordPage() {
+  const { t } = useI18n()
   const [email, setEmail] = useState('')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
@@ -15,7 +18,7 @@ export default function ForgotPasswordPage() {
     setErr(null)
     setMsg(null)
     if (!canSend) {
-      setErr('Введите email')
+      setErr(t('forgotPassword.needEmail'))
       return
     }
 
@@ -24,9 +27,9 @@ export default function ForgotPasswordPage() {
       const redirectTo = `${window.location.origin}/reset-password`
       const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo })
       if (error) throw error
-      setMsg('Ссылка отправлена на email. Открой письмо и перейди по ссылке.')
-    } catch (e: any) {
-      setErr(e?.message || 'Ошибка отправки')
+      setMsg(t('forgotPassword.success'))
+    } catch (e: unknown) {
+      setErr(clientWorkerErrorMessage(t, e))
     } finally {
       setBusy(false)
     }
@@ -39,17 +42,17 @@ export default function ForgotPasswordPage() {
           <div className="flex items-center gap-3">
             <img src="/tanija-logo.png" alt="Tanija" className="h-10 w-10 rounded-xl" />
             <div>
-              <div className="text-xl font-semibold tracking-tight text-amber-200">Восстановление пароля</div>
-              <div className="text-sm text-zinc-400">Мы пришлём ссылку на email</div>
+              <div className="text-xl font-semibold tracking-tight text-amber-200">{t('forgotPassword.title')}</div>
+              <div className="text-sm text-zinc-400">{t('forgotPassword.subtitle')}</div>
             </div>
           </div>
 
           <div className="mt-6 space-y-3">
-            <label className="block text-sm text-zinc-300">Email</label>
+            <label className="block text-sm text-zinc-300">{t('forgotPassword.emailLabel')}</label>
             <input
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="name@example.com"
+              placeholder={t('forgotPassword.emailPlaceholder')}
               className="w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 text-zinc-100 outline-none transition focus:border-amber-300/60"
               autoComplete="email"
               inputMode="email"
@@ -60,14 +63,14 @@ export default function ForgotPasswordPage() {
               disabled={busy || !canSend}
               className="mt-2 w-full rounded-2xl border border-amber-300/30 bg-amber-300/10 px-4 py-3 font-semibold text-amber-200 transition hover:bg-amber-300/15 disabled:opacity-50"
             >
-              {busy ? 'Отправляю…' : 'Отправить ссылку'}
+              {busy ? t('forgotPassword.sending') : t('forgotPassword.send')}
             </button>
 
             <a
               href="/"
               className="block text-center text-sm text-zinc-400 underline decoration-amber-300/40 underline-offset-4 hover:text-zinc-200"
             >
-              Назад к входу
+              {t('forgotPassword.backToLogin')}
             </a>
 
             {msg ? (
@@ -85,7 +88,7 @@ export default function ForgotPasswordPage() {
         </div>
 
         <div className="mt-4 text-center text-xs text-zinc-500">
-          В Supabase Auth добавь Redirect URL: <span className="text-zinc-300">/reset-password</span>
+          {t('forgotPassword.redirectHint')} <span className="text-zinc-300">/reset-password</span>
         </div>
       </div>
     </div>

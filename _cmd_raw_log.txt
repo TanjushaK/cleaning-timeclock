@@ -1,0 +1,1277 @@
+## stage1-i18n...origin/stage1-i18n
+ M app/admin/approvals/page.tsx
+ M app/admin/fact/page.tsx
+ M app/admin/layout.tsx
+ M app/admin/page.tsx
+ M app/api/admin/geocode/route.ts
+ M app/api/admin/jobs/create/route.ts
+ M app/api/admin/jobs/update/route.ts
+ M app/api/admin/reports/route.ts
+ M app/api/admin/schedule/route.ts
+ M app/api/admin/sites/[id]/route.ts
+ M app/api/admin/sites/archive/route.ts
+ M app/api/admin/sites/delete/route.ts
+ M app/api/admin/sites/list/route.ts
+ M app/api/admin/sites/route.ts
+ M app/api/admin/sites/set-archived/route.ts
+ M app/api/admin/workers/[id]/profile/route.ts
+ M app/api/admin/workers/delete/route.ts
+ M app/api/admin/workers/list/route.ts
+ M app/api/admin/workers/set-active/route.ts
+ M app/api/admin/workers/set-role/route.ts
+ M app/api/admin/workers/toggle-active/route.ts
+ M app/api/auth/login/route.ts
+ M app/api/auth/refresh/route.ts
+ M app/api/me/assignments/note/route.ts
+ M app/api/me/avatar/route.ts
+ M app/api/me/jobs/accept/route.ts
+ M app/api/me/jobs/route.ts
+ M app/api/me/jobs/start/route.ts
+ M app/api/me/jobs/stop/route.ts
+ M app/api/me/photos/route.ts
+ M app/api/me/profile/route.ts
+ M app/api/me/profile/submit/route.ts
+ M app/api/me/profile/update/route.ts
+ M app/auth/callback/page.tsx
+ M app/forgot-password/page.tsx
+ M app/layout.tsx
+ M app/me/profile/page.tsx
+ M app/page.tsx
+ M app/reset-password/page.tsx
+ M app/root-shell.tsx
+ M lib/auth-fetch.ts
+ D lib/i18n/home-catalog.ts
+ M lib/i18n/home-provider.tsx
+ M lib/i18n/types.ts
+ M lib/supabase-server.ts
+ M messages/home/en.json
+ M messages/home/nl.json
+ M messages/home/ru.json
+?? _cmd_raw_log.txt
+?? _proof_run.ps1
+?? _run_proof_py.py
+?? app/_components/
+?? app/admin/admin-footer-client.tsx
+?? app/admin/hours/
+?? app/not-found.tsx
+?? app/offline/
+?? components/I18nProvider.tsx
+?? components/LanguageSwitch.tsx
+?? lib/admin-api-message.ts
+?? lib/admin-bearer-guard.ts
+?? lib/api-error-codes.ts
+?? lib/app-api-message.ts
+?? lib/app-error-codes.ts
+?? lib/deepl-fill.server.ts
+?? lib/fetch-api-error.ts
+?? lib/format-message.ts
+?? lib/i18n-config.ts
+?? lib/json-api-error.ts
+?? lib/locale-format.ts
+?? lib/localized-records.ts
+?? lib/request-lang.ts
+?? lib/use-admin-auth-fetch.ts
+?? messages/admin-en.ts
+?? messages/admin-nl.ts
+?? messages/admin-ru.ts
+?? messages/admin-uk.ts
+?? messages/en.ts
+?? messages/errors-api.ts
+?? messages/home/uk.json
+?? messages/index.ts
+?? messages/nest.ts
+?? messages/nl.ts
+?? messages/ru.ts
+?? messages/types.ts
+?? messages/uk.ts
+?? sql/
+app/admin/approvals/page.tsx
+app/admin/fact/page.tsx
+app/admin/layout.tsx
+app/admin/page.tsx
+app/api/admin/geocode/route.ts
+app/api/admin/jobs/create/route.ts
+app/api/admin/jobs/update/route.ts
+app/api/admin/reports/route.ts
+app/api/admin/schedule/route.ts
+app/api/admin/sites/[id]/route.ts
+app/api/admin/sites/archive/route.ts
+app/api/admin/sites/delete/route.ts
+app/api/admin/sites/list/route.ts
+app/api/admin/sites/route.ts
+app/api/admin/sites/set-archived/route.ts
+app/api/admin/workers/[id]/profile/route.ts
+app/api/admin/workers/delete/route.ts
+app/api/admin/workers/list/route.ts
+app/api/admin/workers/set-active/route.ts
+app/api/admin/workers/set-role/route.ts
+app/api/admin/workers/toggle-active/route.ts
+app/api/auth/login/route.ts
+app/api/auth/refresh/route.ts
+app/api/me/assignments/note/route.ts
+app/api/me/avatar/route.ts
+app/api/me/jobs/accept/route.ts
+app/api/me/jobs/route.ts
+app/api/me/jobs/start/route.ts
+app/api/me/jobs/stop/route.ts
+app/api/me/photos/route.ts
+app/api/me/profile/route.ts
+app/api/me/profile/submit/route.ts
+app/api/me/profile/update/route.ts
+app/auth/callback/page.tsx
+app/forgot-password/page.tsx
+app/layout.tsx
+app/me/profile/page.tsx
+app/page.tsx
+app/reset-password/page.tsx
+app/root-shell.tsx
+lib/auth-fetch.ts
+lib/i18n/home-catalog.ts
+lib/i18n/home-provider.tsx
+lib/i18n/types.ts
+lib/supabase-server.ts
+messages/home/en.json
+messages/home/nl.json
+messages/home/ru.json
+ app/admin/approvals/page.tsx                 | 126 ++--
+ app/admin/fact/page.tsx                      | 114 ++--
+ app/admin/layout.tsx                         |   3 +-
+ app/admin/page.tsx                           | 855 ++++++++++++++-------------
+ app/api/admin/geocode/route.ts               |  11 +-
+ app/api/admin/jobs/create/route.ts           |  60 +-
+ app/api/admin/jobs/update/route.ts           | 105 ++--
+ app/api/admin/reports/route.ts               |  12 +-
+ app/api/admin/schedule/route.ts              | 193 +++---
+ app/api/admin/sites/[id]/route.ts            | 219 ++++---
+ app/api/admin/sites/archive/route.ts         |  40 +-
+ app/api/admin/sites/delete/route.ts          |  96 +--
+ app/api/admin/sites/list/route.ts            | 108 ++--
+ app/api/admin/sites/route.ts                 | 144 +++--
+ app/api/admin/sites/set-archived/route.ts    |  91 +--
+ app/api/admin/workers/[id]/profile/route.ts  | 324 ++++++----
+ app/api/admin/workers/delete/route.ts        | 133 ++---
+ app/api/admin/workers/list/route.ts          |  73 +--
+ app/api/admin/workers/set-active/route.ts    |  94 +--
+ app/api/admin/workers/set-role/route.ts      |  87 +--
+ app/api/admin/workers/toggle-active/route.ts |  40 +-
+ app/api/auth/login/route.ts                  |  26 +-
+ app/api/auth/refresh/route.ts                |  13 +-
+ app/api/me/assignments/note/route.ts         |  34 +-
+ app/api/me/avatar/route.ts                   |  24 +-
+ app/api/me/jobs/accept/route.ts              |  25 +-
+ app/api/me/jobs/route.ts                     |  29 +-
+ app/api/me/jobs/start/route.ts               |  47 +-
+ app/api/me/jobs/stop/route.ts                |  52 +-
+ app/api/me/photos/route.ts                   |  40 +-
+ app/api/me/profile/route.ts                  |  13 +-
+ app/api/me/profile/submit/route.ts           |  12 +-
+ app/api/me/profile/update/route.ts           |   5 +-
+ app/auth/callback/page.tsx                   |  22 +-
+ app/forgot-password/page.tsx                 |  25 +-
+ app/layout.tsx                               |  17 +-
+ app/me/profile/page.tsx                      | 166 +++---
+ app/page.tsx                                 | 101 ++--
+ app/reset-password/page.tsx                  |  29 +-
+ app/root-shell.tsx                           |  11 +-
+ lib/auth-fetch.ts                            |  15 +-
+ lib/i18n/home-catalog.ts                     |  10 -
+ lib/i18n/home-provider.tsx                   |  91 +--
+ lib/i18n/types.ts                            |  36 +-
+ lib/supabase-server.ts                       |  27 +-
+ messages/home/en.json                        |  58 +-
+ messages/home/nl.json                        |  58 +-
+ messages/home/ru.json                        |  58 +-
+ 48 files changed, 2111 insertions(+), 1861 deletions(-)
+diff --git a/app/me/profile/page.tsx b/app/me/profile/page.tsx
+index f0a6c64..afe6685 100644
+--- a/app/me/profile/page.tsx
++++ b/app/me/profile/page.tsx
+@@ -1,8 +1,10 @@
+ 'use client'
+ 
+-import { useCallback, useEffect, useRef, useState } from 'react'
+-import { supabase } from '@/lib/supabase'
++import { useCallback, useEffect, useState } from 'react'
++import { useI18n } from '@/components/I18nProvider'
++import { clientWorkerErrorMessage } from '@/lib/app-api-message'
+ import { authFetchJson, clearAuthTokens, getAccessToken } from '@/lib/auth-fetch'
++import { supabase } from '@/lib/supabase'
+ 
+ type Profile = {
+   id: string
+@@ -34,6 +36,7 @@ function bearerHeaders(): Record<string, string> {
+ }
+ 
+ export default function WorkerProfilePage() {
++  const { t } = useI18n()
+   const [booting, setBooting] = useState(true)
+   const [me, setMe] = useState<MeProfileResponse | null>(null)
+ 
+@@ -47,7 +50,7 @@ export default function WorkerProfilePage() {
+ 
+   const [photos, setPhotos] = useState<Array<{ path: string; url?: string | null }>>([])
+   const [avatarPath, setAvatarPath] = useState<string | null>(null)
+-  const fileRef = useRef<HTMLInputElement | null>(null)
++  const [fileInputKey, setFileInputKey] = useState(0)
+ 
+   const [busy, setBusy] = useState(false)
+   const [error, setError] = useState<string | null>(null)
+@@ -56,9 +59,10 @@ export default function WorkerProfilePage() {
+   const authed = !!getAccessToken()
+ 
+   const loadPhotos = useCallback(async () => {
+-    const r = await fetch('/api/me/photos', { headers: bearerHeaders(), cache: 'no-store' })
+-    const data = (await r.json().catch(() => ({}))) as MyPhotosResponse | any
+-    if (!r.ok) throw new Error(String(data?.error || `HTTP ${r.status}`))
++    const data = await authFetchJson<MyPhotosResponse>('/api/me/photos', {
++      headers: bearerHeaders(),
++      cache: 'no-store',
++    })
+     setPhotos(Array.isArray(data.photos) ? data.photos : [])
+     setAvatarPath(data.avatar_path || null)
+   }, [])
+@@ -86,13 +90,13 @@ export default function WorkerProfilePage() {
+           return
+         }
+         await loadMe()
+-      } catch (e: any) {
+-        setError(String(e?.message || e || 'Ошибка'))
++      } catch (e: unknown) {
++        setError(clientWorkerErrorMessage(t, e))
+       } finally {
+         setBooting(false)
+       }
+     })()
+-  }, [loadMe])
++  }, [loadMe, t])
+ 
+   const logout = useCallback(() => {
+     clearAuthTokens()
+@@ -108,7 +112,7 @@ export default function WorkerProfilePage() {
+     setNotice(null)
+     try {
+       const name = fullName.trim()
+-      if (!name) throw new Error('Укажи имя')
++      if (!name) throw new Error(t('errors.nameRequired'))
+ 
+       const payload = {
+         full_name: name,
+@@ -123,7 +127,6 @@ export default function WorkerProfilePage() {
+         body: JSON.stringify(payload),
+       })
+ 
+-      // email в auth (чтобы magic-link шёл на новый email)
+       if (email.trim()) {
+         try {
+           await supabase.auth.updateUser({ email: email.trim() })
+@@ -131,13 +134,13 @@ export default function WorkerProfilePage() {
+       }
+ 
+       await loadMe()
+-      setNotice('Сохранено.')
+-    } catch (e: any) {
+-      setError(String(e?.message || e || 'Ошибка'))
++      setNotice(t('notify.saved'))
++    } catch (e: unknown) {
++      setError(clientWorkerErrorMessage(t, e))
+     } finally {
+       setBusy(false)
+     }
+-  }, [email, fullName, loadMe, notes, phone])
++  }, [email, fullName, loadMe, notes, phone, t])
+ 
+   const setPassword = useCallback(async () => {
+     setBusy(true)
+@@ -146,19 +149,19 @@ export default function WorkerProfilePage() {
+     try {
+       const p1 = newPassword.trim()
+       const p2 = newPassword2.trim()
+-      if (p1.length < 8) throw new Error('Пароль должен быть минимум 8 символов')
+-      if (p1 !== p2) throw new Error('Пароли не совпадают')
++      if (p1.length < 8) throw new Error(t('errors.passwordMin8'))
++      if (p1 !== p2) throw new Error(t('errors.passwordMismatch'))
+       await supabase.auth.updateUser({ password: p1, data: { temp_password: false } })
+       setNewPassword('')
+       setNewPassword2('')
+       await loadMe().catch(() => {})
+-      setNotice('Пароль установлен. Теперь можно входить по Email + пароль.')
+-    } catch (e: any) {
+-      setError(String(e?.message || e || 'Ошибка установки пароля'))
++      setNotice(t('notify.passwordSetEmailLogin'))
++    } catch (e: unknown) {
++      setError(clientWorkerErrorMessage(t, e))
+     } finally {
+       setBusy(false)
+     }
+-  }, [loadMe, newPassword, newPassword2])
++  }, [loadMe, newPassword, newPassword2, t])
+ 
+   const uploadPhoto = useCallback(
+     async (file: File) => {
+@@ -168,19 +171,17 @@ export default function WorkerProfilePage() {
+       try {
+         const fd = new FormData()
+         fd.append('file', file)
+-        const r = await fetch('/api/me/photos', { method: 'POST', headers: bearerHeaders(), body: fd })
+-        const data = await r.json().catch(() => ({}))
+-        if (!r.ok) throw new Error(String((data as any)?.error || `HTTP ${r.status}`))
++        await authFetchJson('/api/me/photos', { method: 'POST', headers: bearerHeaders(), body: fd })
+         await loadPhotos()
+-        setNotice('Фото загружено.')
+-      } catch (e: any) {
+-        setError(String(e?.message || e || 'Ошибка загрузки'))
++        setNotice(t('notify.photoUploaded'))
++      } catch (e: unknown) {
++        setError(clientWorkerErrorMessage(t, e))
+       } finally {
+         setBusy(false)
+-        if (fileRef.current) fileRef.current.value = ''
++        setFileInputKey((k) => k + 1)
+       }
+     },
+-    [loadPhotos]
++    [loadPhotos, t],
+   )
+ 
+   const delPhoto = useCallback(
+@@ -189,22 +190,20 @@ export default function WorkerProfilePage() {
+       setError(null)
+       setNotice(null)
+       try {
+-        const r = await fetch('/api/me/photos', {
++        await authFetchJson('/api/me/photos', {
+           method: 'DELETE',
+           headers: { 'Content-Type': 'application/json', ...bearerHeaders() },
+           body: JSON.stringify({ path }),
+         })
+-        const data = await r.json().catch(() => ({}))
+-        if (!r.ok) throw new Error(String((data as any)?.error || `HTTP ${r.status}`))
+         await loadPhotos()
+-        setNotice('Удалено.')
+-      } catch (e: any) {
+-        setError(String(e?.message || e || 'Ошибка удаления'))
++        setNotice(t('notify.deleted'))
++      } catch (e: unknown) {
++        setError(clientWorkerErrorMessage(t, e))
+       } finally {
+         setBusy(false)
+       }
+     },
+-    [loadPhotos]
++    [loadPhotos, t],
+   )
+ 
+   const makeAvatar = useCallback(
+@@ -213,28 +212,26 @@ export default function WorkerProfilePage() {
+       setError(null)
+       setNotice(null)
+       try {
+-        const r = await fetch('/api/me/photos', {
++        await authFetchJson('/api/me/photos', {
+           method: 'PATCH',
+           headers: { 'Content-Type': 'application/json', ...bearerHeaders() },
+           body: JSON.stringify({ action: 'make_primary', path }),
+         })
+-        const data = await r.json().catch(() => ({}))
+-        if (!r.ok) throw new Error(String((data as any)?.error || `HTTP ${r.status}`))
+         await loadPhotos()
+-        setNotice('Аватар обновлён.')
+-      } catch (e: any) {
+-        setError(String(e?.message || e || 'Ошибка'))
++        setNotice(t('notify.avatarSet'))
++      } catch (e: unknown) {
++        setError(clientWorkerErrorMessage(t, e))
+       } finally {
+         setBusy(false)
+       }
+     },
+-    [loadPhotos]
++    [loadPhotos, t],
+   )
+ 
+   if (booting) {
+     return (
+       <div className="min-h-screen bg-zinc-950 text-amber-100 flex items-center justify-center">
+-        <div className="text-sm opacity-80">Загрузка…</div>
++        <div className="text-sm opacity-80">{t('boot.loading')}</div>
+       </div>
+     )
+   }
+@@ -243,32 +240,38 @@ export default function WorkerProfilePage() {
+     return (
+       <div className="min-h-screen bg-zinc-950 text-amber-100 flex items-center justify-center p-6">
+         <div className="w-full max-w-md rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-6 shadow-xl">
+-          <div className="text-lg font-semibold">Нужен вход</div>
+-          <div className="text-sm opacity-80 mt-2">Открой главную страницу и войди по телефону или email.</div>
+-          <a className="mt-4 inline-block rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10" href="/">
+-            На главную
++          <div className="text-lg font-semibold">{t('profile.needLoginTitle')}</div>
++          <div className="text-sm opacity-80 mt-2">{t('profile.needLoginBody')}</div>
++          <a
++            className="mt-4 inline-block rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10"
++            href="/"
++          >
++            {t('nav.home')}
+           </a>
+         </div>
+       </div>
+     )
+   }
+ 
++  const roleLabel = me?.profile?.role || t('active.roleWorker')
++  const activeYes = me?.profile?.active === true ? t('onboarding.emailYes') : t('onboarding.emailNo')
++
+   return (
+     <div className="min-h-screen bg-zinc-950 text-amber-100 p-6">
+       <div className="mx-auto max-w-4xl">
+         <div className="flex items-start justify-between gap-4">
+           <div>
+-            <div className="text-2xl font-semibold">Профиль работника</div>
++            <div className="text-2xl font-semibold">{t('profile.pageTitle')}</div>
+             <div className="text-sm opacity-80 mt-1">
+-              {me?.profile?.role || 'worker'} • active: {me?.profile?.active === true ? 'да' : 'нет'}
++              {roleLabel} • {t('profile.activeLabel')}: {activeYes}
+             </div>
+           </div>
+           <div className="flex gap-2">
+             <a className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10" href="/">
+-              Назад
++              {t('nav.back')}
+             </a>
+             <button className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10" onClick={logout}>
+-              Выйти
++              {t('active.logout')}
+             </button>
+           </div>
+         </div>
+@@ -281,31 +284,31 @@ export default function WorkerProfilePage() {
+         ) : null}
+ 
+         <div className="mt-6 rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-5 shadow-xl">
+-          <div className="text-lg font-semibold">Данные</div>
++          <div className="text-lg font-semibold">{t('onboarding.dataTitle')}</div>
+ 
+           <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+             <input
+               className="rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
+-              placeholder="Имя и фамилия"
++              placeholder={t('onboarding.namePlaceholder')}
+               value={fullName}
+               onChange={(e) => setFullName(e.target.value)}
+             />
+             <input
+               className="rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
+-              placeholder="Телефон (контактный)"
++              placeholder={t('login.phonePlaceholder')}
+               value={phone}
+               onChange={(e) => setPhone(e.target.value)}
+             />
+             <input
+               className="md:col-span-2 rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
+-              placeholder="Email (контактный / для magic link)"
++              placeholder={t('onboarding.emailOptionalPlaceholder')}
+               value={email}
+               onChange={(e) => setEmail(e.target.value)}
+               autoComplete="email"
+             />
+             <textarea
+               className="md:col-span-2 min-h-[110px] rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
+-              placeholder="Заметки"
++              placeholder={t('profile.notesPlaceholder')}
+               value={notes}
+               onChange={(e) => setNotes(e.target.value)}
+             />
+@@ -317,7 +320,7 @@ export default function WorkerProfilePage() {
+               disabled={busy}
+               onClick={save}
+             >
+-              {busy ? 'Сохраняю…' : 'Сохранить'}
++              {busy ? t('onboarding.saving') : t('onboarding.save')}
+             </button>
+             <button
+               className="rounded-xl border border-amber-500/30 px-4 py-2 text-sm hover:bg-amber-500/10 disabled:opacity-60"
+@@ -328,29 +331,26 @@ export default function WorkerProfilePage() {
+                 setNotice(null)
+                 try {
+                   await loadMe()
+-                  setNotice('Обновлено.')
+-                } catch (e: any) {
+-                  setError(String(e?.message || e || 'Ошибка'))
++                  setNotice(t('notify.refreshed'))
++                } catch (e: unknown) {
++                  setError(clientWorkerErrorMessage(t, e))
+                 } finally {
+                   setBusy(false)
+                 }
+               }}
+             >
+-              {busy ? '…' : 'Обновить'}
++              {busy ? t('onboarding.refreshBusy') : t('onboarding.refresh')}
+             </button>
+           </div>
+         </div>
+ 
+-        
+         <div className="mt-4 rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-5 shadow-xl">
+-          <div className="text-lg font-semibold">Пароль</div>
+-          <div className="mt-2 text-sm opacity-80">
+-            Основной вход: <span className="font-semibold">Email + пароль</span>. Телефон (SMS) остаётся резервным вариантом.
+-          </div>
++          <div className="text-lg font-semibold">{t('login.tabPassword')}</div>
++          <div className="mt-2 text-sm opacity-80">{t('profile.passwordLoginHint')}</div>
+           <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+             <input
+               className="rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
+-              placeholder="Новый пароль (мин. 8 символов)"
++              placeholder={t('tempPassword.newPlaceholder')}
+               type="password"
+               value={newPassword}
+               onChange={(e) => setNewPassword(e.target.value)}
+@@ -358,38 +358,37 @@ export default function WorkerProfilePage() {
+             />
+             <input
+               className="rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
+-              placeholder="Повторить пароль"
++              placeholder={t('tempPassword.repeatPlaceholder')}
+               type="password"
+               value={newPassword2}
+               onChange={(e) => setNewPassword2(e.target.value)}
+               autoComplete="new-password"
+             />
+           </div>
+-          <div className="mt-3 flex gap-2">
++          <div className="mt-3 flex gap-2 flex-wrap">
+             <button
+               className="rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
+               disabled={busy || !newPassword.trim() || !newPassword2.trim()}
+               onClick={setPassword}
+             >
+-              {busy ? "Сохраняю…" : "Установить пароль"}
++              {busy ? t('tempPassword.saving') : t('login.setPassword')}
+             </button>
+             <div className="text-xs opacity-70 self-center">
+-              Email подтверждён: {me?.user?.email ? (me?.user?.email_confirmed_at ? "да" : "нет") : "—"}
++              {t('profile.emailConfirmedShort')}:{' '}
++              {me?.user?.email ? (me?.user?.email_confirmed_at ? t('onboarding.emailYes') : t('onboarding.emailNo')) : t('onboarding.emailDash')}
+             </div>
+           </div>
+         </div>
+ 
+         <div className="mt-4 rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-5 shadow-xl">
+           <div className="flex items-baseline justify-between">
+-            <div className="text-lg font-semibold">Аватары (до 5)</div>
+-            <div className="text-sm opacity-70">
+-              {photos.length}/5
+-            </div>
++            <div className="text-lg font-semibold">{t('onboarding.photosTitle')}</div>
++            <div className="text-sm opacity-70">{photos.length}/5</div>
+           </div>
+ 
+           <div className="mt-3">
+             <input
+-              ref={fileRef}
++              key={fileInputKey}
+               type="file"
+               accept="image/*"
+               className="block w-full text-sm"
+@@ -407,7 +406,11 @@ export default function WorkerProfilePage() {
+               return (
+                 <div key={p.path} className="rounded-xl border border-amber-500/15 bg-zinc-900/30 overflow-hidden">
+                   <div className="aspect-square bg-black/30 flex items-center justify-center">
+-                    {p.url ? <img src={p.url} className="h-full w-full object-cover" /> : <div className="text-xs opacity-60">—</div>}
++                    {p.url ? (
++                      <img src={p.url} className="h-full w-full object-cover" alt="" />
++                    ) : (
++                      <div className="text-xs opacity-60">{t('onboarding.emailDash')}</div>
++                    )}
+                   </div>
+                   <div className="p-2 space-y-2">
+                     <button
+@@ -415,14 +418,14 @@ export default function WorkerProfilePage() {
+                       disabled={busy}
+                       onClick={() => makeAvatar(p.path)}
+                     >
+-                      {isAvatar ? 'Аватар' : 'Сделать аватаром'}
++                      {isAvatar ? t('onboarding.avatar') : t('onboarding.makeAvatar')}
+                     </button>
+                     <button
+                       className="w-full rounded-lg border border-amber-500/30 px-2 py-1 text-xs hover:bg-amber-500/10 disabled:opacity-60"
+                       disabled={busy}
+                       onClick={() => delPhoto(p.path)}
+                     >
+-                      Удалить
++                      {t('onboarding.delete')}
+                     </button>
+                   </div>
+                 </div>
+@@ -430,10 +433,9 @@ export default function WorkerProfilePage() {
+             })}
+           </div>
+ 
+-          {photos.length === 0 ? <div className="mt-3 text-sm opacity-70">Загрузи фото и выбери аватар.</div> : null}
++          {photos.length === 0 ? <div className="mt-3 text-sm opacity-70">{t('onboarding.photosEmpty')}</div> : null}
+         </div>
+       </div>
+     </div>
+   )
+ }
+-
+diff --git a/app/page.tsx b/app/page.tsx
+index 2357544..e2dd18c 100644
+--- a/app/page.tsx
++++ b/app/page.tsx
+@@ -2,7 +2,9 @@
+ 
+ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+ import HomeLanguageSwitcher from "@/components/home-language-switcher";
++import { clientWorkerErrorMessage } from "@/lib/app-api-message";
+ import { useHomeI18n } from "@/lib/i18n/home-provider";
++import { formatDateShort, formatWallTime } from "@/lib/locale-format";
+ import { supabase } from "@/lib/supabase";
+ import { authFetchJson, clearAuthTokens, getAccessToken, setAuthTokens } from "@/lib/auth-fetch";
+ 
+@@ -56,15 +58,6 @@ function pad2(n: number) {
+   return String(n).padStart(2, "0");
+ }
+ 
+-function fmtD(iso?: string | null) {
+-  if (!iso) return "—";
+-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+-  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+-  const d = new Date(iso);
+-  if (Number.isNaN(d.getTime())) return "—";
+-  return `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}-${d.getFullYear()}`;
+-}
+-
+ function timeHHMM(t?: string | null) {
+   if (!t) return null;
+   const x = String(t);
+@@ -130,7 +123,11 @@ export default function AppPage() {
+ 
+   const authed = !!token;
+ 
+-  const { t } = useHomeI18n();
++  const { t, locale } = useHomeI18n();
++
++  const fmtDate = useCallback((iso?: string | null) => formatDateShort(locale, iso), [locale]);
++
++  const fmtWall = useCallback((raw?: string | null) => formatWallTime(locale, raw), [locale]);
+ 
+   const fmtDurLoc = useCallback(
+     (mins: number) => {
+@@ -175,12 +172,10 @@ export default function AppPage() {
+   }, [t]);
+ 
+   const loadPhotos = useCallback(async () => {
+-    const r = await fetch("/api/me/photos", {
++    const data = await authFetchJson<MyPhotosResponse>("/api/me/photos", {
+       headers: bearerHeaders(),
+       cache: "no-store",
+     });
+-    const data = (await r.json()) as MyPhotosResponse | any;
+-    if (!r.ok) throw new Error(String(data?.error || `HTTP ${r.status}`));
+     setPhotos(Array.isArray(data.photos) ? data.photos : []);
+     setAvatarPath(data.avatar_path || null);
+   }, []);
+@@ -195,7 +190,7 @@ export default function AppPage() {
+     setFullName(String(profile?.profile?.full_name || ""));
+     setProfileEmail(String(profile?.profile?.email || profile?.user?.email || ""));
+ 
+-    // Фото нужны и активному работнику: аватар/галерея.
++    // Photos (avatar/gallery) are loaded for inactive onboarding and active workers.
+     await loadPhotos().catch(() => {});
+ 
+     if (profile?.profile?.active !== true) {
+@@ -210,12 +205,12 @@ export default function AppPage() {
+   useEffect(() => {
+     (async () => {
+       try {
+-        const t = getAccessToken();
+-        setToken(t);
+-        if (t) await loadAll();
+-      } catch (e: any) {
+-        const msg = String(e?.message || e || t("error.generic"));
+-        if (msg.includes("401") || /токен|unauthorized/i.test(msg)) {
++        const accessToken = getAccessToken();
++        setToken(accessToken);
++        if (accessToken) await loadAll();
++      } catch (e: unknown) {
++        const msg = String((e as Error)?.message || e || t("error.generic"));
++        if (msg.includes("401") || /token|unauthorized|invalid or expired/i.test(msg)) {
+           clearAuthTokens();
+           try {
+             await supabase.auth.signOut();
+@@ -224,7 +219,7 @@ export default function AppPage() {
+           setMe(null);
+           setJobs([]);
+         } else {
+-          setError(msg);
++          setError(clientWorkerErrorMessage(t, e));
+         }
+       } finally {
+         setBooting(false);
+@@ -251,7 +246,7 @@ export default function AppPage() {
+       setOtp("");
+       setNotice(t("notify.smsSent"));
+     } catch (e: any) {
+-      setError(String(e?.message || e || t("errors.smsSend")));
++      setError(clientWorkerErrorMessage(t, e));
+     } finally {
+       setBusy(false);
+     }
+@@ -289,7 +284,7 @@ export default function AppPage() {
+       setOtp("");
+       setRecoverNewPassword("");
+     } catch (e: any) {
+-      setError(String(e?.message || e || t("errors.confirm")));
++      setError(clientWorkerErrorMessage(t, e));
+     } finally {
+       setBusy(false);
+     }
+@@ -306,13 +301,14 @@ export default function AppPage() {
+       if (!em.includes("@") && !em.startsWith("+")) throw new Error(t("errors.phoneE164"));
+       if (!pw || !pw.trim()) throw new Error(t("errors.passwordRequired"));
+ 
+-      const res = await fetch("/api/auth/login", {
++      const payload = await authFetchJson<{
++        access_token?: string;
++        refresh_token?: string | null;
++      }>("/api/auth/login", {
+         method: "POST",
+         headers: { "Content-Type": "application/json" },
+         body: JSON.stringify({ identifier: em, password: pw }),
+       });
+-      const payload = await res.json().catch(() => ({}));
+-      if (!res.ok) throw new Error(payload?.error || `HTTP ${res.status}`);
+       if (!payload?.access_token) throw new Error(t("errors.token"));
+ 
+       setAuthTokens(String(payload.access_token), payload.refresh_token ? String(payload.refresh_token) : null);
+@@ -321,13 +317,13 @@ export default function AppPage() {
+       await loadAll();
+       setNotice(t("notify.loggedIn"));
+ 
+-      // Если роль admin — без лишних кликов в админку
++      // If user is admin, send them straight to /admin
+       try {
+         const prof = await authFetchJson<MeProfileResponse>("/api/me/profile", { cache: "no-store" });
+         if (prof?.profile?.role === "admin") window.location.href = "/admin";
+       } catch {}
+     } catch (e: any) {
+-      setError(String(e?.message || e || t("errors.login")));
++      setError(clientWorkerErrorMessage(t, e));
+     } finally {
+       setBusy(false);
+     }
+@@ -369,7 +365,7 @@ export default function AppPage() {
+       await loadAll();
+       setNotice(t("notify.saved"));
+     } catch (e: any) {
+-      setError(String(e?.message || e || t("error.generic")));
++      setError(clientWorkerErrorMessage(t, e));
+     } finally {
+       setBusy(false);
+     }
+@@ -384,13 +380,11 @@ export default function AppPage() {
+         if (photos.length >= 5) throw new Error(t("errors.photoLimit"));
+         const fd = new FormData();
+         fd.append("file", file);
+-        const r = await fetch("/api/me/photos", { method: "POST", headers: bearerHeaders(), body: fd });
+-        const data = await r.json().catch(() => ({}));
+-        if (!r.ok) throw new Error(String((data as any)?.error || `HTTP ${r.status}`));
++        await authFetchJson("/api/me/photos", { method: "POST", headers: bearerHeaders(), body: fd });
+         await loadPhotos();
+         setNotice(t("notify.photoUploaded"));
+       } catch (e: any) {
+-        setError(String(e?.message || e || t("error.generic")));
++        setError(clientWorkerErrorMessage(t, e));
+       } finally {
+         setBusy(false);
+         if (fileRef.current) fileRef.current.value = "";
+@@ -405,17 +399,15 @@ export default function AppPage() {
+       setError(null);
+       setNotice(null);
+       try {
+-        const r = await fetch("/api/me/photos", {
++        await authFetchJson("/api/me/photos", {
+           method: "DELETE",
+           headers: { "Content-Type": "application/json", ...bearerHeaders() },
+           body: JSON.stringify({ path }),
+         });
+-        const data = await r.json().catch(() => ({}));
+-        if (!r.ok) throw new Error(String((data as any)?.error || `HTTP ${r.status}`));
+         await loadPhotos();
+         setNotice(t("notify.deleted"));
+       } catch (e: any) {
+-        setError(String(e?.message || e || t("error.generic")));
++        setError(clientWorkerErrorMessage(t, e));
+       } finally {
+         setBusy(false);
+       }
+@@ -429,18 +421,16 @@ export default function AppPage() {
+       setError(null);
+       setNotice(null);
+       try {
+-        const r = await fetch("/api/me/photos", {
++        await authFetchJson("/api/me/photos", {
+           method: "PATCH",
+           headers: { "Content-Type": "application/json", ...bearerHeaders() },
+           body: JSON.stringify({ action: "make_primary", path }),
+         });
+-        const data = await r.json().catch(() => ({}));
+-        if (!r.ok) throw new Error(String((data as any)?.error || `HTTP ${r.status}`));
+         await loadPhotos();
+         await loadAll();
+         setNotice(t("notify.avatarSet"));
+       } catch (e: any) {
+-        setError(String(e?.message || e || t("error.generic")));
++        setError(clientWorkerErrorMessage(t, e));
+       } finally {
+         setBusy(false);
+       }
+@@ -457,7 +447,7 @@ export default function AppPage() {
+       await loadAll();
+       setNotice(t("notify.submittedActivation"));
+     } catch (e: any) {
+-      setError(String(e?.message || e || t("error.generic")));
++      setError(clientWorkerErrorMessage(t, e));
+     } finally {
+       setBusy(false);
+     }
+@@ -477,7 +467,7 @@ export default function AppPage() {
+         setNotice(t("notify.shiftAccepted"));
+         await loadAll();
+       } catch (e: any) {
+-        setError(String(e?.message || e || t("error.generic")));
++        setError(clientWorkerErrorMessage(t, e));
+       } finally {
+         setBusy(false);
+       }
+@@ -500,7 +490,7 @@ export default function AppPage() {
+         setNotice(t("notify.startRecorded"));
+         await loadAll();
+       } catch (e: any) {
+-        setError(String(e?.message || e || t("error.generic")));
++        setError(clientWorkerErrorMessage(t, e));
+       } finally {
+         setBusy(false);
+       }
+@@ -523,7 +513,7 @@ export default function AppPage() {
+         setNotice(t("notify.stopRecorded"));
+         await loadAll();
+       } catch (e: any) {
+-        setError(String(e?.message || e || t("error.generic")));
++        setError(clientWorkerErrorMessage(t, e));
+       } finally {
+         setBusy(false);
+       }
+@@ -553,7 +543,7 @@ export default function AppPage() {
+         <div className="relative w-full max-w-md">
+           <div className="pointer-events-none absolute -inset-2 rounded-[28px] bg-gradient-to-r from-amber-500/55 via-amber-500/18 to-amber-500/55 blur-2xl" />
+           <div className="relative w-full rounded-2xl border border-amber-500/40 bg-zinc-950/70 p-6 shadow-[0_0_0_1px_rgba(245,158,11,0.18),0_0_95px_rgba(245,158,11,0.14),0_25px_90px_rgba(0,0,0,0.75)]">
+-            <div className="text-xl font-semibold">Tanija • Worker</div>
++            <div className="text-xl font-semibold">{t("active.title")}</div>
+             <div className="text-sm opacity-80 mt-1">{t("login.brandSubtitle")}</div>
+ 
+             <div className="mt-4 flex gap-2">
+@@ -767,13 +757,13 @@ export default function AppPage() {
+                     if (pw1.length < 8) throw new Error(t("errors.passwordMin8Temp"));
+                     if (pw1 !== pw2) throw new Error(t("errors.passwordMismatch"));
+                     const { error: uErr } = await supabase.auth.updateUser({ password: pw1, data: { temp_password: false } });
+-                    if (uErr) throw new Error(uErr.message);
++                    if (uErr) throw uErr;
+                     setForceNewPassword("");
+                     setForceNewPassword2("");
+                     await loadAll();
+                     setNotice(t("notify.profileUpdated"));
+                   } catch (e: any) {
+-                    setError(String(e?.message || e || t("errors.tempPassword")));
++                    setError(clientWorkerErrorMessage(t, e));
+                   } finally {
+                     setBusy(false);
+                   }
+@@ -869,7 +859,7 @@ export default function AppPage() {
+                     await loadAll();
+                     setNotice(t("notify.refreshed"));
+                   } catch (e: any) {
+-                    setError(String(e?.message || e || t("error.generic")));
++                    setError(clientWorkerErrorMessage(t, e));
+                   } finally {
+                     setBusy(false);
+                   }
+@@ -906,7 +896,7 @@ export default function AppPage() {
+                 return (
+                   <div key={p.path} className="rounded-xl border border-amber-500/15 bg-zinc-900/30 overflow-hidden">
+                     <div className="aspect-square bg-black/30 flex items-center justify-center">
+-                      {p.url ? <img src={p.url} className="h-full w-full object-cover" /> : <div className="text-xs opacity-60">—</div>}
++                      {p.url ? <img src={p.url} className="h-full w-full object-cover" /> : <div className="text-xs opacity-60">{t("onboarding.emailDash")}</div>}
+                     </div>
+                     <div className="p-2 space-y-2">
+                       <button
+@@ -992,7 +982,7 @@ export default function AppPage() {
+                   await loadAll();
+                   setNotice(t("notify.refreshed"));
+                 } catch (e: any) {
+-                  setError(String(e?.message || e || t("error.updateFailed")));
++                  setError(clientWorkerErrorMessage(t, e));
+                 } finally {
+                   setBusy(false);
+                 }
+@@ -1041,7 +1031,7 @@ export default function AppPage() {
+               return (
+                 <div key={p.path} className="min-w-[150px] max-w-[150px] rounded-xl border border-amber-500/15 bg-zinc-900/30 overflow-hidden">
+                   <div className="aspect-square bg-black/30 flex items-center justify-center">
+-                    {p.url ? <img src={p.url} className="h-full w-full object-cover" /> : <div className="text-xs opacity-60">—</div>}
++                    {p.url ? <img src={p.url} className="h-full w-full object-cover" /> : <div className="text-xs opacity-60">{t("onboarding.emailDash")}</div>}
+                   </div>
+                   <div className="p-2 space-y-2">
+                     <button
+@@ -1111,16 +1101,19 @@ export default function AppPage() {
+               const showFact = j.status === "done" && factM > 0;
+ 
+               const dash = t("job.lineDash");
++              const wFrom = fmtWall(j.scheduled_time);
++              const wTo = fmtWall(j.scheduled_end_time ?? null);
++              const timeSegment = from && to ? `${wFrom}–${wTo}` : from ? wFrom : dash;
+               const line =
+                 j.status === "done"
+-                  ? `${fmtD(j.job_date)} • ${from && to ? `${from}–${to}` : from || dash} • ${
++                  ? `${fmtDate(j.job_date)} • ${timeSegment} • ${
+                       showFact
+                         ? `${t("job.factPrefix")} ${fmtDurLoc(factM)}`
+                         : planM != null
+                           ? `${fmtDurLoc(planM)}`
+                           : dash
+                     } • ${jobStatusLabel(String(j.status || ""))}`
+-                  : `${fmtD(j.job_date)} • ${from && to ? `${from}–${to}` : from || dash}${
++                  : `${fmtDate(j.job_date)} • ${timeSegment}${
+                       planM != null ? ` • ${fmtDurLoc(planM)}` : ""
+                     } • ${jobStatusLabel(String(j.status || ""))}`;
+ 
+diff --git a/app/auth/callback/page.tsx b/app/auth/callback/page.tsx
+index 150a164..4aadedf 100644
+--- a/app/auth/callback/page.tsx
++++ b/app/auth/callback/page.tsx
+@@ -1,11 +1,18 @@
+ 'use client'
+ 
+ import { useEffect, useState } from 'react'
+-import { supabase } from '@/lib/supabase'
++import { useI18n } from '@/components/I18nProvider'
++import { clientWorkerErrorMessage } from '@/lib/app-api-message'
+ import { setAuthTokens } from '@/lib/auth-fetch'
++import { supabase } from '@/lib/supabase'
+ 
+ export default function AuthCallbackPage() {
+-  const [msg, setMsg] = useState('Завершаю вход…')
++  const { t } = useI18n()
++  const [msg, setMsg] = useState('')
++
++  useEffect(() => {
++    setMsg(t('authCallback.loading'))
++  }, [t])
+ 
+   useEffect(() => {
+     ;(async () => {
+@@ -17,7 +24,6 @@ export default function AuthCallbackPage() {
+           const { error } = await supabase.auth.exchangeCodeForSession(code)
+           if (error) throw error
+         } else {
+-          // fallback на старый implicit flow (#access_token=...)
+           const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+           const access_token = hash.get('access_token')
+           const refresh_token = hash.get('refresh_token')
+@@ -30,21 +36,21 @@ export default function AuthCallbackPage() {
+         const { data, error: sErr } = await supabase.auth.getSession()
+         if (sErr) throw sErr
+         const session = data?.session
+-        if (!session?.access_token) throw new Error('Сессия не получена')
++        if (!session?.access_token) throw { code: 'session_not_found' }
+ 
+         setAuthTokens(session.access_token, session.refresh_token || null)
+ 
+         window.location.replace('/')
+-      } catch (e: any) {
+-        setMsg(`Ошибка входа: ${String(e?.message || e)}`)
++      } catch (e: unknown) {
++        setMsg(clientWorkerErrorMessage(t, e))
+       }
+     })()
+-  }, [])
++  }, [t])
+ 
+   return (
+     <div className="min-h-screen bg-zinc-950 text-amber-100 flex items-center justify-center p-6">
+       <div className="w-full max-w-md rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-6 shadow-xl">
+-        <div className="text-sm opacity-80">{msg}</div>
++        <div className="text-sm opacity-80">{msg || t('authCallback.loading')}</div>
+       </div>
+     </div>
+   )
+diff --git a/app/forgot-password/page.tsx b/app/forgot-password/page.tsx
+index cc84adb..09e1329 100644
+--- a/app/forgot-password/page.tsx
++++ b/app/forgot-password/page.tsx
+@@ -1,9 +1,12 @@
+ 'use client'
+ 
+ import { useMemo, useState } from 'react'
++import { useI18n } from '@/components/I18nProvider'
++import { clientWorkerErrorMessage } from '@/lib/app-api-message'
+ import { supabase } from '@/lib/supabase'
+ 
+ export default function ForgotPasswordPage() {
++  const { t } = useI18n()
+   const [email, setEmail] = useState('')
+   const [busy, setBusy] = useState(false)
+   const [msg, setMsg] = useState<string | null>(null)
+@@ -15,7 +18,7 @@ export default function ForgotPasswordPage() {
+     setErr(null)
+     setMsg(null)
+     if (!canSend) {
+-      setErr('Введите email')
++      setErr(t('forgotPassword.needEmail'))
+       return
+     }
+ 
+@@ -24,9 +27,9 @@ export default function ForgotPasswordPage() {
+       const redirectTo = `${window.location.origin}/reset-password`
+       const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo })
+       if (error) throw error
+-      setMsg('Ссылка отправлена на email. Открой письмо и перейди по ссылке.')
+-    } catch (e: any) {
+-      setErr(e?.message || 'Ошибка отправки')
++      setMsg(t('forgotPassword.success'))
++    } catch (e: unknown) {
++      setErr(clientWorkerErrorMessage(t, e))
+     } finally {
+       setBusy(false)
+     }
+@@ -39,17 +42,17 @@ export default function ForgotPasswordPage() {
+           <div className="flex items-center gap-3">
+             <img src="/tanija-logo.png" alt="Tanija" className="h-10 w-10 rounded-xl" />
+             <div>
+-              <div className="text-xl font-semibold tracking-tight text-amber-200">Восстановление пароля</div>
+-              <div className="text-sm text-zinc-400">Мы пришлём ссылку на email</div>
++              <div className="text-xl font-semibold tracking-tight text-amber-200">{t('forgotPassword.title')}</div>
++              <div className="text-sm text-zinc-400">{t('forgotPassword.subtitle')}</div>
+             </div>
+           </div>
+ 
+           <div className="mt-6 space-y-3">
+-            <label className="block text-sm text-zinc-300">Email</label>
++            <label className="block text-sm text-zinc-300">{t('forgotPassword.emailLabel')}</label>
+             <input
+               value={email}
+               onChange={(e) => setEmail(e.target.value)}
+-              placeholder="name@example.com"
++              placeholder={t('forgotPassword.emailPlaceholder')}
+               className="w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 text-zinc-100 outline-none transition focus:border-amber-300/60"
+               autoComplete="email"
+               inputMode="email"
+@@ -60,14 +63,14 @@ export default function ForgotPasswordPage() {
+               disabled={busy || !canSend}
+               className="mt-2 w-full rounded-2xl border border-amber-300/30 bg-amber-300/10 px-4 py-3 font-semibold text-amber-200 transition hover:bg-amber-300/15 disabled:opacity-50"
+             >
+-              {busy ? 'Отправляю…' : 'Отправить ссылку'}
++              {busy ? t('forgotPassword.sending') : t('forgotPassword.send')}
+             </button>
+ 
+             <a
+               href="/"
+               className="block text-center text-sm text-zinc-400 underline decoration-amber-300/40 underline-offset-4 hover:text-zinc-200"
+             >
+-              Назад к входу
++              {t('forgotPassword.backToLogin')}
+             </a>
+ 
+             {msg ? (
+@@ -85,7 +88,7 @@ export default function ForgotPasswordPage() {
+         </div>
+ 
+         <div className="mt-4 text-center text-xs text-zinc-500">
+-          В Supabase Auth добавь Redirect URL: <span className="text-zinc-300">/reset-password</span>
++          {t('forgotPassword.redirectHint')} <span className="text-zinc-300">/reset-password</span>
+         </div>
+       </div>
+     </div>
+diff --git a/app/reset-password/page.tsx b/app/reset-password/page.tsx
+index 49f45fc..6cae5a8 100644
+--- a/app/reset-password/page.tsx
++++ b/app/reset-password/page.tsx
+@@ -1,9 +1,12 @@
+ 'use client'
+ 
+ import { useEffect, useMemo, useState } from 'react'
++import { useI18n } from '@/components/I18nProvider'
++import { clientWorkerErrorMessage } from '@/lib/app-api-message'
+ import { supabase } from '@/lib/supabase'
+ 
+ export default function ResetPasswordPage() {
++  const { t } = useI18n()
+   const [ready, setReady] = useState(false)
+   const [busy, setBusy] = useState(false)
+   const [pass1, setPass1] = useState('')
+@@ -34,7 +37,7 @@ export default function ResetPasswordPage() {
+     setErr(null)
+     setMsg(null)
+     if (!canSave) {
+-      setErr('Пароль минимум 8 символов и должен совпадать')
++      setErr(t('resetPassword.passRules'))
+       return
+     }
+ 
+@@ -43,11 +46,11 @@ export default function ResetPasswordPage() {
+       const { error } = await supabase.auth.updateUser({ password: pass1, data: { temp_password: false } })
+       if (error) throw error
+ 
+-      setMsg('Пароль обновлён. Теперь войди заново.')
++      setMsg(t('resetPassword.success'))
+       await supabase.auth.signOut()
+       setTimeout(() => (window.location.href = '/'), 900)
+-    } catch (e: any) {
+-      setErr(e?.message || 'Ошибка обновления')
++    } catch (e: unknown) {
++      setErr(clientWorkerErrorMessage(t, e))
+     } finally {
+       setBusy(false)
+     }
+@@ -60,32 +63,32 @@ export default function ResetPasswordPage() {
+           <div className="flex items-center gap-3">
+             <img src="/tanija-logo.png" alt="Tanija" className="h-10 w-10 rounded-xl" />
+             <div>
+-              <div className="text-xl font-semibold tracking-tight text-amber-200">Новый пароль</div>
+-              <div className="text-sm text-zinc-400">Установи новый пароль для аккаунта</div>
++              <div className="text-xl font-semibold tracking-tight text-amber-200">{t('resetPassword.title')}</div>
++              <div className="text-sm text-zinc-400">{t('resetPassword.subtitle')}</div>
+             </div>
+           </div>
+ 
+           {!ready ? (
+             <div className="mt-6 rounded-2xl border border-amber-400/15 bg-amber-300/5 px-4 py-3 text-sm text-zinc-300">
+-              Открой эту страницу по ссылке из письма.
++              {t('resetPassword.openFromEmail')}
+             </div>
+           ) : (
+             <div className="mt-6 space-y-3">
+-              <label className="block text-sm text-zinc-300">Новый пароль</label>
++              <label className="block text-sm text-zinc-300">{t('resetPassword.newPassword')}</label>
+               <input
+                 value={pass1}
+                 onChange={(e) => setPass1(e.target.value)}
+-                placeholder="Минимум 8 символов"
++                placeholder={t('resetPassword.minChars')}
+                 type="password"
+                 className="w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 text-zinc-100 outline-none transition focus:border-amber-300/60"
+                 autoComplete="new-password"
+               />
+ 
+-              <label className="block text-sm text-zinc-300">Повтори пароль</label>
++              <label className="block text-sm text-zinc-300">{t('resetPassword.repeat')}</label>
+               <input
+                 value={pass2}
+                 onChange={(e) => setPass2(e.target.value)}
+-                placeholder="Повтори пароль"
++                placeholder={t('resetPassword.repeat')}
+                 type="password"
+                 className="w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 text-zinc-100 outline-none transition focus:border-amber-300/60"
+                 autoComplete="new-password"
+@@ -96,7 +99,7 @@ export default function ResetPasswordPage() {
+                 disabled={busy || !canSave}
+                 className="mt-2 w-full rounded-2xl border border-amber-300/30 bg-amber-300/10 px-4 py-3 font-semibold text-amber-200 transition hover:bg-amber-300/15 disabled:opacity-50"
+               >
+-                {busy ? 'Сохраняю…' : 'Сохранить пароль'}
++                {busy ? t('resetPassword.saving') : t('resetPassword.save')}
+               </button>
+ 
+               {msg ? (
+@@ -117,7 +120,7 @@ export default function ResetPasswordPage() {
+             href="/"
+             className="mt-6 block text-center text-sm text-zinc-400 underline decoration-amber-300/40 underline-offset-4 hover:text-zinc-200"
+           >
+-            На главную
++            {t('resetPassword.home')}
+           </a>
+         </div>
+       </div>
+
+> cleaning-timeclock@0.1.0 build
+> next build
+
+▲ Next.js 16.1.6 (Turbopack)
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 1834.5ms
+  Running TypeScript ...
+  Collecting page data using 15 workers ...
+  Generating static pages using 15 workers (0/34) ...
+  Generating static pages using 15 workers (8/34) 
+  Generating static pages using 15 workers (16/34) 
+  Generating static pages using 15 workers (25/34) 
+✓ Generating static pages using 15 workers (34/34) in 145.6ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ƒ /
+├ ƒ /_not-found
+├ ƒ /admin
+├ ƒ /admin/approvals
+├ ƒ /admin/fact
+├ ƒ /admin/hours
+├ ƒ /api/admin/assignments
+├ ƒ /api/admin/geocode
+├ ƒ /api/admin/jobs
+├ ƒ /api/admin/jobs/[id]
+├ ƒ /api/admin/jobs/cancel
+├ ƒ /api/admin/jobs/create
+├ ƒ /api/admin/jobs/move
+├ ƒ /api/admin/jobs/move-day
+├ ƒ /api/admin/jobs/set-actual
+├ ƒ /api/admin/jobs/update
+├ ƒ /api/admin/reports
+├ ƒ /api/admin/schedule
+├ ƒ /api/admin/sites
+├ ƒ /api/admin/sites/[id]
+├ ƒ /api/admin/sites/[id]/photos
+├ ƒ /api/admin/sites/archive
+├ ƒ /api/admin/sites/delete
+├ ƒ /api/admin/sites/list
+├ ƒ /api/admin/sites/set-archived
+├ ƒ /api/admin/workers
+├ ƒ /api/admin/workers/[id]
+├ ƒ /api/admin/workers/[id]/photos
+├ ƒ /api/admin/workers/[id]/profile
+├ ƒ /api/admin/workers/activate
+├ ƒ /api/admin/workers/anonymize
+├ ƒ /api/admin/workers/delete
+├ ƒ /api/admin/workers/invite
+├ ƒ /api/admin/workers/list
+├ ƒ /api/admin/workers/pending
+├ ƒ /api/admin/workers/purge
+├ ƒ /api/admin/workers/set-active
+├ ƒ /api/admin/workers/set-role
+├ ƒ /api/admin/workers/toggle-active
+├ ƒ /api/auth/login
+├ ƒ /api/auth/refresh
+├ ƒ /api/geocode
+├ ƒ /api/me/assignments/note
+├ ƒ /api/me/avatar
+├ ƒ /api/me/jobs
+├ ƒ /api/me/jobs/accept
+├ ƒ /api/me/jobs/start
+├ ƒ /api/me/jobs/stop
+├ ƒ /api/me/photos
+├ ƒ /api/me/profile
+├ ƒ /api/me/profile/submit
+├ ƒ /api/me/profile/update
+├ ƒ /auth/callback
+├ ƒ /forgot-password
+├ ƒ /me/profile
+├ ƒ /offline
+├ ƒ /reset-password
+├ ƒ /sites/[...path]
+├ ƒ /undefined/[...path]
+└ ƒ /workers/[...path]
+
+
+ƒ  (Dynamic)  server-rendered on demand
+

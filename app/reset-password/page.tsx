@@ -1,9 +1,12 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { useI18n } from '@/components/I18nProvider'
+import { clientWorkerErrorMessage } from '@/lib/app-api-message'
 import { supabase } from '@/lib/supabase'
 
 export default function ResetPasswordPage() {
+  const { t } = useI18n()
   const [ready, setReady] = useState(false)
   const [busy, setBusy] = useState(false)
   const [pass1, setPass1] = useState('')
@@ -34,7 +37,7 @@ export default function ResetPasswordPage() {
     setErr(null)
     setMsg(null)
     if (!canSave) {
-      setErr('Пароль минимум 8 символов и должен совпадать')
+      setErr(t('resetPassword.passRules'))
       return
     }
 
@@ -43,11 +46,11 @@ export default function ResetPasswordPage() {
       const { error } = await supabase.auth.updateUser({ password: pass1, data: { temp_password: false } })
       if (error) throw error
 
-      setMsg('Пароль обновлён. Теперь войди заново.')
+      setMsg(t('resetPassword.success'))
       await supabase.auth.signOut()
       setTimeout(() => (window.location.href = '/'), 900)
-    } catch (e: any) {
-      setErr(e?.message || 'Ошибка обновления')
+    } catch (e: unknown) {
+      setErr(clientWorkerErrorMessage(t, e))
     } finally {
       setBusy(false)
     }
@@ -60,32 +63,32 @@ export default function ResetPasswordPage() {
           <div className="flex items-center gap-3">
             <img src="/tanija-logo.png" alt="Tanija" className="h-10 w-10 rounded-xl" />
             <div>
-              <div className="text-xl font-semibold tracking-tight text-amber-200">Новый пароль</div>
-              <div className="text-sm text-zinc-400">Установи новый пароль для аккаунта</div>
+              <div className="text-xl font-semibold tracking-tight text-amber-200">{t('resetPassword.title')}</div>
+              <div className="text-sm text-zinc-400">{t('resetPassword.subtitle')}</div>
             </div>
           </div>
 
           {!ready ? (
             <div className="mt-6 rounded-2xl border border-amber-400/15 bg-amber-300/5 px-4 py-3 text-sm text-zinc-300">
-              Открой эту страницу по ссылке из письма.
+              {t('resetPassword.openFromEmail')}
             </div>
           ) : (
             <div className="mt-6 space-y-3">
-              <label className="block text-sm text-zinc-300">Новый пароль</label>
+              <label className="block text-sm text-zinc-300">{t('resetPassword.newPassword')}</label>
               <input
                 value={pass1}
                 onChange={(e) => setPass1(e.target.value)}
-                placeholder="Минимум 8 символов"
+                placeholder={t('resetPassword.minChars')}
                 type="password"
                 className="w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 text-zinc-100 outline-none transition focus:border-amber-300/60"
                 autoComplete="new-password"
               />
 
-              <label className="block text-sm text-zinc-300">Повтори пароль</label>
+              <label className="block text-sm text-zinc-300">{t('resetPassword.repeat')}</label>
               <input
                 value={pass2}
                 onChange={(e) => setPass2(e.target.value)}
-                placeholder="Повтори пароль"
+                placeholder={t('resetPassword.repeat')}
                 type="password"
                 className="w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 text-zinc-100 outline-none transition focus:border-amber-300/60"
                 autoComplete="new-password"
@@ -96,7 +99,7 @@ export default function ResetPasswordPage() {
                 disabled={busy || !canSave}
                 className="mt-2 w-full rounded-2xl border border-amber-300/30 bg-amber-300/10 px-4 py-3 font-semibold text-amber-200 transition hover:bg-amber-300/15 disabled:opacity-50"
               >
-                {busy ? 'Сохраняю…' : 'Сохранить пароль'}
+                {busy ? t('resetPassword.saving') : t('resetPassword.save')}
               </button>
 
               {msg ? (
@@ -117,7 +120,7 @@ export default function ResetPasswordPage() {
             href="/"
             className="mt-6 block text-center text-sm text-zinc-400 underline decoration-amber-300/40 underline-offset-4 hover:text-zinc-200"
           >
-            На главную
+            {t('resetPassword.home')}
           </a>
         </div>
       </div>

@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireActiveWorker } from '@/lib/supabase-server'
+import { AppApiErrorCodes } from '@/lib/app-error-codes'
+import { requireActiveWorker, toErrorResponse } from '@/lib/supabase-server'
+
+function errJson(status: number, message: string) {
+  return NextResponse.json({ error: message, errorCode: AppApiErrorCodes.JOB_LIST_QUERY_FAILED }, { status })
+}
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -114,10 +119,10 @@ export async function GET(req: NextRequest) {
           .eq('worker_id', userId)
           .gte('job_date', dateFrom)
           .lte('job_date', dateTo)
-        if (e2) return NextResponse.json({ error: e2.message }, { status: 400 })
+        if (e2) return errJson(400, e2.message)
         jobsA = d2 || []
       } else {
-        if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+        if (error) return errJson(400, error.message)
         jobsA = data || []
       }
     }
@@ -139,10 +144,10 @@ export async function GET(req: NextRequest) {
           .in('id', jobIdsViaLink)
           .gte('job_date', dateFrom)
           .lte('job_date', dateTo)
-        if (e2) return NextResponse.json({ error: e2.message }, { status: 400 })
+        if (e2) return errJson(400, e2.message)
         jobsB = d2 || []
       } else {
-        if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+        if (error) return errJson(400, error.message)
         jobsB = data || []
       }
     }
@@ -168,10 +173,10 @@ export async function GET(req: NextRequest) {
           .in('site_id', siteIds)
           .gte('job_date', dateFrom)
           .lte('job_date', dateTo)
-        if (e2) return NextResponse.json({ error: e2.message }, { status: 400 })
+        if (e2) return errJson(400, e2.message)
         jobsC = d2 || []
       } else {
-        if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+        if (error) return errJson(400, error.message)
         jobsC = data || []
       }
     }
@@ -204,8 +209,8 @@ export async function GET(req: NextRequest) {
       jobIds.length ? supabase.from('time_logs').select('job_id,started_at,stopped_at').in('job_id', jobIds) : Promise.resolve({ data: [], error: null } as any),
     ])
 
-    if (sitesRes.error) return NextResponse.json({ error: sitesRes.error.message }, { status: 400 })
-    if (logsRes.error) return NextResponse.json({ error: logsRes.error.message }, { status: 400 })
+    if (sitesRes.error) return errJson(400, sitesRes.error.message)
+    if (logsRes.error) return errJson(400, logsRes.error.message)
 
     const siteName = new Map<string, string>()
     for (const s of (sitesRes.data || []) as any[]) siteName.set(String(s.id), s.name || '')
@@ -257,10 +262,8 @@ export async function GET(req: NextRequest) {
     })
 
     return NextResponse.json({ items })
-  } catch (e: any) {
-    const msg = e?.message || 'Ошибка'
-    const status = /Нет токена/i.test(msg) ? 401 : 400
-    return NextResponse.json({ error: msg }, { status })
+  } catch (e: unknown) {
+    return toErrorResponse(e)
   }
 }
 

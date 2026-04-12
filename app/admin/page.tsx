@@ -2,7 +2,9 @@
 
 import Image from 'next/image'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useI18n } from '@/components/I18nProvider'
 import { getAccessToken, setAuthTokens, clearAuthTokens } from '@/lib/auth-fetch'
+import { useAdminAuthFetch } from '@/lib/use-admin-auth-fetch'
 
 // Token (localStorage)
 function getAccessTokenOrNull(): string | null {
@@ -150,18 +152,17 @@ function addDays(d: Date, n: number) {
   return x
 }
 
-function enumerateDates(fromISO: string, toISO: string) {
+function enumerateDates(fromISO: string, toISO: string, dows: string[]) {
   const from = new Date(fromISO + 'T00:00:00')
   const to = new Date(toISO + 'T00:00:00')
   if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return []
   const out: { iso: string; label: string; dow: string }[] = []
   let cur = new Date(from)
-  const dows = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб']
   while (cur.getTime() <= to.getTime()) {
     out.push({
       iso: toISODate(cur),
       label: `${pad2(cur.getDate())}-${pad2(cur.getMonth() + 1)}`,
-      dow: dows[cur.getDay()],
+      dow: dows[cur.getDay()] ?? '—',
     })
     cur = addDays(cur, 1)
   }
@@ -190,12 +191,13 @@ function fmtMinutesHM(totalMinutes: number) {
   return `${h}:${pad2(m)}`
 }
 
-function statusRu(s: string) {
-  if (s === 'planned') return 'Запланировано'
-  if (s === 'in_progress') return 'В процессе'
-  if (s === 'done') return 'Завершено'
-  if (s === 'cancelled') return 'Отменено'
-  return s || '—'
+function jobStatusLabel(t: (key: string) => string, s: string) {
+  const x = String(s || '')
+  if (x === 'planned') return t('job.statusPlanned')
+  if (x === 'in_progress') return t('job.statusInProgress')
+  if (x === 'done') return t('job.statusDone')
+  if (x === 'cancelled') return t('job.statusCancelled')
+  return x || t('job.lineDash')
 }
 
 function cn(...xs: Array<string | false | null | undefined>) {
@@ -222,45 +224,8 @@ async function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T
   return res
 }
 
-async function authFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const token = getAccessTokenOrNull()
-  if (!token) throw new Error('Нет токена (Authorization: Bearer ...)')
-
-  const ctrl = new AbortController()
-  const ms = 15000
-  const t = setTimeout(() => ctrl.abort(), ms)
-
-  try {
-    const res = await fetch(url, {
-      ...init,
-      headers: {
-        ...(init?.headers || {}),
-        Authorization: `Bearer ${token}`,
-      },
-      cache: 'no-store',
-      signal: ctrl.signal,
-    })
-
-    const payload = await res.json().catch(() => ({} as any))
-
-    if (res.status === 401) {
-      clearAuthTokens()
-      throw new Error('Сессия истекла. Войдите снова.')
-    }
-    if (!res.ok) throw new Error(payload?.error || `HTTP ${res.status}`)
-    return payload as T
-  } catch (e: any) {
-    if (e?.name === 'AbortError') {
-      throw new Error('Таймаут запроса (15с). Нажми “Обновить данные” ещё раз.')
-    }
-    throw e
-  } finally {
-    clearTimeout(t)
-  }
-}
-
-
 function Modal(props: { open: boolean; title: string; onClose: () => void; children: React.ReactNode }) {
+  const { t } = useI18n()
   if (!props.open) return null
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center px-4 py-6 overflow-y-auto">
@@ -272,7 +237,7 @@ function Modal(props: { open: boolean; title: string; onClose: () => void; child
             onClick={props.onClose}
             className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40"
           >
-            Закрыть
+            {t('admin.common.close')}
           </button>
         </div>
         <div className="mt-4 flex-1 overflow-y-auto pr-1">{props.children}</div>
@@ -292,27 +257,29 @@ function Pill({ children }: { children: any }) {
 
 type SiteCategory = { id: number; label: string; dotClass: string }
 
-const SITE_CATEGORIES: SiteCategory[] = [
-  { id: 1, label: 'Категория 1', dotClass: 'bg-emerald-400' },
-  { id: 2, label: 'Категория 2', dotClass: 'bg-sky-400' },
-  { id: 3, label: 'Категория 3', dotClass: 'bg-violet-400' },
-  { id: 4, label: 'Категория 4', dotClass: 'bg-fuchsia-400' },
-  { id: 5, label: 'Категория 5', dotClass: 'bg-rose-400' },
-  { id: 6, label: 'Категория 6', dotClass: 'bg-amber-400' },
-  { id: 7, label: 'Категория 7', dotClass: 'bg-lime-400' },
-  { id: 8, label: 'Категория 8', dotClass: 'bg-cyan-400' },
-  { id: 9, label: 'Категория 9', dotClass: 'bg-indigo-400' },
-  { id: 10, label: 'Категория 10', dotClass: 'bg-orange-400' },
-  { id: 11, label: 'Категория 11', dotClass: 'bg-teal-400' },
-  { id: 12, label: 'Категория 12', dotClass: 'bg-pink-400' },
-  { id: 13, label: 'Категория 13', dotClass: 'bg-red-400' },
-  { id: 14, label: 'Категория 14', dotClass: 'bg-purple-400' },
-  { id: 15, label: 'Категория 15', dotClass: 'bg-green-400' },
-]
+const SITE_CATEGORY_DOT: Record<number, string> = {
+  1: 'bg-emerald-400',
+  2: 'bg-sky-400',
+  3: 'bg-violet-400',
+  4: 'bg-fuchsia-400',
+  5: 'bg-rose-400',
+  6: 'bg-amber-400',
+  7: 'bg-lime-400',
+  8: 'bg-cyan-400',
+  9: 'bg-indigo-400',
+  10: 'bg-orange-400',
+  11: 'bg-teal-400',
+  12: 'bg-pink-400',
+  13: 'bg-red-400',
+  14: 'bg-purple-400',
+  15: 'bg-green-400',
+}
 
-function siteCategoryMeta(category: number | null | undefined) {
-  const c = SITE_CATEGORIES.find((x) => x.id === category)
-  return c || ({ id: 0, label: 'Без категории', dotClass: 'bg-zinc-500' } as SiteCategory)
+function siteCategoryMeta(t: (key: string, vars?: Record<string, string | number>) => string, category: number | null | undefined): SiteCategory {
+  const id = category != null && category >= 1 && category <= 15 ? Math.trunc(category) : 0
+  const dotClass = id ? SITE_CATEGORY_DOT[id] || 'bg-zinc-500' : 'bg-zinc-500'
+  const label = id ? t('admin.main.category', { n: id }) : t('admin.main.categoryNone')
+  return { id, label, dotClass }
 }
 
 function googleNavUrl(lat: number, lng: number) {
@@ -354,9 +321,10 @@ function osmEmbedUrl(lat: number, lng: number, delta = 0.006) {
 }
 
 function CategoryPicker(props: { value: number | null; onChange: (v: number | null) => void; disabled?: boolean }) {
+  const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement | null>(null)
-  const meta = siteCategoryMeta(props.value)
+  const meta = siteCategoryMeta(t, props.value)
 
   useEffect(() => {
     function onDown(e: MouseEvent) {
@@ -397,10 +365,13 @@ function CategoryPicker(props: { value: number | null; onChange: (v: number | nu
           >
             <span className={cn('h-3 w-3 rounded-full ring-2 ring-black/40 shadow', 'bg-zinc-500')} />
             <span className="font-semibold">—</span>
-            <span>Без категории</span>
+            <span>{t('admin.main.categoryNone')}</span>
           </button>
           <div className="h-px bg-yellow-400/10" />
-          {SITE_CATEGORIES.map((c) => (
+          {Array.from({ length: 15 }, (_, i) => {
+            const id = i + 1
+            const c = siteCategoryMeta(t, id)
+            return (
             <button
               key={c.id}
               onClick={() => {
@@ -413,7 +384,8 @@ function CategoryPicker(props: { value: number | null; onChange: (v: number | nu
               <span className="font-semibold">#{c.id}</span>
               <span className="text-yellow-100/60">{c.label}</span>
             </button>
-          ))}
+            )
+          })}
         </div>
       ) : null}
     </div>
@@ -421,11 +393,12 @@ function CategoryPicker(props: { value: number | null; onChange: (v: number | nu
 }
 
 function MapMini(props: { lat: number | null; lng: number | null; onClick: () => void }) {
+  const { t } = useI18n()
   const { lat, lng } = props
   if (lat == null || lng == null) {
     return (
       <div className="flex h-[92px] w-[150px] items-center justify-center rounded-2xl border border-yellow-400/10 bg-black/20 text-[11px] text-yellow-100/40">
-        Нет координат
+        {t('admin.main.mapNoCoords')}
       </div>
     )
   }
@@ -433,13 +406,18 @@ function MapMini(props: { lat: number | null; lng: number | null; onClick: () =>
   return (
     <div className="relative h-[92px] w-[150px] overflow-hidden rounded-2xl border border-yellow-400/20 bg-black/20">
       <iframe src={osmEmbedUrl(lat, lng, 0.004)} className="h-full w-full" loading="lazy" />
-      <button onClick={props.onClick} className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/0 to-black/0" title="Открыть навигацию" />
-      <div className="absolute bottom-1 left-2 text-[10px] font-semibold text-yellow-100/90">Навигация</div>
+      <button
+        onClick={props.onClick}
+        className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/0 to-black/0"
+        title={t('admin.common.openNavigation')}
+      />
+      <div className="absolute bottom-1 left-2 text-[10px] font-semibold text-yellow-100/90">{t('admin.common.navigation')}</div>
     </div>
   )
 }
 
 function MapLarge(props: { lat: number; lng: number }) {
+  const { t } = useI18n()
   const { lat, lng } = props
   return (
     <div className="relative h-[180px] overflow-hidden rounded-2xl border border-yellow-400/20 bg-black/20">
@@ -447,9 +425,9 @@ function MapLarge(props: { lat: number; lng: number }) {
       <button
         onClick={() => window.open(googleNavUrl(lat, lng), '_blank', 'noopener,noreferrer')}
         className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/0 to-black/0"
-        title="Открыть навигацию"
+        title={t('admin.common.openNavigation')}
       />
-      <div className="absolute bottom-2 left-3 text-xs font-semibold text-yellow-100/90">Открыть навигацию</div>
+      <div className="absolute bottom-2 left-3 text-xs font-semibold text-yellow-100/90">{t('admin.common.openNavigation')}</div>
     </div>
   )
 }
@@ -460,6 +438,7 @@ function MultiWorkerPicker(props: {
   onChange: (v: string[]) => void
   disabled?: boolean
 }) {
+  const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
   const ref = useRef<HTMLDivElement | null>(null)
@@ -504,11 +483,13 @@ function MultiWorkerPicker(props: {
         )}
       >
         {selectedNames.length === 0 ? (
-          <span className="text-zinc-400">Выбери работников…</span>
+          <span className="text-zinc-400">{t('admin.main.pickWorkers')}</span>
         ) : (
           <span className="text-zinc-100">
             {selectedNames.slice(0, 3).join(', ')}
-            {selectedNames.length > 3 ? ` и ещё ${selectedNames.length - 3}` : ''}
+            {selectedNames.length > 3
+              ? ` ${t('admin.main.pickWorkersMore', { n: selectedNames.length - 3 })}`
+              : ''}
           </span>
         )}
       </button>
@@ -518,12 +499,14 @@ function MultiWorkerPicker(props: {
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Поиск работника…"
+            placeholder={t('admin.main.workerSearchPlaceholder')}
             className="mb-2 w-full rounded-2xl border border-yellow-400/15 bg-black/40 px-3 py-2 text-xs text-zinc-200 outline-none focus:border-yellow-300/50"
           />
 
           <div className="max-h-[240px] overflow-auto rounded-2xl border border-yellow-400/10 bg-black/20">
-            {filtered.length === 0 ? <div className="px-3 py-3 text-xs text-zinc-500">Ничего не найдено</div> : null}
+            {filtered.length === 0 ? (
+              <div className="px-3 py-3 text-xs text-zinc-500">{t('admin.main.searchNoResults')}</div>
+            ) : null}
 
             {filtered.map((w) => {
               const on = props.value.includes(w.id)
@@ -544,7 +527,7 @@ function MultiWorkerPicker(props: {
                       on ? 'border-yellow-300/60 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-300'
                     )}
                   >
-                    {on ? 'выбран' : ' '}
+                    {on ? t('admin.main.selected') : ' '}
                   </span>
                 </button>
               )
@@ -552,13 +535,15 @@ function MultiWorkerPicker(props: {
           </div>
 
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-            <div className="text-[11px] text-zinc-300">Показано: {filtered.length} • Выбрано: {props.value.length}</div>
+            <div className="text-[11px] text-zinc-300">
+              {t('admin.main.shownSelected', { shown: filtered.length, sel: props.value.length })}
+            </div>
             <button
               type="button"
               onClick={() => props.onChange([])}
               className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40"
             >
-              Очистить
+              {t('admin.main.clearSelection')}
             </button>
           </div>
         </div>
@@ -586,6 +571,8 @@ function payrollForReports(d: Date) {
 }
 
 function ReportsPanel() {
+  const { t } = useI18n()
+  const authFetchJson = useAdminAuthFetch()
   const initialPayroll = useMemo(() => payrollForReports(new Date()), [])
   const [reportsView, setReportsView] = useState<'workers' | 'sites'>('workers')
   const [reportPickerOpen, setReportPickerOpen] = useState(false)
@@ -638,12 +625,12 @@ function ReportsPanel() {
 
       setReportData(data)
     } catch (e: any) {
-      setReportError(String(e?.message || 'Ошибка отчёта'))
+      setReportError(String(e?.message || t('admin.main.errReport')))
       setReportData(null)
     } finally {
       setReportLoading(false)
     }
-  }, [])
+  }, [authFetchJson, t])
 
   useEffect(() => {
     void loadReports(reportFrom, reportTo)
@@ -654,9 +641,9 @@ function ReportsPanel() {
     <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="text-sm font-semibold text-yellow-100">Контроль рабочего времени</div>
+          <div className="text-sm font-semibold text-yellow-100">{t('admin.reports.titleTimeControl')}</div>
           <div className="mt-1 text-xs text-zinc-300">
-            Период: {fmtD(reportFrom)} — {fmtD(reportTo)}
+            {t('admin.reports.periodLine', { from: fmtD(reportFrom), to: fmtD(reportTo) })}
           </div>
         </div>
   
@@ -666,21 +653,21 @@ function ReportsPanel() {
             onClick={() => setReportPickerOpen(true)}
             className="rounded-2xl border border-yellow-400/25 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/50"
           >
-            Выбрать период
+            {t('admin.reports.pickPeriod')}
           </button>
 
           <a
             href="/admin/fact"
             className="rounded-2xl border border-yellow-400/25 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/50"
           >
-            Правка факта
+            {t('admin.reports.editFact')}
           </a>
 
 <a
   className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10"
   href="/admin/approvals"
 >
-  Активации
+  {t('admin.reports.linkActivations')}
 </a>
 			
           <div className="flex items-center gap-2 rounded-2xl border border-yellow-400/10 bg-black/25 p-1">
@@ -692,7 +679,7 @@ function ReportsPanel() {
                 reportsView === 'workers' ? 'bg-yellow-400/10 text-yellow-100' : 'text-zinc-200 hover:text-yellow-100'
               )}
             >
-              По работникам
+              {t('admin.plan.byWorkers')}
             </button>
             <button
               type="button"
@@ -702,7 +689,7 @@ function ReportsPanel() {
                 reportsView === 'sites' ? 'bg-yellow-400/10 text-yellow-100' : 'text-zinc-200 hover:text-yellow-100'
               )}
             >
-              По объектам
+              {t('admin.plan.bySites')}
             </button>
           </div>
         </div>
@@ -710,22 +697,24 @@ function ReportsPanel() {
   
       <div className="mt-4 grid gap-3 md:grid-cols-3">
         <div className="rounded-3xl border border-yellow-400/10 bg-black/30 p-4">
-          <div className="text-[11px] text-zinc-300">Итог периода</div>
+          <div className="text-[11px] text-zinc-300">{t('admin.reports.periodTotal')}</div>
           <div className="mt-1 text-2xl font-semibold tracking-tight text-yellow-100">
             {fmtMinutesHM(reportData?.total_minutes ?? 0)}
           </div>
-          <div className="mt-1 text-[11px] text-zinc-400">часы:минуты</div>
+          <div className="mt-1 text-[11px] text-zinc-400">{t('admin.reports.hoursMinutes')}</div>
         </div>
   
         <div className="rounded-3xl border border-yellow-400/10 bg-black/30 p-4 md:col-span-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-[11px] text-zinc-300">Поиск</div>
-            <div className="text-[11px] text-zinc-400">{reportLoading ? 'Считаю…' : reportData ? 'Готово' : '—'}</div>
+            <div className="text-[11px] text-zinc-300">{t('admin.reports.search')}</div>
+            <div className="text-[11px] text-zinc-400">
+              {reportLoading ? t('admin.reports.loading') : reportData ? t('admin.reports.ready') : t('admin.common.dash')}
+            </div>
           </div>
           <input
             value={reportSearch}
             onChange={(e) => setReportSearch(e.target.value)}
-            placeholder="Имя работника / объект"
+            placeholder={t('admin.reports.searchPlaceholder')}
             className="mt-2 w-full rounded-2xl border border-yellow-400/15 bg-black/35 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 outline-none focus:border-yellow-300/40"
           />
           {reportError ? (
@@ -765,7 +754,9 @@ function ReportsPanel() {
                   </div>
                   <div className="min-w-0">
                     <div className="truncate text-sm font-semibold text-zinc-100">{title}</div>
-                    <div className="mt-0.5 text-[11px] text-zinc-400">{reportsView === 'workers' ? 'Работник' : 'Объект'}</div>
+                    <div className="mt-0.5 text-[11px] text-zinc-400">
+                      {reportsView === 'workers' ? t('admin.reports.rowWorker') : t('admin.reports.rowSite')}
+                    </div>
                   </div>
                 </div>
   
@@ -778,7 +769,7 @@ function ReportsPanel() {
   
         {!reportLoading &&
         (reportsView === 'workers' ? (reportData?.by_worker?.length ?? 0) : (reportData?.by_site?.length ?? 0)) === 0 ? (
-          <div className="px-4 py-6 text-center text-sm text-zinc-400">Нет данных за выбранный период</div>
+          <div className="px-4 py-6 text-center text-sm text-zinc-400">{t('admin.reports.emptyPeriod')}</div>
         ) : null}
       </div>
     </div>
@@ -788,13 +779,13 @@ function ReportsPanel() {
       <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4">
         <div className="w-full max-w-xl overflow-hidden rounded-3xl border border-yellow-400/15 bg-zinc-950/95 shadow-[0_20px_80px_rgba(0,0,0,0.75)] backdrop-blur">
           <div className="flex items-center justify-between gap-2 border-b border-yellow-400/10 px-5 py-4">
-            <div className="text-sm font-semibold text-yellow-100">Период отчёта</div>
+            <div className="text-sm font-semibold text-yellow-100">{t('admin.reports.modalTitle')}</div>
             <button
               type="button"
               onClick={() => setReportPickerOpen(false)}
               className="rounded-2xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-xs text-zinc-200 hover:border-yellow-300/40"
             >
-              Закрыть
+              {t('admin.common.close')}
             </button>
           </div>
   
@@ -808,7 +799,7 @@ function ReportsPanel() {
                   reportPickerTab === 'payroll' ? 'bg-yellow-400/10 text-yellow-100' : 'text-zinc-200 hover:text-yellow-100'
                 )}
               >
-                Платёжный период
+                {t('admin.reports.tabPayroll')}
               </button>
               <button
                 type="button"
@@ -818,7 +809,7 @@ function ReportsPanel() {
                   reportPickerTab === 'custom' ? 'bg-yellow-400/10 text-yellow-100' : 'text-zinc-200 hover:text-yellow-100'
                 )}
               >
-                Пользовательские даты
+                {t('admin.reports.tabCustom')}
               </button>
             </div>
   
@@ -826,7 +817,7 @@ function ReportsPanel() {
               <div className="mt-4 grid gap-3">
                 <div className="grid gap-3 md:grid-cols-2">
                   <label className="grid gap-1 text-xs text-zinc-300">
-                    С
+                    {t('admin.fact.dateFrom')}
                     <input
                       type="date"
                       value={reportFrom}
@@ -835,7 +826,7 @@ function ReportsPanel() {
                     />
                   </label>
                   <label className="grid gap-1 text-xs text-zinc-300">
-                    До
+                    {t('admin.fact.dateTo')}
                     <input
                       type="date"
                       value={reportTo}
@@ -845,9 +836,7 @@ function ReportsPanel() {
                   </label>
                 </div>
   
-                <div className="text-[11px] text-zinc-400">
-                  Можно выставить хоть один день, хоть «сто лет» — серверу всё равно, если база выдержит.
-                </div>
+                <div className="text-[11px] text-zinc-400">{t('admin.main.customDatesHint')}</div>
               </div>
             ) : (
               <div className="mt-4 max-h-[52vh] overflow-auto rounded-3xl border border-yellow-400/10 bg-black/25">
@@ -875,7 +864,7 @@ function ReportsPanel() {
                           checked ? 'border-yellow-300/60 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-300'
                         )}
                       >
-                        {checked ? 'выбран' : ' '}
+                        {checked ? t('admin.main.selected') : ' '}
                       </span>
                     </button>
                   )
@@ -889,7 +878,7 @@ function ReportsPanel() {
               onClick={() => setReportPickerOpen(false)}
               className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-sm text-zinc-200 hover:border-yellow-300/40"
             >
-              Отмена
+              {t('admin.main.cancel')}
             </button>
             <button
               type="button"
@@ -902,7 +891,7 @@ function ReportsPanel() {
               }}
               className="rounded-2xl border border-yellow-400/40 bg-yellow-400/15 px-5 py-2 text-sm font-semibold text-yellow-100 hover:border-yellow-300/70"
             >
-              Применить
+              {t('admin.common.apply')}
             </button>
           </div>
         </div>
@@ -913,6 +902,9 @@ function ReportsPanel() {
 }
 
 export default function AdminPage() {
+  const { t, lang } = useI18n()
+  const authFetchJson = useAdminAuthFetch()
+
   const [tab, setTab] = useState<TabKey>('jobs')
 
   const [sessionLoading, setSessionLoading] = useState(true)
@@ -935,13 +927,13 @@ export default function AdminPage() {
   useEffect(() => {
     if (!busy) return
     const seq = busySeq
-    const t = window.setTimeout(() => {
+    const tid = window.setTimeout(() => {
       if (refreshSeqRef.current !== seq) return
       setBusy(false)
-      setError('Обновление зависло. Обычно это сеть/таймаут. Нажми “Обновить данные” ещё раз.')
+      setError(t('admin.common.refreshStuck'))
     }, 25000)
-    return () => window.clearTimeout(t)
-  }, [busy, busySeq])
+    return () => window.clearTimeout(tid)
+  }, [busy, busySeq, t])
 
   const [showArchivedSites, setShowArchivedSites] = useState(false)
 
@@ -1091,7 +1083,7 @@ const [editOpen, setEditOpen] = useState(false)
       .sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''))
   }, [workers])
 
-  const workersForPicker = useMemo(() => workersForSelect.map((w) => ({ id: w.id, name: w.full_name || 'Работник' })), [workersForSelect])
+  const workersForPicker = useMemo(() => workersForSelect.map((w) => ({ id: w.id, name: w.full_name || t('admin.common.worker') })), [workersForSelect, t])
 
   const siteWorkers = useMemo(() => {
     const m = new Map<string, Worker[]>()
@@ -1130,14 +1122,24 @@ const [editOpen, setEditOpen] = useState(false)
   const done = useMemo(() => scheduleFiltered.filter((x) => x.status === 'done'), [scheduleFiltered])
   const cancelled = useMemo(() => scheduleFiltered.filter((x) => x.status === 'cancelled'), [scheduleFiltered])
 
-  const planDates = useMemo(() => enumerateDates(dateFrom, dateTo), [dateFrom, dateTo])
+  const dowByGetDay = useMemo(
+    () => [t('admin.plan.dSun'), t('admin.plan.dMon'), t('admin.plan.dTue'), t('admin.plan.dWed'), t('admin.plan.dThu'), t('admin.plan.dFri'), t('admin.plan.dSat')],
+    [t],
+  )
+
+  const planCalHead = useMemo(
+    () => [t('admin.plan.dMon'), t('admin.plan.dTue'), t('admin.plan.dWed'), t('admin.plan.dThu'), t('admin.plan.dFri'), t('admin.plan.dSat'), t('admin.plan.dSun')],
+    [t],
+  )
+
+  const planDates = useMemo(() => enumerateDates(dateFrom, dateTo, dowByGetDay), [dateFrom, dateTo, dowByGetDay])
 
   const planEntities = useMemo(() => {
     if (planMode === 'workers') {
-      return workersForSelect.map((w) => ({ id: w.id, name: w.full_name || 'Работник' }))
+      return workersForSelect.map((w) => ({ id: w.id, name: w.full_name || t('admin.common.worker') }))
     }
-    return activeSites.map((s) => ({ id: s.id, name: s.name || 'Объект' }))
-  }, [planMode, workersForSelect, activeSites])
+    return activeSites.map((s) => ({ id: s.id, name: s.name || t('admin.common.site') }))
+  }, [planMode, workersForSelect, activeSites, t])
 
   const hours = useMemo(() => Array.from({ length: 24 }, (_, i) => pad2(i) + ':00'), [])
 
@@ -1201,7 +1203,7 @@ const [editOpen, setEditOpen] = useState(false)
       // Параллелим: максимум = один таймаут fetch, а не два подряд.
       await Promise.all([refreshCore(), refreshSchedule()])
     } catch (e: any) {
-      setError(e?.message || 'Ошибка загрузки')
+      setError(e?.message || t('admin.main.errLoad'))
     } finally {
       if (seq === refreshSeqRef.current) setBusy(false)
     }
@@ -1222,7 +1224,7 @@ const [editOpen, setEditOpen] = useState(false)
     // meId не критичен: админские API сами проверяют роль
     setMeId(null)
   } catch (e: any) {
-    setError(e?.message || 'Ошибка сессии')
+    setError(e?.message || t('admin.main.errSession'))
     clearAuthTokens()
     setSessionToken(null)
     setMeId(null)
@@ -1272,14 +1274,14 @@ const [editOpen, setEditOpen] = useState(false)
       })
       const j = await res.json().catch(() => null)
       if (!res.ok) throw new Error(j?.error || `HTTP ${res.status}`)
-      if (!j?.access_token) throw new Error('Не удалось получить токен')
+      if (!j?.access_token) throw new Error(t('admin.main.errToken'))
 
       setAuthTokens(String(j.access_token), j.refresh_token ? String(j.refresh_token) : null)
       setSessionToken(String(j.access_token))
       setMeId(j?.user?.id || null)
       await refreshAll()
     } catch (e: any) {
-      setError(e?.message || 'Ошибка входа')
+      setError(e?.message || t('admin.main.errLogin'))
     } finally {
       setBusy(false)
     }
@@ -1307,7 +1309,7 @@ const [editOpen, setEditOpen] = useState(false)
     setNotice(null)
     try {
       const em = inviteEmail.trim()
-      if (!em) throw new Error('Нужен email или телефон')
+      if (!em) throw new Error(t('admin.main.errNeedContact'))
       const out = await authFetchJson('/api/admin/workers/invite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1316,10 +1318,10 @@ const [editOpen, setEditOpen] = useState(false)
       setInviteEmail('')
       const login = String((out as any)?.login || em)
       const pw = String((out as any)?.password || '')
-      setNotice(`Создано. Логин: ${login}. Временный пароль: ${pw} (при первом входе попросим сменить).`)
+      setNotice(t('admin.main.noticeInviteCreated', { login, pw }))
       await refreshCore()
     } catch (e: any) {
-      setError(e?.message || 'Ошибка приглашения')
+      setError(e?.message || t('admin.main.errInvite'))
     } finally {
       setBusy(false)
     }
@@ -1336,7 +1338,7 @@ const [editOpen, setEditOpen] = useState(false)
       })
       await refreshCore()
     } catch (e: any) {
-      setError(e?.message || 'Ошибка назначения')
+      setError(e?.message || t('admin.main.errAssign'))
     } finally {
       setBusy(false)
     }
@@ -1353,7 +1355,7 @@ const [editOpen, setEditOpen] = useState(false)
       })
       await refreshCore()
     } catch (e: any) {
-      setError(e?.message || 'Ошибка снятия назначения')
+      setError(e?.message || t('admin.main.errUnassign'))
     } finally {
       setBusy(false)
     }
@@ -1370,7 +1372,7 @@ const [editOpen, setEditOpen] = useState(false)
       })
       await refreshCore()
     } catch (e: any) {
-      setError(e?.message || 'Не удалось обновить архив')
+      setError(e?.message || t('admin.main.errSiteArchive'))
     } finally {
       setBusy(false)
     }
@@ -1442,7 +1444,7 @@ const [editOpen, setEditOpen] = useState(false)
 
       await refreshCore()
     } catch (e: any) {
-      setError(e?.message || 'Не удалось создать объект')
+      setError(e?.message || t('admin.main.errSiteCreate'))
     } finally {
       setBusy(false)
     }
@@ -1483,14 +1485,14 @@ const [editOpen, setEditOpen] = useState(false)
       setSiteCardOpen(false)
       await refreshCore()
     } catch (e: any) {
-      setError(e?.message || 'Не удалось сохранить объект')
+      setError(e?.message || t('admin.main.errSiteSave'))
     } finally {
       setBusy(false)
     }
   }
 
   async function deleteObjectSite(siteId: string) {
-    const ok = window.confirm('Удалить объект? Это действие нельзя отменить.')
+    const ok = window.confirm(t('admin.main.confirmDeleteSite'))
     if (!ok) return
 
     setBusy(true)
@@ -1500,7 +1502,7 @@ const [editOpen, setEditOpen] = useState(false)
       if (siteCardId === siteId) setSiteCardOpen(false)
       await refreshCore()
     } catch (e: any) {
-      setError(e?.message || 'Не удалось удалить объект')
+      setError(e?.message || t('admin.main.errSiteDelete'))
     } finally {
       setBusy(false)
     }
@@ -1517,7 +1519,7 @@ const [editOpen, setEditOpen] = useState(false)
       })
       if (res?.site) applySiteUpdate(res.site)
     } catch (e: any) {
-      setError(e?.message || 'Не удалось обновить категорию')
+      setError(e?.message || t('admin.main.errSiteCategory'))
     } finally {
       setBusy(false)
     }
@@ -1538,12 +1540,12 @@ const [editOpen, setEditOpen] = useState(false)
 
 
       if (left <= 0) {
-        setPhotoUiError('Лимит 5 фото. Удалите одно и повторите.')
+        setPhotoUiError(t('admin.main.photoLimit5'))
         return
       }
 
       if (toUpload.length < files.length) {
-        setPhotoUiNotice(`Загружу ${toUpload.length} из ${files.length} (лимит 5)`)
+        setPhotoUiNotice(t('admin.main.photoUploadBatch', { n: toUpload.length, total: files.length }))
       }
 
       for (const f of toUpload) {
@@ -1556,11 +1558,11 @@ const [editOpen, setEditOpen] = useState(false)
         if (res?.site) applySiteUpdate(res.site)
       }
 
-      setPhotoUiNotice(toUpload.length > 1 ? 'Фото загружены.' : 'Фото загружено.')
+      setPhotoUiNotice(toUpload.length > 1 ? t('admin.main.photoUploadedMany') : t('admin.main.photoUploadedOne'))
       await refreshCore()
     } catch (e: any) {
-      setPhotoUiError(e?.message || 'Не удалось загрузить фото')
-      setError(e?.message || 'Не удалось загрузить фото')
+      setPhotoUiError(e?.message || t('admin.main.errPhotoUpload'))
+      setError(e?.message || t('admin.main.errPhotoUpload'))
     } finally {
       setPhotoBusy(false)
     }
@@ -1578,11 +1580,11 @@ const [editOpen, setEditOpen] = useState(false)
         body: JSON.stringify({ action: 'make_primary', path }),
       })
       if (res?.site) applySiteUpdate(res.site)
-      setPhotoUiNotice('Фото удалено.')
+      setPhotoUiNotice(t('admin.main.photoSetPrimary'))
       await refreshCore()
     } catch (e: any) {
-      setPhotoUiError(e?.message || 'Не удалось сделать фото главным')
-      setError(e?.message || 'Не удалось сделать фото главным')
+      setPhotoUiError(e?.message || t('admin.main.errPhotoPrimary'))
+      setError(e?.message || t('admin.main.errPhotoPrimary'))
     } finally {
       setPhotoBusy(false)
     }
@@ -1602,8 +1604,8 @@ const [editOpen, setEditOpen] = useState(false)
       if (res?.site) applySiteUpdate(res.site)
       await refreshCore()
     } catch (e: any) {
-      setPhotoUiError(e?.message || 'Не удалось удалить фото')
-      setError(e?.message || 'Не удалось удалить фото')
+      setPhotoUiError(e?.message || t('admin.main.errPhotoDelete'))
+      setError(e?.message || t('admin.main.errPhotoDelete'))
     } finally {
       setPhotoBusy(false)
     }
@@ -1611,10 +1613,10 @@ const [editOpen, setEditOpen] = useState(false)
 
   async function setRole(workerId: string, role: 'admin' | 'worker') {
     if (role === 'worker' && meId && workerId === meId) {
-      setError('Нельзя разжаловать самого себя.')
+      setError(t('admin.main.errSelfDemote'))
       return
     }
-    const ok = window.confirm(role === 'admin' ? 'Сделать этого работника админом?' : 'Сделать этого админа обычным работником?')
+    const ok = window.confirm(role === 'admin' ? t('admin.main.confirmSetAdmin') : t('admin.main.confirmUnsetAdmin'))
     if (!ok) return
 
     setBusy(true)
@@ -1627,7 +1629,7 @@ const [editOpen, setEditOpen] = useState(false)
       })
       await refreshCore()
     } catch (e: any) {
-      setError(e?.message || 'Не удалось изменить роль')
+      setError(e?.message || t('admin.main.errRole'))
     } finally {
       setBusy(false)
     }
@@ -1635,14 +1637,12 @@ const [editOpen, setEditOpen] = useState(false)
 
   async function setWorkerArchived(workerId: string, archive: boolean) {
     if (meId && workerId === meId) {
-      setError('Нельзя архивировать самого себя.')
+      setError(t('admin.main.errSelfArchive'))
       return
     }
 
     const ok = window.confirm(
-      archive
-        ? 'Заархивировать работника? Он не сможет работать в приложении.'
-        : 'Вернуть работника из архива?'
+      archive ? t('admin.main.confirmArchiveWorker') : t('admin.main.confirmUnarchiveWorker')
     )
     if (!ok) return
 
@@ -1656,7 +1656,7 @@ const [editOpen, setEditOpen] = useState(false)
       })
       await refreshCore()
     } catch (e: any) {
-      setError(e?.message || 'Не удалось обновить статус работника')
+      setError(e?.message || t('admin.main.errWorkerStatus'))
     } finally {
       setBusy(false)
     }
@@ -1664,13 +1664,11 @@ const [editOpen, setEditOpen] = useState(false)
 
   async function deleteWorker(workerId: string) {
     if (meId && workerId === meId) {
-      setError('Нельзя удалить самого себя.')
+      setError(t('admin.main.errSelfDelete'))
       return
     }
 
-    const ok = window.confirm(
-      'Удалить работника НАВСЕГДА?\n\nВажно: если у него есть таймлоги/смены, сервер запретит удаление (и это нормально).'
-    )
+    const ok = window.confirm(t('admin.main.confirmDeleteWorker'))
     if (!ok) return
 
     setBusy(true)
@@ -1683,7 +1681,7 @@ const [editOpen, setEditOpen] = useState(false)
       })
       await refreshCore()
     } catch (e: any) {
-      setError(e?.message || 'Не удалось удалить работника')
+      setError(e?.message || t('admin.main.errWorkerDelete'))
     } finally {
       setBusy(false)
     }
@@ -1732,7 +1730,7 @@ const [editOpen, setEditOpen] = useState(false)
       setEditOpen(false)
       await refreshSchedule()
     } catch (e: any) {
-      setError(e?.message || 'Не удалось сохранить')
+      setError(e?.message || t('admin.main.errSave'))
     } finally {
       setBusy(false)
     }
@@ -1815,7 +1813,7 @@ const [editOpen, setEditOpen] = useState(false)
       // обновим thumb для списка
       await loadWorkerPhotoMeta(workerId)
     } catch (e: any) {
-      setError(e?.message || 'Не удалось сохранить профиль')
+      setError(e?.message || t('admin.main.errSaveProfile'))
     } finally {
       setWorkerProfileSaving(false)
     }
@@ -1836,7 +1834,7 @@ const [editOpen, setEditOpen] = useState(false)
       }
       await loadWorkerPhotoMeta(workerId)
     } catch (e: any) {
-      setError(e?.message || 'Не удалось выбрать аватар')
+      setError(e?.message || t('admin.main.errAvatar'))
     }
   }
 
@@ -1861,7 +1859,7 @@ const [editOpen, setEditOpen] = useState(false)
         setWorkerCardPhotos(Array.isArray(res?.photos) ? res.photos : [])
       }
     } catch (e: any) {
-      setError(e?.message || 'Не удалось загрузить фото')
+      setError(e?.message || t('admin.main.errWorkerPhotoUp'))
     } finally {
       setWorkerPhotoBusy(false)
     }
@@ -1878,7 +1876,7 @@ const [editOpen, setEditOpen] = useState(false)
       })
       setWorkerCardPhotos(Array.isArray(res?.photos) ? res.photos : [])
     } catch (e: any) {
-      setError(e?.message || 'Не удалось удалить фото')
+      setError(e?.message || t('admin.main.errWorkerPhotoDel'))
     } finally {
       setWorkerPhotoBusy(false)
     }
@@ -1900,7 +1898,7 @@ const [editOpen, setEditOpen] = useState(false)
     try {
       await Promise.all([loadWorkerCard(workerId), loadWorkerPhotos(workerId), loadWorkerProfile(workerId)])
     } catch (e: any) {
-      setError(e?.message || 'Не удалось загрузить карточку работника')
+      setError(e?.message || t('admin.main.errWorkerCard'))
     }
   }
 
@@ -1918,7 +1916,7 @@ const [editOpen, setEditOpen] = useState(false)
       setJobsView('table')
       await refreshSchedule()
     } catch (e: any) {
-      setError(e?.message || 'Не удалось создать смену')
+      setError(e?.message || t('admin.main.errJobCreate'))
     } finally {
       setBusy(false)
     }
@@ -1957,7 +1955,7 @@ const [editOpen, setEditOpen] = useState(false)
       await refreshSchedule()
       await refreshCore()
     } catch (e: any) {
-      setError(e?.message || 'Не удалось перенести')
+      setError(e?.message || t('admin.main.errJobMove'))
     } finally {
       setBusy(false)
     }
@@ -1975,7 +1973,7 @@ const [editOpen, setEditOpen] = useState(false)
       setCancelOpen(false)
       await refreshSchedule()
     } catch (e: any) {
-      setError(e?.message || 'Не удалось отменить')
+      setError(e?.message || t('admin.main.errJobCancel'))
     } finally {
       setBusy(false)
     }
@@ -2000,7 +1998,7 @@ const [editOpen, setEditOpen] = useState(false)
       await refreshSchedule()
       await refreshCore()
     } catch (e: any) {
-      setError(e?.message || 'Не удалось перенести день')
+      setError(e?.message || t('admin.main.errJobMoveDay'))
     } finally {
       setBusy(false)
     }
@@ -2027,8 +2025,8 @@ const [editOpen, setEditOpen] = useState(false)
   }
 
   function jobCard(j: ScheduleItem, compact: boolean) {
-    const left = planMode === 'workers' ? (j.site_name || 'Объект') : (j.worker_name || 'Работник')
-    const right = `${timeRangeHHMM(j.scheduled_time, j.scheduled_end_time)} • ${statusRu(String(j.status || ''))}`
+    const left = planMode === 'workers' ? (j.site_name || t('admin.common.site')) : (j.worker_name || t('admin.common.worker'))
+    const right = `${timeRangeHHMM(j.scheduled_time, j.scheduled_end_time)} • ${jobStatusLabel(t, String(j.status || ''))}`
     return (
       <div
         key={j.id}
@@ -2097,7 +2095,7 @@ const [editOpen, setEditOpen] = useState(false)
               }}
               className="rounded-xl border border-yellow-400/10 bg-black/25 px-2 py-1 text-[10px] text-zinc-200 hover:border-yellow-300/30"
             >
-              отменить
+              {t('admin.main.cancelJob')}
             </button>
 
             {planMode === 'workers' ? (
@@ -2110,7 +2108,7 @@ const [editOpen, setEditOpen] = useState(false)
                 }}
                 className="rounded-xl border border-yellow-400/10 bg-black/25 px-2 py-1 text-[10px] text-zinc-200 hover:border-yellow-300/30"
               >
-                перенести
+                {t('admin.main.moveJob')}
               </button>
             ) : null}
           </div>
@@ -2133,7 +2131,7 @@ const [editOpen, setEditOpen] = useState(false)
               planView === 'day' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
             )}
           >
-            День
+            {t('admin.plan.day')}
           </button>
           <button
             onClick={() => {
@@ -2145,7 +2143,7 @@ const [editOpen, setEditOpen] = useState(false)
               planView === 'week' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
             )}
           >
-            Неделя
+            {t('admin.plan.week')}
           </button>
           <button
             onClick={() => {
@@ -2157,7 +2155,7 @@ const [editOpen, setEditOpen] = useState(false)
               planView === 'month' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
             )}
           >
-            Месяц
+            {t('admin.plan.month')}
           </button>
 
           <div className="mx-2 h-7 w-px bg-yellow-400/10" />
@@ -2169,7 +2167,7 @@ const [editOpen, setEditOpen] = useState(false)
               planMode === 'workers' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
             )}
           >
-            По работникам
+            {t('admin.plan.byWorkers')}
           </button>
           <button
             onClick={() => setPlanMode('sites')}
@@ -2178,13 +2176,13 @@ const [editOpen, setEditOpen] = useState(false)
               planMode === 'sites' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
             )}
           >
-            По объектам
+            {t('admin.plan.bySites')}
           </button>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <label className="grid gap-1">
-            <span className="text-[11px] text-zinc-300">Дата</span>
+            <span className="text-[11px] text-zinc-300">{t('admin.fact.colDate')}</span>
             <input
               type="date"
               value={anchorDate}
@@ -2205,7 +2203,7 @@ const [editOpen, setEditOpen] = useState(false)
             }}
             className="mt-5 rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/40"
           >
-            Сегодня
+            {t('admin.main.today')}
           </button>
 
           <button
@@ -2218,7 +2216,7 @@ const [editOpen, setEditOpen] = useState(false)
             }}
             className="mt-5 rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 hover:border-yellow-200/70"
           >
-            Перенести день
+            {t('admin.main.moveDay')}
           </button>
         </div>
       </div>
@@ -2231,7 +2229,7 @@ const [editOpen, setEditOpen] = useState(false)
         <div className="min-w-[980px]">
           <div className="grid" style={{ gridTemplateColumns: `320px repeat(${planDates.length}, minmax(220px, 1fr))` }}>
             <div className="sticky top-0 z-10 border-b border-yellow-400/10 bg-zinc-950/90 px-4 py-3 text-xs font-semibold text-zinc-200">
-              {planMode === 'workers' ? 'Работник' : 'Объект'}
+              {planMode === 'workers' ? t('admin.common.worker') : t('admin.common.site')}
             </div>
 
             {planDates.map((d) => (
@@ -2264,8 +2262,10 @@ const [editOpen, setEditOpen] = useState(false)
                     </div>
                       <div className="mt-1 text-[11px] text-zinc-400">
                         {planMode === 'workers'
-                          ? `Объекты: ${(workerSites.get(ent.id) || []).length}`
-                          : `Назначены: ${(siteWorkers.get(ent.id) || []).filter((w) => (w.role || '') !== 'admin').length}`}
+                          ? t('admin.main.planSitesCount', { n: (workerSites.get(ent.id) || []).length })
+                          : t('admin.main.planAssignedCount', {
+                              n: (siteWorkers.get(ent.id) || []).filter((w) => (w.role || '') !== 'admin').length,
+                            })}
                       </div>
                     </div>
 
@@ -2274,7 +2274,7 @@ const [editOpen, setEditOpen] = useState(false)
                         onClick={() => openWorkerCard(ent.id)}
                         className="rounded-2xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-[11px] text-zinc-200 hover:border-yellow-300/40"
                       >
-                        карточка
+                        {t('admin.main.card')}
                       </button>
                     ) : null}
                   </div>
@@ -2300,7 +2300,7 @@ const [editOpen, setEditOpen] = useState(false)
                     <div className="grid gap-2">
                       {jobsInCell({ entityId: ent.id, dateISO: d.iso }).map((j) => jobCard(j, true))}
                       <div className="rounded-2xl border border-dashed border-yellow-400/10 bg-black/10 px-3 py-2 text-[11px] text-zinc-500">
-                        перетащи сюда
+                        {t('admin.main.dragHere')}
                       </div>
                     </div>
                   </div>
@@ -2320,7 +2320,7 @@ const [editOpen, setEditOpen] = useState(false)
         <div className="min-w-[980px]">
           <div className="grid" style={{ gridTemplateColumns: `100px repeat(${planEntities.length}, minmax(220px, 1fr))` }}>
             <div className="sticky top-0 z-10 border-b border-yellow-400/10 bg-zinc-950/90 px-3 py-3 text-xs font-semibold text-zinc-200">
-              Время
+              {t('admin.main.timeCol')}
             </div>
 
             {planEntities.map((ent) => (
@@ -2347,7 +2347,7 @@ const [editOpen, setEditOpen] = useState(false)
                       onClick={() => openWorkerCard(ent.id)}
                       className="rounded-xl border border-yellow-400/10 bg-black/25 px-2 py-1 text-[10px] text-zinc-200 hover:border-yellow-300/30"
                     >
-                      карточка
+                      {t('admin.main.card')}
                     </button>
                   ) : null}
                 </div>
@@ -2380,7 +2380,7 @@ const [editOpen, setEditOpen] = useState(false)
                     <div className="grid gap-2">
                       {jobsInCell({ entityId: ent.id, dateISO: dayISO, hour: h }).map((j) => jobCard(j, true))}
                       <div className="rounded-2xl border border-dashed border-yellow-400/10 bg-black/10 px-3 py-2 text-[11px] text-zinc-500">
-                        перетащи сюда
+                        {t('admin.main.dragHere')}
                       </div>
                     </div>
                   </div>
@@ -2402,13 +2402,13 @@ const [editOpen, setEditOpen] = useState(false)
     const start = startOfWeek(first)
     const end = endOfWeek(last)
 
-    const days = enumerateDates(toISODate(start), toISODate(end))
+    const days = enumerateDates(toISODate(start), toISODate(end), dowByGetDay)
 
     return (
       <div className="mt-4 overflow-auto rounded-3xl border border-yellow-400/15 bg-black/15">
         <div className="min-w-[980px] p-4">
           <div className="grid grid-cols-7 gap-3">
-            {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((d) => (
+            {planCalHead.map((d) => (
               <div key={d} className="text-xs font-semibold text-zinc-300">
                 {d}
               </div>
@@ -2447,12 +2447,14 @@ const [editOpen, setEditOpen] = useState(false)
 
                     {schedule.filter((j) => (j.job_date || '') === d.iso).length > 3 ? (
                       <div className="rounded-2xl border border-yellow-400/10 bg-black/15 px-3 py-2 text-[11px] text-zinc-400">
-                        ещё {schedule.filter((j) => (j.job_date || '') === d.iso).length - 3}
+                        {t('admin.main.moreJobs', {
+                          n: schedule.filter((j) => (j.job_date || '') === d.iso).length - 3,
+                        })}
                       </div>
                     ) : null}
 
                     <div className="rounded-2xl border border-dashed border-yellow-400/10 bg-black/10 px-3 py-2 text-[11px] text-zinc-500">
-                      перетащи сюда
+                      {t('admin.main.dragHere')}
                     </div>
                   </div>
                 </div>
@@ -2469,7 +2471,7 @@ const [editOpen, setEditOpen] = useState(false)
       <main className="min-h-screen bg-gradient-to-b from-zinc-950 via-black to-zinc-950 text-zinc-100">
         <div className="mx-auto max-w-6xl px-4 py-10">
           <div className="rounded-3xl border border-yellow-400/20 bg-zinc-950/50 p-6 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur">
-            <div className="text-sm text-zinc-300">Проверяю вход…</div>
+            <div className="text-sm text-zinc-300">{t('admin.common.checkingSession')}</div>
           </div>
         </div>
       </main>
@@ -2485,13 +2487,13 @@ const [editOpen, setEditOpen] = useState(false)
               <Image src="/tanija-logo.png" alt="Tanija" fill className="object-contain p-2" priority />
             </div>
             <div>
-              <div className="text-lg font-semibold tracking-wide">Админ-панель</div>
-              <div className="text-xs text-yellow-200/70">Tanija • объекты • работники • смены</div>
+              <div className="text-lg font-semibold tracking-wide">{t('admin.common.panelTitle')}</div>
+              <div className="text-xs text-yellow-200/70">{t('admin.common.panelSubtitle')}</div>
             </div>
           </div>
 
           <div className="rounded-3xl border border-yellow-400/20 bg-zinc-950/50 p-6 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur">
-            <h1 className="text-xl font-semibold text-yellow-100">Вход</h1>
+            <h1 className="text-xl font-semibold text-yellow-100">{t('admin.common.loginTitle')}</h1>
 
             {error ? (
               <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-950/30 px-4 py-3 text-sm text-red-100">{error}</div>
@@ -2503,7 +2505,7 @@ const [editOpen, setEditOpen] = useState(false)
 
             <form onSubmit={onLogin} className="mt-5 grid gap-3">
               <label className="grid gap-1">
-                <span className="text-xs text-zinc-300">Логин (email или телефон)</span>
+                <span className="text-xs text-zinc-300">{t('admin.common.loginEmailLabel')}</span>
                 <input
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -2516,7 +2518,7 @@ const [editOpen, setEditOpen] = useState(false)
               </label>
 
               <label className="grid gap-1">
-                <span className="text-xs text-zinc-300">Пароль</span>
+                <span className="text-xs text-zinc-300">{t('admin.common.loginPasswordLabel')}</span>
                 <input
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -2533,7 +2535,7 @@ const [editOpen, setEditOpen] = useState(false)
                 disabled={busy}
                 className="mt-2 rounded-2xl border border-yellow-300/40 bg-gradient-to-r from-yellow-500/10 via-yellow-400/10 to-yellow-300/10 px-4 py-3 text-sm font-semibold text-yellow-100 shadow-[0_0_0_1px_rgba(255,215,0,0.18)] transition hover:border-yellow-200/70 hover:bg-yellow-400/10 disabled:opacity-60"
               >
-                {busy ? 'Вхожу…' : 'Войти'}
+                {busy ? t('admin.common.signingIn') : t('admin.common.signIn')}
               </button>
             </form>
           </div>
@@ -2559,8 +2561,8 @@ const [editOpen, setEditOpen] = useState(false)
               <Image src="/tanija-logo.png" alt="Tanija" fill className="object-contain p-2" priority />
             </div>
             <div>
-              <div className="text-lg font-semibold tracking-wide">Админ-панель</div>
-              <div className="text-xs text-yellow-200/70">Tanija • объекты • работники • смены</div>
+              <div className="text-lg font-semibold tracking-wide">{t('admin.common.panelTitle')}</div>
+              <div className="text-xs text-yellow-200/70">{t('admin.common.panelSubtitle')}</div>
             </div>
           </div>
 
@@ -2570,7 +2572,7 @@ const [editOpen, setEditOpen] = useState(false)
               disabled={busy}
               className="rounded-xl border border-yellow-400/40 bg-black/40 px-4 py-2 text-sm text-yellow-100 transition hover:border-yellow-300/70 hover:bg-black/60 disabled:opacity-60"
             >
-              {busy ? 'Обновляю…' : 'Обновить данные'}
+              {busy ? t('admin.common.refreshing') : t('admin.common.refreshData')}
             </button>
 
             <button
@@ -2578,7 +2580,7 @@ const [editOpen, setEditOpen] = useState(false)
               disabled={busy}
               className="rounded-xl border border-yellow-400/25 bg-black/30 px-4 py-2 text-sm text-yellow-100/90 transition hover:border-yellow-300/60 hover:bg-black/50 disabled:opacity-60"
             >
-              Выйти
+              {t('admin.common.logout')}
             </button>
           </div>
         </div>
@@ -2595,7 +2597,15 @@ const [editOpen, setEditOpen] = useState(false)
                     tab === k ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
                   )}
                 >
-                  {k === 'sites' ? 'Объекты' : k === 'workers' ? 'Работники' : k === 'jobs' ? 'Смены' : k === 'plan' ? 'График' : 'Отчёты'}
+                  {k === 'sites'
+                    ? t('admin.main.tabSites')
+                    : k === 'workers'
+                      ? t('admin.main.tabWorkers')
+                      : k === 'jobs'
+                        ? t('admin.main.tabJobs')
+                        : k === 'plan'
+                          ? t('admin.main.tabPlan')
+                          : t('admin.main.tabReports')}
                 </button>
               ))}
             </div>
@@ -2609,12 +2619,12 @@ const [editOpen, setEditOpen] = useState(false)
                     onChange={(e) => setShowArchivedSites(e.target.checked)}
                     className="h-4 w-4 accent-yellow-400"
                   />
-                  Показать архив
+                  {t('admin.main.showArchive')}
                 </label>
               ) : null}
 
               <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-[11px] text-zinc-200">
-                Объекты: {sites.length} • Работники: {workers.length} • Смены: {schedule.length}
+                {t('admin.main.statsLine', { sites: sites.length, workers: workers.length, jobs: schedule.length })}
               </div>
             </div>
           </div>
@@ -2642,8 +2652,8 @@ const [editOpen, setEditOpen] = useState(false)
                         <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div>
-                              <div className="text-sm font-semibold text-yellow-100">Объекты</div>
-                              <div className="mt-1 text-xs text-zinc-300">Назначение = доступ к объекту. Расписание делается в “Смены” и “График”.</div>
+                              <div className="text-sm font-semibold text-yellow-100">{t('admin.main.sitesSectionTitle')}</div>
+                              <div className="mt-1 text-xs text-zinc-300">{t('admin.main.sitesSectionHint')}</div>
                             </div>
 
                             <button
@@ -2651,19 +2661,19 @@ const [editOpen, setEditOpen] = useState(false)
                               disabled={busy}
                               className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
                             >
-                              + Добавить объект
+                              {t('admin.main.addSite')}
                             </button>
                           </div>
 
                           <div className="mt-4 flex flex-wrap items-end gap-2">
                             <label className="grid gap-1">
-                              <span className="text-[11px] text-zinc-300">Быстрое назначение: объект</span>
+                              <span className="text-[11px] text-zinc-300">{t('admin.main.quickAssignSite')}</span>
                               <select
                                 value={qaSite}
                                 onChange={(e) => setQaSite(e.target.value)}
                                 className="w-[260px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                               >
-                                <option value="">Выбери объект…</option>
+                                <option value="">{t('admin.main.selectSite')}</option>
                                 {activeSites.map((s) => (
                                   <option key={s.id} value={s.id}>
                                     {s.name || s.id}
@@ -2673,16 +2683,16 @@ const [editOpen, setEditOpen] = useState(false)
                             </label>
 
                             <label className="grid gap-1">
-                              <span className="text-[11px] text-zinc-300">Быстрое назначение: работник</span>
+                              <span className="text-[11px] text-zinc-300">{t('admin.main.quickAssignWorker')}</span>
                               <select
                                 value={qaWorker}
                                 onChange={(e) => setQaWorker(e.target.value)}
                                 className="w-[260px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                               >
-                                <option value="">Выбери работника…</option>
+                                <option value="">{t('admin.main.selectWorker')}</option>
                                 {workersForSelect.map((w) => (
                                   <option key={w.id} value={w.id}>
-                                    {w.full_name || 'Работник'}
+                                    {w.full_name || t('admin.common.worker')}
                                   </option>
                                 ))}
                               </select>
@@ -2693,7 +2703,7 @@ const [editOpen, setEditOpen] = useState(false)
                               disabled={busy || !qaSite || !qaWorker}
                               className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
                             >
-                              Назначить
+                              {t('admin.main.assign')}
                             </button>
                           </div>
                         </div>
@@ -2704,7 +2714,7 @@ const [editOpen, setEditOpen] = useState(false)
                           .map((s) => {
                             const archived = !!s.archived_at
                             const assigned = (siteWorkers.get(s.id) || []).filter((w) => (w.role || '') !== 'admin')
-                            const meta = siteCategoryMeta(s.category ?? null)
+                            const meta = siteCategoryMeta(t, s.category ?? null)
                             const photos = Array.isArray(s.photos) ? s.photos : []
                             const primaryUrl = photos?.[0]?.url || null
 
@@ -2731,10 +2741,16 @@ const [editOpen, setEditOpen] = useState(false)
                                               openSiteCard(s)
                                             }}
                                             className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-black/0"
-                                            title={(s.lat != null && s.lng != null) || !!s.address ? 'Открыть навигацию' : 'Открыть карточку'}
+                                            title={
+                                              (s.lat != null && s.lng != null) || !!s.address
+                                                ? t('admin.common.openNavigation')
+                                                : t('admin.common.openCard')
+                                            }
                                           />
                                           <div className="absolute bottom-1 left-2 text-[10px] font-semibold text-yellow-100/90">
-                                            {(s.lat != null && s.lng != null) || !!s.address ? 'Навигация' : 'Карточка'}
+                                            {(s.lat != null && s.lng != null) || !!s.address
+                                              ? t('admin.common.navigation')
+                                              : t('admin.common.openCard')}
                                           </div>
                                         </div>
                                       ) : (
@@ -2754,32 +2770,51 @@ const [editOpen, setEditOpen] = useState(false)
                                         <button
                                           onClick={() => openSiteCard(s)}
                                           className="truncate text-left text-base font-semibold text-yellow-100 hover:underline"
-                                          title="Открыть карточку объекта"
+                                          title={t('admin.common.openSiteCard')}
                                         >
-                                          {s.name || 'Объект'}
+                                          {s.name || t('admin.common.site')}
                                         </button>
 
                                         {archived ? (
-                                          <span className="rounded-xl border border-yellow-400/20 bg-black/30 px-2 py-1 text-[11px] text-zinc-200">в архиве</span>
+                                          <span className="rounded-xl border border-yellow-400/20 bg-black/30 px-2 py-1 text-[11px] text-zinc-200">
+                                            {t('admin.common.archived')}
+                                          </span>
                                         ) : (
-                                          <span className="rounded-xl border border-yellow-300/40 bg-yellow-400/10 px-2 py-1 text-[11px] text-yellow-100">активен</span>
+                                          <span className="rounded-xl border border-yellow-300/40 bg-yellow-400/10 px-2 py-1 text-[11px] text-yellow-100">
+                                            {t('admin.common.active')}
+                                          </span>
                                         )}
 
                                         <span className="inline-flex items-center gap-2 rounded-xl border border-yellow-400/15 bg-black/30 px-2 py-1 text-[11px] text-yellow-100/70">
                                           <span className={cn('h-2.5 w-2.5 rounded-full', meta.dotClass)} />
-                                          {s.category ? `#${s.category}` : 'без категории'}
+                                          {s.category ? `#${s.category}` : t('admin.common.noCategory')}
                                         </span>
                                       </div>
 
-                                      {s.address ? <div className="mt-2 text-xs text-zinc-300">Адрес: {s.address}</div> : null}
+                                      {s.address ? (
+                                        <div className="mt-2 text-xs text-zinc-300">
+                                          {t('admin.common.addressPrefix')} {s.address}
+                                        </div>
+                                      ) : null}
 
                                       <div className="mt-2 flex flex-wrap gap-2">
-                                        <Pill>радиус: {s.radius ?? 150} м</Pill>
-                                        <Pill>GPS: {s.lat != null && s.lng != null ? `${s.lat}, ${s.lng}` : 'нет'}</Pill>
-                                        <Pill>фото: {photos.length}/5</Pill>
+                                        <Pill>
+                                          {t('admin.common.radiusPrefix')} {s.radius ?? 150} {t('admin.sites.meterSuffix')}
+                                        </Pill>
+                                        <Pill>
+                                          {t('admin.common.gpsPrefix')}{' '}
+                                          {s.lat != null && s.lng != null ? `${s.lat}, ${s.lng}` : t('admin.sites.gpsNone')}
+                                        </Pill>
+                                        <Pill>
+                                          {t('admin.common.photosPrefix')} {photos.length}/5
+                                        </Pill>
                                       </div>
 
-                                      {s.notes ? <div className="mt-2 text-xs text-zinc-300">Заметки: {String(s.notes).slice(0, 160)}</div> : null}
+                                      {s.notes ? (
+                                        <div className="mt-2 text-xs text-zinc-300">
+                                          {t('admin.common.notesPrefix')} {String(s.notes).slice(0, 160)}
+                                        </div>
+                                      ) : null}
 
                                       <div className="mt-3 flex flex-wrap items-center gap-2">
                                         <CategoryPicker
@@ -2795,7 +2830,7 @@ const [editOpen, setEditOpen] = useState(false)
                                           disabled={busy}
                                           className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 transition hover:border-yellow-300/40 disabled:opacity-60"
                                         >
-                                          Карточка
+                                          {t('admin.common.openCard')}
                                         </button>
 
                                         <button
@@ -2803,7 +2838,7 @@ const [editOpen, setEditOpen] = useState(false)
                                           disabled={busy}
                                           className="rounded-2xl border border-red-500/25 bg-red-500/15 px-4 py-2 text-xs font-semibold text-red-100/85 transition hover:border-red-400/45 disabled:opacity-60"
                                         >
-                                          Удалить
+                                          {t('admin.common.delete')}
                                         </button>
 
                                         <button
@@ -2811,24 +2846,24 @@ const [editOpen, setEditOpen] = useState(false)
                                           disabled={busy}
                                           className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 transition hover:border-yellow-300/40 disabled:opacity-60"
                                         >
-                                          {archived ? 'Вернуть из архива' : 'В архив'}
+                                          {archived ? t('admin.common.unarchive') : t('admin.common.archive')}
                                         </button>
                                       </div>
 
-                                      <div className="mt-3 text-xs text-zinc-300">Назначены:</div>
+                                      <div className="mt-3 text-xs text-zinc-300">{t('admin.common.assignedPrefix')}</div>
                                       {assigned.length === 0 ? (
                                         <div className="mt-1 text-xs text-zinc-500">—</div>
                                       ) : (
                                         <div className="mt-2 flex flex-wrap gap-2">
                                           {assigned.map((w) => (
                                             <div key={w.id} className="flex items-center gap-2 rounded-2xl border border-yellow-400/10 bg-black/35 px-3 py-2 text-xs">
-                                              <span className="text-zinc-100">{w.full_name || 'Работник'}</span>
+                                              <span className="text-zinc-100">{w.full_name || t('admin.common.worker')}</span>
                                               <button
                                                 onClick={() => unassign(s.id, w.id)}
                                                 disabled={busy}
                                                 className="rounded-xl border border-yellow-400/20 bg-black/30 px-2 py-1 text-[11px] text-yellow-100/80 transition hover:border-yellow-300/50 disabled:opacity-60"
                                               >
-                                                снять
+                                                {t('admin.workers.unassign')}
                                               </button>
                                             </div>
                                           ))}
@@ -2841,16 +2876,16 @@ const [editOpen, setEditOpen] = useState(false)
                                     {!archived ? (
                                       <div className="flex flex-wrap items-end gap-2">
                                         <label className="grid gap-1">
-                                          <span className="text-[11px] text-zinc-300">Добавить работника</span>
+                                          <span className="text-[11px] text-zinc-300">{t('admin.sites.addWorkerToSite')}</span>
                                           <select
                                             value={workerPickSite[s.id] || ''}
                                             onChange={(e) => setWorkerPickSite((p) => ({ ...p, [s.id]: e.target.value }))}
                                             className="w-[240px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                                           >
-                                            <option value="">Выбери работника…</option>
+                                            <option value="">{t('admin.main.selectWorker')}</option>
                                             {workersForSelect.map((w) => (
                                               <option key={w.id} value={w.id}>
-                                                {w.full_name || 'Работник'}
+                                                {w.full_name || t('admin.common.worker')}
                                               </option>
                                             ))}
                                           </select>
@@ -2865,11 +2900,13 @@ const [editOpen, setEditOpen] = useState(false)
                                           disabled={busy || !workerPickSite[s.id]}
                                           className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
                                         >
-                                          Назначить
+                                          {t('admin.main.assign')}
                                         </button>
                                       </div>
                                     ) : (
-                                      <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-xs text-zinc-300">Архивный объект</div>
+                                      <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-xs text-zinc-300">
+                                        {t('admin.sites.archivedSite')}
+                                      </div>
                                     )}
                                   </div>
                                 </div>
@@ -2877,31 +2914,31 @@ const [editOpen, setEditOpen] = useState(false)
                             )
                           })}
 
-                        <Modal open={siteCreateOpen} title="Новый объект" onClose={() => setSiteCreateOpen(false)}>
+                        <Modal open={siteCreateOpen} title={t('admin.sites.modalNewTitle')} onClose={() => setSiteCreateOpen(false)}>
                           <div className="grid gap-3">
                             <label className="grid gap-1">
-                              <span className="text-[11px] text-zinc-300">Название</span>
+                              <span className="text-[11px] text-zinc-300">{t('admin.sites.name')}</span>
                               <input
                                 value={newObjName}
                                 onChange={(e) => setNewObjName(e.target.value)}
                                 className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
-                                placeholder="Например: Дом, офис, объект №1"
+                                placeholder={t('admin.sites.namePlaceholder')}
                               />
                             </label>
 
                             <label className="grid gap-1">
-                              <span className="text-[11px] text-zinc-300">Адрес</span>
+                              <span className="text-[11px] text-zinc-300">{t('admin.sites.address')}</span>
                               <input
                                 value={newObjAddress}
                                 onChange={(e) => setNewObjAddress(e.target.value)}
                                 className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
-                                placeholder="(необязательно)"
+                                placeholder={t('admin.sites.optional')}
                               />
                             </label>
 
                             <div className="grid gap-3 sm:grid-cols-2">
                               <label className="grid gap-1">
-                                <span className="text-[11px] text-zinc-300">Радиус (м)</span>
+                                <span className="text-[11px] text-zinc-300">{t('admin.sites.radiusM')}</span>
                                 <input
                                   value={newObjRadius}
                                   onChange={(e) => setNewObjRadius(e.target.value)}
@@ -2911,18 +2948,18 @@ const [editOpen, setEditOpen] = useState(false)
                               </label>
 
                               <div className="grid gap-1">
-                                <span className="text-[11px] text-zinc-300">Категория</span>
+                                <span className="text-[11px] text-zinc-300">{t('admin.sites.category')}</span>
                                 <CategoryPicker value={newObjCategory} onChange={setNewObjCategory} disabled={busy} />
                               </div>
                             </div>
 
                             <label className="grid gap-1">
-                              <span className="text-[11px] text-zinc-300">Заметки</span>
+                              <span className="text-[11px] text-zinc-300">{t('admin.sites.notes')}</span>
                               <textarea
                                 value={newObjNotes}
                                 onChange={(e) => setNewObjNotes(e.target.value)}
                                 className="min-h-[100px] rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
-                                placeholder="(необязательно)"
+                                placeholder={t('admin.sites.optional')}
                               />
                             </label>
 
@@ -2932,27 +2969,27 @@ const [editOpen, setEditOpen] = useState(false)
                                 disabled={busy || !newObjName.trim()}
                                 className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-yellow-100 transition hover:border-yellow-200/70 disabled:opacity-60"
                               >
-                                Создать
+                                {t('admin.sites.create')}
                               </button>
                               <button
                                 onClick={() => setSiteCreateOpen(false)}
                                 disabled={busy}
                                 className="rounded-2xl border border-yellow-400/15 bg-black/30 px-5 py-3 text-sm text-zinc-200 transition hover:border-yellow-300/40 disabled:opacity-60"
                               >
-                                Отмена
+                                {t('admin.main.cancel')}
                               </button>
                             </div>
                           </div>
                         </Modal>
 
-                        <Modal open={siteCardOpen} title={siteCardName || 'Карточка объекта'} onClose={() => setSiteCardOpen(false)}>
+                        <Modal open={siteCardOpen} title={siteCardName || t('admin.sites.cardTitleFallback')} onClose={() => setSiteCardOpen(false)}>
                           {!siteCardId ? (
-                            <div className="text-sm text-zinc-300">Нет объекта</div>
+                            <div className="text-sm text-zinc-300">{t('admin.sites.noSiteSelected')}</div>
                           ) : (
                             <div className="grid gap-4">
                               <div className="grid gap-3 sm:grid-cols-2">
                                 <label className="grid gap-1 sm:col-span-2">
-                                  <span className="text-[11px] text-zinc-300">Название</span>
+                                  <span className="text-[11px] text-zinc-300">{t('admin.sites.name')}</span>
                                   <input
                                     value={siteCardName}
                                     onChange={(e) => setSiteCardName(e.target.value)}
@@ -2961,7 +2998,7 @@ const [editOpen, setEditOpen] = useState(false)
                                 </label>
 
                                 <label className="grid gap-1 sm:col-span-2">
-                                  <span className="text-[11px] text-zinc-300">Адрес</span>
+                                  <span className="text-[11px] text-zinc-300">{t('admin.sites.address')}</span>
                                   <input
                                     value={siteCardAddress}
                                     onChange={(e) => setSiteCardAddress(e.target.value)}
@@ -2970,7 +3007,7 @@ const [editOpen, setEditOpen] = useState(false)
                                 </label>
 
                                 <label className="grid gap-1">
-                                  <span className="text-[11px] text-zinc-300">Радиус (м)</span>
+                                  <span className="text-[11px] text-zinc-300">{t('admin.sites.radiusM')}</span>
                                   <input
                                     value={siteCardRadius}
                                     onChange={(e) => setSiteCardRadius(e.target.value)}
@@ -2979,32 +3016,32 @@ const [editOpen, setEditOpen] = useState(false)
                                 </label>
 
                                 <div className="grid gap-1">
-                                  <span className="text-[11px] text-zinc-300">Категория</span>
+                                  <span className="text-[11px] text-zinc-300">{t('admin.sites.category')}</span>
                                   <CategoryPicker value={siteCardCategory} onChange={setSiteCardCategory} disabled={busy} />
                                 </div>
 
                                 <label className="grid gap-1">
-                                  <span className="text-[11px] text-zinc-300">Lat</span>
+                                  <span className="text-[11px] text-zinc-300">{t('admin.sites.lat')}</span>
                                   <input
                                     value={siteCardLat}
                                     onChange={(e) => setSiteCardLat(e.target.value)}
                                     className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
-                                    placeholder="например 41.40338"
+                                    placeholder={t('admin.sites.latPlaceholder')}
                                   />
                                 </label>
 
                                 <label className="grid gap-1">
-                                  <span className="text-[11px] text-zinc-300">Lng</span>
+                                  <span className="text-[11px] text-zinc-300">{t('admin.sites.lng')}</span>
                                   <input
                                     value={siteCardLng}
                                     onChange={(e) => setSiteCardLng(e.target.value)}
                                     className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
-                                    placeholder="например 2.17403"
+                                    placeholder={t('admin.sites.lngPlaceholder')}
                                   />
                                 </label>
 
                                 <label className="grid gap-1 sm:col-span-2">
-                                  <span className="text-[11px] text-zinc-300">Заметки</span>
+                                  <span className="text-[11px] text-zinc-300">{t('admin.sites.notes')}</span>
                                   <textarea
                                     value={siteCardNotes}
                                     onChange={(e) => setSiteCardNotes(e.target.value)}
@@ -3018,14 +3055,14 @@ const [editOpen, setEditOpen] = useState(false)
                                     disabled={busy || !siteCardName.trim()}
                                     className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-yellow-100 transition hover:border-yellow-200/70 disabled:opacity-60"
                                   >
-                                    Сохранить
+                                    {t('admin.sites.save')}
                                   </button>
                                   <button
                                     onClick={() => deleteObjectSite(siteCardId)}
                                     disabled={busy}
                                     className="rounded-2xl border border-red-500/25 bg-red-500/15 px-5 py-3 text-sm font-semibold text-red-100/85 transition hover:border-red-400/45 disabled:opacity-60"
                                   >
-                                    Удалить объект
+                                    {t('admin.sites.deleteSiteBtn')}
                                   </button>
                                 </div>
                               </div>
@@ -3036,14 +3073,14 @@ const [editOpen, setEditOpen] = useState(false)
                                 if (lat == null || lng == null || Number.isNaN(lat) || Number.isNaN(lng)) return null
                                 return (
                                   <div className="grid gap-2">
-                                    <div className="text-sm font-semibold text-yellow-100">Карта</div>
+                                    <div className="text-sm font-semibold text-yellow-100">{t('admin.sites.mapTitle')}</div>
                                     <MapLarge lat={lat} lng={lng} />
                                     <div className="flex flex-wrap items-center gap-3 text-xs text-yellow-100/70">
                                       <a className="underline decoration-yellow-400/20 hover:decoration-yellow-300/50" href={googleNavUrl(lat, lng)} target="_blank" rel="noreferrer">
-                                        Google навигация
+                                        {t('admin.sites.navGoogle')}
                                       </a>
                                       <a className="underline decoration-yellow-400/20 hover:decoration-yellow-300/50" href={appleNavUrl(lat, lng)} target="_blank" rel="noreferrer">
-                                        Apple навигация
+                                        {t('admin.sites.navApple')}
                                       </a>
                                     </div>
                                   </div>
@@ -3051,10 +3088,12 @@ const [editOpen, setEditOpen] = useState(false)
                               })()}
 
                               <div className="grid gap-2">
-                                <div className="text-sm font-semibold text-yellow-100">Фото (до 5)</div>
+                                <div className="text-sm font-semibold text-yellow-100">{t('admin.sites.photosTitle')}</div>
 
                                 <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <div className="text-xs text-yellow-100/55">Сейчас: {siteCardPhotos.length}/5</div>
+                                  <div className="text-xs text-yellow-100/55">
+                                    {t('admin.sites.nowCount', { count: siteCardPhotos.length })}
+                                  </div>
 
                                   <div className="flex flex-wrap gap-2">
                                     <label
@@ -3063,7 +3102,7 @@ const [editOpen, setEditOpen] = useState(false)
                                         photoBusy || !siteCardId || siteCardPhotos.length >= 5 ? 'opacity-70' : ''
                                       )}
                                     >
-                                      Загрузить фото
+                                      {t('admin.sites.uploadPhoto')}
                                       <input
                                         type="file"
                                         accept="image/*"
@@ -3075,7 +3114,7 @@ const [editOpen, setEditOpen] = useState(false)
                                           const files = input.files ? Array.from(input.files) : []
                                           input.value = ''
                                           if (!siteCardId) {
-                                            setPhotoUiError('ID объекта не найден. Закрой и открой карточку объекта заново.')
+                                            setPhotoUiError(t('admin.sites.errSiteIdMissing'))
                                             return
                                           }
                                           await uploadSitePhotos(siteCardId, files)
@@ -3089,7 +3128,7 @@ const [editOpen, setEditOpen] = useState(false)
                                         photoBusy || !siteCardId || siteCardPhotos.length >= 5 ? 'opacity-70' : ''
                                       )}
                                     >
-                                      Сделать фото
+                                      {t('admin.sites.takePhoto')}
                                       <input
                                         type="file"
                                         accept="image/*"
@@ -3101,7 +3140,7 @@ const [editOpen, setEditOpen] = useState(false)
                                           const files = input.files ? Array.from(input.files) : []
                                           input.value = ''
                                           if (!siteCardId) {
-                                            setPhotoUiError('ID объекта не найден. Закрой и открой карточку объекта заново.')
+                                            setPhotoUiError(t('admin.sites.errSiteIdMissing'))
                                             return
                                           }
                                           await uploadSitePhotos(siteCardId, files)
@@ -3125,7 +3164,9 @@ const [editOpen, setEditOpen] = useState(false)
                                 ) : null}
 
                                 {siteCardPhotos.length === 0 ? (
-                                  <div className="rounded-2xl border border-yellow-400/10 bg-black/20 px-3 py-3 text-xs text-yellow-100/55">Фото нет</div>
+                                  <div className="rounded-2xl border border-yellow-400/10 bg-black/20 px-3 py-3 text-xs text-yellow-100/55">
+                                    {t('admin.sites.noPhotosYet')}
+                                  </div>
                                 ) : (
                                   <div className="grid grid-cols-2 gap-2">
                                     {siteCardPhotos.map((p, idx) => (
@@ -3133,7 +3174,9 @@ const [editOpen, setEditOpen] = useState(false)
                                         {/* eslint-disable-next-line @next/next/no-img-element */}
                                         <img src={p.url || ""} alt="site" className="h-36 w-full object-cover" loading="lazy" />
 
-                                        <div className="absolute left-2 top-2 rounded-xl border border-yellow-400/15 bg-black/50 px-2 py-1 text-[11px] text-yellow-100/80">{idx === 0 ? 'главное' : ''}</div>
+                                        <div className="absolute left-2 top-2 rounded-xl border border-yellow-400/15 bg-black/50 px-2 py-1 text-[11px] text-yellow-100/80">
+                                          {idx === 0 ? t('admin.sites.badgePrimary') : ''}
+                                        </div>
 
                                         <div className="absolute right-2 top-2 flex gap-2">
                                           {idx !== 0 ? (
@@ -3148,7 +3191,7 @@ const [editOpen, setEditOpen] = useState(false)
                                                 photoBusy ? 'opacity-70' : 'hover:border-yellow-200/70'
                                               )}
                                             >
-                                              Главное
+                                              {t('admin.sites.btnPrimary')}
                                             </button>
                                           ) : null}
 
@@ -3163,7 +3206,7 @@ const [editOpen, setEditOpen] = useState(false)
                                               photoBusy ? 'opacity-70' : 'hover:border-red-400/45'
                                             )}
                                           >
-                                            Удалить
+                                            {t('admin.common.delete')}
                                           </button>
                                         </div>
                                       </div>
@@ -3171,7 +3214,7 @@ const [editOpen, setEditOpen] = useState(false)
                                   </div>
                                 )}
 
-                                {photoBusy ? <div className="text-xs text-yellow-100/45">Обработка…</div> : null}
+                                {photoBusy ? <div className="text-xs text-yellow-100/45">{t('admin.sites.processing')}</div> : null}
                               </div>
                             </div>
                           )}
@@ -3186,20 +3229,20 @@ const [editOpen, setEditOpen] = useState(false)
               <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
                 <div className="flex flex-wrap items-end justify-between gap-3">
                   <div>
-                    <div className="text-sm font-semibold text-yellow-100">Создать работника</div>
-                    <div className="mt-1 text-xs text-zinc-300">Создаёт работника и показывает временный пароль. Логин может быть email или телефон (+...).</div>
+                    <div className="text-sm font-semibold text-yellow-100">{t('admin.workers.createBlockTitle')}</div>
+                    <div className="mt-1 text-xs text-zinc-300">{t('admin.workers.createBlockHint')}</div>
                   </div>
 
                   <div className="flex flex-wrap items-end gap-2">
                     <label className="grid gap-1">
-                      <span className="text-[11px] text-zinc-300">Логин (email или телефон)</span>
+                      <span className="text-[11px] text-zinc-300">{t('admin.approvals.loginLabel')}</span>
                       <input
                         value={inviteEmail}
                         onChange={(e) => setInviteEmail(e.target.value)}
                         type="text"
                         autoComplete="username"
                         className="w-[260px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
-                        placeholder="name@domain.com или +31612345678"
+                        placeholder={t('admin.approvals.invitePlaceholder')}
                       />
                     </label>
 
@@ -3209,7 +3252,7 @@ const [editOpen, setEditOpen] = useState(false)
                       disabled={busy || !inviteEmail.trim()}
                       className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
                     >
-                      Создать
+                      {t('admin.sites.create')}
                     </button>
                   </div>
                 </div>
@@ -3248,28 +3291,29 @@ const [editOpen, setEditOpen] = useState(false)
                           <div className="min-w-[220px]">
                             <div className="text-base font-semibold text-yellow-100">
                               <button onClick={() => openWorkerCard(w.id)} className="hover:text-yellow-100">
-                                {w.full_name || 'Без имени'}
+                                {w.full_name || t('admin.workers.noName')}
                               </button>{' '}
                             {isAdmin ? (
                               <span className="ml-2 rounded-xl border border-yellow-400/30 bg-yellow-400/10 px-2 py-1 text-[11px] text-yellow-100">
-                                админ
+                                {t('admin.workers.roleBadgeAdmin')}
                               </span>
                             ) : (
                               <span className="ml-2 rounded-xl border border-yellow-400/15 bg-black/30 px-2 py-1 text-[11px] text-zinc-200">
-                                работник
+                                {t('admin.workers.roleBadgeWorker')}
                               </span>
                             )}
                             {w.active === false ? (
                               <span className="ml-2 rounded-xl border border-red-400/20 bg-red-500/10 px-2 py-1 text-[11px] text-red-100">
-                                отключён
+                                {t('admin.workers.badgeInactive')}
                               </span>
                             ) : null}
                             <span className="ml-2 rounded-xl border border-yellow-400/15 bg-black/30 px-2 py-1 text-[11px] text-zinc-200">
-                              фото: {workerPhotoMeta[w.id]?.count ?? '…'}/5
+                              {t('admin.common.photosPrefix')}{' '}
+                              {workerPhotoMeta[w.id]?.count ?? t('admin.common.dash')}/5
                             </span>
                           </div>
 
-                          <div className="mt-3 text-xs text-zinc-300">Объекты:</div>
+                          <div className="mt-3 text-xs text-zinc-300">{t('admin.workers.sitesHeading')}</div>
                           {sitesList.length === 0 ? (
                             <div className="mt-1 text-xs text-zinc-500">—</div>
                           ) : (
@@ -3282,7 +3326,7 @@ const [editOpen, setEditOpen] = useState(false)
                                     disabled={busy}
                                     className="rounded-xl border border-yellow-400/20 bg-black/30 px-2 py-1 text-[11px] text-yellow-100/80 transition hover:border-yellow-300/50 disabled:opacity-60"
                                   >
-                                    снять
+                                    {t('admin.workers.unassign')}
                                   </button>
                                 </div>
                               ))}
@@ -3299,7 +3343,7 @@ const [editOpen, setEditOpen] = useState(false)
                                 disabled={busy}
                                 className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
                               >
-                                Сделать админом
+                                {t('admin.workers.makeAdmin')}
                               </button>
                             ) : (
                               <button
@@ -3307,7 +3351,7 @@ const [editOpen, setEditOpen] = useState(false)
                                 disabled={busy || isMe}
                                 className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 transition hover:border-yellow-300/40 disabled:opacity-60"
                               >
-                                Сделать работником
+                                {t('admin.workers.makeWorker')}
                               </button>
                             )}
                           </div>
@@ -3324,7 +3368,7 @@ const [editOpen, setEditOpen] = useState(false)
                                     : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
                                 )}
                               >
-                                {w.active === false ? 'Вернуть из архива' : 'Архивировать'}
+                                {w.active === false ? t('admin.common.unarchive') : t('admin.common.archive')}
                               </button>
 
                               <button
@@ -3332,7 +3376,7 @@ const [editOpen, setEditOpen] = useState(false)
                                 disabled={busy}
                                 className="rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-2 text-xs font-semibold text-red-100 transition hover:border-red-300/40 hover:bg-red-500/15 disabled:opacity-60"
                               >
-                                Удалить
+                                {t('admin.common.delete')}
                               </button>
                             </div>
                           ) : null}
@@ -3340,13 +3384,13 @@ const [editOpen, setEditOpen] = useState(false)
                           {!isAdmin ? (
                             <div className="flex flex-wrap items-end gap-2">
                               <label className="grid gap-1">
-                                <span className="text-[11px] text-zinc-300">Добавить объект</span>
+                                <span className="text-[11px] text-zinc-300">{t('admin.main.addSiteShort')}</span>
                                 <select
                                   value={pick}
                                   onChange={(e) => setWorkerPickSite((p) => ({ ...p, [w.id]: e.target.value }))}
                                   className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                                 >
-                                  <option value="">Выбери объект…</option>
+                                  <option value="">{t('admin.main.selectSite')}</option>
                                   {activeSites.map((s) => (
                                     <option key={s.id} value={s.id}>
                                       {s.name || s.id}
@@ -3360,12 +3404,12 @@ const [editOpen, setEditOpen] = useState(false)
                                 disabled={busy || !pick}
                                 className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
                               >
-                                Назначить
+                                {t('admin.main.assign')}
                               </button>
                             </div>
                           ) : (
                             <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-xs text-zinc-300">
-                              Админа не назначаем
+                              {t('admin.main.noAdminAssign')}
                             </div>
                           )}
                         </div>
@@ -3380,12 +3424,12 @@ const [editOpen, setEditOpen] = useState(false)
           {tab === 'jobs' ? (
             <div className="mt-6 grid gap-4">
               <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
-                <div className="text-sm font-semibold text-yellow-100">Создать смену</div>
-                <div className="mt-1 text-xs text-zinc-300">Объект + дата + время + несколько работников.</div>
+                <div className="text-sm font-semibold text-yellow-100">{t('admin.main.jobsCreateTitle')}</div>
+                <div className="mt-1 text-xs text-zinc-300">{t('admin.main.jobsCreateHint')}</div>
 
                 <div className="mt-4 grid gap-3 lg:grid-cols-[1.3fr_1.7fr_0.8fr_0.7fr_0.7fr_auto]">
                   <label className="grid gap-1">
-                    <span className="text-[11px] text-zinc-300">Объект</span>
+                    <span className="text-[11px] text-zinc-300">{t('admin.main.jobsSiteField')}</span>
                     <select
                       value={newSiteId}
                       onChange={(e) => {
@@ -3395,7 +3439,7 @@ const [editOpen, setEditOpen] = useState(false)
                       }}
                       className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
                     >
-                      <option value="">Выбери объект…</option>
+                      <option value="">{t('admin.main.selectSite')}</option>
                       {activeSites.map((s) => (
                         <option key={s.id} value={s.id}>
                           {s.name || s.id}
@@ -3405,12 +3449,12 @@ const [editOpen, setEditOpen] = useState(false)
                   </label>
 
                   <label className="grid gap-1">
-                    <span className="text-[11px] text-zinc-300">Работники (можно несколько)</span>
+                    <span className="text-[11px] text-zinc-300">{t('admin.main.jobsWorkersField')}</span>
                     <MultiWorkerPicker workers={workersForPicker} value={newWorkers} onChange={setNewWorkers} disabled={!newSiteId} />
                   </label>
 
                   <label className="grid gap-1">
-                    <span className="text-[11px] text-zinc-300">Дата</span>
+                    <span className="text-[11px] text-zinc-300">{t('admin.main.jobsDateField')}</span>
                     <input
                       type="date"
                       value={newDate}
@@ -3420,7 +3464,7 @@ const [editOpen, setEditOpen] = useState(false)
                   </label>
 
                   <label className="grid gap-1">
-                    <span className="text-[11px] text-zinc-300">Время</span>
+                    <span className="text-[11px] text-zinc-300">{t('admin.main.jobsTimeField')}</span>
                     <input
                       type="time"
                       value={newTime}
@@ -3430,7 +3474,7 @@ const [editOpen, setEditOpen] = useState(false)
                   </label>
 
                   <label className="grid gap-1">
-                    <span className="text-[11px] text-zinc-300">Конец</span>
+                    <span className="text-[11px] text-zinc-300">{t('admin.main.jobsEndField')}</span>
                     <input
                       type="time"
                       value={newTimeTo}
@@ -3445,7 +3489,7 @@ const [editOpen, setEditOpen] = useState(false)
                     disabled={busy || !newSiteId || newWorkers.length === 0}
                     className="mt-5 rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
                   >
-                    Создать смену
+                    {t('admin.main.jobsCreateAction')}
                   </button>
                 </div>
 
@@ -3457,7 +3501,7 @@ const [editOpen, setEditOpen] = useState(false)
                       jobsView === 'table' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
                     )}
                   >
-                    Расписание
+                    {t('admin.main.jobsSchedule')}
                   </button>
                   <button
                     onClick={() => setJobsView('board')}
@@ -3466,7 +3510,7 @@ const [editOpen, setEditOpen] = useState(false)
                       jobsView === 'board' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
                     )}
                   >
-                    Доска
+                    {t('admin.main.jobsBoard')}
                   </button>
 
                   <div className="ml-auto flex flex-wrap items-center gap-2">
@@ -3477,7 +3521,7 @@ const [editOpen, setEditOpen] = useState(false)
                       }}
                       className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/40"
                     >
-                      Сегодня
+                      {t('admin.main.today')}
                     </button>
                     <button
                       onClick={() => {
@@ -3488,7 +3532,7 @@ const [editOpen, setEditOpen] = useState(false)
                       }}
                       className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/40"
                     >
-                      Неделя
+                      {t('admin.plan.week')}
                     </button>
                     <button
                       onClick={() => {
@@ -3499,7 +3543,7 @@ const [editOpen, setEditOpen] = useState(false)
                       }}
                       className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/40"
                     >
-                      Месяц
+                      {t('admin.plan.month')}
                     </button>
                   </div>
                 </div>
@@ -3507,11 +3551,11 @@ const [editOpen, setEditOpen] = useState(false)
 
               <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
                 <div className="flex flex-wrap items-end justify-between gap-3">
-                  <div className="text-sm font-semibold text-yellow-100">Фильтры</div>
+                  <div className="text-sm font-semibold text-yellow-100">{t('admin.main.jobsFiltersTitle')}</div>
 
                   <div className="flex flex-wrap items-end gap-2">
                     <label className="grid gap-1">
-                      <span className="text-[11px] text-zinc-300">С</span>
+                      <span className="text-[11px] text-zinc-300">{t('admin.main.filterFromShort')}</span>
                       <input
                         type="date"
                         value={dateFrom}
@@ -3520,7 +3564,7 @@ const [editOpen, setEditOpen] = useState(false)
                       />
                     </label>
                     <label className="grid gap-1">
-                      <span className="text-[11px] text-zinc-300">По</span>
+                      <span className="text-[11px] text-zinc-300">{t('admin.main.filterToShort')}</span>
                       <input
                         type="date"
                         value={dateTo}
@@ -3530,13 +3574,13 @@ const [editOpen, setEditOpen] = useState(false)
                     </label>
 
                     <label className="grid gap-1">
-                      <span className="text-[11px] text-zinc-300">Объект</span>
+                      <span className="text-[11px] text-zinc-300">{t('admin.main.jobsSiteField')}</span>
                       <select
                         value={filterSite}
                         onChange={(e) => setFilterSite(e.target.value)}
                         className="w-[220px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                       >
-                        <option value="">Все</option>
+                        <option value="">{t('admin.main.filterAll')}</option>
                         {sites
                           .slice()
                           .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
@@ -3549,19 +3593,19 @@ const [editOpen, setEditOpen] = useState(false)
                     </label>
 
                     <label className="grid gap-1">
-                      <span className="text-[11px] text-zinc-300">Работник</span>
+                      <span className="text-[11px] text-zinc-300">{t('admin.main.filterWorkerLabel')}</span>
                       <select
                         value={filterWorker}
                         onChange={(e) => setFilterWorker(e.target.value)}
                         className="w-[220px] rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
                       >
-                        <option value="">Все</option>
+                        <option value="">{t('admin.main.filterAll')}</option>
                         {workers
                           .slice()
                           .sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''))
                           .map((w) => (
                             <option key={w.id} value={w.id}>
-                              {w.full_name || 'Без имени'}
+                              {w.full_name || t('admin.workers.noName')}
                             </option>
                           ))}
                       </select>
@@ -3572,10 +3616,10 @@ const [editOpen, setEditOpen] = useState(false)
                 {jobsView === 'board' ? (
                   <div className="mt-5 grid gap-3 lg:grid-cols-4">
                     {[
-                      { key: 'planned', title: 'Запланировано', items: planned },
-                      { key: 'in_progress', title: 'В процессе', items: inProgress },
-                      { key: 'done', title: 'Завершено', items: done },
-                      { key: 'cancelled', title: 'Отменено', items: cancelled },
+                      { key: 'planned', title: t('admin.main.kanbanPlanned'), items: planned },
+                      { key: 'in_progress', title: t('admin.main.kanbanInProgress'), items: inProgress },
+                      { key: 'done', title: t('admin.main.kanbanDone'), items: done },
+                      { key: 'cancelled', title: t('admin.main.kanbanCancelled'), items: cancelled },
                     ].map((col) => (
                       <div key={col.key} className="rounded-3xl border border-yellow-400/12 bg-black/20 p-4">
                         <div className="text-xs font-semibold text-zinc-200">{col.title}</div>
@@ -3591,13 +3635,13 @@ const [editOpen, setEditOpen] = useState(false)
                     <table className="min-w-[920px] w-full text-left text-sm">
                       <thead className="bg-black/30 text-xs text-zinc-300">
                         <tr>
-                          <th className="px-4 py-3">Дата</th>
-                          <th className="px-4 py-3">Время</th>
-                          <th className="px-4 py-3">Объект</th>
-                          <th className="px-4 py-3">Работник</th>
-                          <th className="px-4 py-3">Статус</th>
-                          <th className="px-4 py-3">Начал</th>
-                          <th className="px-4 py-3">Закончил</th>
+                          <th className="px-4 py-3">{t('admin.main.tableDate')}</th>
+                          <th className="px-4 py-3">{t('admin.main.tableTime')}</th>
+                          <th className="px-4 py-3">{t('admin.main.tableSite')}</th>
+                          <th className="px-4 py-3">{t('admin.main.tableWorker')}</th>
+                          <th className="px-4 py-3">{t('admin.main.tableStatus')}</th>
+                          <th className="px-4 py-3">{t('admin.main.tableStarted')}</th>
+                          <th className="px-4 py-3">{t('admin.main.tableStopped')}</th>
                           <th className="px-4 py-3"></th>
                         </tr>
                       </thead>
@@ -3635,7 +3679,7 @@ const [editOpen, setEditOpen] = useState(false)
                                           'relative h-7 w-10 overflow-hidden rounded-xl border border-yellow-400/15 bg-black/30',
                                           canNav ? 'hover:border-yellow-300/40' : ''
                                         )}
-                                        title={canNav ? 'Открыть навигацию' : 'Фото объекта'}
+                                        title={canNav ? t('admin.main.thumbNavTitle') : t('admin.main.thumbSitePhoto')}
                                       >
                                         {/* eslint-disable-next-line @next/next/no-img-element */}
                                         <img src={url} alt="" className="h-full w-full object-cover" loading="lazy" />
@@ -3670,7 +3714,7 @@ const [editOpen, setEditOpen] = useState(false)
                                   '—'
                                 )}
                               </td>
-                              <td className="px-4 py-3">{statusRu(String(j.status || ''))}</td>
+                              <td className="px-4 py-3">{jobStatusLabel(t, String(j.status || ''))}</td>
                               <td className="px-4 py-3">{fmtDT(j.started_at)}</td>
                               <td className="px-4 py-3">{fmtDT(j.stopped_at)}</td>
                               <td className="px-4 py-3">
@@ -3678,7 +3722,7 @@ const [editOpen, setEditOpen] = useState(false)
                                   onClick={() => openEditForJob(j)}
                                   className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40"
                                 >
-                                  править
+                                  {t('admin.main.editShift')}
                                 </button>
                               </td>
                             </tr>
@@ -3686,7 +3730,7 @@ const [editOpen, setEditOpen] = useState(false)
                         {scheduleFiltered.length === 0 ? (
                           <tr>
                             <td colSpan={8} className="px-4 py-6 text-center text-xs text-zinc-500">
-                              Нет смен
+                              {t('admin.main.emptyShifts')}
                             </td>
                           </tr>
                         ) : null}
@@ -3708,7 +3752,7 @@ const [editOpen, setEditOpen] = useState(false)
               {planView === 'month' ? <PlanMonthGrid /> : null}
 
               <div className="mt-4 rounded-3xl border border-yellow-400/15 bg-black/20 p-4 text-xs text-zinc-300">
-                Подсказка: перетаскивай смены мышкой. Клик по смене — “править”. “Перенести” — быстрый перевод на другого работника. “Отменить” — убрать из графика.
+                {t('admin.main.planDragHint')}
               </div>
             </div>
           ) : null}
@@ -3716,10 +3760,10 @@ const [editOpen, setEditOpen] = useState(false)
       </div>
 
       {/* МОДАЛКА: ПРАВКА СМЕНЫ */}
-      <Modal open={editOpen} title="Правка смены" onClose={() => setEditOpen(false)}>
+      <Modal open={editOpen} title={t('admin.main.modalEditShift')} onClose={() => setEditOpen(false)}>
         <div className="grid gap-3">
           <div className="grid gap-1">
-            <span className="text-[11px] text-zinc-300">Объект</span>
+            <span className="text-[11px] text-zinc-300">{t('admin.main.jobsSiteField')}</span>
             <select
               value={editSiteId}
               onChange={(e) => setEditSiteId(e.target.value)}
@@ -3735,7 +3779,7 @@ const [editOpen, setEditOpen] = useState(false)
           </div>
 
           <div className="grid gap-1">
-            <span className="text-[11px] text-zinc-300">Работник</span>
+            <span className="text-[11px] text-zinc-300">{t('admin.main.filterWorkerLabel')}</span>
             <select
               value={editWorkerId}
               onChange={(e) => setEditWorkerId(e.target.value)}
@@ -3744,7 +3788,7 @@ const [editOpen, setEditOpen] = useState(false)
               <option value="">—</option>
               {workersForSelect.map((w) => (
                 <option key={w.id} value={w.id}>
-                  {w.full_name || 'Работник'}
+                  {w.full_name || t('admin.common.worker')}
                 </option>
               ))}
             </select>
@@ -3752,7 +3796,7 @@ const [editOpen, setEditOpen] = useState(false)
 
           <div className="grid gap-3 sm:grid-cols-3">
             <label className="grid gap-1">
-              <span className="text-[11px] text-zinc-300">Дата</span>
+              <span className="text-[11px] text-zinc-300">{t('admin.main.jobsDateField')}</span>
               <input
                 type="date"
                 value={editDate}
@@ -3761,7 +3805,7 @@ const [editOpen, setEditOpen] = useState(false)
               />
             </label>
             <label className="grid gap-1">
-              <span className="text-[11px] text-zinc-300">Начало</span>
+              <span className="text-[11px] text-zinc-300">{t('admin.main.modalStart')}</span>
               <input
                 type="time"
                 value={editTime}
@@ -3770,7 +3814,7 @@ const [editOpen, setEditOpen] = useState(false)
               />
             </label>
             <label className="grid gap-1">
-              <span className="text-[11px] text-zinc-300">Конец</span>
+              <span className="text-[11px] text-zinc-300">{t('admin.main.jobsEndField')}</span>
               <input
                 type="time"
                 value={editTimeTo}
@@ -3781,16 +3825,16 @@ const [editOpen, setEditOpen] = useState(false)
           </div>
 
           <div className="grid gap-1">
-            <span className="text-[11px] text-zinc-300">Статус</span>
+            <span className="text-[11px] text-zinc-300">{t('admin.main.tableStatus')}</span>
             <select
               value={String(editStatus)}
               onChange={(e) => setEditStatus(e.target.value)}
               className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
             >
-              <option value="planned">Запланировано</option>
-              <option value="in_progress">В процессе</option>
-              <option value="done">Завершено</option>
-              <option value="cancelled">Отменено</option>
+              <option value="planned">{t('admin.main.kanbanPlanned')}</option>
+              <option value="in_progress">{t('admin.main.kanbanInProgress')}</option>
+              <option value="done">{t('admin.main.kanbanDone')}</option>
+              <option value="cancelled">{t('admin.main.kanbanCancelled')}</option>
             </select>
           </div>
 
@@ -3803,7 +3847,7 @@ const [editOpen, setEditOpen] = useState(false)
               }}
               className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/40"
             >
-              Отменить смену
+              {t('admin.main.modalCancelShift')}
             </button>
 
             <button
@@ -3811,39 +3855,41 @@ const [editOpen, setEditOpen] = useState(false)
               disabled={busy || !editJobId}
               className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-2 text-xs font-semibold text-yellow-100 hover:border-yellow-200/70 disabled:opacity-60"
             >
-              Сохранить
+              {t('admin.sites.save')}
             </button>
           </div>
         </div>
       </Modal>
 
       {/* МОДАЛКА: КАРТОЧКА РАБОТНИКА */}
-      <Modal open={workerCardOpen} title="Карточка работника" onClose={() => setWorkerCardOpen(false)}>
+      <Modal open={workerCardOpen} title={t('admin.main.workerCardTitle')} onClose={() => setWorkerCardOpen(false)}>
         <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-4">
           {(() => {
             const w = workersById.get(workerCardId)
             const archived = w?.active === false
-            const role = w?.role === 'admin' ? 'Админ' : 'Работник'
+            const role = w?.role === 'admin' ? t('admin.main.roleAdminLabel') : t('admin.main.roleWorkerLabel')
 
             return (
               <div className="grid gap-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <div className="text-sm font-semibold text-yellow-100">{w?.full_name || 'Работник'}</div>
+                    <div className="text-sm font-semibold text-yellow-100">{w?.full_name || t('admin.common.worker')}</div>
                     <div className="mt-1 text-xs text-zinc-300">
                       {role}
-                      {archived ? ' • в архиве' : ' • активен'}
+                      {archived ? ` • ${t('admin.common.archived')}` : ` • ${t('admin.common.active')}`}
                       <span className="text-zinc-500"> • </span>
                       <span className="text-zinc-400">ID:</span>{' '}
                       <span className="font-mono text-[11px] text-zinc-400">{workerCardId}</span>
                     </div>
-                    <div className="mt-1 text-xs text-zinc-300">Диапазон: {fmtD(dateFrom)} — {fmtD(dateTo)}</div>
+                    <div className="mt-1 text-xs text-zinc-300">
+                      {t('admin.main.rangeLine', { from: fmtD(dateFrom), to: fmtD(dateTo) })}
+                    </div>
                   </div>
                 </div>
 
                 <div className="grid gap-2">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-sm font-semibold text-yellow-100">Данные и заметки</div>
+                    <div className="text-sm font-semibold text-yellow-100">{t('admin.main.dataNotes')}</div>
 
                     <button
                       onClick={() => {
@@ -3856,34 +3902,36 @@ const [editOpen, setEditOpen] = useState(false)
                         workerProfileSaving ? 'opacity-70' : ''
                       )}
                     >
-                      {workerProfileSaving ? 'Сохранение…' : 'Сохранить'}
+                      {workerProfileSaving ? t('admin.main.saving') : t('admin.sites.save')}
                     </button>
                   </div>
 
                   {workerProfileLoading ? (
-                    <div className="rounded-2xl border border-yellow-400/10 bg-black/20 px-3 py-3 text-xs text-yellow-100/55">Загрузка данных…</div>
+                    <div className="rounded-2xl border border-yellow-400/10 bg-black/20 px-3 py-3 text-xs text-yellow-100/55">
+                      {t('admin.main.loadingData')}
+                    </div>
                   ) : (
                     <div className="grid gap-2 rounded-3xl border border-yellow-400/10 bg-black/20 p-3">
                       <div className="grid gap-2 md:grid-cols-2">
                         <div className="grid gap-1">
-                          <div className="text-[11px] text-zinc-400">ФИО</div>
+                          <div className="text-[11px] text-zinc-400">{t('admin.main.fullName')}</div>
                           <input
                             value={workerCardFullName}
                             onChange={(e) => setWorkerCardFullName(e.target.value)}
-                            placeholder="Имя работника"
+                            placeholder={t('admin.workers.fullName')}
                             className="w-full rounded-xl border border-yellow-400/10 bg-black/30 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-yellow-300/40"
                           />
                         </div>
 
                         <div className="grid gap-1">
-                          <div className="text-[11px] text-zinc-400">Контакты</div>
+                          <div className="text-[11px] text-zinc-400">{t('admin.main.contacts')}</div>
                           <div className="rounded-xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-xs text-zinc-200">
                             <div>
-                              <span className="text-zinc-500">Email:</span>{' '}
+                              <span className="text-zinc-500">{t('admin.main.emailShort')}</span>{' '}
                               <span className="text-zinc-200">{workerProfileById?.[workerCardId]?.email || '—'}</span>
                             </div>
                             <div className="mt-1">
-                              <span className="text-zinc-500">Тел:</span>{' '}
+                              <span className="text-zinc-500">{t('admin.main.phoneShort')}</span>{' '}
                               <span className="text-zinc-200">{workerProfileById?.[workerCardId]?.phone || '—'}</span>
                             </div>
                           </div>
@@ -3891,11 +3939,11 @@ const [editOpen, setEditOpen] = useState(false)
                       </div>
 
                       <div className="grid gap-1">
-                        <div className="text-[11px] text-zinc-400">Заметки</div>
+                        <div className="text-[11px] text-zinc-400">{t('admin.workers.notes')}</div>
                         <textarea
                           value={workerCardNotes}
                           onChange={(e) => setWorkerCardNotes(e.target.value)}
-                          placeholder="Заметки: график, ключи, инструкции, нюансы…"
+                          placeholder={t('admin.main.workerNotesPlaceholder')}
                           rows={4}
                           className="w-full resize-none rounded-2xl border border-yellow-400/10 bg-black/30 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-yellow-300/40"
                         />
@@ -3905,10 +3953,12 @@ const [editOpen, setEditOpen] = useState(false)
                 </div>
 
                 <div className="grid gap-2">
-                  <div className="text-sm font-semibold text-yellow-100">Фото (до 5)</div>
+                  <div className="text-sm font-semibold text-yellow-100">{t('admin.sites.photosTitle')}</div>
 
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-xs text-yellow-100/55">Сейчас: {workerCardPhotos.length}/5</div>
+                    <div className="text-xs text-yellow-100/55">
+                      {t('admin.sites.nowCount', { count: workerCardPhotos.length })}
+                    </div>
 
                     <div className="flex flex-wrap gap-2">
                       <label
@@ -3917,7 +3967,7 @@ const [editOpen, setEditOpen] = useState(false)
                           workerPhotoBusy || !workerCardId || workerCardPhotos.length >= 5 ? 'opacity-70' : ''
                         )}
                       >
-                        Загрузить фото
+                        {t('admin.sites.uploadPhoto')}
                         <input
                           type="file"
                           accept="image/*"
@@ -3939,7 +3989,7 @@ const [editOpen, setEditOpen] = useState(false)
                           workerPhotoBusy || !workerCardId || workerCardPhotos.length >= 5 ? 'opacity-70' : ''
                         )}
                       >
-                        Сделать фото
+                        {t('admin.sites.takePhoto')}
                         <input
                           type="file"
                           accept="image/*"
@@ -3958,7 +4008,9 @@ const [editOpen, setEditOpen] = useState(false)
                   </div>
 
                   {workerCardPhotos.length === 0 ? (
-                    <div className="rounded-2xl border border-yellow-400/10 bg-black/20 px-3 py-3 text-xs text-yellow-100/55">Фото нет</div>
+                    <div className="rounded-2xl border border-yellow-400/10 bg-black/20 px-3 py-3 text-xs text-yellow-100/55">
+                      {t('admin.sites.noPhotosYet')}
+                    </div>
                   ) : (
                     <div className="grid grid-cols-2 gap-2">
                       {workerCardPhotos.map((p) => (
@@ -3978,7 +4030,7 @@ const [editOpen, setEditOpen] = useState(false)
                                 workerPhotoBusy ? 'opacity-70' : 'hover:border-red-400/45'
                               )}
                             >
-                              Удалить
+                              {t('admin.common.delete')}
                             </button>
                           </div>
 
@@ -3997,7 +4049,7 @@ const [editOpen, setEditOpen] = useState(false)
                                 workerPhotoBusy ? 'opacity-70' : ''
                               )}
                             >
-                              {workerCardAvatarPath === p.path ? 'Аватар' : 'Сделать аватаром'}
+                              {workerCardAvatarPath === p.path ? t('admin.main.isAvatar') : t('admin.main.setAvatar')}
                             </button>
                           </div>
                         </div>
@@ -4005,14 +4057,18 @@ const [editOpen, setEditOpen] = useState(false)
                     </div>
                   )}
 
-                  {workerPhotoBusy ? <div className="text-xs text-yellow-100/45">Обработка…</div> : null}
+                  {workerPhotoBusy ? (
+                    <div className="text-xs text-yellow-100/45">{t('admin.sites.processing')}</div>
+                  ) : null}
                 </div>
 
                 <div className="mt-1 grid gap-2">
-                  <div className="text-sm font-semibold text-yellow-100">Смены</div>
+                  <div className="text-sm font-semibold text-yellow-100">{t('admin.main.workerShifts')}</div>
 
                   {workerCardItems.length === 0 ? (
-                    <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-3 text-xs text-zinc-500">Смен нет</div>
+                    <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-3 text-xs text-zinc-500">
+                      {t('admin.main.noShifts')}
+                    </div>
                   ) : null}
 
                   {workerCardItems.map((j) => (
@@ -4044,7 +4100,7 @@ const [editOpen, setEditOpen] = useState(false)
                                   'relative h-5 w-7 overflow-hidden rounded-lg border border-yellow-400/15 bg-black/30',
                                   canNav ? 'hover:border-yellow-300/40' : ''
                                 )}
-                                title={canNav ? 'Открыть навигацию' : 'Фото объекта'}
+                                title={canNav ? t('admin.main.thumbNavTitle') : t('admin.main.thumbSitePhoto')}
                               >
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img src={url} alt="" className="h-full w-full object-cover" loading="lazy" />
@@ -4052,15 +4108,18 @@ const [editOpen, setEditOpen] = useState(false)
                             )
                           })()}
                           <span>{j.site_name || '—'}</span>
-                        </span> • <span className="text-zinc-500">{statusRu(String(j.status || ''))}</span>
-                        <div className="mt-1 text-[11px] text-zinc-400">Начал: {fmtDT(j.started_at)} • Закончил: {fmtDT(j.stopped_at)}</div>
+                        </span> • <span className="text-zinc-500">{jobStatusLabel(t, String(j.status || ''))}</span>
+                        <div className="mt-1 text-[11px] text-zinc-400">
+                          {t('admin.main.shiftStarted')} {fmtDT(j.started_at)} • {t('admin.main.shiftStopped')}{' '}
+                          {fmtDT(j.stopped_at)}
+                        </div>
                       </div>
                       <button
                         onClick={() => openEditForJob(j)}
                         disabled={busy}
                         className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40 disabled:opacity-60"
                       >
-                        Править
+                        {t('admin.main.editButton')}
                       </button>
                     </div>
                   ))}
@@ -4072,19 +4131,19 @@ const [editOpen, setEditOpen] = useState(false)
       </Modal>
 
       {/* МОДАЛКА: ПЕРЕНОС СМЕНЫ НА ДРУГОГО РАБОТНИКА */}
-      <Modal open={moveJobOpen} title="Перенести смену" onClose={() => setMoveJobOpen(false)}>
+      <Modal open={moveJobOpen} title={t('admin.main.moveJobTitle')} onClose={() => setMoveJobOpen(false)}>
         <div className="grid gap-3">
           <div className="grid gap-1">
-            <span className="text-[11px] text-zinc-300">Кому перенести</span>
+            <span className="text-[11px] text-zinc-300">{t('admin.main.moveToLabel')}</span>
             <select
               value={moveJobTargetWorker}
               onChange={(e) => setMoveJobTargetWorker(e.target.value)}
               className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
             >
-              <option value="">Выбери работника…</option>
+              <option value="">{t('admin.main.selectWorker')}</option>
               {workersForSelect.map((w) => (
                 <option key={w.id} value={w.id}>
-                  {w.full_name || 'Работник'}
+                  {w.full_name || t('admin.common.worker')}
                 </option>
               ))}
             </select>
@@ -4099,16 +4158,16 @@ const [editOpen, setEditOpen] = useState(false)
             disabled={busy || !moveJobId || !moveJobTargetWorker}
             className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-yellow-100 hover:border-yellow-200/70 disabled:opacity-60"
           >
-            Перенести
+            {t('admin.main.moveAction')}
           </button>
         </div>
       </Modal>
 
       {/* МОДАЛКА: ПЕРЕНОС ДНЯ */}
-      <Modal open={moveDayOpen} title="Перенести день" onClose={() => setMoveDayOpen(false)}>
+      <Modal open={moveDayOpen} title={t('admin.main.moveDay')} onClose={() => setMoveDayOpen(false)}>
         <div className="grid gap-3">
           <div className="grid gap-1">
-            <span className="text-[11px] text-zinc-300">Дата</span>
+            <span className="text-[11px] text-zinc-300">{t('admin.main.jobsDateField')}</span>
             <input
               type="date"
               value={moveDayDate}
@@ -4119,32 +4178,32 @@ const [editOpen, setEditOpen] = useState(false)
 
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="grid gap-1">
-              <span className="text-[11px] text-zinc-300">С кого</span>
+              <span className="text-[11px] text-zinc-300">{t('admin.main.moveDayFrom')}</span>
               <select
                 value={moveDayFromWorker}
                 onChange={(e) => setMoveDayFromWorker(e.target.value)}
                 className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
               >
-                <option value="">Выбери работника…</option>
+                <option value="">{t('admin.main.selectWorker')}</option>
                 {workersForSelect.map((w) => (
                   <option key={w.id} value={w.id}>
-                    {w.full_name || 'Работник'}
+                    {w.full_name || t('admin.common.worker')}
                   </option>
                 ))}
               </select>
             </label>
 
             <label className="grid gap-1">
-              <span className="text-[11px] text-zinc-300">На кого</span>
+              <span className="text-[11px] text-zinc-300">{t('admin.main.moveDayTo')}</span>
               <select
                 value={moveDayToWorker}
                 onChange={(e) => setMoveDayToWorker(e.target.value)}
                 className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
               >
-                <option value="">Выбери работника…</option>
+                <option value="">{t('admin.main.selectWorker')}</option>
                 {workersForSelect.map((w) => (
                   <option key={w.id} value={w.id}>
-                    {w.full_name || 'Работник'}
+                    {w.full_name || t('admin.common.worker')}
                   </option>
                 ))}
               </select>
@@ -4158,7 +4217,7 @@ const [editOpen, setEditOpen] = useState(false)
               onChange={(e) => setMoveDayOnlyPlanned(e.target.checked)}
               className="h-4 w-4 accent-yellow-400"
             />
-            Переносить только “Запланировано”
+            {t('admin.main.moveDayOnlyPlanned')}
           </label>
 
           <button
@@ -4166,16 +4225,16 @@ const [editOpen, setEditOpen] = useState(false)
             disabled={busy || !moveDayFromWorker || !moveDayToWorker || !moveDayDate}
             className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-yellow-100 hover:border-yellow-200/70 disabled:opacity-60"
           >
-            Перенести день
+            {t('admin.main.moveDay')}
           </button>
         </div>
       </Modal>
 
       {/* МОДАЛКА: ОТМЕНА */}
-      <Modal open={cancelOpen} title="Отмена смены" onClose={() => setCancelOpen(false)}>
+      <Modal open={cancelOpen} title={t('admin.main.cancelShiftTitle')} onClose={() => setCancelOpen(false)}>
         <div className="grid gap-3">
           <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-4 py-3 text-sm text-zinc-200">
-            Это уберёт смену из работы (статус “Отменено”). Отчёты не ломаем.
+            {t('admin.main.cancelShiftBody')}
           </div>
 
           <button
@@ -4183,7 +4242,7 @@ const [editOpen, setEditOpen] = useState(false)
             disabled={busy || !cancelJobId}
             className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-yellow-100 hover:border-yellow-200/70 disabled:opacity-60"
           >
-            Отменить
+            {t('admin.main.cancelShiftConfirm')}
           </button>
         </div>
       </Modal>

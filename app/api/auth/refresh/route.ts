@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { AppApiErrorCodes } from '@/lib/app-error-codes'
 
 export const runtime = 'nodejs'
 
@@ -24,11 +25,16 @@ function json(status: number, data: any) {
   })
 }
 
+function err(status: number, message: string, errorCode: string) {
+  return json(status, { error: message, errorCode })
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}))
     const refresh_token = String(body?.refresh_token || '').trim()
-    if (!refresh_token) return json(400, { error: 'refresh_token обязателен' })
+    if (!refresh_token)
+      return err(400, 'refresh_token is required', AppApiErrorCodes.AUTH_REFRESH_TOKEN_REQUIRED)
 
     const url = mustEnv('NEXT_PUBLIC_SUPABASE_URL')
     const anon = mustEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY')
@@ -39,7 +45,8 @@ export async function POST(req: Request) {
 
     // NOTE: Supabase JS v2 supports refreshSession({ refresh_token })
     const { data, error } = await (supabase as any).auth.refreshSession({ refresh_token })
-    if (error || !data?.session) return json(401, { error: error?.message || 'Не удалось обновить сессию' })
+    if (error || !data?.session)
+      return err(401, error?.message || 'Could not refresh session', AppApiErrorCodes.AUTH_SESSION_REFRESH_FAILED)
 
     return json(200, {
       access_token: data.session.access_token,
@@ -47,7 +54,7 @@ export async function POST(req: Request) {
       user: data.user,
     })
   } catch (e: any) {
-    return json(500, { error: String(e?.message || e) })
+    return err(500, String(e?.message || e), AppApiErrorCodes.INTERNAL)
   }
 }
 

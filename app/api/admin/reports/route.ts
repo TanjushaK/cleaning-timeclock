@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server'
+import { ApiErrorCodes } from '@/lib/api-error-codes'
+import { jsonApiError } from '@/lib/json-api-error'
 import { requireAdmin, toErrorResponse } from '@/lib/supabase-server'
 
 function asDateISO(d: Date) {
@@ -65,10 +67,10 @@ export async function GET(req: Request) {
     const fromD = parseDateISO(from)
     const toD = parseDateISO(to)
     if (!fromD || !toD) {
-      return NextResponse.json({ error: 'Неверный период (ожидаю YYYY-MM-DD)' }, { status: 400 })
+      return jsonApiError(400, ApiErrorCodes.REPORT_PERIOD_INVALID, 'Invalid period (expected YYYY-MM-DD)')
     }
     if (toD.getTime() < fromD.getTime()) {
-      return NextResponse.json({ error: 'Период неверный: to < from' }, { status: 400 })
+      return jsonApiError(400, ApiErrorCodes.REPORT_RANGE_ORDER_INVALID, 'Invalid range: end before start')
     }
 
     const admin = await requireAdmin(req)
@@ -84,7 +86,7 @@ export async function GET(req: Request) {
       .lte('job_date', toISO)
 
     if (jobsRes.error) {
-      return NextResponse.json({ error: jobsRes.error.message }, { status: 500 })
+      return jsonApiError(500, ApiErrorCodes.ADMIN_QUERY_FAILED, jobsRes.error.message)
     }
 
     const jobs = (jobsRes.data || []).filter((j: any) => !!j?.id && !!j?.worker_id && !!j?.site_id)
@@ -110,7 +112,7 @@ export async function GET(req: Request) {
       .lte('started_at', startAtMax)
 
     if (logsRes.error) {
-      return NextResponse.json({ error: logsRes.error.message }, { status: 500 })
+      return jsonApiError(500, ApiErrorCodes.ADMIN_QUERY_FAILED, logsRes.error.message)
     }
 
     const minutesByJob = new Map<string, number>()
@@ -167,7 +169,7 @@ export async function GET(req: Request) {
       sb.from('sites').select('id, name').in('id', siteIds),
     ])
 
-    if (sitesRes.error) return NextResponse.json({ error: sitesRes.error.message }, { status: 500 })
+    if (sitesRes.error) return jsonApiError(500, ApiErrorCodes.ADMIN_QUERY_FAILED, sitesRes.error.message)
 
     const RAW_WORKER_BUCKET = process.env.WORKER_PHOTOS_BUCKET || 'site-photos/workers'
     const { bucket: WORKER_BUCKET } = parseBucketRef(RAW_WORKER_BUCKET, 'site-photos')

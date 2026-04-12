@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
-
-function bearer(req: NextRequest) {
-  const h = req.headers.get('authorization') || ''
-  const m = /^Bearer\s+(.+)$/i.exec(h)
-  return m?.[1] || null
-}
+import { requireAdminBearer } from '@/lib/admin-bearer-guard'
+import { ApiErrorCodes } from '@/lib/api-error-codes'
+import { AppApiErrorCodes } from '@/lib/app-error-codes'
+import { jsonApiError } from '@/lib/json-api-error'
 
 function cleanEnv(v: string | undefined | null): string {
   const s = String(v ?? '').replace(/\uFEFF/g, '').trim()
@@ -19,28 +17,6 @@ function envOrThrow(name: string) {
   const v = cleanEnv(process.env[name])
   if (!v) throw new Error(`Missing env: ${name}`)
   return v
-}
-
-async function assertAdmin(req: NextRequest) {
-  const token = bearer(req)
-  if (!token) return { ok: false as const, status: 401, error: 'Нет входа. Авторизуйся в админке.' }
-
-  const url = envOrThrow('NEXT_PUBLIC_SUPABASE_URL')
-  const anon = envOrThrow('NEXT_PUBLIC_SUPABASE_ANON_KEY')
-
-  const sb = createClient(url, anon, {
-    global: { headers: { Authorization: `Bearer ${token}` } },
-    auth: { persistSession: false, autoRefreshToken: false },
-  })
-
-  const { data: userData, error: userErr } = await sb.auth.getUser(token)
-  if (userErr || !userData?.user) return { ok: false as const, status: 401, error: 'Невалидный токен' }
-
-  const { data: prof, error: profErr } = await sb.from('profiles').select('id, role, active').eq('id', userData.user.id).single()
-  if (profErr || !prof) return { ok: false as const, status: 403, error: 'Профиль не найден' }
-  if (prof.role !== 'admin' || prof.active !== true) return { ok: false as const, status: 403, error: 'Доступ запрещён' }
-
-  return { ok: true as const }
 }
 
 let ASSIGNMENTS_TABLE: string | null = null
@@ -63,7 +39,7 @@ async function resolveAssignmentsTable(admin: SupabaseClient) {
     }
   }
 
-  throw new Error('Не найдена таблица назначений (assignments/site_workers).')
+  throw Object.assign(new Error('Assignments table not found'), { code: AppApiErrorCodes.ASSIGNMENTS_TABLE_MISSING })
 }
 
 let JOBS_END_TIME_COL: string | null | undefined = undefined
@@ -100,8 +76,8 @@ function normalizeHHMM(v: string) {
 
 export async function POST(req: NextRequest) {
   try {
-    const guard = await assertAdmin(req)
-    if (!guard.ok) return NextResponse.json({ error: guard.error }, { status: guard.status })
+    const guard = await requireAdminBearer(req)
+    if (!guard.ok) return guard.response
 
     const body = await req.json().catch(() => ({} as any))
 
@@ -115,10 +91,10 @@ export async function POST(req: NextRequest) {
     const workerIdsRaw = Array.isArray(body?.worker_ids) ? body.worker_ids : []
     const workerIds = workerIdsRaw.map((x: any) => String(x).trim()).filter(Boolean)
 
-    if (!siteId) return NextResponse.json({ error: 'site_id обязателен' }, { status: 400 })
-    if (!jobDate) return NextResponse.json({ error: 'job_date обязателен' }, { status: 400 })
-    if (!scheduledTime) return NextResponse.json({ error: 'scheduled_time обязателен' }, { status: 400 })
-    if (workerIds.length === 0) return NextResponse.json({ error: 'Выбери хотя бы одного работника' }, { status: 400 })
+    if (!siteId) return jsonApiError(400, ApiErrorCodes.SITE_ID_REQUIRED, 'site_id is required')
+    if (!jobDate) return jsonApiError(400, ApiErrorCodes.JOB_DATE_REQUIRED, 'job_date is required')
+    if (!scheduledTime) return jsonApiError(400, ApiErrorCodes.SCHEDULED_TIME_REQUIRED, 'scheduled_time is required')
+    if (workerIds.length === 0) return jsonApiError(400, ApiErrorCodes.AT_LEAST_ONE_WORKER, 'Select at least one worker')
 
     const url = envOrThrow('NEXT_PUBLIC_SUPABASE_URL')
     const service = envOrThrow('SUPABASE_SERVICE_ROLE_KEY')
@@ -128,15 +104,15 @@ export async function POST(req: NextRequest) {
     const assignTable = await resolveAssignmentsTable(admin)
     for (const wid of workerIds) {
       const { data: ex, error: exErr } = await admin.from(assignTable).select('site_id,worker_id').eq('site_id', siteId).eq('worker_id', wid).limit(1)
-      if (exErr) return NextResponse.json({ error: exErr.message }, { status: 500 })
+      if (exErr) return jsonApiError(500, ApiErrorCodes.ADMIN_QUERY_FAILED, exErr.message)
       if (!Array.isArray(ex) || ex.length === 0) {
         const { error: insAErr } = await admin.from(assignTable).insert([{ site_id: siteId, worker_id: wid }])
-        if (insAErr) return NextResponse.json({ error: insAErr.message }, { status: 500 })
+        if (insAErr) return jsonApiError(500, ApiErrorCodes.ADMIN_QUERY_FAILED, insAErr.message)
       }
     }
 
     const timeFrom = normalizeHHMM(scheduledTime)
-    if (!timeFrom) return NextResponse.json({ error: 'scheduled_time обязателен' }, { status: 400 })
+    if (!timeFrom) return jsonApiError(400, ApiErrorCodes.SCHEDULED_TIME_REQUIRED, 'scheduled_time is required')
 
     const timeTo = scheduledTimeToRaw == null ? null : normalizeHHMM(String(scheduledTimeToRaw))
     const endCol = timeTo ? await resolveJobsEndTimeColumn(admin) : null
@@ -154,10 +130,14 @@ export async function POST(req: NextRequest) {
     })
 
     const { data, error } = await admin.from('jobs').insert(rows).select('id')
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return jsonApiError(500, ApiErrorCodes.ADMIN_QUERY_FAILED, error.message)
 
     return NextResponse.json({ ok: true, created: data ?? [] })
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'Ошибка сервера' }, { status: 500 })
+    const code = (e as any)?.code
+    if (code === AppApiErrorCodes.ASSIGNMENTS_TABLE_MISSING) {
+      return jsonApiError(500, AppApiErrorCodes.ASSIGNMENTS_TABLE_MISSING, String(e?.message || 'Assignments table not found'))
+    }
+    return jsonApiError(500, ApiErrorCodes.ADMIN_INTERNAL, String(e?.message || e || 'Server error'))
   }
 }

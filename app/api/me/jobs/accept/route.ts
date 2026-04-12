@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { AppApiErrorCodes } from '@/lib/app-error-codes'
 import { ApiError, requireActiveWorker, toErrorResponse } from '@/lib/supabase-server'
 
 export const runtime = 'nodejs'
@@ -31,7 +32,7 @@ export async function POST(req: Request) {
     const { supabase, userId } = await requireActiveWorker(req)
     const body = await req.json().catch(() => ({} as any))
     const jobId = String(body?.jobId || body?.job_id || body?.id || '').trim()
-    if (!jobId) throw new ApiError(400, 'Нужен jobId')
+    if (!jobId) throw new ApiError(400, 'Job id is required', AppApiErrorCodes.JOB_ID_REQUIRED)
 
     const { data: job, error: jErr } = await supabase
       .from('jobs')
@@ -39,22 +40,23 @@ export async function POST(req: Request) {
       .eq('id', jobId)
       .maybeSingle()
 
-    if (jErr) throw new ApiError(400, jErr.message)
-    if (!job) throw new ApiError(404, 'Смена не найдена')
+    if (jErr) throw new ApiError(400, jErr.message, AppApiErrorCodes.JOB_ACCEPT_QUERY_FAILED)
+    if (!job) throw new ApiError(404, 'Shift not found', AppApiErrorCodes.JOB_NOT_FOUND)
 
-    if (job.status !== 'planned') throw new ApiError(400, 'Принять можно только запланированную смену')
+    if (job.status !== 'planned')
+      throw new ApiError(400, 'Only planned shifts can be accepted', AppApiErrorCodes.JOB_START_STATUS_INVALID)
 
     if (job.worker_id && String(job.worker_id) === String(userId)) {
       return NextResponse.json({ ok: true }, { status: 200 })
     }
 
-    if (job.worker_id) throw new ApiError(409, 'Смена уже занята')
+    if (job.worker_id) throw new ApiError(409, 'Shift already taken', AppApiErrorCodes.JOB_TAKEN_BY_OTHER)
 
     const siteId = String(job.site_id || '').trim()
-    if (!siteId) throw new ApiError(400, 'У смены нет site_id')
+    if (!siteId) throw new ApiError(400, 'Shift has no site id', AppApiErrorCodes.JOB_SITE_ID_MISSING)
 
     const t = await resolveAssignmentsTable(supabase)
-    if (!t) throw new ApiError(500, 'Не найдена таблица назначений')
+    if (!t) throw new ApiError(500, 'Assignments table not found', AppApiErrorCodes.ASSIGNMENTS_TABLE_MISSING)
 
     const { data: a, error: aErr } = await supabase
       .from(t)
@@ -63,8 +65,9 @@ export async function POST(req: Request) {
       .eq('worker_id', userId)
       .limit(1)
 
-    if (aErr) throw new ApiError(400, aErr.message)
-    if (!Array.isArray(a) || a.length === 0) throw new ApiError(403, 'Нет доступа к объекту')
+    if (aErr) throw new ApiError(400, aErr.message, AppApiErrorCodes.JOB_ACCEPT_QUERY_FAILED)
+    if (!Array.isArray(a) || a.length === 0)
+      throw new ApiError(403, 'No assignment for this site', AppApiErrorCodes.SITE_NOT_IN_ASSIGNMENTS)
 
     const { error: updErr } = await supabase
       .from('jobs')
@@ -72,12 +75,10 @@ export async function POST(req: Request) {
       .eq('id', jobId)
       .is('worker_id', null)
 
-    if (updErr) throw new ApiError(400, updErr.message)
+    if (updErr) throw new ApiError(400, updErr.message, AppApiErrorCodes.JOB_ACCEPT_UPDATE_FAILED)
 
     return NextResponse.json({ ok: true }, { status: 200 })
   } catch (e) {
     return toErrorResponse(e)
   }
 }
-
-

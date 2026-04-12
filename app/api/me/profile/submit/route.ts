@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server'
+import { ApiErrorCodes } from '@/lib/api-error-codes'
+import { AppApiErrorCodes } from '@/lib/app-error-codes'
 import { ApiError, requireUser, toErrorResponse } from '@/lib/supabase-server'
 
 export const runtime = 'nodejs'
@@ -14,14 +16,14 @@ export async function POST(req: Request) {
       .eq('id', userId)
       .maybeSingle()
 
-    if (error) throw new ApiError(400, error.message)
-    if (!prof) throw new ApiError(404, 'Профиль не найден')
+    if (error) throw new ApiError(400, error.message, AppApiErrorCodes.PROFILE_LOAD_FAILED)
+    if (!prof) throw new ApiError(404, 'Profile not found', ApiErrorCodes.PROFILE_NOT_FOUND)
 
     const full = String((prof as any).full_name || '').trim()
     const avatar = String((prof as any).avatar_path || '').trim()
 
-    if (!full) throw new ApiError(400, 'Заполни имя')
-    if (!avatar) throw new ApiError(400, 'Поставь аватар (главное фото)')
+    if (!full) throw new ApiError(400, 'Fill in your name', AppApiErrorCodes.PROFILE_SUBMIT_NAME_REQUIRED)
+    if (!avatar) throw new ApiError(400, 'Set a profile photo', AppApiErrorCodes.PROFILE_SUBMIT_AVATAR_REQUIRED)
 
     const patch: any = {
       active: false,
@@ -35,7 +37,7 @@ export async function POST(req: Request) {
       .select('id, role, active, full_name, phone, email, avatar_path, notes, onboarding_submitted_at')
       .single()
 
-    if (r.error) throw new ApiError(400, r.error.message)
+    if (r.error) throw new ApiError(400, r.error.message, AppApiErrorCodes.PROFILE_UPDATE_FAILED)
 
     return NextResponse.json({ ok: true, profile: r.data })
   } catch (e) {

@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useI18n } from '@/components/I18nProvider'
 import { authFetchJson, clearAuthTokens, getAccessToken, setAuthTokens } from '@/lib/auth-fetch'
 
 type ScheduleItem = {
@@ -52,14 +53,6 @@ function minutesFromHHMM(t: string) {
   return hh * 60 + mm
 }
 
-function fmtDur(mins: number) {
-  const m = Math.max(0, Math.floor(mins || 0))
-  const h = Math.floor(m / 60)
-  const r = m % 60
-  if (h <= 0) return `${r}м`
-  return `${h}ч ${pad2(r)}м`
-}
-
 function fmtHM(mins: number) {
   const m = Math.max(0, Math.floor(mins || 0))
   const h = Math.floor(m / 60)
@@ -99,6 +92,16 @@ function parseHM(s: string): number | null {
 }
 
 export default function AdminFactPage() {
+  const { t } = useI18n()
+
+  function fmtDur(mins: number) {
+    const m = Math.max(0, Math.floor(mins || 0))
+    const h = Math.floor(m / 60)
+    const r = m % 60
+    if (h <= 0) return `${r}${t('admin.fact.minutesShort')}`
+    return `${h}${t('admin.fact.hoursShort')} ${pad2(r)}${t('admin.fact.minutesShort')}`
+  }
+
   const [booting, setBooting] = useState(true)
   const [token, setToken] = useState<string | null>(null)
 
@@ -143,12 +146,12 @@ export default function AdminFactPage() {
   useEffect(() => {
     ;(async () => {
       try {
-        const t = getAccessToken()
-        setToken(t)
-        if (t) await refresh()
+        const tok = getAccessToken()
+        setToken(tok)
+        if (tok) await refresh()
       } catch (e: any) {
-        const msg = String(e?.message || e || 'Ошибка')
-        if (msg.includes('401') || /токен|unauthorized/i.test(msg)) {
+        const msg = String(e?.message || e || t('admin.approvals.errGeneric'))
+        if (msg.includes('401') || /токен|token|unauthorized/i.test(msg)) {
           clearAuthTokens()
           setToken(null)
         } else {
@@ -158,7 +161,7 @@ export default function AdminFactPage() {
         setBooting(false)
       }
     })()
-  }, [refresh])
+  }, [refresh, t])
 
   const doLogin = useCallback(async () => {
     setBusy(true)
@@ -173,24 +176,24 @@ export default function AdminFactPage() {
       const payload = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(payload?.error || `HTTP ${res.status}`)
       setAuthTokens(payload.access_token, payload.refresh_token || null)
-      const t = getAccessToken()
-      setToken(t)
+      const tok = getAccessToken()
+      setToken(tok)
       await refresh()
-      setNotice('Вход выполнен.')
+      setNotice(t('admin.approvals.loginOk'))
     } catch (e: any) {
-      setError(String(e?.message || e || 'Ошибка входа'))
+      setError(String(e?.message || e || t('admin.main.errLogin')))
     } finally {
       setBusy(false)
       setBooting(false)
     }
-  }, [email, password, refresh])
+  }, [email, password, refresh, t])
 
   const doLogout = useCallback(() => {
     clearAuthTokens()
     setToken(null)
     setItems([])
-    setNotice('Вы вышли.')
-  }, [])
+    setNotice(t('admin.fact.loggedOut'))
+  }, [t])
 
   const doneItems = useMemo(() => {
     return items
@@ -214,27 +217,27 @@ export default function AdminFactPage() {
       try {
         const hm = String(editHM[jobId] || '').trim()
         const mins = parseHM(hm)
-        if (mins == null) throw new Error('Факт должен быть в формате H:MM (например 3:15)')
+        if (mins == null) throw new Error(t('admin.fact.invalidFactFormat'))
         await authFetchJson('/api/admin/jobs/set-actual', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ job_id: jobId, hm }),
         })
-        setNotice('Факт обновлён.')
+        setNotice(t('admin.fact.factUpdated'))
         await refresh()
       } catch (e: any) {
-        setError(String(e?.message || e || 'Ошибка сохранения'))
+        setError(String(e?.message || e || t('admin.main.errSave')))
       } finally {
         setBusy(false)
       }
     },
-    [editHM, refresh]
+    [editHM, refresh, t]
   )
 
   if (booting) {
     return (
       <div className="min-h-screen bg-zinc-950 text-amber-100 flex items-center justify-center">
-        <div className="text-sm opacity-80">Загрузка…</div>
+        <div className="text-sm opacity-80">{t('admin.main.loadingData')}</div>
       </div>
     )
   }
@@ -243,8 +246,8 @@ export default function AdminFactPage() {
     return (
       <div className="min-h-screen bg-zinc-950 text-amber-100 flex items-center justify-center p-6">
         <div className="w-full max-w-md rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-6 shadow-xl">
-          <div className="text-xl font-semibold">Tanija • Admin • Факт</div>
-          <div className="text-sm opacity-80 mt-1">Вход по email/паролю</div>
+          <div className="text-xl font-semibold">{t('admin.fact.brand')}</div>
+          <div className="text-sm opacity-80 mt-1">{t('admin.fact.subtitleLogin')}</div>
 
           {error ? (
             <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
@@ -263,7 +266,7 @@ export default function AdminFactPage() {
               id="email"
               name="email"
               className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-              placeholder="Email"
+              placeholder={t('admin.approvals.emailPlaceholder')}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="email"
@@ -272,7 +275,7 @@ export default function AdminFactPage() {
               id="password"
               name="password"
               className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-              placeholder="Пароль"
+              placeholder={t('admin.common.loginPasswordLabel')}
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -283,7 +286,7 @@ export default function AdminFactPage() {
               onClick={doLogin}
               disabled={busy || !email.trim() || !password.trim()}
             >
-              {busy ? 'Вхожу…' : 'Войти'}
+              {busy ? t('admin.common.signingIn') : t('admin.common.signIn')}
             </button>
           </div>
         </div>
@@ -296,23 +299,23 @@ export default function AdminFactPage() {
       <div className="mx-auto max-w-6xl">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="text-2xl font-semibold">Tanija • Admin • Факт</div>
-            <div className="text-sm opacity-80 mt-1">Редактирование фактически отработанного времени</div>
+            <div className="text-2xl font-semibold">{t('admin.fact.brand')}</div>
+            <div className="text-sm opacity-80 mt-1">{t('admin.fact.subtitleEdit')}</div>
           </div>
 
           <div className="flex gap-2">
             <a className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10" href="/admin">
-              Админка
+              {t('admin.fact.adminHome')}
             </a>
             <button className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10" onClick={doLogout}>
-              Выйти
+              {t('admin.common.logout')}
             </button>
           </div>
         </div>
 
         <div className="mt-4 flex flex-wrap items-end gap-3">
           <label className="grid gap-1">
-            <span className="text-xs opacity-80">Дата с</span>
+            <span className="text-xs opacity-80">{t('admin.fact.dateFrom')}</span>
             <input
               type="date"
               value={dateFrom}
@@ -321,7 +324,7 @@ export default function AdminFactPage() {
             />
           </label>
           <label className="grid gap-1">
-            <span className="text-xs opacity-80">Дата по</span>
+            <span className="text-xs opacity-80">{t('admin.fact.dateTo')}</span>
             <input
               type="date"
               value={dateTo}
@@ -337,9 +340,9 @@ export default function AdminFactPage() {
               setNotice(null)
               try {
                 await refresh()
-                setNotice('Обновлено.')
+                setNotice(t('admin.approvals.refreshed'))
               } catch (e: any) {
-                setError(String(e?.message || e || 'Ошибка обновления'))
+                setError(String(e?.message || e || t('admin.fact.errRefresh')))
               } finally {
                 setBusy(false)
               }
@@ -347,7 +350,7 @@ export default function AdminFactPage() {
             disabled={busy}
             className="rounded-xl border border-amber-500/30 px-4 py-2 text-sm hover:bg-amber-500/10 disabled:opacity-60"
           >
-            {busy ? 'Обновляю…' : 'Обновить'}
+            {busy ? t('admin.common.refreshing') : t('admin.common.refreshData')}
           </button>
         </div>
 
@@ -361,37 +364,38 @@ export default function AdminFactPage() {
 
         <div className="mt-6 rounded-2xl border border-amber-500/20 bg-zinc-950/60 overflow-hidden">
           <div className="grid grid-cols-12 gap-0 border-b border-amber-500/10 bg-black/20 px-4 py-3 text-xs text-zinc-200">
-            <div className="col-span-2">Дата</div>
-            <div className="col-span-3">Объект</div>
-            <div className="col-span-2">Работник</div>
-            <div className="col-span-2">План</div>
-            <div className="col-span-1">Факт</div>
-            <div className="col-span-2">Правка</div>
+            <div className="col-span-2">{t('admin.fact.colDate')}</div>
+            <div className="col-span-3">{t('admin.fact.colSite')}</div>
+            <div className="col-span-2">{t('admin.fact.colWorker')}</div>
+            <div className="col-span-2">{t('admin.fact.colPlan')}</div>
+            <div className="col-span-1">{t('admin.fact.colFact')}</div>
+            <div className="col-span-2">{t('admin.fact.colEdit')}</div>
           </div>
 
           {doneItems.length === 0 ? (
-            <div className="px-4 py-6 text-sm opacity-70">Нет завершённых смен в выбранном диапазоне.</div>
+            <div className="px-4 py-6 text-sm opacity-70">{t('admin.fact.emptyRange')}</div>
           ) : (
             doneItems.map((j) => {
               const from = timeHHMM(j.scheduled_time)
               const to = timeHHMM(j.scheduled_end_time ?? null)
               const planM = plannedMinutes(from, to)
               const factM = actualMinutes(j.started_at, j.stopped_at)
-              const factStr = factM != null ? fmtDur(factM) : '—'
-              const planStr = from && to ? `${from}–${to}${planM != null ? ` • ${fmtDur(planM)}` : ''}` : from || '—'
+              const dash = t('admin.common.dash')
+              const factStr = factM != null ? fmtDur(factM) : dash
+              const planStr = from && to ? `${from}–${to}${planM != null ? ` • ${fmtDur(planM)}` : ''}` : from || dash
 
               return (
                 <div key={j.id} className="grid grid-cols-12 items-center gap-0 border-t border-amber-500/10 px-4 py-3 text-sm">
                   <div className="col-span-2 opacity-90">{fmtD(j.job_date)}</div>
-                  <div className="col-span-3 font-semibold">{j.site_name || '—'}</div>
-                  <div className="col-span-2 opacity-90">{j.worker_name || '—'}</div>
+                  <div className="col-span-3 font-semibold">{j.site_name || dash}</div>
+                  <div className="col-span-2 opacity-90">{j.worker_name || dash}</div>
                   <div className="col-span-2 text-xs opacity-80">{planStr}</div>
                   <div className="col-span-1 text-xs opacity-80">{factStr}</div>
                   <div className="col-span-2 flex items-center gap-2">
                     <input
                       value={editHM[j.id] ?? ''}
                       onChange={(e) => setEditHM((p) => ({ ...p, [j.id]: e.target.value }))}
-                      placeholder="H:MM"
+                      placeholder={t('admin.fact.placeholderHm')}
                       className="w-24 rounded-xl border border-amber-500/20 bg-zinc-900/40 px-3 py-2 text-xs outline-none focus:border-amber-400/50"
                     />
                     <button
@@ -399,7 +403,7 @@ export default function AdminFactPage() {
                       disabled={busy}
                       className="rounded-xl border border-amber-500/30 px-3 py-2 text-xs hover:bg-amber-500/10 disabled:opacity-60"
                     >
-                      Сохранить
+                      {t('admin.fact.save')}
                     </button>
                   </div>
                 </div>
@@ -408,9 +412,7 @@ export default function AdminFactPage() {
           )}
         </div>
 
-        <div className="mt-4 text-xs opacity-70">
-          Формат правки: <span className="font-semibold">H:MM</span> (например <span className="font-semibold">3:15</span>). Меняет <span className="font-semibold">stopped_at</span> первого time_log (started_at + длительность).
-        </div>
+        <div className="mt-4 text-xs opacity-70">{t('admin.fact.formatHint')}</div>
       </div>
     </div>
   )

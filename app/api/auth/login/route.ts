@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { AppApiErrorCodes } from '@/lib/app-error-codes'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -35,6 +36,10 @@ function json(status: number, data: any) {
   })
 }
 
+function err(status: number, message: string, errorCode: string) {
+  return json(status, { error: message, errorCode })
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({} as any))
@@ -43,7 +48,8 @@ export async function POST(req: Request) {
     const identifier = String(body?.identifier ?? body?.email ?? body?.phone ?? '').trim()
     const password = String(body?.password || '').trim()
 
-    if (!identifier || !password) return json(400, { error: 'Логин/пароль обязательны' })
+    if (!identifier || !password)
+      return err(400, 'Login and password are required', AppApiErrorCodes.AUTH_IDENTIFIER_PASSWORD_REQUIRED)
 
     const url = mustEnv('NEXT_PUBLIC_SUPABASE_URL')
     const anon = mustEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY')
@@ -55,9 +61,11 @@ export async function POST(req: Request) {
     const looksEmail = identifier.includes('@')
 
     if (looksEmail) {
-      if (!isEmail(identifier)) return json(400, { error: 'Неверный email' })
+      if (!isEmail(identifier))
+        return err(400, 'Invalid email', AppApiErrorCodes.AUTH_INVALID_EMAIL)
       const { data, error } = await supabase.auth.signInWithPassword({ email: identifier.toLowerCase(), password })
-      if (error || !data?.session) return json(401, { error: error?.message || 'Неверный логин/пароль' })
+      if (error || !data?.session)
+        return err(401, error?.message || 'Invalid login or password', AppApiErrorCodes.AUTH_INVALID_CREDENTIALS)
       return json(200, {
         access_token: data.session.access_token,
         refresh_token: data.session.refresh_token,
@@ -65,10 +73,16 @@ export async function POST(req: Request) {
       })
     }
 
-    if (!isE164(identifier)) return json(400, { error: 'Телефон нужен в формате E.164, например +31612345678' })
+    if (!isE164(identifier))
+      return err(
+        400,
+        'Phone must be in E.164 format, e.g. +31612345678',
+        AppApiErrorCodes.AUTH_INVALID_PHONE_E164,
+      )
 
     const { data, error } = await supabase.auth.signInWithPassword({ phone: identifier, password })
-    if (error || !data?.session) return json(401, { error: error?.message || 'Неверный логин/пароль' })
+    if (error || !data?.session)
+      return err(401, error?.message || 'Invalid login or password', AppApiErrorCodes.AUTH_INVALID_CREDENTIALS)
 
     return json(200, {
       access_token: data.session.access_token,
@@ -77,7 +91,7 @@ export async function POST(req: Request) {
     })
   } catch (e: any) {
     // важный момент: отдаём реальную причину, иначе сложно дебажить Vercel env
-    return json(500, { error: String(e?.message || e) })
+    return err(500, String(e?.message || e), AppApiErrorCodes.INTERNAL)
   }
 }
 

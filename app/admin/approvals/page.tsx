@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useI18n } from '@/components/I18nProvider'
 import { authFetchJson, clearAuthTokens, getAccessToken, setAuthTokens } from '@/lib/auth-fetch'
 
 type PendingWorker = {
@@ -34,6 +35,7 @@ function isE164(s: string) {
 }
 
 export default function AdminApprovalsPage() {
+  const { t } = useI18n()
   const BG = 'bg-[#0b0604]'
   const CARD =
     'border border-amber-500/20 bg-[#120806]/70 shadow-[0_0_0_1px_rgba(245,158,11,0.12),0_30px_80px_rgba(0,0,0,0.55)] backdrop-blur'
@@ -82,12 +84,12 @@ export default function AdminApprovalsPage() {
   useEffect(() => {
     ;(async () => {
       try {
-        const t = getAccessToken()
-        setToken(t)
-        if (t) await refresh()
+        const tok = getAccessToken()
+        setToken(tok)
+        if (tok) await refresh()
       } catch (e: any) {
-        const msg = String(e?.message || e || 'Ошибка')
-        if (msg.includes('401') || /токен|unauthorized/i.test(msg)) {
+        const msg = String(e?.message || e || t('admin.approvals.errGeneric'))
+        if (msg.includes('401') || /токен|token|unauthorized/i.test(msg)) {
           clearAuthTokens()
           setToken(null)
         } else {
@@ -97,7 +99,7 @@ export default function AdminApprovalsPage() {
         setBooting(false)
       }
     })()
-  }, [refresh])
+  }, [refresh, t])
 
   const doLogin = useCallback(async () => {
     setBusy(true)
@@ -112,17 +114,17 @@ export default function AdminApprovalsPage() {
       const payload = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(payload?.error || `HTTP ${res.status}`)
       setAuthTokens(payload.access_token, payload.refresh_token || null)
-      const t = getAccessToken()
-      setToken(t)
+      const tok = getAccessToken()
+      setToken(tok)
       await refresh()
-      setNotice('Вход выполнен.')
+      setNotice(t('admin.approvals.loginOk'))
     } catch (e: any) {
-      setError(String(e?.message || e || 'Ошибка входа'))
+      setError(String(e?.message || e || t('admin.main.errLogin')))
     } finally {
       setBusy(false)
       setBooting(false)
     }
-  }, [email, password, refresh])
+  }, [email, password, refresh, t])
 
   const activate = useCallback(
     async (id: string, force: boolean) => {
@@ -135,15 +137,15 @@ export default function AdminApprovalsPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ worker_id: id, force }),
         })
-        setNotice('Активирован.')
+        setNotice(t('admin.approvals.activated'))
         await refresh()
       } catch (e: any) {
-        setError(String(e?.message || e || 'Ошибка активации'))
+        setError(String(e?.message || e || t('admin.approvals.errActivation')))
       } finally {
         setBusy(false)
       }
     },
-    [refresh]
+    [refresh, t]
   )
 
   const inviteWorker = useCallback(async () => {
@@ -152,11 +154,11 @@ export default function AdminApprovalsPage() {
     setNotice(null)
     try {
       const em = inviteEmail.trim()
-      if (!em) throw new Error('Нужен email или телефон')
+      if (!em) throw new Error(t('admin.main.errNeedContact'))
       if (em.includes('@')) {
-        if (!isEmail(em)) throw new Error('Неверный email')
+        if (!isEmail(em)) throw new Error(t('admin.approvals.invalidEmail'))
       } else {
-        if (!isE164(em)) throw new Error('Телефон должен быть E.164, например +31612345678')
+        if (!isE164(em)) throw new Error(t('admin.approvals.phoneE164Required'))
       }
 
       const out = await authFetchJson('/api/admin/workers/invite', {
@@ -168,14 +170,14 @@ export default function AdminApprovalsPage() {
       setInviteEmail('')
       const login = String((out as any)?.login || em)
       const pw = String((out as any)?.password || '')
-      setNotice(`Создано. Логин: ${login}. Временный пароль: ${pw} (при первом входе попросим сменить).`)
+      setNotice(t('admin.main.noticeInviteCreated', { login, pw }))
       await refresh().catch(() => null)
     } catch (e: any) {
-      setError(String(e?.message || e || 'Ошибка приглашения'))
+      setError(String(e?.message || e || t('admin.main.errInvite')))
     } finally {
       setBusy(false)
     }
-  }, [inviteEmail, refresh])
+  }, [inviteEmail, refresh, t])
 
   const saveContact = useCallback(
     async (id: string) => {
@@ -187,8 +189,8 @@ export default function AdminApprovalsPage() {
         const phone = v.phone.trim()
         const em = v.email.trim()
 
-        if (phone && !isE164(phone)) throw new Error('Телефон должен быть E.164, например +31612345678')
-        if (em && !isEmail(em)) throw new Error('Неверный email')
+        if (phone && !isE164(phone)) throw new Error(t('admin.approvals.phoneE164Required'))
+        if (em && !isEmail(em)) throw new Error(t('admin.approvals.invalidEmail'))
 
         await authFetchJson(`/api/admin/workers/${encodeURIComponent(id)}/profile`, {
           method: 'PATCH',
@@ -196,15 +198,15 @@ export default function AdminApprovalsPage() {
           body: JSON.stringify({ phone: phone ? phone : null, email: em ? em : null }),
         })
 
-        setNotice('Контакты сохранены.')
+        setNotice(t('admin.approvals.contactsSaved'))
         await refresh()
       } catch (e: any) {
-        setError(String(e?.message || e || 'Ошибка сохранения'))
+        setError(String(e?.message || e || t('admin.approvals.errSaveContacts')))
       } finally {
         setBusy(false)
       }
     },
-    [editById, refresh]
+    [editById, refresh, t]
   )
 
   const pendingCount = useMemo(() => items.length, [items])
@@ -212,7 +214,7 @@ export default function AdminApprovalsPage() {
   if (booting) {
     return (
       <div className={`min-h-screen ${BG} text-amber-100 flex items-center justify-center`}>
-        <div className="text-sm opacity-80">Загрузка…</div>
+        <div className="text-sm opacity-80">{t('admin.main.loadingData')}</div>
       </div>
     )
   }
@@ -221,8 +223,10 @@ export default function AdminApprovalsPage() {
     return (
       <div className={`min-h-screen ${BG} text-amber-100 flex items-center justify-center p-4`}>
         <div className={`w-full max-w-md rounded-3xl ${CARD} p-6`}>
-          <div className="text-xl font-semibold">Tanija • Admin • Активации</div>
-          <div className="mt-1 text-xs text-amber-200/70">Чисто. Чётко. По времени. <span className="opacity-80">© 2026</span></div>
+          <div className="text-xl font-semibold">{t('admin.approvals.title')}</div>
+          <div className="mt-1 text-xs text-amber-200/70">
+            {t('admin.common.footerTagline')} <span className="opacity-80">{t('admin.common.yearCopy', { year: 2026 })}</span>
+          </div>
 
           {error ? (
             <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">{error}</div>
@@ -235,21 +239,21 @@ export default function AdminApprovalsPage() {
           <div className="mt-4 space-y-3">
             <input
               className="w-full rounded-2xl bg-black/30 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-              placeholder="Email"
+              placeholder={t('admin.approvals.emailPlaceholder')}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="username"
             />
             <input
               className="w-full rounded-2xl bg-black/30 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-              placeholder="Пароль"
+              placeholder={t('admin.common.loginPasswordLabel')}
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="current-password"
             />
             <button className={`w-full ${BTN_PRI}`} onClick={doLogin} disabled={busy || !email.trim() || !password.trim()}>
-              {busy ? 'Вхожу…' : 'Войти'}
+              {busy ? t('admin.common.signingIn') : t('admin.common.signIn')}
             </button>
           </div>
         </div>
@@ -263,26 +267,26 @@ export default function AdminApprovalsPage() {
         <div className={`rounded-3xl ${CARD} p-5 sm:p-6`}>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <div className="text-2xl font-semibold">Tanija • Admin • Активации</div>
+              <div className="text-2xl font-semibold">{t('admin.approvals.title')}</div>
               <div className="text-sm text-amber-200/70 mt-1">
-                Новые работники (inactive): <span className="text-amber-200">{pendingCount}</span>
+                {t('admin.approvals.pendingLabel', { count: pendingCount })}
               </div>
             </div>
 
             <div className="flex flex-wrap gap-2 sm:justify-end">
               <a className={BTN} href="/admin">
-                Админка
+                {t('admin.common.adminLink')}
               </a>
               <button
                 className={BTN}
                 disabled={busy}
                 onClick={() =>
                   void refresh()
-                    .then(() => setNotice('Обновлено.'))
-                    .catch((e) => setError(String((e as any)?.message || e || 'Ошибка')))
+                    .then(() => setNotice(t('admin.approvals.refreshed')))
+                    .catch((e) => setError(String((e as any)?.message || e || t('admin.approvals.errGeneric'))))
                 }
               >
-                {busy ? 'Обновляю…' : 'Обновить'}
+                {busy ? t('admin.common.refreshing') : t('admin.approvals.refresh')}
               </button>
             </div>
           </div>
@@ -292,29 +296,27 @@ export default function AdminApprovalsPage() {
 
           {/* Invite block */}
           <div className={`mt-6 rounded-2xl ${SOFT} p-4`}>
-            <div className="text-sm font-semibold">Создать работника</div>
-            <div className="mt-1 text-xs text-amber-200/70">
-              Введи email — отправим приглашение. Дальше сотрудник сможет войти по Email (код/ссылка) — без SMS.
-            </div>
+            <div className="text-sm font-semibold">{t('admin.approvals.createWorker')}</div>
+            <div className="mt-1 text-xs text-amber-200/70">{t('admin.approvals.inviteHint')}</div>
 
             <div className="mt-3 flex flex-col gap-2 sm:flex-row">
               <input
                 className="flex-1 rounded-2xl bg-black/30 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-                placeholder="name@domain.com или +31612345678"
+                placeholder={t('admin.approvals.invitePlaceholder')}
                 value={inviteEmail}
                 onChange={(e) => setInviteEmail(e.target.value)}
                 autoComplete="username"
                 disabled={busy}
               />
               <button className={BTN_PRI} onClick={inviteWorker} disabled={busy || !inviteEmail.trim()}>
-                {busy ? 'Отправляю…' : 'Пригласить'}
+                {busy ? t('admin.approvals.inviting') : t('admin.main.invite')}
               </button>
             </div>
           </div>
 
           <div className="mt-6 space-y-3">
             {items.length === 0 ? (
-              <div className={`rounded-2xl ${SOFT} p-4 text-sm text-amber-200/70`}>Новых заявок нет.</div>
+              <div className={`rounded-2xl ${SOFT} p-4 text-sm text-amber-200/70`}>{t('admin.approvals.noPending')}</div>
             ) : (
               items.map((w) => {
                 const edit = editById[w.id] || { phone: w.phone || '', email: w.email || '' }
@@ -328,33 +330,41 @@ export default function AdminApprovalsPage() {
                             // eslint-disable-next-line @next/next/no-img-element
                             <img src={w.avatar_url} className="h-full w-full object-cover" />
                           ) : (
-                            <div className="text-xs opacity-60">—</div>
+                            <div className="text-xs opacity-60">{t('admin.common.dash')}</div>
                           )}
                         </div>
                         <div>
-                          <div className="text-sm font-semibold">{w.full_name || '—'}</div>
+                          <div className="text-sm font-semibold">{w.full_name || t('admin.common.dash')}</div>
                           <div className="text-xs text-amber-200/70 mt-1">
                             {w.phone ? `📞 ${w.phone}` : ''} {w.email ? ` • ✉️ ${w.email}` : ''}{' '}
-                            {w.email ? (w.email_confirmed_at ? ' • email OK' : ' • email НЕ подтверждён') : ''}
+                            {w.email
+                              ? w.email_confirmed_at
+                                ? t('admin.approvals.emailConfirmed')
+                                : t('admin.approvals.emailNotConfirmed')
+                              : ''}
                           </div>
-                          <div className="text-xs text-amber-200/60 mt-1">Заявка: {fmtDT(w.onboarding_submitted_at)}</div>
-                          <div className="text-[10px] text-amber-200/40 mt-1">ID: {w.id}</div>
+                          <div className="text-xs text-amber-200/60 mt-1">
+                            {t('admin.approvals.submittedAt')} {fmtDT(w.onboarding_submitted_at)}
+                          </div>
+                          <div className="text-[10px] text-amber-200/40 mt-1">
+                            {t('admin.approvals.workerIdLine', { id: w.id })}
+                          </div>
                         </div>
                       </div>
 
                       <div className="flex flex-wrap gap-2 md:justify-end">
                         <button className={BTN_PRI} disabled={busy || !w.can_activate} onClick={() => activate(w.id, false)}>
-                          Активировать
+                          {t('admin.approvals.activate')}
                         </button>
                         <button className={BTN} disabled={busy} onClick={() => activate(w.id, true)}>
-                          Force
+                          {t('admin.approvals.forceActivate')}
                         </button>
                       </div>
                     </div>
 
                     <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
                       <label className="grid gap-1">
-                        <span className="text-[11px] text-amber-200/70">Телефон (E.164)</span>
+                        <span className="text-[11px] text-amber-200/70">{t('admin.approvals.phoneE164')}</span>
                         <input
                           className="w-full rounded-2xl bg-black/30 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
                           placeholder="+31612345678"
@@ -370,10 +380,10 @@ export default function AdminApprovalsPage() {
                       </label>
 
                       <label className="grid gap-1">
-                        <span className="text-[11px] text-amber-200/70">Логин (email или телефон)</span>
+                        <span className="text-[11px] text-amber-200/70">{t('admin.approvals.loginLabel')}</span>
                         <input
                           className="w-full rounded-2xl bg-black/30 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-                          placeholder="name@domain.com или +31612345678"
+                          placeholder={t('admin.approvals.invitePlaceholder')}
                           value={edit.email}
                           onChange={(e) =>
                             setEditById((p) => ({
@@ -387,14 +397,15 @@ export default function AdminApprovalsPage() {
 
                       <div className="flex items-end">
                         <button className={BTN} disabled={busy} onClick={() => void saveContact(w.id)}>
-                          Сохранить контакты
+                          {t('admin.approvals.saveContacts')}
                         </button>
                       </div>
                     </div>
 
                     {!w.can_activate ? (
                       <div className="mt-3 text-xs text-amber-200/60">
-                        Нужно: имя + аватар + “Отправить на активацию” {w.email ? '+ подтверждённый email' : ''}
+                        {t('admin.approvals.needProfile')}
+                        {w.email ? ` ${t('admin.approvals.needProfileEmailExtra')}` : ''}
                       </div>
                     ) : null}
                   </div>
@@ -404,7 +415,8 @@ export default function AdminApprovalsPage() {
           </div>
 
           <div className="mt-8 text-center text-[11px] text-amber-200/55">
-            Чисто. Чётко. По времени. <span className="opacity-80">© 2026</span>
+            {t('admin.common.footerTagline')}{' '}
+            <span className="opacity-80">{t('admin.common.yearCopy', { year: 2026 })}</span>
           </div>
         </div>
       </div>

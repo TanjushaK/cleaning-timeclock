@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { ApiErrorCodes } from '@/lib/api-error-codes'
 import { requireAdmin, toErrorResponse } from '@/lib/supabase-server'
 
 export const runtime = 'nodejs'
@@ -24,7 +25,7 @@ export async function POST(req: Request) {
     const address = String(body?.address || '').trim()
 
     if (!address) {
-      return json(400, { error: 'Missing address' })
+      return json(400, { error: 'Address is required', errorCode: ApiErrorCodes.GEOCODE_ADDRESS_REQUIRED })
     }
 
     const url =
@@ -48,14 +49,18 @@ export async function POST(req: Request) {
 
     if (!res.ok) {
       const text = await res.text().catch(() => '')
-      return json(res.status, { error: `Geocode failed: ${res.status}`, details: text.slice(0, 300) })
+      return json(res.status, {
+        error: `Geocode failed: ${res.status}`,
+        errorCode: ApiErrorCodes.ADMIN_QUERY_FAILED,
+        details: text.slice(0, 300),
+      })
     }
 
     const arr = (await res.json()) as NominatimItem[]
     const item = arr?.[0]
 
     if (!item?.lat || !item?.lon) {
-      return json(404, { error: 'No results' })
+      return json(404, { error: 'No geocoding results', errorCode: ApiErrorCodes.GEOCODE_NO_RESULTS })
     }
 
     return json(200, {

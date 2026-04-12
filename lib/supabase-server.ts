@@ -1,12 +1,17 @@
 import { NextResponse } from 'next/server'
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js'
+import { AppApiErrorCodes } from '@/lib/app-error-codes'
+import { ApiErrorCodes } from '@/lib/api-error-codes'
 
 export class ApiError extends Error {
   status: number
+  errorCode?: string
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, errorCode?: string) {
     super(message)
     this.status = status
+    this.errorCode = errorCode
+    this.name = 'ApiError'
   }
 }
 
@@ -77,14 +82,14 @@ export async function requireUser(reqOrHeaders: Request | Headers): Promise<User
   const token = getBearer(headers)
 
   if (!token) {
-    throw new ApiError(401, 'Нет токена (Authorization: Bearer ...)')
+    throw new ApiError(401, 'Bearer token required', AppApiErrorCodes.AUTH_BEARER_REQUIRED)
   }
 
   const supabase = supabaseService()
   const { data, error } = await supabase.auth.getUser(token)
 
   if (error || !data?.user) {
-    throw new ApiError(401, 'Токен неверный/просрочен (перелогинься)')
+    throw new ApiError(401, 'Invalid or expired token', AppApiErrorCodes.AUTH_TOKEN_INVALID)
   }
 
   return { supabase, token, user: data.user, userId: data.user.id }
@@ -99,8 +104,10 @@ export async function requireAdmin(reqOrHeaders: Request | Headers): Promise<Adm
     .eq('id', guard.userId)
     .maybeSingle()
 
-  if (profErr || !prof) throw new ApiError(403, 'Нет профиля (profiles) или нет доступа')
-  if (prof.role !== 'admin' || prof.active !== true) throw new ApiError(403, 'Нужна роль admin и active=true')
+  if (profErr || !prof)
+    throw new ApiError(403, 'Profile not found or access denied', ApiErrorCodes.ADMIN_PROFILE_NOT_FOUND)
+  if (prof.role !== 'admin' || prof.active !== true)
+    throw new ApiError(403, 'Admin role and active profile required', ApiErrorCodes.ADMIN_NOT_ADMIN)
 
   return { ...guard, profile: prof as ProfileRow }
 }
@@ -115,15 +122,19 @@ export async function requireActiveWorker(reqOrHeaders: Request | Headers): Prom
     .eq('id', guard.userId)
     .maybeSingle()
 
-  if (profErr || !prof) throw new ApiError(403, 'Нет профиля (profiles) или нет доступа')
-  if (prof.role !== 'worker' || prof.active !== true) throw new ApiError(403, 'Нужна роль worker и active=true')
+  if (profErr || !prof)
+    throw new ApiError(403, 'Profile not found or access denied', AppApiErrorCodes.WORKER_PROFILE_ACCESS_DENIED)
+  if (prof.role !== 'worker' || prof.active !== true)
+    throw new ApiError(403, 'Active worker profile required', AppApiErrorCodes.WORKER_ROLE_OR_ACTIVE_REQUIRED)
 
   return { ...guard, profile: prof as ProfileRow }
 }
 
 export function toErrorResponse(err: unknown): NextResponse {
   if (err instanceof ApiError) {
-    return NextResponse.json({ error: err.message }, { status: err.status })
+    const body: Record<string, unknown> = { error: err.message }
+    if (err.errorCode) body.errorCode = err.errorCode
+    return NextResponse.json(body, { status: err.status })
   }
   if (err instanceof Error) {
     return NextResponse.json({ error: err.message }, { status: 500 })

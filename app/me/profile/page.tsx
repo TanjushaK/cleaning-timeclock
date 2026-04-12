@@ -1,8 +1,10 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { useCallback, useEffect, useState } from 'react'
+import { useI18n } from '@/components/I18nProvider'
+import { clientWorkerErrorMessage } from '@/lib/app-api-message'
 import { authFetchJson, clearAuthTokens, getAccessToken } from '@/lib/auth-fetch'
+import { supabase } from '@/lib/supabase'
 
 type Profile = {
   id: string
@@ -34,6 +36,7 @@ function bearerHeaders(): Record<string, string> {
 }
 
 export default function WorkerProfilePage() {
+  const { t } = useI18n()
   const [booting, setBooting] = useState(true)
   const [me, setMe] = useState<MeProfileResponse | null>(null)
 
@@ -47,7 +50,7 @@ export default function WorkerProfilePage() {
 
   const [photos, setPhotos] = useState<Array<{ path: string; url?: string | null }>>([])
   const [avatarPath, setAvatarPath] = useState<string | null>(null)
-  const fileRef = useRef<HTMLInputElement | null>(null)
+  const [fileInputKey, setFileInputKey] = useState(0)
 
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -56,9 +59,10 @@ export default function WorkerProfilePage() {
   const authed = !!getAccessToken()
 
   const loadPhotos = useCallback(async () => {
-    const r = await fetch('/api/me/photos', { headers: bearerHeaders(), cache: 'no-store' })
-    const data = (await r.json().catch(() => ({}))) as MyPhotosResponse | any
-    if (!r.ok) throw new Error(String(data?.error || `HTTP ${r.status}`))
+    const data = await authFetchJson<MyPhotosResponse>('/api/me/photos', {
+      headers: bearerHeaders(),
+      cache: 'no-store',
+    })
     setPhotos(Array.isArray(data.photos) ? data.photos : [])
     setAvatarPath(data.avatar_path || null)
   }, [])
@@ -86,13 +90,13 @@ export default function WorkerProfilePage() {
           return
         }
         await loadMe()
-      } catch (e: any) {
-        setError(String(e?.message || e || 'Ошибка'))
+      } catch (e: unknown) {
+        setError(clientWorkerErrorMessage(t, e))
       } finally {
         setBooting(false)
       }
     })()
-  }, [loadMe])
+  }, [loadMe, t])
 
   const logout = useCallback(() => {
     clearAuthTokens()
@@ -108,7 +112,7 @@ export default function WorkerProfilePage() {
     setNotice(null)
     try {
       const name = fullName.trim()
-      if (!name) throw new Error('Укажи имя')
+      if (!name) throw new Error(t('errors.nameRequired'))
 
       const payload = {
         full_name: name,
@@ -123,7 +127,6 @@ export default function WorkerProfilePage() {
         body: JSON.stringify(payload),
       })
 
-      // email в auth (чтобы magic-link шёл на новый email)
       if (email.trim()) {
         try {
           await supabase.auth.updateUser({ email: email.trim() })
@@ -131,13 +134,13 @@ export default function WorkerProfilePage() {
       }
 
       await loadMe()
-      setNotice('Сохранено.')
-    } catch (e: any) {
-      setError(String(e?.message || e || 'Ошибка'))
+      setNotice(t('notify.saved'))
+    } catch (e: unknown) {
+      setError(clientWorkerErrorMessage(t, e))
     } finally {
       setBusy(false)
     }
-  }, [email, fullName, loadMe, notes, phone])
+  }, [email, fullName, loadMe, notes, phone, t])
 
   const setPassword = useCallback(async () => {
     setBusy(true)
@@ -146,19 +149,19 @@ export default function WorkerProfilePage() {
     try {
       const p1 = newPassword.trim()
       const p2 = newPassword2.trim()
-      if (p1.length < 8) throw new Error('Пароль должен быть минимум 8 символов')
-      if (p1 !== p2) throw new Error('Пароли не совпадают')
+      if (p1.length < 8) throw new Error(t('errors.passwordMin8'))
+      if (p1 !== p2) throw new Error(t('errors.passwordMismatch'))
       await supabase.auth.updateUser({ password: p1, data: { temp_password: false } })
       setNewPassword('')
       setNewPassword2('')
       await loadMe().catch(() => {})
-      setNotice('Пароль установлен. Теперь можно входить по Email + пароль.')
-    } catch (e: any) {
-      setError(String(e?.message || e || 'Ошибка установки пароля'))
+      setNotice(t('notify.passwordSetEmailLogin'))
+    } catch (e: unknown) {
+      setError(clientWorkerErrorMessage(t, e))
     } finally {
       setBusy(false)
     }
-  }, [loadMe, newPassword, newPassword2])
+  }, [loadMe, newPassword, newPassword2, t])
 
   const uploadPhoto = useCallback(
     async (file: File) => {
@@ -168,19 +171,17 @@ export default function WorkerProfilePage() {
       try {
         const fd = new FormData()
         fd.append('file', file)
-        const r = await fetch('/api/me/photos', { method: 'POST', headers: bearerHeaders(), body: fd })
-        const data = await r.json().catch(() => ({}))
-        if (!r.ok) throw new Error(String((data as any)?.error || `HTTP ${r.status}`))
+        await authFetchJson('/api/me/photos', { method: 'POST', headers: bearerHeaders(), body: fd })
         await loadPhotos()
-        setNotice('Фото загружено.')
-      } catch (e: any) {
-        setError(String(e?.message || e || 'Ошибка загрузки'))
+        setNotice(t('notify.photoUploaded'))
+      } catch (e: unknown) {
+        setError(clientWorkerErrorMessage(t, e))
       } finally {
         setBusy(false)
-        if (fileRef.current) fileRef.current.value = ''
+        setFileInputKey((k) => k + 1)
       }
     },
-    [loadPhotos]
+    [loadPhotos, t],
   )
 
   const delPhoto = useCallback(
@@ -189,22 +190,20 @@ export default function WorkerProfilePage() {
       setError(null)
       setNotice(null)
       try {
-        const r = await fetch('/api/me/photos', {
+        await authFetchJson('/api/me/photos', {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json', ...bearerHeaders() },
           body: JSON.stringify({ path }),
         })
-        const data = await r.json().catch(() => ({}))
-        if (!r.ok) throw new Error(String((data as any)?.error || `HTTP ${r.status}`))
         await loadPhotos()
-        setNotice('Удалено.')
-      } catch (e: any) {
-        setError(String(e?.message || e || 'Ошибка удаления'))
+        setNotice(t('notify.deleted'))
+      } catch (e: unknown) {
+        setError(clientWorkerErrorMessage(t, e))
       } finally {
         setBusy(false)
       }
     },
-    [loadPhotos]
+    [loadPhotos, t],
   )
 
   const makeAvatar = useCallback(
@@ -213,28 +212,26 @@ export default function WorkerProfilePage() {
       setError(null)
       setNotice(null)
       try {
-        const r = await fetch('/api/me/photos', {
+        await authFetchJson('/api/me/photos', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', ...bearerHeaders() },
           body: JSON.stringify({ action: 'make_primary', path }),
         })
-        const data = await r.json().catch(() => ({}))
-        if (!r.ok) throw new Error(String((data as any)?.error || `HTTP ${r.status}`))
         await loadPhotos()
-        setNotice('Аватар обновлён.')
-      } catch (e: any) {
-        setError(String(e?.message || e || 'Ошибка'))
+        setNotice(t('notify.avatarSet'))
+      } catch (e: unknown) {
+        setError(clientWorkerErrorMessage(t, e))
       } finally {
         setBusy(false)
       }
     },
-    [loadPhotos]
+    [loadPhotos, t],
   )
 
   if (booting) {
     return (
       <div className="min-h-screen bg-zinc-950 text-amber-100 flex items-center justify-center">
-        <div className="text-sm opacity-80">Загрузка…</div>
+        <div className="text-sm opacity-80">{t('boot.loading')}</div>
       </div>
     )
   }
@@ -243,32 +240,38 @@ export default function WorkerProfilePage() {
     return (
       <div className="min-h-screen bg-zinc-950 text-amber-100 flex items-center justify-center p-6">
         <div className="w-full max-w-md rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-6 shadow-xl">
-          <div className="text-lg font-semibold">Нужен вход</div>
-          <div className="text-sm opacity-80 mt-2">Открой главную страницу и войди по телефону или email.</div>
-          <a className="mt-4 inline-block rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10" href="/">
-            На главную
+          <div className="text-lg font-semibold">{t('profile.needLoginTitle')}</div>
+          <div className="text-sm opacity-80 mt-2">{t('profile.needLoginBody')}</div>
+          <a
+            className="mt-4 inline-block rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10"
+            href="/"
+          >
+            {t('nav.home')}
           </a>
         </div>
       </div>
     )
   }
 
+  const roleLabel = me?.profile?.role || t('active.roleWorker')
+  const activeYes = me?.profile?.active === true ? t('onboarding.emailYes') : t('onboarding.emailNo')
+
   return (
     <div className="min-h-screen bg-zinc-950 text-amber-100 p-6">
       <div className="mx-auto max-w-4xl">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="text-2xl font-semibold">Профиль работника</div>
+            <div className="text-2xl font-semibold">{t('profile.pageTitle')}</div>
             <div className="text-sm opacity-80 mt-1">
-              {me?.profile?.role || 'worker'} • active: {me?.profile?.active === true ? 'да' : 'нет'}
+              {roleLabel} • {t('profile.activeLabel')}: {activeYes}
             </div>
           </div>
           <div className="flex gap-2">
             <a className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10" href="/">
-              Назад
+              {t('nav.back')}
             </a>
             <button className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10" onClick={logout}>
-              Выйти
+              {t('active.logout')}
             </button>
           </div>
         </div>
@@ -281,31 +284,31 @@ export default function WorkerProfilePage() {
         ) : null}
 
         <div className="mt-6 rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-5 shadow-xl">
-          <div className="text-lg font-semibold">Данные</div>
+          <div className="text-lg font-semibold">{t('onboarding.dataTitle')}</div>
 
           <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
             <input
               className="rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-              placeholder="Имя и фамилия"
+              placeholder={t('onboarding.namePlaceholder')}
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
             />
             <input
               className="rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-              placeholder="Телефон (контактный)"
+              placeholder={t('login.phonePlaceholder')}
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
             />
             <input
               className="md:col-span-2 rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-              placeholder="Email (контактный / для magic link)"
+              placeholder={t('onboarding.emailOptionalPlaceholder')}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="email"
             />
             <textarea
               className="md:col-span-2 min-h-[110px] rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-              placeholder="Заметки"
+              placeholder={t('profile.notesPlaceholder')}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
             />
@@ -317,7 +320,7 @@ export default function WorkerProfilePage() {
               disabled={busy}
               onClick={save}
             >
-              {busy ? 'Сохраняю…' : 'Сохранить'}
+              {busy ? t('onboarding.saving') : t('onboarding.save')}
             </button>
             <button
               className="rounded-xl border border-amber-500/30 px-4 py-2 text-sm hover:bg-amber-500/10 disabled:opacity-60"
@@ -328,29 +331,26 @@ export default function WorkerProfilePage() {
                 setNotice(null)
                 try {
                   await loadMe()
-                  setNotice('Обновлено.')
-                } catch (e: any) {
-                  setError(String(e?.message || e || 'Ошибка'))
+                  setNotice(t('notify.refreshed'))
+                } catch (e: unknown) {
+                  setError(clientWorkerErrorMessage(t, e))
                 } finally {
                   setBusy(false)
                 }
               }}
             >
-              {busy ? '…' : 'Обновить'}
+              {busy ? t('onboarding.refreshBusy') : t('onboarding.refresh')}
             </button>
           </div>
         </div>
 
-        
         <div className="mt-4 rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-5 shadow-xl">
-          <div className="text-lg font-semibold">Пароль</div>
-          <div className="mt-2 text-sm opacity-80">
-            Основной вход: <span className="font-semibold">Email + пароль</span>. Телефон (SMS) остаётся резервным вариантом.
-          </div>
+          <div className="text-lg font-semibold">{t('login.tabPassword')}</div>
+          <div className="mt-2 text-sm opacity-80">{t('profile.passwordLoginHint')}</div>
           <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
             <input
               className="rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-              placeholder="Новый пароль (мин. 8 символов)"
+              placeholder={t('tempPassword.newPlaceholder')}
               type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
@@ -358,38 +358,37 @@ export default function WorkerProfilePage() {
             />
             <input
               className="rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-              placeholder="Повторить пароль"
+              placeholder={t('tempPassword.repeatPlaceholder')}
               type="password"
               value={newPassword2}
               onChange={(e) => setNewPassword2(e.target.value)}
               autoComplete="new-password"
             />
           </div>
-          <div className="mt-3 flex gap-2">
+          <div className="mt-3 flex gap-2 flex-wrap">
             <button
               className="rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
               disabled={busy || !newPassword.trim() || !newPassword2.trim()}
               onClick={setPassword}
             >
-              {busy ? "Сохраняю…" : "Установить пароль"}
+              {busy ? t('tempPassword.saving') : t('login.setPassword')}
             </button>
             <div className="text-xs opacity-70 self-center">
-              Email подтверждён: {me?.user?.email ? (me?.user?.email_confirmed_at ? "да" : "нет") : "—"}
+              {t('profile.emailConfirmedShort')}:{' '}
+              {me?.user?.email ? (me?.user?.email_confirmed_at ? t('onboarding.emailYes') : t('onboarding.emailNo')) : t('onboarding.emailDash')}
             </div>
           </div>
         </div>
 
         <div className="mt-4 rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-5 shadow-xl">
           <div className="flex items-baseline justify-between">
-            <div className="text-lg font-semibold">Аватары (до 5)</div>
-            <div className="text-sm opacity-70">
-              {photos.length}/5
-            </div>
+            <div className="text-lg font-semibold">{t('onboarding.photosTitle')}</div>
+            <div className="text-sm opacity-70">{photos.length}/5</div>
           </div>
 
           <div className="mt-3">
             <input
-              ref={fileRef}
+              key={fileInputKey}
               type="file"
               accept="image/*"
               className="block w-full text-sm"
@@ -407,7 +406,11 @@ export default function WorkerProfilePage() {
               return (
                 <div key={p.path} className="rounded-xl border border-amber-500/15 bg-zinc-900/30 overflow-hidden">
                   <div className="aspect-square bg-black/30 flex items-center justify-center">
-                    {p.url ? <img src={p.url} className="h-full w-full object-cover" /> : <div className="text-xs opacity-60">—</div>}
+                    {p.url ? (
+                      <img src={p.url} className="h-full w-full object-cover" alt="" />
+                    ) : (
+                      <div className="text-xs opacity-60">{t('onboarding.emailDash')}</div>
+                    )}
                   </div>
                   <div className="p-2 space-y-2">
                     <button
@@ -415,14 +418,14 @@ export default function WorkerProfilePage() {
                       disabled={busy}
                       onClick={() => makeAvatar(p.path)}
                     >
-                      {isAvatar ? 'Аватар' : 'Сделать аватаром'}
+                      {isAvatar ? t('onboarding.avatar') : t('onboarding.makeAvatar')}
                     </button>
                     <button
                       className="w-full rounded-lg border border-amber-500/30 px-2 py-1 text-xs hover:bg-amber-500/10 disabled:opacity-60"
                       disabled={busy}
                       onClick={() => delPhoto(p.path)}
                     >
-                      Удалить
+                      {t('onboarding.delete')}
                     </button>
                   </div>
                 </div>
@@ -430,10 +433,9 @@ export default function WorkerProfilePage() {
             })}
           </div>
 
-          {photos.length === 0 ? <div className="mt-3 text-sm opacity-70">Загрузи фото и выбери аватар.</div> : null}
+          {photos.length === 0 ? <div className="mt-3 text-sm opacity-70">{t('onboarding.photosEmpty')}</div> : null}
         </div>
       </div>
     </div>
   )
 }
-

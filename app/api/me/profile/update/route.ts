@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { AppApiErrorCodes } from '@/lib/app-error-codes'
 import { ApiError, requireUser, toErrorResponse } from '@/lib/supabase-server'
 
 export const runtime = 'nodejs'
@@ -14,7 +15,7 @@ export async function POST(req: Request) {
     const email = body?.email === null ? null : String(body?.email || '').trim()
     const notes = String(body?.notes ?? '').slice(0, 5000)
 
-    if (!full_name) throw new ApiError(400, 'Укажи имя')
+    if (!full_name) throw new ApiError(400, 'Name is required', AppApiErrorCodes.PROFILE_NAME_REQUIRED)
 
     const patch: any = {
       full_name,
@@ -30,7 +31,7 @@ export async function POST(req: Request) {
       .select('id, role, active, full_name, phone, email, notes, onboarding_submitted_at, avatar_path')
       .single()
 
-    if (error) throw new ApiError(400, error.message)
+    if (error) throw new ApiError(400, error.message, AppApiErrorCodes.PROFILE_UPDATE_FAILED)
 
     return NextResponse.json({ ok: true, profile: data })
   } catch (e) {

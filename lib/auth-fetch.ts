@@ -1,5 +1,9 @@
 'use client';
 
+import { FetchApiError } from '@/lib/fetch-api-error';
+
+export { FetchApiError };
+
 type AnyJson = Record<string, any>;
 
 // LocalStorage keys (ASCII only)
@@ -140,11 +144,16 @@ export async function authFetchJson<T = AnyJson>(
   }
 
   if (!res.ok) {
-    const msg =
-      (payload && (payload.error || payload.message)) ||
+    const rawMsg =
+      (payload && typeof payload === 'object' && (payload.error || payload.message)) ||
       (typeof payload === 'string' && payload.trim()) ||
       `HTTP ${res.status}`;
-    throw new Error(String(msg));
+    const msg = String(rawMsg);
+    const errorCode =
+      payload && typeof payload === 'object' && typeof (payload as any).errorCode === 'string'
+        ? String((payload as any).errorCode)
+        : undefined;
+    throw new FetchApiError(msg, { status: res.status, errorCode });
   }
 
   return payload as T;

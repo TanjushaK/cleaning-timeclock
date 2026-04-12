@@ -2,7 +2,9 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import HomeLanguageSwitcher from "@/components/home-language-switcher";
+import { clientWorkerErrorMessage } from "@/lib/app-api-message";
 import { useHomeI18n } from "@/lib/i18n/home-provider";
+import { formatDateShort, formatWallTime } from "@/lib/locale-format";
 import { supabase } from "@/lib/supabase";
 import { authFetchJson, clearAuthTokens, getAccessToken, setAuthTokens } from "@/lib/auth-fetch";
 
@@ -54,15 +56,6 @@ type MyPhotosResponse = {
 
 function pad2(n: number) {
   return String(n).padStart(2, "0");
-}
-
-function fmtD(iso?: string | null) {
-  if (!iso) return "—";
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
-  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}-${d.getFullYear()}`;
 }
 
 function timeHHMM(t?: string | null) {
@@ -130,7 +123,11 @@ export default function AppPage() {
 
   const authed = !!token;
 
-  const { t } = useHomeI18n();
+  const { t, locale } = useHomeI18n();
+
+  const fmtDate = useCallback((iso?: string | null) => formatDateShort(locale, iso), [locale]);
+
+  const fmtWall = useCallback((raw?: string | null) => formatWallTime(locale, raw), [locale]);
 
   const fmtDurLoc = useCallback(
     (mins: number) => {
@@ -175,12 +172,10 @@ export default function AppPage() {
   }, [t]);
 
   const loadPhotos = useCallback(async () => {
-    const r = await fetch("/api/me/photos", {
+    const data = await authFetchJson<MyPhotosResponse>("/api/me/photos", {
       headers: bearerHeaders(),
       cache: "no-store",
     });
-    const data = (await r.json()) as MyPhotosResponse | any;
-    if (!r.ok) throw new Error(String(data?.error || `HTTP ${r.status}`));
     setPhotos(Array.isArray(data.photos) ? data.photos : []);
     setAvatarPath(data.avatar_path || null);
   }, []);
@@ -195,7 +190,7 @@ export default function AppPage() {
     setFullName(String(profile?.profile?.full_name || ""));
     setProfileEmail(String(profile?.profile?.email || profile?.user?.email || ""));
 
-    // Фото нужны и активному работнику: аватар/галерея.
+    // Photos (avatar/gallery) are loaded for inactive onboarding and active workers.
     await loadPhotos().catch(() => {});
 
     if (profile?.profile?.active !== true) {
@@ -210,12 +205,12 @@ export default function AppPage() {
   useEffect(() => {
     (async () => {
       try {
-        const t = getAccessToken();
-        setToken(t);
-        if (t) await loadAll();
-      } catch (e: any) {
-        const msg = String(e?.message || e || t("error.generic"));
-        if (msg.includes("401") || /токен|unauthorized/i.test(msg)) {
+        const accessToken = getAccessToken();
+        setToken(accessToken);
+        if (accessToken) await loadAll();
+      } catch (e: unknown) {
+        const msg = String((e as Error)?.message || e || t("error.generic"));
+        if (msg.includes("401") || /token|unauthorized|invalid or expired/i.test(msg)) {
           clearAuthTokens();
           try {
             await supabase.auth.signOut();
@@ -224,7 +219,7 @@ export default function AppPage() {
           setMe(null);
           setJobs([]);
         } else {
-          setError(msg);
+          setError(clientWorkerErrorMessage(t, e));
         }
       } finally {
         setBooting(false);
@@ -251,7 +246,7 @@ export default function AppPage() {
       setOtp("");
       setNotice(t("notify.smsSent"));
     } catch (e: any) {
-      setError(String(e?.message || e || t("errors.smsSend")));
+      setError(clientWorkerErrorMessage(t, e));
     } finally {
       setBusy(false);
     }
@@ -289,7 +284,7 @@ export default function AppPage() {
       setOtp("");
       setRecoverNewPassword("");
     } catch (e: any) {
-      setError(String(e?.message || e || t("errors.confirm")));
+      setError(clientWorkerErrorMessage(t, e));
     } finally {
       setBusy(false);
     }
@@ -306,13 +301,14 @@ export default function AppPage() {
       if (!em.includes("@") && !em.startsWith("+")) throw new Error(t("errors.phoneE164"));
       if (!pw || !pw.trim()) throw new Error(t("errors.passwordRequired"));
 
-      const res = await fetch("/api/auth/login", {
+      const payload = await authFetchJson<{
+        access_token?: string;
+        refresh_token?: string | null;
+      }>("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ identifier: em, password: pw }),
       });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(payload?.error || `HTTP ${res.status}`);
       if (!payload?.access_token) throw new Error(t("errors.token"));
 
       setAuthTokens(String(payload.access_token), payload.refresh_token ? String(payload.refresh_token) : null);
@@ -321,13 +317,13 @@ export default function AppPage() {
       await loadAll();
       setNotice(t("notify.loggedIn"));
 
-      // Если роль admin — без лишних кликов в админку
+      // If user is admin, send them straight to /admin
       try {
         const prof = await authFetchJson<MeProfileResponse>("/api/me/profile", { cache: "no-store" });
         if (prof?.profile?.role === "admin") window.location.href = "/admin";
       } catch {}
     } catch (e: any) {
-      setError(String(e?.message || e || t("errors.login")));
+      setError(clientWorkerErrorMessage(t, e));
     } finally {
       setBusy(false);
     }
@@ -369,7 +365,7 @@ export default function AppPage() {
       await loadAll();
       setNotice(t("notify.saved"));
     } catch (e: any) {
-      setError(String(e?.message || e || t("error.generic")));
+      setError(clientWorkerErrorMessage(t, e));
     } finally {
       setBusy(false);
     }
@@ -384,13 +380,11 @@ export default function AppPage() {
         if (photos.length >= 5) throw new Error(t("errors.photoLimit"));
         const fd = new FormData();
         fd.append("file", file);
-        const r = await fetch("/api/me/photos", { method: "POST", headers: bearerHeaders(), body: fd });
-        const data = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(String((data as any)?.error || `HTTP ${r.status}`));
+        await authFetchJson("/api/me/photos", { method: "POST", headers: bearerHeaders(), body: fd });
         await loadPhotos();
         setNotice(t("notify.photoUploaded"));
       } catch (e: any) {
-        setError(String(e?.message || e || t("error.generic")));
+        setError(clientWorkerErrorMessage(t, e));
       } finally {
         setBusy(false);
         if (fileRef.current) fileRef.current.value = "";
@@ -405,17 +399,15 @@ export default function AppPage() {
       setError(null);
       setNotice(null);
       try {
-        const r = await fetch("/api/me/photos", {
+        await authFetchJson("/api/me/photos", {
           method: "DELETE",
           headers: { "Content-Type": "application/json", ...bearerHeaders() },
           body: JSON.stringify({ path }),
         });
-        const data = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(String((data as any)?.error || `HTTP ${r.status}`));
         await loadPhotos();
         setNotice(t("notify.deleted"));
       } catch (e: any) {
-        setError(String(e?.message || e || t("error.generic")));
+        setError(clientWorkerErrorMessage(t, e));
       } finally {
         setBusy(false);
       }
@@ -429,18 +421,16 @@ export default function AppPage() {
       setError(null);
       setNotice(null);
       try {
-        const r = await fetch("/api/me/photos", {
+        await authFetchJson("/api/me/photos", {
           method: "PATCH",
           headers: { "Content-Type": "application/json", ...bearerHeaders() },
           body: JSON.stringify({ action: "make_primary", path }),
         });
-        const data = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(String((data as any)?.error || `HTTP ${r.status}`));
         await loadPhotos();
         await loadAll();
         setNotice(t("notify.avatarSet"));
       } catch (e: any) {
-        setError(String(e?.message || e || t("error.generic")));
+        setError(clientWorkerErrorMessage(t, e));
       } finally {
         setBusy(false);
       }
@@ -457,7 +447,7 @@ export default function AppPage() {
       await loadAll();
       setNotice(t("notify.submittedActivation"));
     } catch (e: any) {
-      setError(String(e?.message || e || t("error.generic")));
+      setError(clientWorkerErrorMessage(t, e));
     } finally {
       setBusy(false);
     }
@@ -477,7 +467,7 @@ export default function AppPage() {
         setNotice(t("notify.shiftAccepted"));
         await loadAll();
       } catch (e: any) {
-        setError(String(e?.message || e || t("error.generic")));
+        setError(clientWorkerErrorMessage(t, e));
       } finally {
         setBusy(false);
       }
@@ -500,7 +490,7 @@ export default function AppPage() {
         setNotice(t("notify.startRecorded"));
         await loadAll();
       } catch (e: any) {
-        setError(String(e?.message || e || t("error.generic")));
+        setError(clientWorkerErrorMessage(t, e));
       } finally {
         setBusy(false);
       }
@@ -523,7 +513,7 @@ export default function AppPage() {
         setNotice(t("notify.stopRecorded"));
         await loadAll();
       } catch (e: any) {
-        setError(String(e?.message || e || t("error.generic")));
+        setError(clientWorkerErrorMessage(t, e));
       } finally {
         setBusy(false);
       }
@@ -553,7 +543,7 @@ export default function AppPage() {
         <div className="relative w-full max-w-md">
           <div className="pointer-events-none absolute -inset-2 rounded-[28px] bg-gradient-to-r from-amber-500/55 via-amber-500/18 to-amber-500/55 blur-2xl" />
           <div className="relative w-full rounded-2xl border border-amber-500/40 bg-zinc-950/70 p-6 shadow-[0_0_0_1px_rgba(245,158,11,0.18),0_0_95px_rgba(245,158,11,0.14),0_25px_90px_rgba(0,0,0,0.75)]">
-            <div className="text-xl font-semibold">Tanija • Worker</div>
+            <div className="text-xl font-semibold">{t("active.title")}</div>
             <div className="text-sm opacity-80 mt-1">{t("login.brandSubtitle")}</div>
 
             <div className="mt-4 flex gap-2">
@@ -767,13 +757,13 @@ export default function AppPage() {
                     if (pw1.length < 8) throw new Error(t("errors.passwordMin8Temp"));
                     if (pw1 !== pw2) throw new Error(t("errors.passwordMismatch"));
                     const { error: uErr } = await supabase.auth.updateUser({ password: pw1, data: { temp_password: false } });
-                    if (uErr) throw new Error(uErr.message);
+                    if (uErr) throw uErr;
                     setForceNewPassword("");
                     setForceNewPassword2("");
                     await loadAll();
                     setNotice(t("notify.profileUpdated"));
                   } catch (e: any) {
-                    setError(String(e?.message || e || t("errors.tempPassword")));
+                    setError(clientWorkerErrorMessage(t, e));
                   } finally {
                     setBusy(false);
                   }
@@ -869,7 +859,7 @@ export default function AppPage() {
                     await loadAll();
                     setNotice(t("notify.refreshed"));
                   } catch (e: any) {
-                    setError(String(e?.message || e || t("error.generic")));
+                    setError(clientWorkerErrorMessage(t, e));
                   } finally {
                     setBusy(false);
                   }
@@ -906,7 +896,7 @@ export default function AppPage() {
                 return (
                   <div key={p.path} className="rounded-xl border border-amber-500/15 bg-zinc-900/30 overflow-hidden">
                     <div className="aspect-square bg-black/30 flex items-center justify-center">
-                      {p.url ? <img src={p.url} className="h-full w-full object-cover" /> : <div className="text-xs opacity-60">—</div>}
+                      {p.url ? <img src={p.url} className="h-full w-full object-cover" /> : <div className="text-xs opacity-60">{t("onboarding.emailDash")}</div>}
                     </div>
                     <div className="p-2 space-y-2">
                       <button
@@ -992,7 +982,7 @@ export default function AppPage() {
                   await loadAll();
                   setNotice(t("notify.refreshed"));
                 } catch (e: any) {
-                  setError(String(e?.message || e || t("error.updateFailed")));
+                  setError(clientWorkerErrorMessage(t, e));
                 } finally {
                   setBusy(false);
                 }
@@ -1041,7 +1031,7 @@ export default function AppPage() {
               return (
                 <div key={p.path} className="min-w-[150px] max-w-[150px] rounded-xl border border-amber-500/15 bg-zinc-900/30 overflow-hidden">
                   <div className="aspect-square bg-black/30 flex items-center justify-center">
-                    {p.url ? <img src={p.url} className="h-full w-full object-cover" /> : <div className="text-xs opacity-60">—</div>}
+                    {p.url ? <img src={p.url} className="h-full w-full object-cover" /> : <div className="text-xs opacity-60">{t("onboarding.emailDash")}</div>}
                   </div>
                   <div className="p-2 space-y-2">
                     <button
@@ -1111,16 +1101,19 @@ export default function AppPage() {
               const showFact = j.status === "done" && factM > 0;
 
               const dash = t("job.lineDash");
+              const wFrom = fmtWall(j.scheduled_time);
+              const wTo = fmtWall(j.scheduled_end_time ?? null);
+              const timeSegment = from && to ? `${wFrom}–${wTo}` : from ? wFrom : dash;
               const line =
                 j.status === "done"
-                  ? `${fmtD(j.job_date)} • ${from && to ? `${from}–${to}` : from || dash} • ${
+                  ? `${fmtDate(j.job_date)} • ${timeSegment} • ${
                       showFact
                         ? `${t("job.factPrefix")} ${fmtDurLoc(factM)}`
                         : planM != null
                           ? `${fmtDurLoc(planM)}`
                           : dash
                     } • ${jobStatusLabel(String(j.status || ""))}`
-                  : `${fmtD(j.job_date)} • ${from && to ? `${from}–${to}` : from || dash}${
+                  : `${fmtDate(j.job_date)} • ${timeSegment}${
                       planM != null ? ` • ${fmtDurLoc(planM)}` : ""
                     } • ${jobStatusLabel(String(j.status || ""))}`;
 
