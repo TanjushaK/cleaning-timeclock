@@ -1,4 +1,5 @@
 import type { Messages } from "./types";
+import { ADMIN_NL } from "./admin-bundles";
 
 export const nl: Messages = {
   common: {
@@ -155,4 +156,5 @@ export const nl: Messages = {
     offlineNotice: "Offline. Acties worden verzonden zodra de verbinding terug is.",
     syncNow: "Nu synchroniseren",
   },
+  admin: ADMIN_NL,
 };

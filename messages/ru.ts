@@ -1,4 +1,5 @@
 import type { Messages } from "./types";
+import { ADMIN_RU } from "./admin-bundles";
 
 export const ru: Messages = {
   common: {
@@ -155,4 +156,5 @@ export const ru: Messages = {
     offlineNotice: "Офлайн. Действия уйдут при появлении сети.",
     syncNow: "Синхронизировать",
   },
+  admin: ADMIN_RU,
 };

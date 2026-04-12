@@ -153,4 +153,12 @@ export type Messages = {
     offlineNotice: string;
     syncNow: string;
   };
+  /** Namespaced: admin.approvals.*, admin.fact.*, admin.hours.*, admin.main.*, admin.common.* */
+  admin: {
+    common: Record<string, string>;
+    approvals: Record<string, string>;
+    fact: Record<string, string>;
+    hours: Record<string, string>;
+    main: Record<string, string>;
+  };
 };

@@ -9,6 +9,7 @@ import {
   parseLang,
   SUPPORTED_LANGS,
 } from "@/lib/i18n-config";
+import { formatMessage } from "@/lib/format-message";
 import { getMessage, messages } from "@/messages";
 
 export type { Lang };
@@ -16,7 +17,7 @@ export type { Lang };
 type Ctx = {
   lang: Lang;
   setLang: (lang: Lang) => void;
-  t: (key: string) => string;
+  t: (key: string, vars?: Record<string, string | number>) => string;
 };
 
 const I18nContext = createContext<Ctx | null>(null);
@@ -102,10 +103,11 @@ export default function I18nProvider({ children }: { children: React.ReactNode }
   };
 
   const t = useMemo(() => {
-    return (key: string) => {
+    return (key: string, vars?: Record<string, string | number>) => {
       const currentMessages = messages[lang] ?? messages[DEFAULT_LANG];
       const fallbackMessages = messages[DEFAULT_LANG];
-      return getMessage(currentMessages, key) ?? getMessage(fallbackMessages, key) ?? key;
+      const raw = getMessage(currentMessages, key) ?? getMessage(fallbackMessages, key) ?? key;
+      return formatMessage(raw, vars);
     };
   }, [lang]);
 
@@ -121,9 +123,10 @@ export function useI18n() {
     return {
       lang: DEFAULT_LANG as Lang,
       setLang: (_lang: Lang) => {},
-      t: (key: string) => {
+      t: (key: string, vars?: Record<string, string | number>) => {
         const fallbackMessages = messages[DEFAULT_LANG];
-        return getMessage(fallbackMessages, key) ?? key;
+        const raw = getMessage(fallbackMessages, key) ?? key;
+        return formatMessage(raw, vars);
       },
     };
   }

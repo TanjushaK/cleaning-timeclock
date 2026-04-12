@@ -1,4 +1,5 @@
 import type { Messages } from "./types";
+import { ADMIN_EN } from "./admin-bundles";
 
 export const en: Messages = {
   common: {
@@ -155,4 +156,5 @@ export const en: Messages = {
     offlineNotice: "Offline. Actions will be sent when the network is back.",
     syncNow: "Sync now",
   },
+  admin: ADMIN_EN,
 };

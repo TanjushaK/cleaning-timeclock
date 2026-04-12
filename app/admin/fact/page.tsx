@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useI18n } from '@/components/I18nProvider'
 import { authFetchJson, clearAuthTokens, getAccessToken, setAuthTokens } from '@/lib/auth-fetch'
 
 type ScheduleItem = {
@@ -52,27 +53,22 @@ function minutesFromHHMM(t: string) {
   return hh * 60 + mm
 }
 
-function fmtDur(mins: number) {
-  const m = Math.max(0, Math.floor(mins || 0))
-  const h = Math.floor(m / 60)
-  const r = m % 60
-  if (h <= 0) return `${r}м`
-  return `${h}ч ${pad2(r)}м`
-}
-
-function fmtHM(mins: number) {
-  const m = Math.max(0, Math.floor(mins || 0))
-  const h = Math.floor(m / 60)
-  const r = m % 60
-  return `${h}:${pad2(r)}`
+function parseHM(s: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(s || '').trim())
+  if (!m) return null
+  const hh = parseInt(m[1], 10)
+  const mm = parseInt(m[2], 10)
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null
+  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null
+  return hh * 60 + mm
 }
 
 function plannedMinutes(from?: string | null, to?: string | null) {
   const f = timeHHMM(from)
-  const t = timeHHMM(to)
-  if (!f || !t) return null
+  const tt = timeHHMM(to)
+  if (!f || !tt) return null
   const a = minutesFromHHMM(f)
-  const b = minutesFromHHMM(t)
+  const b = minutesFromHHMM(tt)
   if (a == null || b == null) return null
   let d = b - a
   if (d < 0) d += 24 * 60
@@ -88,17 +84,30 @@ function actualMinutes(startISO?: string | null, stopISO?: string | null) {
   return Math.round(diff / 60000)
 }
 
-function parseHM(s: string): number | null {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(String(s || '').trim())
-  if (!m) return null
-  const hh = parseInt(m[1], 10)
-  const mm = parseInt(m[2], 10)
-  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null
-  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null
-  return hh * 60 + mm
-}
-
 export default function AdminFactPage() {
+  const { t } = useI18n()
+
+  const fmtDur = useMemo(
+    () => (mins: number) => {
+      const m = Math.max(0, Math.floor(mins || 0))
+      const h = Math.floor(m / 60)
+      const r = m % 60
+      if (h <= 0) return t('admin.fact.durationM', { m: r })
+      return t('admin.fact.durationHM', { h, mm: pad2(r) })
+    },
+    [t],
+  )
+
+  const fmtHM = useMemo(
+    () => (mins: number) => {
+      const m = Math.max(0, Math.floor(mins || 0))
+      const h = Math.floor(m / 60)
+      const r = m % 60
+      return `${h}:${pad2(r)}`
+    },
+    [],
+  )
+
   const [booting, setBooting] = useState(true)
   const [token, setToken] = useState<string | null>(null)
 
@@ -138,17 +147,17 @@ export default function AdminFactPage() {
       if (am != null) next[j.id] = fmtHM(am)
     }
     setEditHM((prev) => ({ ...next, ...prev }))
-  }, [dateFrom, dateTo])
+  }, [dateFrom, dateTo, fmtHM])
 
   useEffect(() => {
     ;(async () => {
       try {
-        const t = getAccessToken()
-        setToken(t)
-        if (t) await refresh()
-      } catch (e: any) {
-        const msg = String(e?.message || e || 'Ошибка')
-        if (msg.includes('401') || /токен|unauthorized/i.test(msg)) {
+        const tok = getAccessToken()
+        setToken(tok)
+        if (tok) await refresh()
+      } catch (e: unknown) {
+        const msg = String((e as { message?: string })?.message || e || t('admin.common.errorGeneric'))
+        if (msg.includes('401') || /token|unauthorized/i.test(msg)) {
           clearAuthTokens()
           setToken(null)
         } else {
@@ -158,7 +167,7 @@ export default function AdminFactPage() {
         setBooting(false)
       }
     })()
-  }, [refresh])
+  }, [refresh, t])
 
   const doLogin = useCallback(async () => {
     setBusy(true)
@@ -171,26 +180,26 @@ export default function AdminFactPage() {
         body: JSON.stringify({ email: email.trim(), password: password.trim() }),
       })
       const payload = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(payload?.error || `HTTP ${res.status}`)
-      setAuthTokens(payload.access_token, payload.refresh_token || null)
-      const t = getAccessToken()
-      setToken(t)
+      if (!res.ok) throw new Error(String((payload as { error?: string })?.error || `HTTP ${res.status}`))
+      setAuthTokens((payload as { access_token: string }).access_token, (payload as { refresh_token?: string }).refresh_token || null)
+      const tok = getAccessToken()
+      setToken(tok)
       await refresh()
-      setNotice('Вход выполнен.')
-    } catch (e: any) {
-      setError(String(e?.message || e || 'Ошибка входа'))
+      setNotice(t('admin.common.noticeLogin'))
+    } catch (e: unknown) {
+      setError(String((e as { message?: string })?.message || e || t('admin.common.errorLogin')))
     } finally {
       setBusy(false)
       setBooting(false)
     }
-  }, [email, password, refresh])
+  }, [email, password, refresh, t])
 
   const doLogout = useCallback(() => {
     clearAuthTokens()
     setToken(null)
     setItems([])
-    setNotice('Вы вышли.')
-  }, [])
+    setNotice(t('admin.common.noticeLogout'))
+  }, [t])
 
   const doneItems = useMemo(() => {
     return items
@@ -214,26 +223,26 @@ export default function AdminFactPage() {
       try {
         const hm = String(editHM[jobId] || '').trim()
         const mins = parseHM(hm)
-        if (mins == null) throw new Error('Факт должен быть в формате H:MM (например 3:15)')
+        if (mins == null) throw new Error(t('admin.fact.errFactFormat'))
         await authFetchJson('/api/admin/jobs/set-actual', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ job_id: jobId, hm }),
         })
-        setNotice('Факт обновлён.')
+        setNotice(t('admin.fact.noticeFactUpdated'))
         await refresh()
-      } catch (e: any) {
-        setError(String(e?.message || e || 'Ошибка сохранения'))
+      } catch (e: unknown) {
+        setError(String((e as { message?: string })?.message || e || t('admin.fact.errSave')))
       } finally {
         setBusy(false)
       }
     },
-    [editHM, refresh]
+    [editHM, refresh, t],
   )
 
   const clearActual = useCallback(
     async (jobId: string) => {
-      if (!confirm('Удалить все отработанные часы по этой смене?')) return
+      if (!confirm(t('admin.fact.confirmClearHours'))) return
       setBusy(true)
       setError(null)
       setNotice(null)
@@ -244,25 +253,25 @@ export default function AdminFactPage() {
           body: JSON.stringify({ job_id: jobId }),
         })
         setEditHM((p) => {
-          const n: any = { ...p }
+          const n: Record<string, string> = { ...p }
           delete n[jobId]
           return n
         })
-        setNotice('Часы удалены.')
+        setNotice(t('admin.fact.noticeHoursDeleted'))
         await refresh()
-      } catch (e: any) {
-        setError(String(e?.message || e || 'Ошибка удаления'))
+      } catch (e: unknown) {
+        setError(String((e as { message?: string })?.message || e || t('admin.fact.errDeleteHours')))
       } finally {
         setBusy(false)
       }
     },
-    [refresh]
+    [refresh, t],
   )
 
   const deleteJob = useCallback(
     async (jobId: string) => {
-      if (!confirm('Удалить смену НАВСЕГДА? Это удалит смену и все связанные часы.')) return
-      const code = prompt('Введите DELETE чтобы подтвердить удаление смены:')
+      if (!confirm(t('admin.fact.confirmDeleteJob'))) return
+      const code = prompt(t('admin.fact.promptDeleteWord'))
       if (String(code || '').trim().toUpperCase() !== 'DELETE') return
 
       setBusy(true)
@@ -273,25 +282,25 @@ export default function AdminFactPage() {
           method: 'DELETE',
         })
         setEditHM((p) => {
-          const n: any = { ...p }
+          const n: Record<string, string> = { ...p }
           delete n[jobId]
           return n
         })
-        setNotice('Смена удалена.')
+        setNotice(t('admin.fact.noticeJobDeleted'))
         await refresh()
-      } catch (e: any) {
-        setError(String(e?.message || e || 'Ошибка удаления смены'))
+      } catch (e: unknown) {
+        setError(String((e as { message?: string })?.message || e || t('admin.fact.errDeleteJob')))
       } finally {
         setBusy(false)
       }
     },
-    [refresh]
+    [refresh, t],
   )
 
   if (booting) {
     return (
       <div className="min-h-screen bg-zinc-950 text-amber-100 flex items-center justify-center">
-        <div className="text-sm opacity-80">Загрузка…</div>
+        <div className="text-sm opacity-80">{t('admin.common.loading')}</div>
       </div>
     )
   }
@@ -300,8 +309,8 @@ export default function AdminFactPage() {
     return (
       <div className="min-h-screen bg-zinc-950 text-amber-100 flex items-center justify-center p-6">
         <div className="w-full max-w-md rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-6 shadow-xl">
-          <div className="text-xl font-semibold">Tanija • Admin • Факт</div>
-          <div className="text-sm opacity-80 mt-1">Вход по email/паролю</div>
+          <div className="text-xl font-semibold">{t('admin.fact.title')}</div>
+          <div className="text-sm opacity-80 mt-1">{t('admin.fact.subtitleLogin')}</div>
 
           {error ? (
             <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
@@ -320,7 +329,7 @@ export default function AdminFactPage() {
               id="email"
               name="email"
               className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-              placeholder="Email"
+              placeholder={t('admin.common.emailPlaceholder')}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="email"
@@ -329,7 +338,7 @@ export default function AdminFactPage() {
               id="password"
               name="password"
               className="w-full rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
-              placeholder="Пароль"
+              placeholder={t('admin.common.passwordPlaceholder')}
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -340,7 +349,7 @@ export default function AdminFactPage() {
               onClick={doLogin}
               disabled={busy || !email.trim() || !password.trim()}
             >
-              {busy ? 'Вхожу…' : 'Войти'}
+              {busy ? t('admin.common.signingIn') : t('admin.common.signIn')}
             </button>
           </div>
         </div>
@@ -353,23 +362,23 @@ export default function AdminFactPage() {
       <div className="mx-auto max-w-6xl">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="text-2xl font-semibold">Tanija • Admin • Факт</div>
-            <div className="text-sm opacity-80 mt-1">Редактирование фактически отработанного времени</div>
+            <div className="text-2xl font-semibold">{t('admin.fact.title')}</div>
+            <div className="text-sm opacity-80 mt-1">{t('admin.fact.subtitleMain')}</div>
           </div>
 
           <div className="flex gap-2">
             <a className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10" href="/admin">
-              Админка
+              {t('admin.common.adminHome')}
             </a>
             <button className="rounded-xl border border-amber-500/30 px-3 py-2 text-sm hover:bg-amber-500/10" onClick={doLogout}>
-              Выйти
+              {t('admin.common.logout')}
             </button>
           </div>
         </div>
 
         <div className="mt-4 flex flex-wrap items-end gap-3">
           <label className="grid gap-1">
-            <span className="text-xs opacity-80">Дата с</span>
+            <span className="text-xs opacity-80">{t('admin.fact.dateFrom')}</span>
             <input
               type="date"
               value={dateFrom}
@@ -378,7 +387,7 @@ export default function AdminFactPage() {
             />
           </label>
           <label className="grid gap-1">
-            <span className="text-xs opacity-80">Дата по</span>
+            <span className="text-xs opacity-80">{t('admin.fact.dateTo')}</span>
             <input
               type="date"
               value={dateTo}
@@ -394,9 +403,9 @@ export default function AdminFactPage() {
               setNotice(null)
               try {
                 await refresh()
-                setNotice('Обновлено.')
-              } catch (e: any) {
-                setError(String(e?.message || e || 'Ошибка обновления'))
+                setNotice(t('admin.common.noticeUpdated'))
+              } catch (e: unknown) {
+                setError(String((e as { message?: string })?.message || e || t('admin.fact.errLoad')))
               } finally {
                 setBusy(false)
               }
@@ -404,7 +413,7 @@ export default function AdminFactPage() {
             disabled={busy}
             className="rounded-xl border border-amber-500/30 px-4 py-2 text-sm hover:bg-amber-500/10 disabled:opacity-60"
           >
-            {busy ? 'Обновляю…' : 'Обновить'}
+            {busy ? t('admin.common.refreshing') : t('admin.common.refresh')}
           </button>
         </div>
 
@@ -418,37 +427,40 @@ export default function AdminFactPage() {
 
         <div className="mt-6 rounded-2xl border border-amber-500/20 bg-zinc-950/60 overflow-hidden">
           <div className="grid grid-cols-12 gap-0 border-b border-amber-500/10 bg-black/20 px-4 py-3 text-xs text-zinc-200">
-            <div className="col-span-2">Дата</div>
-            <div className="col-span-2">Объект</div>
-            <div className="col-span-2">Работник</div>
-            <div className="col-span-2">План</div>
-            <div className="col-span-1">Факт</div>
-            <div className="col-span-3">Правка</div>
+            <div className="col-span-2">{t('admin.fact.theadDate')}</div>
+            <div className="col-span-2">{t('admin.fact.theadSite')}</div>
+            <div className="col-span-2">{t('admin.fact.theadWorker')}</div>
+            <div className="col-span-2">{t('admin.fact.theadPlan')}</div>
+            <div className="col-span-1">{t('admin.fact.theadFact')}</div>
+            <div className="col-span-3">{t('admin.fact.theadEdit')}</div>
           </div>
 
           {doneItems.length === 0 ? (
-            <div className="px-4 py-6 text-sm opacity-70">Нет завершённых смен в выбранном диапазоне.</div>
+            <div className="px-4 py-6 text-sm opacity-70">{t('admin.fact.emptyDone')}</div>
           ) : (
             doneItems.map((j) => {
               const from = timeHHMM(j.scheduled_time)
               const to = timeHHMM(j.scheduled_end_time ?? null)
               const planM = plannedMinutes(from, to)
               const factM = actualMinutes(j.started_at, j.stopped_at)
-              const factStr = factM != null ? fmtDur(factM) : '—'
-              const planStr = from && to ? `${from}–${to}${planM != null ? ` • ${fmtDur(planM)}` : ''}` : from || '—'
+              const factStr = factM != null ? fmtDur(factM) : t('admin.common.dash')
+              const planStr =
+                from && to
+                  ? `${from}–${to}${planM != null ? ` • ${fmtDur(planM)}` : ''}`
+                  : from || t('admin.common.dash')
 
               return (
                 <div key={j.id} className="grid grid-cols-12 items-center gap-0 border-t border-amber-500/10 px-4 py-3 text-sm">
                   <div className="col-span-2 opacity-90">{fmtD(j.job_date)}</div>
-                  <div className="col-span-2 font-semibold">{j.site_name || '—'}</div>
-                  <div className="col-span-2 opacity-90">{j.worker_name || '—'}</div>
+                  <div className="col-span-2 font-semibold">{j.site_name || t('admin.common.dash')}</div>
+                  <div className="col-span-2 opacity-90">{j.worker_name || t('admin.common.dash')}</div>
                   <div className="col-span-2 text-xs opacity-80">{planStr}</div>
                   <div className="col-span-1 text-xs opacity-80">{factStr}</div>
                   <div className="col-span-3 flex items-center gap-2">
                     <input
                       value={editHM[j.id] ?? ''}
                       onChange={(e) => setEditHM((p) => ({ ...p, [j.id]: e.target.value }))}
-                      placeholder="H:MM"
+                      placeholder={t('admin.fact.placeholderHM')}
                       className="w-20 rounded-xl border border-amber-500/20 bg-zinc-900/40 px-3 py-2 text-xs outline-none focus:border-amber-400/50"
                     />
                     <button
@@ -456,13 +468,13 @@ export default function AdminFactPage() {
                       disabled={busy}
                       className="rounded-xl border border-amber-500/30 px-3 py-2 text-xs hover:bg-amber-500/10 disabled:opacity-60"
                     >
-                      Сохранить
+                      {t('admin.fact.save')}
                     </button>
                     <button
                       onClick={() => clearActual(j.id)}
                       disabled={busy}
-                      title="Удалить часы"
-                      aria-label="Удалить часы"
+                      title={t('admin.fact.clearHoursTitle')}
+                      aria-label={t('admin.fact.clearHoursTitle')}
                       className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-100 hover:bg-red-500/15 disabled:opacity-60"
                     >
                       🗑
@@ -471,8 +483,8 @@ export default function AdminFactPage() {
                     <button
                       onClick={() => deleteJob(j.id)}
                       disabled={busy}
-                      title="Удалить смену"
-                      aria-label="Удалить смену"
+                      title={t('admin.fact.deleteShiftTitle')}
+                      aria-label={t('admin.fact.deleteShiftTitle')}
                       className="rounded-xl border border-zinc-500/30 bg-zinc-900/30 px-3 py-2 text-xs text-zinc-100 hover:bg-zinc-900/50 disabled:opacity-60"
                     >
                       ✖
@@ -484,9 +496,7 @@ export default function AdminFactPage() {
           )}
         </div>
 
-        <div className="mt-4 text-xs opacity-70">
-          Формат правки: <span className="font-semibold">H:MM</span> (например <span className="font-semibold">3:15</span>). Меняет <span className="font-semibold">stopped_at</span> первого time_log (started_at + длительность).
-        </div>
+        <div className="mt-4 text-xs opacity-70">{t('admin.fact.formatHint')}</div>
       </div>
     </div>
   )
