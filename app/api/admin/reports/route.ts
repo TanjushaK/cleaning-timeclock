@@ -133,14 +133,21 @@ export async function GET(req: Request) {
       })
     }
 
-    const startAtMin = `${fromISO}T00:00:00.000Z`
-    const startAtMax = `${toISO}T23:59:59.999Z`
+    // Load logs by job id (not only started_at inside [from,to] UTC). Narrow time window missed
+    // cross-midnight / TZ edges and excluded logs that belong to jobs in the report period.
+    const logJobIdSet = new Set<string>()
+    for (const j of jobs as any[]) {
+      if (j?.id) logJobIdSet.add(String(j.id))
+    }
+    for (const j of groupSourceJobs as any[]) {
+      if (j?.id) logJobIdSet.add(String(j.id))
+    }
+    const logJobIds = Array.from(logJobIdSet)
 
-    const logsRes = await sb
-      .from('time_logs')
-      .select('job_id, started_at, stopped_at')
-      .gte('started_at', startAtMin)
-      .lte('started_at', startAtMax)
+    const logsRes =
+      logJobIds.length === 0
+        ? { data: [] as any[], error: null as any }
+        : await sb.from('time_logs').select('job_id, started_at, stopped_at').in('job_id', logJobIds)
 
     if (logsRes.error) {
       return NextResponse.json({ error: logsRes.error.message }, { status: 500 })

@@ -1556,6 +1556,13 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (!sessionToken) return
+    if (tab !== 'plan') return
+    void refreshSchedule()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, sessionToken])
+
+  useEffect(() => {
+    if (!sessionToken) return
     if (tab !== 'workers') return
     // Background-load photo counts + mini-avatars (concurrency-limited to avoid hammering the API).
     enqueueWorkerPhotoMeta(workers.map((w) => w.id))
