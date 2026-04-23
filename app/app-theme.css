@@ -55,6 +55,35 @@
   color: rgba(254, 243, 199, 0.62);
 }
 
+.appFooterLegal {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 6px 10px;
+  margin-bottom: 14px;
+  letter-spacing: 0.06em;
+}
+
+.appFooterLegal a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.appFooterLegal a:hover {
+  color: rgba(253, 224, 71, 0.92);
+}
+
+.appFooterLegalSep {
+  opacity: 0.45;
+  user-select: none;
+}
+
+.appFooterTagline {
+  margin-top: 2px;
+}
+
 .appFooterYear {
   color: rgba(254, 243, 199, 0.72);
 }
@@ -113,6 +142,10 @@ html[data-theme='light'] .appTheme :where([class*='shadow-xl'], [class*='shadow-
 
 html[data-theme='light'] .appFooter {
   color: rgba(68, 64, 60, 0.82);
+}
+
+html[data-theme='light'] .appFooterLegal a:hover {
+  color: rgba(146, 64, 14, 0.95);
 }
 
 html[data-theme='light'] .appFooterYear {

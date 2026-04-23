@@ -192,6 +192,37 @@ export type Messages = {
   };
   appFooter: {
     tagline: string;
+    legalNavAria: string;
+    linkTerms: string;
+    linkPrivacy: string;
+    linkDeleteAccount: string;
+    linkSupport: string;
+  };
+  legal: {
+    terms: {
+      title: string;
+      p1: string;
+      p2: string;
+      p3: string;
+    };
+    privacy: {
+      title: string;
+      p1: string;
+      p2: string;
+      p3: string;
+    };
+    deleteAccount: {
+      title: string;
+      p1: string;
+      p2: string;
+      p3: string;
+    };
+    support: {
+      title: string;
+      p1: string;
+      p2: string;
+      p3: string;
+    };
   };
   searchableSelect: {
     empty: string;

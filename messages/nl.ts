@@ -211,6 +211,37 @@ export const nl: Messages = {
   },
   appFooter: {
     tagline: "Schoon. Duidelijk. Op tijd.",
+    legalNavAria: "Juridische informatie en ondersteuning",
+    linkTerms: "Voorwaarden",
+    linkPrivacy: "Privacy",
+    linkDeleteAccount: "Account verwijderen",
+    linkSupport: "Ondersteuning",
+  },
+  legal: {
+    terms: {
+      title: "Gebruiksvoorwaarden",
+      p1: "Door deze app te gebruiken, gaat u ermee akkoord de service alleen te gebruiken voor geautoriseerde tijdregistratie en de instructies van uw werkgever of beheerder te volgen.",
+      p2: "De service wordt ‘as is’ geleverd voor zover de wet dat toelaat. Deze voorwaarden kunnen worden bijgewerkt; bij voortgezet gebruik na wijzigingen aanvaardt u de nieuwe voorwaarden.",
+      p3: "Als u niet akkoord gaat, stop dan met het gebruik van de app en neem contact op met uw beheerder.",
+    },
+    privacy: {
+      title: "Privacybeleid",
+      p1: "We verwerken gegevens die nodig zijn voor tijdregistratie binnen uw organisatie, waaronder diensten, locaties indien vereist voor uw werk, en profiel- of contactgegevens van u of uw werkgever.",
+      p2: "Uw organisatie bepaalt doeleinden en bewaartermijnen. Voor inzage, correctie of verwijdering kunt u uw werkgever raadplegen of de ondersteuningspagina gebruiken voor app-gerelateerde vragen.",
+      p3: "We passen passende technische en organisatorische maatregelen toe in lijn met de configuratie van uw organisatie.",
+    },
+    deleteAccount: {
+      title: "Account verwijderen",
+      p1: "Personeelsaccounts worden doorgaans door uw werkgever beheerd. Neem contact op met uw werkgever of beheerder om uw account en bijbehorende gegevens te deactiveren of te verwijderen.",
+      p2: "Zij kunnen uw toegang intrekken, opdrachten verwijderen en verwijdering of anonimisatie starten volgens beleid en wetgeving.",
+      p3: "Als u uw beheerder niet bereikt, gebruik dan de ondersteuningspagina met uw zakelijke e-mail of telefoonnummer.",
+    },
+    support: {
+      title: "Ondersteuning & contact",
+      p1: "Voor hulp bij inloggen, profiel, diensten of technische problemen in deze app kunt u eerst contact opnemen met uw werkgever (operations of HR).",
+      p2: "Gebruik het door uw organisatie opgegeven ondersteuningsmailadres of telefoonnummer voor de snelste afhandeling.",
+      p3: "Algemene vragen over deze applicatie kan uw beheerder escaleren naar de technische beheerder van deze omgeving.",
+    },
   },
   searchableSelect: {
     empty: "Niets gevonden",

@@ -211,6 +211,37 @@ export const en: Messages = {
   },
   appFooter: {
     tagline: "Clean. Clear. On time.",
+    legalNavAria: "Legal information and support",
+    linkTerms: "Terms",
+    linkPrivacy: "Privacy",
+    linkDeleteAccount: "Delete account",
+    linkSupport: "Support",
+  },
+  legal: {
+    terms: {
+      title: "Terms of Service",
+      p1: "By using this application, you agree to use the service only for authorized workforce time tracking and to follow instructions from your employer or account administrator.",
+      p2: "The service is provided on an “as is” basis to the extent permitted by law. We may update these terms; continued use after changes constitutes acceptance of the updated terms.",
+      p3: "If you do not agree with these terms, discontinue use of the application and contact your administrator.",
+    },
+    privacy: {
+      title: "Privacy Policy",
+      p1: "We process information needed to operate time tracking for your organization, including work sessions, locations where required for your duties, and profile or contact details provided by you or your employer.",
+      p2: "Your organization determines the purposes and retention of workforce data. For access, correction, or deletion requests, contact your employer or use the Support page for app-related questions.",
+      p3: "We apply appropriate technical and organizational measures to protect data in line with deployment configuration managed by your organization.",
+    },
+    deleteAccount: {
+      title: "Account deletion",
+      p1: "Workforce accounts are typically managed by your employer. To deactivate or delete your account and associated profile data, contact your employer or workspace administrator.",
+      p2: "They can remove your access, revoke assignments, and trigger deletion or anonymization according to internal policy and applicable law.",
+      p3: "If you cannot reach your administrator, use the Support page with your work email or phone so we can route your request appropriately.",
+    },
+    support: {
+      title: "Support & contact",
+      p1: "For help with login, profile, shifts, or technical issues inside this app, contact your employer’s operations or HR contact first.",
+      p2: "If your organization provides a dedicated support email or phone number, use that channel for the fastest resolution.",
+      p3: "For general inquiries about this application product, your administrator can escalate to the technical operator hosting this deployment.",
+    },
   },
   searchableSelect: {
     empty: "No results",
