@@ -220,6 +220,17 @@ function enumerateDates(fromISO: string, toISO: string, dowLabels: string[]) {
   return out
 }
 
+/** Normalize API/DB job_date (date or ISO datetime) to YYYY-MM-DD for grid matching. */
+function jobDateKey(raw: string | null | undefined): string {
+  if (raw == null || raw === '') return ''
+  const s = String(raw).trim()
+  const head = /^(\d{4}-\d{2}-\d{2})/.exec(s)
+  if (head) return head[1]
+  const d = new Date(s)
+  if (!Number.isNaN(d.getTime())) return toISODate(d)
+  return ''
+}
+
 function timeHHMM(t?: string | null) {
   if (!t) return '—'
   const x = String(t)
@@ -1363,10 +1374,30 @@ const [editOpen, setEditOpen] = useState(false)
 
   const planEntities = useMemo(() => {
     if (planMode === 'workers') {
-      return workersForSelect.map((w) => ({ id: w.id, name: w.full_name || t('admin.main.fallbackWorker') }))
+      const base = workersForSelect.map((w) => ({ id: w.id, name: w.full_name || t('admin.main.fallbackWorker') }))
+      const seen = new Set(base.map((r) => r.id))
+      const extra: Array<{ id: string; name: string }> = []
+      for (const j of schedule) {
+        const wid = j.worker_id != null ? String(j.worker_id).trim() : ''
+        if (!wid || seen.has(wid)) continue
+        seen.add(wid)
+        extra.push({ id: wid, name: j.worker_name || t('admin.main.fallbackWorker') })
+      }
+      extra.sort((a, b) => a.name.localeCompare(b.name))
+      return [...base, ...extra]
     }
-    return activeSites.map((s) => ({ id: s.id, name: s.name || t('admin.main.fallbackSite') }))
-  }, [planMode, workersForSelect, activeSites, t])
+    const base = activeSites.map((s) => ({ id: s.id, name: s.name || t('admin.main.fallbackSite') }))
+    const seen = new Set(base.map((r) => r.id))
+    const extra: Array<{ id: string; name: string }> = []
+    for (const j of schedule) {
+      const sid = j.site_id != null ? String(j.site_id).trim() : ''
+      if (!sid || seen.has(sid)) continue
+      seen.add(sid)
+      extra.push({ id: sid, name: j.site_name || t('admin.main.fallbackSite') })
+    }
+    extra.sort((a, b) => a.name.localeCompare(b.name))
+    return [...base, ...extra]
+  }, [planMode, workersForSelect, activeSites, schedule, t])
 
   const hours = useMemo(() => Array.from({ length: 24 }, (_, i) => pad2(i) + ':00'), [])
 
@@ -2333,13 +2364,14 @@ const [editOpen, setEditOpen] = useState(false)
 
   function jobsInCell(args: { entityId: string; dateISO: string; hour?: string }) {
     const { entityId, dateISO, hour } = args
+    const ent = String(entityId).trim()
     return schedule
       .filter((j) => {
-        if ((j.job_date || '') !== dateISO) return false
+        if (jobDateKey(j.job_date) !== dateISO) return false
         if (planMode === 'workers') {
-          if ((j.worker_id || '') !== entityId) return false
+          if (String(j.worker_id ?? '').trim() !== ent) return false
         } else {
-          if ((j.site_id || '') !== entityId) return false
+          if (String(j.site_id ?? '').trim() !== ent) return false
         }
         if (hour) {
           const hh = timeHHMM(j.scheduled_time)
@@ -2782,14 +2814,14 @@ const [editOpen, setEditOpen] = useState(false)
 
                   <div className="mt-2 grid gap-2">
                     {schedule
-                      .filter((j) => (j.job_date || '') === d.iso)
+                      .filter((j) => jobDateKey(j.job_date) === d.iso)
                       .sort((a, b) => timeHHMM(a.scheduled_time).localeCompare(timeHHMM(b.scheduled_time)))
                       .slice(0, 3)
                       .map((j) => jobCard(j, true))}
 
-                    {schedule.filter((j) => (j.job_date || '') === d.iso).length > 3 ? (
+                    {schedule.filter((j) => jobDateKey(j.job_date) === d.iso).length > 3 ? (
                       <div className="rounded-2xl border border-yellow-400/10 bg-black/15 px-3 py-2 text-[11px] text-zinc-400">
-                        {t('admin.main.moreJobs', { n: schedule.filter((j) => (j.job_date || '') === d.iso).length - 3 })}
+                        {t('admin.main.moreJobs', { n: schedule.filter((j) => jobDateKey(j.job_date) === d.iso).length - 3 })}
                       </div>
                     ) : null}
 
