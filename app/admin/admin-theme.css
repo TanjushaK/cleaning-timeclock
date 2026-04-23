@@ -121,36 +121,43 @@ html[data-theme='light'] .adminTheme :where([class*='text-amber-']) {
   color: #92400e !important;
 }
 
-/* Light-mode control contrast:
-   shared admin buttons/tabs rely on dark-theme text tokens (zinc/yellow with low alpha).
-   Once backgrounds are repainted to light surfaces, these tokens become too pale,
-   especially for secondary/active/disabled states. Keep this scoped to light mode only. */
-html[data-theme='light'] .adminTheme button,
-html[data-theme='light'] .adminTheme a[role='button'],
-html[data-theme='light'] .adminPortalTheme button,
-html[data-theme='light'] .workerCardModalTheme button {
+/* Light-mode control contrast (DOM-verified tokens from /admin):
+   page-level buttons use text-yellow-100 / text-zinc-200 utilities designed for dark cards.
+   In light mode those cards are repainted to pale surfaces, so force explicit readable
+   light-theme text for concrete admin button tokens instead of broad button overrides. */
+html[data-theme='light'] .adminTheme button.text-yellow-100,
+html[data-theme='light'] .adminTheme button.text-yellow-100\/90,
+html[data-theme='light'] .adminTheme button.text-yellow-100\/80,
+html[data-theme='light'] .adminTheme button.text-yellow-100\/70,
+html[data-theme='light'] .adminPortalTheme button.text-yellow-100,
+html[data-theme='light'] .workerCardModalTheme button.text-yellow-100 {
+  color: #7c2d12 !important;
+}
+
+html[data-theme='light'] .adminTheme button.text-zinc-200,
+html[data-theme='light'] .adminTheme button.text-zinc-300,
+html[data-theme='light'] .adminPortalTheme button.text-zinc-200,
+html[data-theme='light'] .workerCardModalTheme button.text-zinc-200 {
   color: #1f2937 !important;
 }
 
-html[data-theme='light'] .adminTheme button[class*='text-yellow-'],
-html[data-theme='light'] .adminTheme a[role='button'][class*='text-yellow-'],
-html[data-theme='light'] .adminPortalTheme button[class*='text-yellow-'],
-html[data-theme='light'] .workerCardModalTheme button[class*='text-yellow-'] {
-  color: #78350f !important;
-}
-
-html[data-theme='light'] .adminTheme button[class*='bg-red-'],
-html[data-theme='light'] .adminTheme a[role='button'][class*='bg-red-'],
-html[data-theme='light'] .adminPortalTheme button[class*='bg-red-'],
-html[data-theme='light'] .workerCardModalTheme button[class*='bg-red-'] {
+html[data-theme='light'] .adminTheme button.text-red-900,
+html[data-theme='light'] .adminPortalTheme button.text-red-900,
+html[data-theme='light'] .workerCardModalTheme button.text-red-900 {
   color: #991b1b !important;
 }
 
 html[data-theme='light'] .adminTheme button:disabled,
-html[data-theme='light'] .adminTheme a[role='button'][aria-disabled='true'],
 html[data-theme='light'] .adminPortalTheme button:disabled,
 html[data-theme='light'] .workerCardModalTheme button:disabled {
   opacity: 0.72 !important;
+}
+
+html[data-theme='light'] .adminTheme button:disabled.text-yellow-100,
+html[data-theme='light'] .adminTheme button:disabled.text-zinc-200,
+html[data-theme='light'] .adminTheme button:disabled.text-red-900,
+html[data-theme='light'] .adminPortalTheme button:disabled,
+html[data-theme='light'] .workerCardModalTheme button:disabled {
   color: #57534e !important;
 }
 
