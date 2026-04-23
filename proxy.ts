@@ -35,21 +35,11 @@ function applyCors(req: NextRequest, res: NextResponse) {
 function rewriteIfNeeded(req: NextRequest): NextResponse | null {
   const { pathname } = req.nextUrl;
 
-  const mWorkerProfile = pathname.match(/^\/api\/admin\/workers\/([^/]+)\/profile$/);
-  if (mWorkerProfile && UUID_RE.test(mWorkerProfile[1])) {
-    const url = req.nextUrl.clone();
-    url.pathname = "/api/admin/workers-profile";
-    url.searchParams.set("id", mWorkerProfile[1]);
-    return NextResponse.rewrite(url);
-  }
-
-  const mWorkerPhotos = pathname.match(/^\/api\/admin\/workers\/([^/]+)\/photos$/);
-  if (mWorkerPhotos && UUID_RE.test(mWorkerPhotos[1])) {
-    const url = req.nextUrl.clone();
-    url.pathname = "/api/admin/workers-photos";
-    url.searchParams.set("id", mWorkerPhotos[1]);
-    return NextResponse.rewrite(url);
-  }
+  // Worker profile/photos have first-class dynamic routes at:
+  // /api/admin/workers/[id]/profile and /api/admin/workers/[id]/photos.
+  // Do not rewrite these paths to legacy compatibility endpoints in middleware,
+  // because reverse-proxy forwarded https+localhost combinations can trigger
+  // protocol mismatch proxying (EPROTO) for rewritten requests.
 
   const mSiteItem = pathname.match(/^\/api\/admin\/sites\/([^/]+)$/);
   if (mSiteItem && UUID_RE.test(mSiteItem[1])) {

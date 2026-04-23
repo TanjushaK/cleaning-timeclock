@@ -3753,7 +3753,7 @@ const [editOpen, setEditOpen] = useState(false)
                               <button
                                 onClick={() => deleteWorker(w.id)}
                                 disabled={busy}
-                                className="w-full sm:w-auto rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-2 text-xs font-semibold text-red-100 transition hover:border-red-300/40 hover:bg-red-500/15 disabled:opacity-60"
+                                className="w-full sm:w-auto rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-2 text-xs font-semibold text-red-900 dark:text-red-100 transition hover:border-red-300/40 hover:bg-red-500/15 disabled:opacity-60 disabled:text-red-500 dark:disabled:text-red-300"
                               >
                                 {t('admin.main.delete')}
                               </button>
