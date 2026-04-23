@@ -157,6 +157,12 @@ function toISODate(d: Date) {
   return `${y}-${m}-${day}`
 }
 
+function clampISODateToRange(d: string, from: string, to: string) {
+  if (d < from) return from
+  if (d > to) return to
+  return d
+}
+
 function startOfWeek(d: Date) {
   const x = new Date(d)
   const day = x.getDay()
@@ -1222,9 +1228,8 @@ export default function AdminPage() {
   const [newWorkers, setNewWorkers] = useState<string[]>([])
   const [newDate, setNewDate] = useState<string>(toISODate(new Date()))
   const [newTime, setNewTime] = useState<string>('09:00')
-
-    const [newTimeTo, setNewTimeTo] = useState<string>('')
-const [editOpen, setEditOpen] = useState(false)
+  const [newTimeTo, setNewTimeTo] = useState<string>('')
+  const [editOpen, setEditOpen] = useState(false)
   const [editJobId, setEditJobId] = useState<string | null>(null)
   const [editSiteId, setEditSiteId] = useState<string>('')
   const [editWorkerId, setEditWorkerId] = useState<string>('')
@@ -1236,6 +1241,13 @@ const [editOpen, setEditOpen] = useState(false)
   const [workerCardOpen, setWorkerCardOpen] = useState(false)
   const [workerCardId, setWorkerCardId] = useState<string>('')
   const [workerCardItems, setWorkerCardItems] = useState<ScheduleItem[]>([])
+  const [workerCardNewShiftSiteId, setWorkerCardNewShiftSiteId] = useState('')
+  const [workerCardNewShiftDate, setWorkerCardNewShiftDate] = useState<string>(() => toISODate(new Date()))
+  const [workerCardNewShiftTime, setWorkerCardNewShiftTime] = useState('09:00')
+  const [workerCardNewShiftTimeTo, setWorkerCardNewShiftTimeTo] = useState('')
+  const [workerCardNewShiftBusy, setWorkerCardNewShiftBusy] = useState(false)
+  const [workerCardNewShiftNotice, setWorkerCardNewShiftNotice] = useState<string | null>(null)
+  const [workerCardNewShiftErr, setWorkerCardNewShiftErr] = useState<string | null>(null)
 
   const [workerCardPhotos, setWorkerCardPhotos] = useState<WorkerPhoto[]>([])
   const [workerPhotoMeta, setWorkerPhotoMeta] = useState<Record<string, WorkerPhotoMeta>>({})
@@ -2014,6 +2026,36 @@ const [editOpen, setEditOpen] = useState(false)
     setWorkerCardItems(Array.isArray(sch?.items) ? sch.items : [])
   }
 
+  async function createWorkerCardShift() {
+    const wid = String(workerCardId || '').trim()
+    if (!wid || !workerCardNewShiftSiteId || !workerCardNewShiftDate || !workerCardNewShiftTime) return
+    setWorkerCardNewShiftBusy(true)
+    setWorkerCardNewShiftErr(null)
+    setWorkerCardNewShiftNotice(null)
+    try {
+      await authFetchJson('/api/admin/jobs/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          site_id: workerCardNewShiftSiteId,
+          worker_ids: [wid],
+          job_date: workerCardNewShiftDate,
+          scheduled_time: workerCardNewShiftTime,
+          scheduled_end_time: workerCardNewShiftTimeTo.trim() || null,
+        }),
+      })
+      const inRange = workerCardNewShiftDate >= dateFrom && workerCardNewShiftDate <= dateTo
+      await loadWorkerCard(wid)
+      setWorkerCardNewShiftNotice(
+        inRange ? t('admin.main.workerCardShiftAdded') : t('admin.main.workerCardShiftAddedOutsideRange'),
+      )
+    } catch (e: unknown) {
+      setWorkerCardNewShiftErr(mapAdminErr(e, t))
+    } finally {
+      setWorkerCardNewShiftBusy(false)
+    }
+  }
+
   async function loadWorkerPhotoMeta(workerId: string) {
     try {
       // 1) profile: resolve selected avatar if any
@@ -2167,6 +2209,12 @@ const [editOpen, setEditOpen] = useState(false)
     setWorkerCardItems([])
     setWorkerCardPhotos([])
     setError(null)
+    setWorkerCardNewShiftSiteId('')
+    setWorkerCardNewShiftDate(clampISODateToRange(toISODate(new Date()), dateFrom, dateTo))
+    setWorkerCardNewShiftTime('09:00')
+    setWorkerCardNewShiftTimeTo('')
+    setWorkerCardNewShiftNotice(null)
+    setWorkerCardNewShiftErr(null)
 
     const core = workersById.get(workerId)
     const cached = workerProfileById?.[workerId]
@@ -4361,7 +4409,11 @@ const [editOpen, setEditOpen] = useState(false)
       <Modal
         open={workerCardOpen}
         title={t('admin.main.workerCardTitle')}
-        onClose={() => setWorkerCardOpen(false)}
+        onClose={() => {
+          setWorkerCardOpen(false)
+          setWorkerCardNewShiftNotice(null)
+          setWorkerCardNewShiftErr(null)
+        }}
         scopeClassName="workerCardModalTheme"
       >
         <div className="rounded-3xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/25 p-4">
@@ -4654,6 +4706,98 @@ const [editOpen, setEditOpen] = useState(false)
 
                 <div className="mt-1 grid gap-2">
                   <div className="text-sm font-semibold text-amber-900 dark:text-yellow-100">{t('admin.main.shiftsTitle')}</div>
+
+                  <div className="flex flex-col gap-2 rounded-2xl border border-yellow-400/10 bg-black/20 p-3">
+                    <div className="flex flex-wrap items-end gap-2">
+                      <div className="min-w-0 flex-1 basis-[200px]">
+                        <SearchableSelect
+                          label={t('admin.main.labelSite')}
+                          value={workerCardNewShiftSiteId}
+                          onChange={(v) => {
+                            setWorkerCardNewShiftSiteId(v)
+                            setWorkerCardNewShiftNotice(null)
+                            setWorkerCardNewShiftErr(null)
+                          }}
+                          items={activeSites.map((s) => siteToSelectItem(s, t))}
+                          placeholder={t('admin.main.pickSitePh')}
+                          disabled={workerCardNewShiftBusy}
+                          inputClassName="rounded-xl border border-yellow-400/20 bg-black/40 px-2 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+                        />
+                      </div>
+                      <label className="grid shrink-0 gap-0.5">
+                        <span className="text-[10px] text-stone-600 dark:text-zinc-400">{t('admin.main.labelDate')}</span>
+                        <input
+                          type="date"
+                          onPointerDown={(e) => {
+                            try {
+                              ;(e.currentTarget as HTMLInputElement).showPicker?.()
+                            } catch {}
+                          }}
+                          value={workerCardNewShiftDate}
+                          onChange={(e) => {
+                            setWorkerCardNewShiftDate(e.target.value)
+                            setWorkerCardNewShiftNotice(null)
+                            setWorkerCardNewShiftErr(null)
+                          }}
+                          disabled={workerCardNewShiftBusy}
+                          className="w-[140px] rounded-xl border border-yellow-400/20 bg-black/40 px-2 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+                        />
+                      </label>
+                      <label className="grid shrink-0 gap-0.5">
+                        <span className="text-[10px] text-stone-600 dark:text-zinc-400">{t('admin.main.labelTime')}</span>
+                        <input
+                          type="time"
+                          value={workerCardNewShiftTime}
+                          onChange={(e) => {
+                            setWorkerCardNewShiftTime(e.target.value)
+                            setWorkerCardNewShiftNotice(null)
+                            setWorkerCardNewShiftErr(null)
+                          }}
+                          disabled={workerCardNewShiftBusy}
+                          className="w-[108px] rounded-xl border border-yellow-400/20 bg-black/40 px-2 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+                        />
+                      </label>
+                      <label className="grid shrink-0 gap-0.5">
+                        <span className="text-[10px] text-stone-600 dark:text-zinc-400">{t('admin.main.labelEnd')}</span>
+                        <input
+                          type="time"
+                          onPointerDown={(e) => {
+                            try {
+                              ;(e.currentTarget as HTMLInputElement).showPicker?.()
+                            } catch {}
+                          }}
+                          value={workerCardNewShiftTimeTo}
+                          onChange={(e) => {
+                            setWorkerCardNewShiftTimeTo(e.target.value)
+                            setWorkerCardNewShiftNotice(null)
+                            setWorkerCardNewShiftErr(null)
+                          }}
+                          disabled={workerCardNewShiftBusy}
+                          className="w-[108px] rounded-xl border border-yellow-400/20 bg-black/40 px-2 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => void createWorkerCardShift()}
+                        disabled={
+                          workerCardNewShiftBusy ||
+                          !workerCardId ||
+                          !workerCardNewShiftSiteId ||
+                          !workerCardNewShiftDate ||
+                          !workerCardNewShiftTime
+                        }
+                        className="shrink-0 rounded-xl border border-yellow-300/45 bg-yellow-400/10 px-3 py-2 text-xs font-semibold text-amber-900 dark:text-yellow-100 transition hover:border-yellow-200/70 disabled:cursor-not-allowed disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500"
+                      >
+                        {workerCardNewShiftBusy ? t('admin.main.workerCardShiftAdding') : t('admin.main.workerCardAddShift')}
+                      </button>
+                    </div>
+                    {workerCardNewShiftErr ? (
+                      <div className="text-xs text-red-800 dark:text-red-200/90">{workerCardNewShiftErr}</div>
+                    ) : null}
+                    {workerCardNewShiftNotice ? (
+                      <div className="text-xs text-emerald-800 dark:text-emerald-100/90">{workerCardNewShiftNotice}</div>
+                    ) : null}
+                  </div>
 
                   {workerCardItems.length === 0 ? (
                     <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-3 text-xs text-stone-600 dark:text-zinc-500">
