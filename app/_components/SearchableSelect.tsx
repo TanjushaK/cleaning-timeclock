@@ -31,39 +31,39 @@ const SORT_LOCALE: Record<Lang, string> = {
 function dotToTextClass(dotClass?: string) {
   switch (dotClass) {
     case "bg-emerald-400":
-      return "text-emerald-200";
+      return "text-emerald-700 dark:text-emerald-200";
     case "bg-sky-400":
-      return "text-sky-200";
+      return "text-sky-700 dark:text-sky-200";
     case "bg-violet-400":
-      return "text-violet-200";
+      return "text-violet-700 dark:text-violet-200";
     case "bg-fuchsia-400":
-      return "text-fuchsia-200";
+      return "text-fuchsia-700 dark:text-fuchsia-200";
     case "bg-rose-400":
-      return "text-rose-200";
+      return "text-rose-700 dark:text-rose-200";
     case "bg-amber-400":
-      return "text-amber-200";
+      return "text-amber-800 dark:text-amber-200";
     case "bg-lime-400":
-      return "text-lime-200";
+      return "text-lime-700 dark:text-lime-200";
     case "bg-cyan-400":
-      return "text-cyan-200";
+      return "text-cyan-700 dark:text-cyan-200";
     case "bg-indigo-400":
-      return "text-indigo-200";
+      return "text-indigo-700 dark:text-indigo-200";
     case "bg-orange-400":
-      return "text-orange-200";
+      return "text-orange-700 dark:text-orange-200";
     case "bg-teal-400":
-      return "text-teal-200";
+      return "text-teal-700 dark:text-teal-200";
     case "bg-pink-400":
-      return "text-pink-200";
+      return "text-pink-700 dark:text-pink-200";
     case "bg-red-400":
-      return "text-red-200";
+      return "text-red-700 dark:text-red-200";
     case "bg-purple-400":
-      return "text-purple-200";
+      return "text-purple-700 dark:text-purple-200";
     case "bg-green-400":
-      return "text-green-200";
+      return "text-green-700 dark:text-green-200";
     case "bg-zinc-500":
-      return "text-zinc-200";
+      return "text-stone-700 dark:text-zinc-200";
     default:
-      return "text-zinc-200";
+      return "text-stone-700 dark:text-zinc-200";
   }
 }
 
@@ -132,12 +132,12 @@ export function SearchableSelect({ label, value, onChange, items, placeholder, d
         }}
         className={
           inputClassName ||
-          "w-full rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+          "w-full rounded-2xl border border-stone-400/70 bg-white/90 px-3 py-2 text-xs text-stone-900 placeholder:text-stone-500 outline-none transition focus:border-amber-700/55 dark:border-yellow-400/20 dark:bg-black/40 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:border-yellow-300/60"
         }
       />
 
       {open ? (
-        <div className="absolute left-0 right-0 z-[80] mt-2 max-h-80 overflow-auto rounded-2xl border border-yellow-400/25 bg-[#0b0b0b]/95 backdrop-blur-sm shadow-2xl">
+        <div className="absolute left-0 right-0 z-[80] mt-2 max-h-80 overflow-auto rounded-2xl border border-stone-300/80 bg-white/95 backdrop-blur-sm shadow-2xl dark:border-yellow-400/25 dark:bg-[#0b0b0b]/95">
           {filtered.length ? (
             filtered.map((it) => {
               const active = it.id === value;
@@ -155,8 +155,8 @@ export function SearchableSelect({ label, value, onChange, items, placeholder, d
                   className={
                     "flex w-full items-start gap-3 px-3 py-2 text-left text-xs transition " +
                     (active
-                      ? "bg-yellow-400/15 text-yellow-100"
-                      : "text-zinc-200 hover:bg-yellow-400/10 hover:text-yellow-100")
+                      ? "bg-amber-100/55 text-amber-950 dark:bg-yellow-400/15 dark:text-yellow-100"
+                      : "text-stone-800 hover:bg-amber-50/70 hover:text-amber-950 dark:text-zinc-200 dark:hover:bg-yellow-400/10 dark:hover:text-yellow-100")
                   }
                 >
                   <span
@@ -167,13 +167,13 @@ export function SearchableSelect({ label, value, onChange, items, placeholder, d
                   />
                   <span className="min-w-0 flex-1">
                     <span className={"block truncate font-semibold " + (active ? "" : textClass)}>{it.label}</span>
-                    {it.hint ? <span className="mt-0.5 block truncate text-[10px] text-zinc-400">{it.hint}</span> : null}
+                    {it.hint ? <span className="mt-0.5 block truncate text-[10px] text-stone-500 dark:text-zinc-400">{it.hint}</span> : null}
                   </span>
                 </button>
               );
             })
           ) : (
-            <div className="px-3 py-3 text-xs text-zinc-400">{t("searchableSelect.empty")}</div>
+            <div className="px-3 py-3 text-xs text-stone-500 dark:text-zinc-400">{t("searchableSelect.empty")}</div>
           )}
         </div>
       ) : null}
