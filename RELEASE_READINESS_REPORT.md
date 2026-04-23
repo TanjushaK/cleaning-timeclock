@@ -70,3 +70,9 @@
 - `GET /api/auth/sms-capabilities` = 200 (`{"outboundSms":true}`)  
 - `POST /api/auth/login` with wrong password = 401 (`AUTH_INVALID_CREDENTIALS`)  
 - `POST /api/auth/forgot-password` = 200 (`{"ok":true,"delivery":"none"}`)  
+
+## 13. Legacy cloud zero-trace gate
+
+- Current tree: проверка legacy cloud-токенов должна быть **0** перед финальным baseline.
+- Server active runtime: проверка legacy cloud-токенов должна быть **0**.
+- Active refs (рабочая ветка + baseline tag + release text): проверка legacy cloud-токенов должна быть **0**.

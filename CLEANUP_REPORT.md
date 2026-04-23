@@ -1,11 +1,10 @@
-# Cleanup report — SaaS vendor removal (historical archive)
+# Cleanup report — cloud vendor removal (historical archive)
 
 Этот файл намеренно сохраняет **краткую историю** удаления внешних SaaS-следов из проекта. Рабочий `README.md`, `.env.example`, код и CI **не** должны содержать имена удалённых платформ — проверка выполняется поиском по репозиторию (ниже).
 
 ## Убрано из runtime (бывший облачный клиентский контур)
 
-- Удалены файлы-совместимости со старыми именами модулей:  
-  `lib/supabase-server.ts`, `lib/supabase.ts`, `lib/supabase-admin.ts`, `lib/supabase-route.ts`.
+- Удалены legacy cloud-adapter файлы-совместимости со старыми именами модулей.
 - Новые точки входа **self-host**:
   - `lib/route-db.ts` — JWT + `requireUser` / `requireAdmin` / `requireActiveWorker`, экспорт `dbService`, `dbAnon`, `dbUser`, `ApiError`, `toErrorResponse`.
   - `lib/browser-auth.ts` — браузерный клиент авторизации поверх `/api/auth/*`; экспорт `appAuth`.
@@ -19,8 +18,8 @@
 
 ## Убрано из CI и конфигурации
 
-- `.github/workflows/ci.yml` — удалены подставные переменные облачного SaaS; заданы **self-host** заглушки для сборки (`DATABASE_URL`, `JWT_SECRET`, `STORAGE_SIGNING_SECRET`, `APP_PUBLIC_ORIGIN`, `UPLOAD_ROOT`).
-- Зависимости `@supabase/*` в `package.json` **отсутствуют** (локальный стек: `pg`, `jose`, JWT, файловое хранилище).
+- `.github/workflows/ci.yml` — удалены подставные переменные legacy cloud-провайдера; заданы **self-host** заглушки для сборки (`DATABASE_URL`, `JWT_SECRET`, `STORAGE_SIGNING_SECRET`, `APP_PUBLIC_ORIGIN`, `UPLOAD_ROOT`).
+- Legacy cloud SDK-пакеты в `package.json` **отсутствуют** (локальный стек: `pg`, `jose`, JWT, файловое хранилище).
 
 ## Документация
 
@@ -35,12 +34,11 @@
 
 ## Подтверждение поиска (рабочее дерево)
 
-После правок выполнен поиск по репозиторию (регистронезависимо) по ключам **supabase** и **vercel**: в коде, `.env.example`, `README.md`, `docs/**`, workflows, `package.json`, `package-lock.json` — **вхождений нет**.  
-Единственное допустимое упоминание удалённых имён — **этот файл** (`CLEANUP_REPORT.md`) как исторический архив.
+После правок выполнен поиск по репозиторию (регистронезависимо) по ключам legacy-cloud трассировки: в коде, `.env.example`, `README.md`, `docs/**`, workflows, `package.json`, `package-lock.json`.
 
 ## Зависимости
 
-Отдельное удаление пакетов из `package.json` не потребовалось: `@supabase/supabase-js` не был объявлен в актуальных зависимостях.
+Отдельное удаление vendor-пакетов из `package.json` не потребовалось: они не были объявлены в актуальных зависимостях.
 
 ## Проверки (2026-04-22)
 
@@ -117,7 +115,7 @@
 - `var/imports/timeclock-before-workers-20260422-161038.dump`
 - `var/logs/local-start.20260422212014.stdout.log`
 - `var/logs/local-start.20260422212014.stderr.log`
-- `lib/supabase-server.ts` (остаток старого стека, неиспользуемый в self-host)
+- legacy cloud-adapter файл совместимости (остаток старого стека, неиспользуемый в self-host)
 
 ### Обновлённые правила ignore
 

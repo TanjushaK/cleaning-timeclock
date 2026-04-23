@@ -88,3 +88,9 @@
 - `EnvironmentFile` для systemd лучше держать вне deploy path: `/etc/timeclock/timeclock.env`.
 - Никогда не удалять вручную `/etc/timeclock/timeclock.env`.
 - Перед deploy всегда иметь rollback snapshot service/env.
+
+---
+
+## Zero-Trace Guard
+
+Перед релизом запускать repo-wide проверку legacy cloud-токенов и не деплоить, если есть совпадения в current tree или в активных runtime-конфигах.

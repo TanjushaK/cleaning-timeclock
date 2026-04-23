@@ -33,7 +33,7 @@
 | Обманные permission strings | Не выявлено для оставшихся ключей |
 | Fake UI биометрии | Нет — кнопки завязаны на native + `biometricHardwareAvailable` + флаг сохранённого режима |
 | Hidden debug ATT | Нет |
-| Остатки старого SaaS-кода | `lib/supabase-server.ts` удалён как мёртвый leftover; активные self-host роуты идут через `lib/route-db.ts` |
+| Остатки старого cloud-adapter кода | legacy-файл совместимости удалён как мёртвый leftover; активные self-host роуты идут через `lib/route-db.ts` |
 
 ### 4. Захардкоженный прод-домен в recovery flow
 
