@@ -1,14 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireAdmin, toErrorResponse } from '@/lib/supabase-server'
+import { checkRateLimit, clientIpFromRequest } from '@/lib/rate-limit'
+import { geocodePublicEnabled } from '@/lib/server/env'
+import { requireAdmin, toErrorResponse } from '@/lib/route-db'
 
 export const runtime = 'nodejs'
 
 export async function GET(req: NextRequest) {
   try {
-    await requireAdmin(req)
-
     const q = req.nextUrl.searchParams.get('q')?.trim() || ''
     if (!q) return NextResponse.json({ error: 'q_required' }, { status: 400 })
+
+    const allowPublic = geocodePublicEnabled()
+    if (!allowPublic) {
+      await requireAdmin(req)
+    } else {
+      const ip = clientIpFromRequest(req)
+      if (!checkRateLimit(`geocode:public:${ip}`, 30, 60_000)) {
+        return NextResponse.json({ error: 'rate_limited' }, { status: 429 })
+      }
+    }
 
     // Nominatim policy: identify your application with a proper User-Agent. 
     const ua =

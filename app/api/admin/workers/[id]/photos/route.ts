@@ -1,7 +1,10 @@
-﻿// app/api/admin/workers/[id]/photos/route.ts
+// app/api/admin/workers/[id]/photos/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { AdminApiErrorCode } from '@/lib/api-error-codes'
-import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
+import type { StorageBucketClient } from '@/lib/server/compat/storage-shim'
+import { localPhotoBucket } from '@/lib/server/local-photo-storage'
+import { routeDynamicId } from '@/lib/server/route-dynamic-id'
+import { ApiError, requireAdmin, toErrorResponse } from '@/lib/route-db'
 import sharp from 'sharp'
 
 export const runtime = 'nodejs'
@@ -143,11 +146,11 @@ function validateImageFile(file: IncomingFile) {
 
 let AVATAR_KEY: AvatarKey | null = null
 
-async function resolveAvatarKey(supabase: any): Promise<AvatarKey> {
+async function resolveAvatarKey(db: any): Promise<AvatarKey> {
   if (AVATAR_KEY) return AVATAR_KEY
   const candidates: AvatarKey[] = ['avatar_path', 'avatar_url', 'photo_path']
   for (const k of candidates) {
-    const { error } = await supabase.from('profiles').select(k).limit(1)
+    const { error } = await db.from('profiles').select(k).limit(1)
     if (!error) {
       AVATAR_KEY = k
       return k
@@ -164,13 +167,18 @@ function isHeicName(name: string) {
   return /\.(heic|heif)$/i.test(String(name || ''))
 }
 
-async function normalizeHeicInBucket(supabase: any, workerId: string, itemsRaw: any[]): Promise<boolean> {
+async function normalizeHeicInBucket(
+  sb: any,
+  bucketClient: StorageBucketClient,
+  workerId: string,
+  itemsRaw: any[],
+): Promise<boolean> {
   const heic = (itemsRaw || []).filter((x: any) => isHeicName(String(x?.name || '')))
   if (heic.length === 0) return false
   const pref = workerPrefix(workerId)
   const names = new Set((itemsRaw || []).map((x: any) => String(x?.name || '')))
-  const avatarKey = await resolveAvatarKey(supabase)
-  const { data: prof } = await supabase.from('profiles').select(avatarKey).eq('id', workerId).maybeSingle()
+  const avatarKey = await resolveAvatarKey(sb)
+  const { data: prof } = await sb.from('profiles').select(avatarKey).eq('id', workerId).maybeSingle()
   const curAvatar = prof ? String((prof as any)[avatarKey] || '') : ''
   let nextAvatar = curAvatar
   let changed = false
@@ -183,7 +191,7 @@ async function normalizeHeicInBucket(supabase: any, workerId: string, itemsRaw: 
     const newPath = `${pref}/${jpgName}`
     // если jpeg уже есть — просто удалим heic и поправим avatar_path
     if (!names.has(jpgName)) {
-      const { data: blob, error: dlErr } = await supabase.storage.from(BUCKET).download(oldPath)
+      const { data: blob, error: dlErr } = await bucketClient.download(oldPath)
       if (dlErr || !blob) continue
       const ab = await (blob as any).arrayBuffer()
       const input = Buffer.from(ab)
@@ -193,39 +201,41 @@ async function normalizeHeicInBucket(supabase: any, workerId: string, itemsRaw: 
       } catch {
         continue
       }
-      const { error: upErr } = await supabase.storage.from(BUCKET).upload(newPath, out, { contentType: 'image/jpeg', upsert: false })
+      const { error: upErr } = await bucketClient.upload(newPath, out, { contentType: 'image/jpeg', upsert: false })
       if (upErr) continue
       names.add(jpgName)
     }
     if (curAvatar && curAvatar === oldPath) nextAvatar = newPath
-    await supabase.storage.from(BUCKET).remove([oldPath]).catch(() => null)
+    await bucketClient.remove([oldPath]).catch(() => null)
     changed = true
   }
   if (nextAvatar && nextAvatar !== curAvatar) {
-    await supabase.from('profiles').update({ [avatarKey]: nextAvatar }).eq('id', workerId)
+    await sb.from('profiles').update({ [avatarKey]: nextAvatar }).eq('id', workerId)
     changed = true
   }
   return changed
 }
 
-async function listPhotos(supabase: any, workerId: string): Promise<WorkerPhoto[]> {
+async function listPhotos(sb: any, bucketClient: StorageBucketClient, workerId: string): Promise<WorkerPhoto[]> {
   const pref = workerPrefix(workerId)
 
-  const { data: listed, error: listErr } = await supabase.storage
-    .from(BUCKET)
-    .list(pref, { limit: 100, sortBy: { column: 'created_at', order: 'desc' } })
+  const { data: listed, error: listErr } = await bucketClient.list(pref, {
+    limit: 100,
+    sortBy: { column: 'created_at', order: 'desc' },
+  })
 
   if (listErr) throw new ApiError(500, listErr.message, AdminApiErrorCode.DB_ERROR)
 
   let itemsRaw = (listed || []).filter((x: any) => x?.name && x.name !== '.emptyFolderPlaceholder')
   // HEIC/HEIF часто не отображаются в Chrome/Android WebView — конвертируем в JPEG автоматически
   if (itemsRaw.length) {
-    const changed = await normalizeHeicInBucket(supabase, workerId, itemsRaw).catch(() => false)
+    const changed = await normalizeHeicInBucket(sb, bucketClient, workerId, itemsRaw).catch(() => false)
     if (changed) {
-      const { data: relisted } = await supabase.storage
-        .from(BUCKET)
-        .list(pref, { limit: 100, sortBy: { column: "created_at", order: "desc" } })
-      itemsRaw = (relisted || []).filter((x: any) => x?.name && x.name !== ".emptyFolderPlaceholder")
+      const { data: relisted } = await bucketClient.list(pref, {
+        limit: 100,
+        sortBy: { column: 'created_at', order: 'desc' },
+      })
+      itemsRaw = (relisted || []).filter((x: any) => x?.name && x.name !== '.emptyFolderPlaceholder')
     }
   }
   const ttl = getSignedTtlSeconds()
@@ -234,7 +244,7 @@ async function listPhotos(supabase: any, workerId: string): Promise<WorkerPhoto[
   if (paths.length === 0) return []
 
   const urlByPath = new Map<string, string>()
-  const { data: signed, error: signErr } = await supabase.storage.from(BUCKET).createSignedUrls(paths, ttl)
+  const { data: signed, error: signErr } = await bucketClient.createSignedUrls(paths, ttl)
 
   if (!signErr && Array.isArray(signed)) {
     for (const s of signed as any[]) {
@@ -244,7 +254,7 @@ async function listPhotos(supabase: any, workerId: string): Promise<WorkerPhoto[
     }
   } else {
     for (const p of paths) {
-      const { data: one } = await supabase.storage.from(BUCKET).createSignedUrl(p, ttl)
+      const { data: one } = await bucketClient.createSignedUrl(p, ttl)
       if (one?.signedUrl) urlByPath.set(p, String(one.signedUrl))
     }
   }
@@ -263,12 +273,12 @@ async function listPhotos(supabase: any, workerId: string): Promise<WorkerPhoto[
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const { id: workerId } = await ctx.params
+    const workerId = await routeDynamicId(req, ctx)
     const headers = withCookieBearer(req)
     const admin = await requireAdmin(headers)
     if (!workerId) throw new ApiError(400, 'worker id is required', AdminApiErrorCode.WORKER_ID_REQUIRED)
 
-    const photos = await listPhotos((admin as any).supabase, workerId)
+    const photos = await listPhotos((admin as any).db, localPhotoBucket(BUCKET), workerId)
     return NextResponse.json({ photos }, { status: 200 })
   } catch (e) {
     return toErrorResponse(e)
@@ -277,14 +287,15 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const { id: workerId } = await ctx.params
+    const workerId = await routeDynamicId(req, ctx)
     const headers = withCookieBearer(req)
     const admin = await requireAdmin(headers)
-    const sb = (admin as any).supabase
+    const sb = (admin as any).db
+    const bucketClient = localPhotoBucket(BUCKET)
 
     if (!workerId) throw new ApiError(400, 'worker id is required', AdminApiErrorCode.WORKER_ID_REQUIRED)
 
-    const current = await listPhotos(sb, workerId)
+    const current = await listPhotos(sb, bucketClient, workerId)
     if (current.length >= 5) throw new ApiError(400, 'Photo limit reached (5)', AdminApiErrorCode.PHOTO_LIMIT_REACHED)
 
     const form = await req.formData()
@@ -308,7 +319,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
     const contentType = ext === 'jpg' ? 'image/jpeg' : (ALLOWED_IMAGE_TYPES.has(mime) ? String(file.type) : contentTypeFor(ext))
 
-    const { error: upErr } = await sb.storage.from(BUCKET).upload(path, bytes, {
+    const { error: upErr } = await bucketClient.upload(path, bytes, {
       contentType,
       upsert: false,
     })
@@ -321,7 +332,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       await sb.from('profiles').update({ [avatarKey]: path }).eq('id', workerId)
     }
 
-    const photos = await listPhotos(sb, workerId)
+    const photos = await listPhotos(sb, bucketClient, workerId)
     return NextResponse.json({ photos }, { status: 200 })
   } catch (e) {
     return toErrorResponse(e)
@@ -330,10 +341,11 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
 export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const { id: workerId } = await ctx.params
+    const workerId = await routeDynamicId(req, ctx)
     const headers = withCookieBearer(req)
     const admin = await requireAdmin(headers)
-    const sb = (admin as any).supabase
+    const sb = (admin as any).db
+    const bucketClient = localPhotoBucket(BUCKET)
 
     if (!workerId) throw new ApiError(400, 'worker id is required', AdminApiErrorCode.WORKER_ID_REQUIRED)
 
@@ -344,10 +356,10 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     const pref = workerPrefix(workerId)
     if (!path.startsWith(`${pref}/`)) throw new ApiError(403, 'Cannot delete another user’s file', AdminApiErrorCode.PHOTO_DELETE_FORBIDDEN)
 
-    const { error: delErr } = await sb.storage.from(BUCKET).remove([path])
+    const { error: delErr } = await bucketClient.remove([path])
     if (delErr) throw new ApiError(500, delErr.message, AdminApiErrorCode.DB_ERROR)
 
-    const photos = await listPhotos(sb, workerId)
+    const photos = await listPhotos(sb, bucketClient, workerId)
 
     const avatarKey = await resolveAvatarKey(sb)
     const { data: prof } = await sb.from('profiles').select(avatarKey).eq('id', workerId).maybeSingle()

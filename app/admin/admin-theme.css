@@ -63,6 +63,167 @@
 .adminFooterYear {
   color: rgba(254, 243, 199, 0.72);
 }
+
+html[data-theme='light'] .adminTheme {
+  color: #292524;
+  background:
+    radial-gradient(900px circle at 18% -8%, rgba(245, 158, 11, 0.10), transparent 55%),
+    radial-gradient(900px circle at 82% 8%, rgba(245, 158, 11, 0.09), transparent 60%),
+    radial-gradient(700px circle at 50% 110%, rgba(245, 158, 11, 0.08), transparent 55%),
+    #fff7ed;
+}
+
+html[data-theme='light'] .adminTheme :where([class*='bg-zinc-950']) {
+  background-color: rgba(255, 255, 255, 0.92) !important;
+}
+
+html[data-theme='light'] .adminTheme :where([class*='bg-neutral-950'], [class*='bg-slate-950']) {
+  background-color: rgba(255, 255, 255, 0.92) !important;
+}
+
+html[data-theme='light'] .adminTheme :where([class*='bg-zinc-900']) {
+  background-color: rgba(255, 251, 235, 0.92) !important;
+}
+
+html[data-theme='light'] .adminTheme :where([class*='bg-black']) {
+  background-color: rgba(255, 255, 255, 0.78) !important;
+}
+
+html[data-theme='light'] .adminTheme :where([class*='text-zinc-100'], [class*='text-zinc-200']) {
+  color: #292524 !important;
+}
+
+html[data-theme='light'] .adminTheme :where([class*='text-white']) {
+  color: #292524 !important;
+}
+
+html[data-theme='light'] .adminTheme :where([class*='text-zinc-300'], [class*='text-zinc-400']) {
+  color: #57534e !important;
+}
+
+html[data-theme='light'] .adminTheme :where([class*='border-yellow-400'], [class*='border-amber-500']) {
+  border-color: rgba(180, 83, 9, 0.35) !important;
+}
+
+html[data-theme='light'] .adminTheme :where([class*='text-yellow-']) {
+  color: #92400e !important;
+}
+
+html[data-theme='light'] .adminTheme :where([class*='border-amber-']) {
+  border-color: rgba(180, 83, 9, 0.35) !important;
+}
+
+html[data-theme='light'] .adminTheme :where([class*='border-zinc-']) {
+  border-color: rgba(120, 113, 108, 0.35) !important;
+}
+
+html[data-theme='light'] .adminTheme :where([class*='text-amber-']) {
+  color: #92400e !important;
+}
+
+html[data-theme='light'] .adminTheme :where([class*='shadow-xl'], [class*='shadow-2xl'], [class*='shadow-[']) {
+  box-shadow:
+    0 0 0 1px rgba(180, 83, 9, 0.15),
+    0 0 32px rgba(180, 83, 9, 0.10),
+    0 10px 38px rgba(0, 0, 0, 0.18) !important;
+}
+
+html[data-theme='light'] .adminFooter {
+  color: rgba(68, 64, 60, 0.82);
+}
+
+html[data-theme='light'] .adminFooterYear {
+  color: rgba(68, 64, 60, 0.92);
+}
+
+/* Approvals page uses explicit hex backgrounds; normalize them in light mode. */
+html[data-theme='light'] .adminTheme .bg-\[\#0b0604\] {
+  background-color: #fff7ed !important;
+}
+
+html[data-theme='light'] .adminTheme .bg-\[\#120806\]\/70 {
+  background-color: rgba(255, 255, 255, 0.92) !important;
+}
+
+/* Portal modals are rendered outside `.adminTheme`, so use a shared portal scope. */
+html[data-theme='light'] .adminPortalTheme .bg-zinc-950\/90,
+html[data-theme='light'] .adminPortalTheme .bg-zinc-950\/95,
+html[data-theme='light'] .workerCardModalTheme .bg-zinc-950\/90,
+html[data-theme='light'] .workerCardModalTheme .bg-zinc-950\/95 {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+}
+
+html[data-theme='light'] .adminPortalTheme :where([class*='bg-neutral-950'], [class*='bg-slate-950']),
+html[data-theme='light'] .workerCardModalTheme :where([class*='bg-neutral-950'], [class*='bg-slate-950']) {
+  background-color: rgba(255, 255, 255, 0.92) !important;
+}
+
+html[data-theme='light'] .adminPortalTheme .bg-black\/70,
+html[data-theme='light'] .workerCardModalTheme .bg-black\/70 {
+  background-color: rgba(41, 37, 36, 0.35) !important;
+}
+
+html[data-theme='light'] .adminPortalTheme :where([class*='bg-black']),
+html[data-theme='light'] .workerCardModalTheme :where([class*='bg-black']) {
+  background-color: rgba(255, 255, 255, 0.82) !important;
+}
+
+html[data-theme='light'] .adminPortalTheme :where([class*='text-zinc-100'], [class*='text-zinc-200']),
+html[data-theme='light'] .workerCardModalTheme :where([class*='text-zinc-100'], [class*='text-zinc-200']) {
+  color: #292524 !important;
+}
+
+html[data-theme='light'] .adminPortalTheme :where([class*='text-white']),
+html[data-theme='light'] .workerCardModalTheme :where([class*='text-white']) {
+  color: #292524 !important;
+}
+
+html[data-theme='light'] .adminPortalTheme :where([class*='text-zinc-300'], [class*='text-zinc-400'], [class*='text-zinc-500']),
+html[data-theme='light'] .workerCardModalTheme :where([class*='text-zinc-300'], [class*='text-zinc-400'], [class*='text-zinc-500']) {
+  color: #57534e !important;
+}
+
+html[data-theme='light'] .adminPortalTheme :where([class*='text-yellow-100']),
+html[data-theme='light'] .workerCardModalTheme :where([class*='text-yellow-100']) {
+  color: #92400e !important;
+}
+
+html[data-theme='light'] .adminPortalTheme :where([class*='border-yellow-400'], [class*='border-yellow-300'], [class*='border-amber-']),
+html[data-theme='light'] .workerCardModalTheme :where([class*='border-yellow-400'], [class*='border-yellow-300'], [class*='border-amber-']) {
+  border-color: rgba(180, 83, 9, 0.35) !important;
+}
+
+html[data-theme='light'] .adminPortalTheme :where([class*='border-zinc-']),
+html[data-theme='light'] .workerCardModalTheme :where([class*='border-zinc-']) {
+  border-color: rgba(120, 113, 108, 0.35) !important;
+}
+
+html[data-theme='light'] .adminPortalTheme .bg-yellow-400\/10,
+html[data-theme='light'] .adminPortalTheme .bg-yellow-400\/15,
+html[data-theme='light'] .workerCardModalTheme .bg-yellow-400\/10,
+html[data-theme='light'] .workerCardModalTheme .bg-yellow-400\/15 {
+  background-color: rgba(245, 158, 11, 0.14) !important;
+}
+
+html[data-theme='light'] .adminPortalTheme .bg-sky-500\/10,
+html[data-theme='light'] .workerCardModalTheme .bg-sky-500\/10 {
+  background-color: rgba(14, 165, 233, 0.12) !important;
+}
+
+html[data-theme='light'] .adminPortalTheme .text-sky-100\/90,
+html[data-theme='light'] .workerCardModalTheme .text-sky-100\/90 {
+  color: #0c4a6e !important;
+}
+
+html[data-theme='light'] .adminPortalTheme .bg-red-500\/15,
+html[data-theme='light'] .workerCardModalTheme .bg-red-500\/15 {
+  background-color: rgba(239, 68, 68, 0.14) !important;
+}
+
+html[data-theme='light'] .adminPortalTheme .text-red-100\/85,
+html[data-theme='light'] .workerCardModalTheme .text-red-100\/85 {
+  color: #991b1b !important;
+}
 /* Mobile: make top tabs horizontally scrollable instead of overflowing page */
 @media (hover: none) and (pointer: coarse) {
   .adminTheme {

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin, ApiError, toErrorResponse } from "@/lib/supabase-server";
+import { requireAdmin, ApiError, toErrorResponse } from "@/lib/route-db";
 
 function jsonError(status: number, message: string, details?: any) {
   return NextResponse.json({ error: message, ...(details ? { details } : {}) }, { status });
@@ -35,7 +35,7 @@ export async function POST(req: Request) {
     if (fromDate === toDate) return jsonError(400, "from_date equals to_date");
 
     // Only move planned jobs; keep started/done where they are.
-    const updRes = await guard.supabase
+    const updRes = await guard.db
       .from("jobs")
       .update({ job_date: toDate })
       .eq("job_date", fromDate)

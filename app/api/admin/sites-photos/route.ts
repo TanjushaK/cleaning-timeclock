@@ -1,6 +1,6 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { POST as postPhotos, DELETE as deletePhoto } from "../sites/[id]/photos/route";
-import { ApiError, requireAdmin, toErrorResponse } from "@/lib/supabase-server";
+import { ApiError, requireAdmin, toErrorResponse } from "@/lib/route-db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,9 +8,14 @@ export const dynamic = "force-dynamic";
 type SitePhoto = { path: string; url?: string; created_at?: string | null };
 
 function getId(req: NextRequest) {
-  const id = String(req.nextUrl.searchParams.get("id") || "").trim();
-  if (!id) throw new ApiError(400, "id_required");
-  return id;
+  const fromQuery = String(req.nextUrl.searchParams.get("id") || "").trim();
+  if (fromQuery) return fromQuery;
+
+  const pathname = req.nextUrl.pathname || "";
+  const pretty = pathname.match(/^\/api\/admin\/sites\/([^/]+)\/photos$/);
+  if (pretty?.[1]) return pretty[1];
+
+  throw new ApiError(400, "id_required");
 }
 
 function normalizePhotos(v: any): SitePhoto[] {
@@ -45,7 +50,7 @@ export async function DELETE(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   try {
     const id = getId(req);
-    const { supabase } = await requireAdmin(req.headers);
+    const { db } = await requireAdmin(req.headers);
 
     const body = await req.json().catch(() => ({} as any));
     const action = String(body?.action || "");
@@ -54,7 +59,7 @@ export async function PATCH(req: NextRequest) {
     if (action !== "make_primary") throw new ApiError(400, "unsupported_action");
     if (!path) throw new ApiError(400, "path_required");
 
-    const { data: siteData, error: siteErr } = await supabase
+    const { data: siteData, error: siteErr } = await db
       .from("sites")
       .select("id,name,address,lat,lng,radius,category,notes,photos,archived_at")
       .eq("id", id)
@@ -68,7 +73,7 @@ export async function PATCH(req: NextRequest) {
 
     const nextPhotos = [photos[idx], ...photos.filter((_, i) => i !== idx)];
 
-    const { data: updated, error: updErr } = await supabase
+    const { data: updated, error: updErr } = await db
       .from("sites")
       .update({ photos: nextPhotos })
       .eq("id", id)

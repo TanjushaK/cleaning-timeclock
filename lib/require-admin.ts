@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server'
-import type { SupabaseClient, User } from '@supabase/supabase-js'
-import { ApiError, requireAdmin as requireAdminGuard } from '@/lib/supabase-server'
+import type { CompatClient } from '@/lib/server/compat/client'
+import type { AppUser } from '@/lib/server/compat/types'
+import { ApiError, requireAdmin as requireAdminGuard } from '@/lib/route-db'
 
 export type AdminAuthOk = {
   ok: true
-  supabase: SupabaseClient
+  db: CompatClient
   token: string
-  user: User
+  user: AppUser
   userId: string
 }
 
@@ -19,12 +20,12 @@ export type AdminAuthResult = AdminAuthOk | AdminAuthFail
 
 export async function requireAdmin(reqOrHeaders: Request | Headers): Promise<AdminAuthResult> {
   try {
-    const g = await requireAdminGuard(reqOrHeaders)
-    return { ok: true, supabase: g.supabase, token: g.token, user: g.user, userId: g.userId }
-  } catch (e: any) {
-    if (e instanceof ApiError) {
-      return { ok: false, response: NextResponse.json({ error: e.message }, { status: e.status }) }
+    const guard = await requireAdminGuard(reqOrHeaders)
+    return { ok: true, db: guard.db, token: guard.token, user: guard.user, userId: guard.userId }
+  } catch (error) {
+    if (error instanceof ApiError) {
+      return { ok: false, response: NextResponse.json({ error: error.message }, { status: error.status }) }
     }
-    return { ok: false, response: NextResponse.json({ error: String(e?.message || e) }, { status: 500 }) }
+    return { ok: false, response: NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 }) }
   }
 }

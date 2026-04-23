@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { ApiError, requireAdmin } from '@/lib/supabase-server'
+import { ApiError, requireAdmin } from '@/lib/route-db'
 
 type WorkerProfile = {
   id: string
@@ -10,14 +10,14 @@ type WorkerProfile = {
   avatar_url: string | null
 }
 
-async function emailMap(supabase: any): Promise<Record<string, string>> {
+async function emailMap(db: any): Promise<Record<string, string>> {
   const map: Record<string, string> = {}
   let page = 1
   const perPage = 1000
 
    
   while (true) {
-    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage })
+    const { data, error } = await db.auth.admin.listUsers({ page, perPage })
     if (error) throw new ApiError(400, error.message)
 
     for (const u of data?.users || []) {
@@ -33,9 +33,9 @@ async function emailMap(supabase: any): Promise<Record<string, string>> {
 
 export async function GET(req: Request) {
   try {
-    const { supabase } = await requireAdmin(req.headers)
+    const { db } = await requireAdmin(req.headers)
 
-    const { data: profs, error } = await supabase
+    const { data: profs, error } = await db
       .from('profiles')
       .select('id, role, full_name, phone, active, avatar_url')
       .eq('role', 'worker')
@@ -43,7 +43,7 @@ export async function GET(req: Request) {
 
     if (error) throw new ApiError(400, error.message)
 
-    const map = await emailMap(supabase)
+    const map = await emailMap(db)
 
     const workers = ((profs ?? []) as WorkerProfile[]).map((p) => ({
       ...p,
@@ -60,7 +60,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const { supabase } = await requireAdmin(req.headers)
+    const { db } = await requireAdmin(req.headers)
 
     const body = await req.json().catch(() => ({}))
     const email = typeof body?.email === 'string' ? body.email.trim() : ''
@@ -71,7 +71,7 @@ export async function POST(req: Request) {
     if (!email) throw new ApiError(400, 'email_required')
     if (!password || password.length < 6) throw new ApiError(400, 'password_min_6')
 
-    const { data: created, error: cErr } = await supabase.auth.admin.createUser({
+    const { data: created, error: cErr } = await db.auth.admin.createUser({
       email,
       password,
       email_confirm: true,
@@ -81,7 +81,7 @@ export async function POST(req: Request) {
 
     const id = created.user.id
 
-    const { error: pErr } = await supabase.from('profiles').upsert(
+    const { error: pErr } = await db.from('profiles').upsert(
       {
         id,
         role: 'worker',

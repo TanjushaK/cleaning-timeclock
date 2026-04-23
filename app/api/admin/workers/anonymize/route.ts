@@ -1,7 +1,7 @@
 // app/api/admin/workers/anonymize/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { AdminApiErrorCode } from '@/lib/api-error-codes'
-import { ApiError, requireAdmin, supabaseService, toErrorResponse } from '@/lib/supabase-server'
+import { ApiError, requireAdmin, dbService, toErrorResponse } from '@/lib/route-db'
 
 export async function POST(req: NextRequest) {
   try {
@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
       throw new ApiError(409, 'Cannot anonymize yourself', AdminApiErrorCode.ANONYMIZE_SELF_FORBIDDEN)
     }
 
-    const admin = supabaseService()
+    const admin = dbService()
 
     const { data: prof, error: profErr } = await admin
       .from('profiles')

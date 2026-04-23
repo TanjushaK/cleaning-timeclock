@@ -1,15 +1,15 @@
 import { NextResponse } from 'next/server'
 import { AdminApiErrorCode } from '@/lib/api-error-codes'
-import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
+import { ApiError, requireAdmin, toErrorResponse } from '@/lib/route-db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: Request) {
   try {
-    const { supabase } = await requireAdmin(req)
+    const { db } = await requireAdmin(req)
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('jobs')
       .select('*')
 

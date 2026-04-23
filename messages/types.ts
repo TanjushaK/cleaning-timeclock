@@ -4,6 +4,9 @@ export type Messages = {
   };
   common: {
     language: string;
+    themeToggle: string;
+    themeLight: string;
+    themeDark: string;
     loading: string;
     save: string;
     cancel: string;
@@ -35,6 +38,9 @@ export type Messages = {
     phoneConfirmed: string;
     passwordUpdated: string;
     recoveryEmailSent: string;
+    smsCodeDevLog: string;
+    smsResetNeutral: string;
+    smsResetNeutralLive: string;
     profileUpdated: string;
     approvalSubmitted: string;
     photoUploaded: string;
@@ -69,7 +75,7 @@ export type Messages = {
     passwordMismatch: string;
     nameRequired: string;
     api: Record<string, string>;
-    supabase: Record<string, string>;
+    identity: Record<string, string>;
   };
   auth: {
     logout: string;
@@ -101,6 +107,15 @@ export type Messages = {
     howItWorksItem3: string;
     howItWorksItem4: string;
     adminRedirectHint: string;
+    biometricQuickLogin: string;
+    biometricEnable: string;
+    biometricDisable: string;
+    biometricPromptReason: string;
+    biometricPromptTitle: string;
+    biometricCanceled: string;
+    biometricFailed: string;
+    biometricEnabledOk: string;
+    biometricDisabledOk: string;
   };
   nav: {
     home: string;
@@ -202,6 +217,9 @@ export type Messages = {
   forgotPassword: {
     needEmail: string;
     success: string;
+    successEmailSent: string;
+    deliveryDevLog: string;
+    requestAck: string;
     title: string;
     subtitle: string;
     emailLabel: string;

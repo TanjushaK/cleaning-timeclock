@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AdminApiErrorCode } from "@/lib/api-error-codes";
-import { ApiError, requireAdmin, toErrorResponse } from "@/lib/supabase-server";
+import { ApiError, requireAdmin, toErrorResponse } from "@/lib/route-db";
 
 export async function GET(req: NextRequest) {
   try {
-    const { supabase } = await requireAdmin(req);
+    const { db } = await requireAdmin(req);
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from("profiles")
       .select("id, full_name, role, active")
       .order("full_name", { ascending: true });

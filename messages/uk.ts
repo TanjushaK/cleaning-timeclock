@@ -8,6 +8,9 @@ export const uk: Messages = {
   },
   common: {
     language: "Мова",
+    themeToggle: "Перемкнути тему",
+    themeLight: "Світла",
+    themeDark: "Темна",
     loading: "Завантаження…",
     save: "Зберегти",
     cancel: "Скасувати",
@@ -36,7 +39,13 @@ export const uk: Messages = {
     loggedOut: "Ви вийшли.",
     loginSuccess: "Вхід виконано.",
     smsCodeSent: "Код надіслано SMS.",
-    phoneConfirmed: "Номер підтверджено. Тепер задайте новий пароль.",
+    smsCodeDevLog:
+      "SMS не налаштовано — код записано в журнал сервера (var/logs/auth-delivery.log). Введіть його нижче.",
+    smsResetNeutral:
+      "Якщо номер зареєстровано, код може бути в var/logs/auth-delivery.log (SMS ще не повністю налаштовані).",
+    smsResetNeutralLive:
+      "Якщо номер зареєстровано, незабаром надійде SMS з кодом.",
+    phoneConfirmed: "Код прийнято. Задайте новий пароль (мінімум 8 символів).",
     passwordUpdated: "Пароль оновлено. Можна входити паролем.",
     recoveryEmailSent: "Лист для відновлення надіслано. Перевірте пошту.",
     profileUpdated: "Профіль оновлено.",
@@ -73,7 +82,7 @@ export const uk: Messages = {
     passwordMismatch: "Паролі не збігаються",
     nameRequired: "Введіть ім’я",
     api: workerApiErrorsUk,
-    supabase: {
+    identity: {
       invalid_credentials: "Невірний логін або пароль.",
       email_not_confirmed: "Спочатку підтвердіть email.",
       user_not_found: "Користувача не знайдено.",
@@ -116,6 +125,15 @@ export const uk: Messages = {
     howItWorksItem3: "Телефон — відновлення через SMS (якщо прив’язаний до акаунта).",
     howItWorksItem4: "Email — друге відновлення (сторінка /forgot-password або вкладка “По Email”).",
     adminRedirectHint: "Якщо ви адміністратор — після входу вас автоматично перекине в /admin.",
+    biometricQuickLogin: "Увійти через Face ID / відбиток",
+    biometricEnable: "Увімкнути Face ID / відбиток",
+    biometricDisable: "Вимкнути біометрію для входу",
+    biometricPromptReason: "Підтвердіть особу для швидкого входу",
+    biometricPromptTitle: "Біометрія",
+    biometricCanceled: "Вхід із біометрією скасовано.",
+    biometricFailed: "Біометрія не спрацювала. Увійдіть паролем.",
+    biometricEnabledOk: "Швидкий біометричний вхід увімкнено на цьому пристрої.",
+    biometricDisabledOk: "Швидкий біометричний вхід вимкнено.",
   },
   nav: {
     home: "На головну",
@@ -185,7 +203,7 @@ export const uk: Messages = {
     refreshData: "Оновити",
     refreshBusy: "…",
     photosEmptyHint: "Завантажте фото та оберіть аватар.",
-    roleWorkerDefault: "worker",
+    roleWorkerDefault: "працівник",
     activeLabelShort: "active",
     passwordSectionTitle: "Пароль",
     phoneContactPlaceholder: "Телефон (контактний)",
@@ -218,14 +236,18 @@ export const uk: Messages = {
   forgotPassword: {
     needEmail: "Введіть email",
     success: "Посилання надіслано на email. Відкрийте лист і перейдіть за посиланням.",
+    successEmailSent: "Якщо цю адресу знайдено в системі, надіслано лист із посиланням.",
+    deliveryDevLog:
+      "Вихідну пошту не налаштовано (потрібні EMAIL_SEND_ENABLED=1, RESEND_API_KEY та MAIL_FROM) — посилання записано лише в var/logs/auth-delivery.log.",
+    requestAck: "Якщо цей email зареєстровано, будуть надіслані інструкції. Перевірте пошту або журнал сервера.",
     title: "Відновлення пароля",
-    subtitle: "Ми надішлемо посилання на email",
+    subtitle: "Якщо налаштовано Resend — лист надійде на пошту; інакше посилання — у var/logs/auth-delivery.log.",
     emailLabel: "Email",
     emailPlaceholder: "name@example.com",
     sending: "Надсилаю…",
     send: "Надіслати посилання",
     backToLogin: "Назад до входу",
-    redirectHint: "Додайте цей Redirect URL у Supabase Auth:",
+    redirectHint: "Для правильного посилання задайте APP_PUBLIC_ORIGIN у .env відповідно до URL застосунку.",
   },
   resetPassword: {
     passRules: "Пароль мінімум 8 символів і має збігатися в обох полях",

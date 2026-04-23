@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { AdminApiErrorCode } from '@/lib/api-error-codes'
-import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
+import { ApiError, requireAdmin, toErrorResponse } from '@/lib/route-db'
 import crypto from 'crypto'
 
 export const runtime = 'nodejs'
@@ -30,13 +30,13 @@ function genTempPassword(): string {
     .slice(0, 14)
 }
 
-async function findUserIdByEmail(supabase: any, email: string): Promise<string | null> {
+async function findUserIdByEmail(db: any, email: string): Promise<string | null> {
   let page = 1
   const perPage = 200
   const needle = email.trim().toLowerCase()
 
   for (let i = 0; i < 60; i++) {
-    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage })
+    const { data, error } = await db.auth.admin.listUsers({ page, perPage })
     if (error) throw new ApiError(500, error.message || 'listUsers failed', AdminApiErrorCode.INVITE_USER_LOOKUP_FAILED)
 
     const users = data?.users ?? []
@@ -49,13 +49,13 @@ async function findUserIdByEmail(supabase: any, email: string): Promise<string |
   return null
 }
 
-async function findUserIdByPhone(supabase: any, phone: string): Promise<string | null> {
+async function findUserIdByPhone(db: any, phone: string): Promise<string | null> {
   let page = 1
   const perPage = 200
   const needle = phone.trim()
 
   for (let i = 0; i < 60; i++) {
-    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage })
+    const { data, error } = await db.auth.admin.listUsers({ page, perPage })
     if (error) throw new ApiError(500, error.message || 'listUsers failed', AdminApiErrorCode.INVITE_USER_LOOKUP_FAILED)
 
     const users = data?.users ?? []
@@ -70,7 +70,7 @@ async function findUserIdByPhone(supabase: any, phone: string): Promise<string |
 
 export async function POST(req: Request) {
   try {
-    const { supabase, userId } = await requireAdmin(req)
+    const { db, userId } = await requireAdmin(req)
 
     const body = await req.json().catch(() => ({} as any))
 
@@ -102,7 +102,7 @@ export async function POST(req: Request) {
 
     // Try create
     try {
-      const { data, error } = await supabase.auth.admin.createUser({
+      const { data, error } = await db.auth.admin.createUser({
         email: email ?? undefined,
         phone: phone ?? undefined,
         password,
@@ -120,15 +120,15 @@ export async function POST(req: Request) {
       // User exists — treat as "admin reset password"
       existed = true
 
-      if (email) user_id = await findUserIdByEmail(supabase, email)
-      if (!user_id && phone) user_id = await findUserIdByPhone(supabase, phone)
+      if (email) user_id = await findUserIdByEmail(db, email)
+      if (!user_id && phone) user_id = await findUserIdByPhone(db, phone)
       if (!user_id)
         throw new ApiError(400, 'User exists but id could not be resolved', AdminApiErrorCode.INVITE_USER_LOOKUP_FAILED)
 
       // merge metadata (не затираем старое)
       let prevMeta: Record<string, any> = {}
       try {
-        const { data: u } = await supabase.auth.admin.getUserById(user_id)
+        const { data: u } = await db.auth.admin.getUserById(user_id)
         prevMeta = (((u as any)?.user as any)?.user_metadata ?? {}) as Record<string, any>
       } catch {
         // ignore
@@ -154,14 +154,14 @@ export async function POST(req: Request) {
         authPatch.phone_confirm = true
       }
 
-      const { error: uErr } = await supabase.auth.admin.updateUserById(user_id, authPatch)
+      const { error: uErr } = await db.auth.admin.updateUserById(user_id, authPatch)
       if (uErr) throw new ApiError(400, uErr.message || 'updateUser failed', AdminApiErrorCode.AUTH_USER_UPDATE_FAILED)
     }
 
     if (!user_id) throw new ApiError(500, 'Could not create user', AdminApiErrorCode.INVITE_USER_CREATE_FAILED)
 
     // Ensure profile
-    const { error: pErr } = await supabase
+    const { error: pErr } = await db
       .from('profiles')
       .upsert(
         { id: user_id, role, active, email: email ?? null, phone: phone ?? null },

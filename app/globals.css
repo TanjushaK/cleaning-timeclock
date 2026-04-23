@@ -20,6 +20,15 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+html[data-theme="light"] body {
+  background:
+    radial-gradient(900px circle at 18% -8%, rgba(245, 158, 11, 0.12), transparent 55%),
+    radial-gradient(900px circle at 82% 8%, rgba(245, 158, 11, 0.10), transparent 60%),
+    radial-gradient(700px circle at 50% 110%, rgba(245, 158, 11, 0.08), transparent 55%),
+    #fff7ed;
+  color: #292524;
+}
+
 /* iOS PWA safe-area: keep UI controls below the status bar / notch */
 :root {
   --ct-safe-top: env(safe-area-inset-top, 0px);
@@ -84,5 +93,21 @@ select:disabled {
 select option {
   background-color: #0b0b0b;
   color: #e4e4e7;
+}
+
+html[data-theme="light"] select {
+  background-color: rgba(255, 255, 255, 0.9);
+  border-color: rgba(180, 83, 9, 0.35);
+  color: #292524;
+}
+
+html[data-theme="light"] select:focus {
+  border-color: rgba(180, 83, 9, 0.65);
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.16);
+}
+
+html[data-theme="light"] select option {
+  background-color: #fff7ed;
+  color: #292524;
 }
 

@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import type { SupabaseClient } from '@supabase/supabase-js'
 import { AdminApiErrorCode } from '@/lib/api-error-codes'
-import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
+import { ApiError, requireAdmin, toErrorResponse } from '@/lib/route-db'
 
 let ASSIGNMENTS_TABLE: string | null = null
 
-async function resolveAssignmentsTable(admin: SupabaseClient): Promise<string> {
+async function resolveAssignmentsTable(admin: any): Promise<string> {
   if (ASSIGNMENTS_TABLE) return ASSIGNMENTS_TABLE
 
   const candidates = ['assignments', 'site_assignments', 'site_workers', 'worker_sites']
@@ -28,7 +27,7 @@ async function resolveAssignmentsTable(admin: SupabaseClient): Promise<string> {
 
 let JOBS_END_TIME_COL: string | null | undefined = undefined
 
-async function resolveJobsEndTimeColumn(admin: SupabaseClient) {
+async function resolveJobsEndTimeColumn(admin: any) {
   if (JOBS_END_TIME_COL !== undefined) return JOBS_END_TIME_COL
 
   const candidates = ['scheduled_time_to', 'scheduled_end_time', 'scheduled_time_end', 'end_time', 'time_to', 'scheduled_to']
@@ -60,7 +59,7 @@ function normalizeHHMM(v: string) {
 export async function POST(req: NextRequest) {
   try {
     const guard = await requireAdmin(req)
-    const admin = guard.supabase
+    const admin = guard.db
 
     const body = await req.json().catch(() => ({} as any))
 

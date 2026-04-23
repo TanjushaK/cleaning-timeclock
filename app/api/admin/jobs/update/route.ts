@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { AdminApiErrorCode } from '@/lib/api-error-codes'
-import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
+import { ApiError, requireAdmin, toErrorResponse } from '@/lib/route-db'
 
 export async function POST(req: NextRequest) {
   try {
     const guard = await requireAdmin(req)
-    const admin = guard.supabase
+    const admin = guard.db
 
     const body = await req.json().catch(() => ({} as any))
 

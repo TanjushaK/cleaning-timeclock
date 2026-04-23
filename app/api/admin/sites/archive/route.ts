@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { AdminApiErrorCode } from "@/lib/api-error-codes";
-import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { ApiError, requireAdmin, toErrorResponse } from "@/lib/supabase-server";
+import { getDbAdmin } from "@/lib/db-admin";
+import { ApiError, requireAdmin, toErrorResponse } from "@/lib/route-db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,9 +18,9 @@ export async function POST(req: Request) {
       throw new ApiError(400, "site_id is required", AdminApiErrorCode.SITE_ID_REQUIRED);
     }
 
-    const supabase = getSupabaseAdmin();
+    const db = getDbAdmin();
 
-    const { error } = await supabase.from("sites").update({ archived }).eq("id", siteId);
+    const { error } = await db.from("sites").update({ archived }).eq("id", siteId);
 
     if (error) {
       throw new ApiError(500, error.message || "Update failed", AdminApiErrorCode.SITE_UPDATE_FAILED);

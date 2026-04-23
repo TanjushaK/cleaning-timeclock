@@ -1,7 +1,7 @@
 // app/api/admin/workers/delete/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { AdminApiErrorCode } from "@/lib/api-error-codes";
-import { ApiError, requireAdmin, toErrorResponse } from "@/lib/supabase-server";
+import { ApiError, requireAdmin, toErrorResponse } from "@/lib/route-db";
 
 export async function POST(req: NextRequest) {
   try {
@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
     const workerId = String(body?.worker_id || "").trim();
     if (!workerId) throw new ApiError(400, "worker_id is required", AdminApiErrorCode.WORKER_ID_REQUIRED);
 
-    const admin = guard.supabase;
+    const admin = guard.db;
 
     const { data: prof, error: profErr } = await admin.from("profiles").select("id, role").eq("id", workerId).single();
 

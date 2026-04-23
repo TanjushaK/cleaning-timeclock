@@ -1,5 +1,5 @@
 ﻿import { NextRequest, NextResponse } from 'next/server'
-import { ApiError, requireUser, toErrorResponse } from '@/lib/supabase-server'
+import { ApiError, requireUser, toErrorResponse } from '@/lib/route-db'
 import { AppApiErrorCodes } from '@/lib/app-error-codes'
 
 export const runtime = 'nodejs'
@@ -7,9 +7,9 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(req: NextRequest) {
   try {
-    const { supabase, user } = await requireUser(req)
+    const { db, user } = await requireUser(req)
 
-    const { data: profile, error } = await supabase
+    const { data: profile, error } = await db
       .from('profiles')
       .select('id, role, active, full_name, phone, email, avatar_path, notes, onboarding_submitted_at')
       .eq('id', user.id)
@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
     const rawTemp = (user as any)?.user_metadata?.temp_password; const tempPassword = rawTemp === true || rawTemp === 'true' || rawTemp === 1 || rawTemp === '1'
 
     if (!profile) {
-      const { data: created, error: cErr } = await supabase
+      const { data: created, error: cErr } = await db
         .from('profiles')
         .insert({
           id: user.id,
@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
     if (uEmail && !profile.email) patch.email = uEmail
 
     if (Object.keys(patch).length) {
-      await supabase.from('profiles').update(patch).eq('id', user.id)
+      await db.from('profiles').update(patch).eq('id', user.id)
       Object.assign(profile as any, patch)
     }
 

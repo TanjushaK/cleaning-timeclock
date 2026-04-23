@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { AdminApiErrorCode } from '@/lib/api-error-codes'
-import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
+import { localPhotoBucket } from '@/lib/server/local-photo-storage'
+import { ApiError, requireAdmin, toErrorResponse } from '@/lib/route-db'
 
 function truthy(v: string | undefined | null) {
   if (!v) return false
@@ -65,7 +66,7 @@ async function fetchProfiles(sb: any, workerIds: string[]) {
 export async function GET(req: Request) {
   try {
     const admin = await requireAdmin(req)
-    const sb = admin.supabase
+    const sb = admin.db
 
     const url = new URL(req.url)
     const from = (url.searchParams.get('from') || url.searchParams.get('date_from') || '').trim()
@@ -237,7 +238,7 @@ export async function GET(req: Request) {
     const signedByPath = new Map<string, string>()
     const uniqPaths = Array.from(new Set(needSign.filter(Boolean)))
     if (uniqPaths.length) {
-      const { data: signed, error: signErr } = await sb.storage.from(WORKER_BUCKET).createSignedUrls(uniqPaths, ttl)
+      const { data: signed, error: signErr } = await localPhotoBucket(WORKER_BUCKET).createSignedUrls(uniqPaths, ttl)
       if (!signErr && Array.isArray(signed)) {
         for (const s of signed as any[]) {
           const p = s?.path ? String(s.path) : ''

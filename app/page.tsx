@@ -1,8 +1,16 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { supabase } from "@/lib/supabase";
-import { authFetchJson, clearAuthTokens, getAccessToken, setAuthTokens } from "@/lib/auth-fetch";
+import { appAuth } from "@/lib/browser-auth";
+import {
+  biometricHardwareAvailable,
+  clearBiometricStoredCredentials,
+  enableBiometricUnlock,
+  hasBiometricUnlockFlag,
+  isNativeCapacitorApp,
+  unlockSessionWithBiometrics,
+} from "@/lib/biometric-unlock";
+import { authFetchJson, clearAuthTokens, getAccessToken, getRefreshToken, setAuthTokens } from "@/lib/auth-fetch";
 import { clientWorkerErrorMessage } from "@/lib/app-api-message";
 import { FetchApiError } from "@/lib/fetch-api-error";
 import { formatDateShort, formatDateTimeShort, formatWallTime } from "@/lib/locale-format";
@@ -234,6 +242,7 @@ export default function AppPage() {
   const [smsPhone, setSmsPhone] = useState("");
   const [smsOtp, setSmsOtp] = useState("");
   const [smsNewPassword, setSmsNewPassword] = useState("");
+  const [smsResetToken, setSmsResetToken] = useState("");
   const [smsStep, setSmsStep] = useState<"enter_phone" | "enter_code" | "set_password">("enter_phone");
 
   // email recovery link
@@ -249,6 +258,11 @@ export default function AppPage() {
   const [teamByJob, setTeamByJob] = useState<TeamResponse["teams"]>({});
   const [syncing, setSyncing] = useState(false);
 
+  /** Native Capacitor: biometric hardware present and enrolled */
+  const [bioHardware, setBioHardware] = useState(false);
+  /** User chose to save refresh token behind biometrics */
+  const [bioSaved, setBioSaved] = useState(false);
+
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [localStartMs, setLocalStartMs] = useState<Record<string, number>>({});
 
@@ -260,6 +274,28 @@ export default function AppPage() {
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const authed = !!token;
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      if (!isNativeCapacitorApp()) {
+        if (!cancelled) {
+          setBioHardware(false);
+          setBioSaved(false);
+        }
+        return;
+      }
+      const hw = await biometricHardwareAvailable();
+      const saved = hasBiometricUnlockFlag();
+      if (!cancelled) {
+        setBioHardware(hw);
+        setBioSaved(saved);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!authed) return;
@@ -434,7 +470,7 @@ const loadAll = useCallback(async () => {
           setMe(null);
           setJobs([]);
           try {
-            await supabase.auth.signOut();
+            await appAuth.auth.signOut();
           } catch {}
         } else {
           setError(clientWorkerErrorMessage(tr, e));
@@ -500,12 +536,14 @@ const loadAll = useCallback(async () => {
     setError(null);
     setNotice(null);
     try {
+      await clearBiometricStoredCredentials();
+      setBioSaved(false);
       clearAuthTokens();
       setToken(null);
       setMe(null);
       setJobs([]);
       try {
-        await supabase.auth.signOut();
+        await appAuth.auth.signOut();
       } catch {}
       setNotice(tr("feedback.loggedOut"));
     } catch (e: any) {
@@ -514,6 +552,87 @@ const loadAll = useCallback(async () => {
       setBusy(false);
     }
   }, [tr]);
+
+  const bioPrompt = useCallback(
+    () => ({
+      reason: tr("auth.biometricPromptReason"),
+      title: tr("auth.biometricPromptTitle"),
+      subtitle: "",
+      description: "",
+      cancel: tr("common.cancel"),
+    }),
+    [tr],
+  );
+
+  const doEnableBiometric = useCallback(async () => {
+    if (!getRefreshToken()) {
+      setError(tr("errors.sessionExpired"));
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await enableBiometricUnlock(bioPrompt());
+      setBioSaved(true);
+      setNotice(tr("auth.biometricEnabledOk"));
+    } catch (e: unknown) {
+      const msg = String((e as Error)?.message || e || "");
+      if (/user cancel|USER_CANCEL|cancel/i.test(msg)) {
+        setNotice(tr("auth.biometricCanceled"));
+      } else {
+        setError(tr("auth.biometricFailed"));
+      }
+    } finally {
+      setBusy(false);
+    }
+  }, [bioPrompt, tr]);
+
+  const doDisableBiometric = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await clearBiometricStoredCredentials();
+      setBioSaved(false);
+      setNotice(tr("auth.biometricDisabledOk"));
+    } catch (e: unknown) {
+      setError(clientWorkerErrorMessage(tr, e));
+    } finally {
+      setBusy(false);
+    }
+  }, [tr]);
+
+  const doBiometricQuickLogin = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const ok = await unlockSessionWithBiometrics(bioPrompt());
+      if (!ok) throw new Error(tr("auth.biometricFailed"));
+
+      const at = getAccessToken();
+      const rt = getRefreshToken();
+      if (!at) throw new Error(tr("errors.tokenMissing"));
+
+      try {
+        if (rt) await appAuth.auth.setSession({ access_token: at, refresh_token: rt });
+      } catch {}
+
+      setToken(at);
+      await loadAll();
+      setNotice(tr("feedback.loginSuccess"));
+
+      try {
+        const prof = await authFetchJson<MeProfileResponse>("/api/me/profile", { cache: "no-store" });
+        if (prof?.profile?.role === "admin") window.location.href = "/admin";
+      } catch {}
+    } catch (e: unknown) {
+      setError(clientWorkerErrorMessage(tr, e));
+    } finally {
+      setBusy(false);
+    }
+  }, [bioPrompt, loadAll, tr]);
 
   const doEmailPasswordLogin = useCallback(async () => {
     setBusy(true);
@@ -548,10 +667,10 @@ const loadAll = useCallback(async () => {
 
       setAuthTokens(String(payload.access_token), payload.refresh_token ? String(payload.refresh_token) : null);
 
-      // Sync Supabase client session so supabase.auth.updateUser() works after /api/auth/login
+      // Sync browser auth session tokens so profile/password updates stay consistent after /api/auth/login
       try {
         if (payload.refresh_token) {
-          await supabase.auth.setSession({
+          await appAuth.auth.setSession({
             access_token: String(payload.access_token),
             refresh_token: String(payload.refresh_token),
           });
@@ -582,18 +701,28 @@ const loadAll = useCallback(async () => {
       const p = smsPhone.trim();
       if (!isE164(p)) throw new Error(tr("errors.phoneE164"));
 
-      const { error: otpErr } = await supabase.auth.signInWithOtp({
-        phone: p,
-        options: {
-          shouldCreateUser: false,
-        },
+      const res = await fetch("/api/auth/forgot-password-sms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: p }),
       });
+      const payload = (await res.json().catch(() => ({}))) as { errorCode?: string; error?: string };
+      if (!res.ok) {
+        const code = payload?.errorCode ? String(payload.errorCode) : "";
+        if (code) {
+          throw new FetchApiError(`admin.api.${code}`, { status: res.status, errorCode: code });
+        }
+        throw new Error(payload?.error || `HTTP ${res.status}`);
+      }
 
-      if (otpErr) throw new Error(otpErr.message);
+      const cap = (await fetch("/api/auth/sms-capabilities")
+        .then((r) => r.json())
+        .catch(() => ({ outboundSms: false }))) as { outboundSms?: boolean };
 
       setSmsStep("enter_code");
-      setNotice(tr("feedback.smsCodeSent"));
-    } catch (e: any) {
+      setSmsResetToken("");
+      setNotice(cap.outboundSms ? tr("feedback.smsResetNeutralLive") : tr("feedback.smsResetNeutral"));
+    } catch (e: unknown) {
       setError(clientWorkerErrorMessage(tr, e));
     } finally {
       setBusy(false);
@@ -610,20 +739,30 @@ const loadAll = useCallback(async () => {
       if (!isE164(p)) throw new Error(tr("errors.phoneE164"));
       if (!code) throw new Error(tr("errors.enterSmsCode"));
 
-      const { data, error: vErr } = await supabase.auth.verifyOtp({
-        phone: p,
-        token: code,
-        type: "sms",
+      const res = await fetch("/api/auth/verify-reset-sms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: p, code }),
       });
+      const payload = (await res.json().catch(() => ({}))) as {
+        errorCode?: string;
+        error?: string;
+        reset_token?: string;
+      };
+      if (!res.ok) {
+        const codeErr = payload?.errorCode ? String(payload.errorCode) : "";
+        if (codeErr) {
+          throw new FetchApiError(`admin.api.${codeErr}`, { status: res.status, errorCode: codeErr });
+        }
+        throw new Error(payload?.error || `HTTP ${res.status}`);
+      }
+      const tok = payload?.reset_token ? String(payload.reset_token) : "";
+      if (!tok) throw new Error(tr("errors.tokenMissing"));
 
-      if (vErr) throw new Error(vErr.message);
-      if (!data?.session) throw new Error(tr("errors.smsSessionFailed"));
-
-      setAuthTokens(String(data.session.access_token), data.session.refresh_token ? String(data.session.refresh_token) : null);
-      setToken(getAccessToken());
+      setSmsResetToken(tok);
       setSmsStep("set_password");
       setNotice(tr("feedback.phoneConfirmed"));
-    } catch (e: any) {
+    } catch (e: unknown) {
       setError(clientWorkerErrorMessage(tr, e));
     } finally {
       setBusy(false);
@@ -635,27 +774,36 @@ const loadAll = useCallback(async () => {
     setError(null);
     setNotice(null);
     try {
-      const pw = smsNewPassword;
-      if (!pw || pw.trim().length < 6) throw new Error(tr("errors.passwordMin6"));
+      const pw = smsNewPassword.trim();
+      if (!pw || pw.length < 8) throw new Error(tr("errors.passwordMin8"));
+      if (!smsResetToken) throw new Error(tr("errors.sessionExpired"));
 
-      await authFetchJson('/api/me/password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: pw.trim() }),
+      const res = await fetch("/api/auth/reset-password-sms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reset_token: smsResetToken, password: pw }),
       });
+      const payload = (await res.json().catch(() => ({}))) as { errorCode?: string; error?: string };
+      if (!res.ok) {
+        const code = payload?.errorCode ? String(payload.errorCode) : "";
+        if (code) {
+          throw new FetchApiError(`admin.api.${code}`, { status: res.status, errorCode: code });
+        }
+        throw new Error(payload?.error || `HTTP ${res.status}`);
+      }
 
-      await loadAll().catch(() => {});
       setNotice(tr("feedback.passwordUpdated"));
       setTab("login");
       setSmsStep("enter_phone");
       setSmsOtp("");
       setSmsNewPassword("");
-    } catch (e: any) {
+      setSmsResetToken("");
+    } catch (e: unknown) {
       setError(clientWorkerErrorMessage(tr, e));
     } finally {
       setBusy(false);
     }
-  }, [smsNewPassword, loadAll, tr]);
+  }, [smsNewPassword, smsResetToken, tr]);
 
   const doEmailRecovery = useCallback(async () => {
     setBusy(true);
@@ -665,12 +813,12 @@ const loadAll = useCallback(async () => {
       const em = emailRecover.trim().toLowerCase();
       if (!em || !em.includes("@")) throw new Error(tr("errors.validEmailRequired"));
 
-      const redirectTo =
-        typeof window !== "undefined"
-          ? `${window.location.origin}/reset-password`
-          : "https://timeclock.tanjusha.nl/reset-password";
+      if (typeof window === "undefined") {
+        throw new Error(tr("errors.loadFailed"));
+      }
+      const redirectTo = `${window.location.origin}/reset-password`;
 
-      const { error: rErr } = await supabase.auth.resetPasswordForEmail(em, {
+      const { error: rErr } = await appAuth.auth.resetPasswordForEmail(em, {
         redirectTo,
       });
 
@@ -1034,7 +1182,20 @@ const loadAll = useCallback(async () => {
             <div className="text-sm opacity-70">Van Tanija BV Cleaning</div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {authed && bioHardware && (
+              <>
+                {bioSaved ? (
+                  <button type="button" className={clsx(btn, "text-xs")} onClick={doDisableBiometric} disabled={busy}>
+                    {tr("auth.biometricDisable")}
+                  </button>
+                ) : (
+                  <button type="button" className={clsx(btn, "text-xs")} onClick={doEnableBiometric} disabled={busy}>
+                    {tr("auth.biometricEnable")}
+                  </button>
+                )}
+              </>
+            )}
             {authed && (
               <>
                 <a className={btn} href="/me/profile">{tr("nav.profile")}</a>
@@ -1094,6 +1255,12 @@ const loadAll = useCallback(async () => {
               {tab === "login" && (
                 <div className="mt-5 space-y-3">
                   <div className="text-sm opacity-80">{tr("auth.loginHint")}</div>
+
+                  {bioHardware && bioSaved && (
+                    <button type="button" className={clsx(btnSolid, "w-full")} onClick={doBiometricQuickLogin} disabled={busy}>
+                      {tr("auth.biometricQuickLogin")}
+                    </button>
+                  )}
 
                   <input
                     className={input}
@@ -1163,6 +1330,7 @@ const loadAll = useCallback(async () => {
                           onClick={() => {
                             setSmsStep("enter_phone");
                             setSmsOtp("");
+                            setSmsResetToken("");
                           }}
                           disabled={busy}
                         >

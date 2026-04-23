@@ -1,13 +1,13 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { AppApiErrorCodes } from '@/lib/app-error-codes'
-import { ApiError, requireUser, toErrorResponse } from '@/lib/supabase-server'
+import { ApiError, requireUser, toErrorResponse } from '@/lib/route-db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export async function POST(req: Request) {
   try {
-    const { supabase, user, userId } = await requireUser(req)
+    const { db, user, userId } = await requireUser(req)
 
     const body = await req.json().catch(() => ({} as any))
     const password = String(body?.password ?? '').trim()
@@ -27,7 +27,7 @@ export async function POST(req: Request) {
     if ((user as any)?.email) patch.email_confirm = true
     if ((user as any)?.phone) patch.phone_confirm = true
 
-    const { error } = await supabase.auth.admin.updateUserById(userId, patch)
+    const { error } = await db.auth.admin.updateUserById(userId, patch)
 
     if (error) throw new ApiError(400, error.message, AppApiErrorCodes.PASSWORD_UPDATE_FAILED)
 

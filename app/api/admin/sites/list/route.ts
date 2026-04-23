@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AdminApiErrorCode } from "@/lib/api-error-codes";
 import { shapeSiteForAdmin } from "@/lib/admin-sites-shape.server";
+import { localPhotoBucket } from "@/lib/server/local-photo-storage";
 import { requestLocale } from "@/lib/request-lang";
-import { ApiError, requireAdmin, toErrorResponse } from "@/lib/supabase-server";
+import { ApiError, requireAdmin, toErrorResponse } from "@/lib/route-db";
 
 type SitePhoto = { path: string; url?: string; created_at?: string | null };
 
@@ -43,12 +44,12 @@ const SITE_FIELDS =
 
 export async function GET(req: NextRequest) {
   try {
-    const { supabase } = await requireAdmin(req.headers);
+    const { db } = await requireAdmin(req.headers);
     const loc = requestLocale(req);
 
     const includeArchived = req.nextUrl.searchParams.get("include_archived") === "1";
 
-    let q = supabase.from("sites").select(SITE_FIELDS).order("name", { ascending: true });
+    let q = db.from("sites").select(SITE_FIELDS).order("name", { ascending: true });
 
     if (!includeArchived) {
       q = q.is("archived_at", null);
@@ -60,12 +61,12 @@ export async function GET(req: NextRequest) {
     const sites = (data ?? []).map((s: Record<string, unknown>) => ({
       ...shapeSiteForAdmin(s, loc),
       photos: normalizePhotos(s.photos),
-    }));
+    })) as Array<ReturnType<typeof shapeSiteForAdmin> & { photos: SitePhoto[] }>;
 
     const allPaths = Array.from(
       new Set(
         sites
-          .flatMap((s) => (Array.isArray(s.photos) ? s.photos : []))
+          .flatMap((s) => s.photos)
           .map((p) => (p?.path ? String(p.path) : ""))
           .filter(Boolean),
       ),
@@ -73,7 +74,7 @@ export async function GET(req: NextRequest) {
 
     if (allPaths.length > 0) {
       const ttl = getSignedTtlSeconds();
-      const { data: signed, error: signErr } = await supabase.storage.from(BUCKET).createSignedUrls(allPaths, ttl);
+      const { data: signed, error: signErr } = await localPhotoBucket(BUCKET).createSignedUrls(allPaths, ttl);
 
       if (!signErr && Array.isArray(signed)) {
         const urlByPath = new Map<string, string>();

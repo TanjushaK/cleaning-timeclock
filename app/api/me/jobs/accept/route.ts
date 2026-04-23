@@ -1,17 +1,17 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { AppApiErrorCodes } from '@/lib/app-error-codes'
-import { ApiError, requireActiveWorker, toErrorResponse } from '@/lib/supabase-server'
+import { ApiError, requireActiveWorker, toErrorResponse } from '@/lib/route-db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 let ASSIGN_TABLE: string | null | undefined = undefined
 
-async function resolveAssignmentsTable(supabase: any): Promise<string | null> {
+async function resolveAssignmentsTable(db: any): Promise<string | null> {
   if (ASSIGN_TABLE !== undefined) return ASSIGN_TABLE
   const candidates = ['assignments', 'site_assignments', 'site_workers', 'worker_sites']
   for (const t of candidates) {
-    const { error } = await supabase.from(t).select('site_id,worker_id').limit(1)
+    const { error } = await db.from(t).select('site_id,worker_id').limit(1)
     if (!error) {
       ASSIGN_TABLE = t
       return t
@@ -35,12 +35,12 @@ async function resolveAssignmentsTable(supabase: any): Promise<string | null> {
 
 export async function POST(req: Request) {
   try {
-    const { supabase, userId } = await requireActiveWorker(req)
+    const { db, userId } = await requireActiveWorker(req)
     const body = await req.json().catch(() => ({} as any))
     const jobId = String(body?.jobId || body?.job_id || body?.id || '').trim()
     if (!jobId) throw new ApiError(400, 'job id required', AppApiErrorCodes.JOB_ID_REQUIRED)
 
-    const { data: job, error: jErr } = await supabase
+    const { data: job, error: jErr } = await db
       .from('jobs')
       .select('id,status,worker_id,site_id')
       .eq('id', jobId)
@@ -60,10 +60,10 @@ export async function POST(req: Request) {
     const siteId = String(job.site_id || '').trim()
     if (!siteId) throw new ApiError(400, 'site_id missing', AppApiErrorCodes.JOB_SITE_ID_MISSING)
 
-    const t = await resolveAssignmentsTable(supabase)
+    const t = await resolveAssignmentsTable(db)
     if (!t) throw new ApiError(500, 'assignments table missing', AppApiErrorCodes.ASSIGNMENTS_TABLE_MISSING)
 
-    const { data: a, error: aErr } = await supabase
+    const { data: a, error: aErr } = await db
       .from(t)
       .select('site_id,worker_id')
       .eq('site_id', siteId)
@@ -73,7 +73,7 @@ export async function POST(req: Request) {
     if (aErr) throw new ApiError(400, aErr.message, AppApiErrorCodes.JOB_ACCEPT_QUERY_FAILED)
     if (!Array.isArray(a) || a.length === 0) throw new ApiError(403, 'Site not assigned', AppApiErrorCodes.SITE_NOT_IN_ASSIGNMENTS)
 
-    const { error: updErr } = await supabase
+    const { error: updErr } = await db
       .from('jobs')
       .update({ worker_id: userId })
       .eq('id', jobId)

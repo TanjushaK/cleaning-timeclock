@@ -23,8 +23,8 @@ export function clientApiErrorMessage(t: TFn, e: unknown): string {
 }
 
 /**
- * Worker UI: JSON API errors (`errorCode` → `errors.api.*`) plus Supabase Auth `{ code }`
- * → `errors.supabase.*`.
+ * Worker UI: JSON API errors (`errorCode` → `errors.api.*`) plus legacy `{ code }` payloads
+ * → `errors.identity.*`.
  */
 export function clientWorkerErrorMessage(t: TFn, e: unknown): string {
   if (e instanceof FetchApiError) {
@@ -33,7 +33,7 @@ export function clientWorkerErrorMessage(t: TFn, e: unknown): string {
   if (e && typeof e === "object" && "code" in e) {
     const code = (e as { code?: unknown }).code;
     if (typeof code === "string" && code) {
-      const key = `errors.supabase.${code}`;
+      const key = `errors.identity.${code}`;
       const m = t(key);
       if (m !== key) return m;
     }
