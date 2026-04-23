@@ -22,8 +22,8 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "Van Tanija BV Cleaning • Timeclock",
-  description: "Van Tanija BV Cleaning — Cleaning Timeclock",
+  title: "Cleaning Timeclock • Van Tanija BV",
+  description: "Cleaning Timeclock by Van Tanija BV",
   icons: { icon: "/icons/icon-192.png", apple: "/icons/icon-192.png" },
   manifest: "/manifest.webmanifest",
   appleWebApp: {

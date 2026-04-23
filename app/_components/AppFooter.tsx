@@ -21,6 +21,8 @@ export default function AppFooter() {
           <Link href="/terms">{t("legalNav.terms")}</Link>
           <span className="appFooterSep">·</span>
           <Link href="/support">{t("legalNav.support")}</Link>
+          <span className="appFooterSep">·</span>
+          <Link href="/contact">{t("legalNav.contact")}</Link>
         </span>
       </div>
     </footer>
