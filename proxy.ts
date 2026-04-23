@@ -49,13 +49,10 @@ function rewriteIfNeeded(req: NextRequest): NextResponse | null {
     return NextResponse.rewrite(url);
   }
 
-  const mSitePhotos = pathname.match(/^\/api\/admin\/sites\/([^/]+)\/photos$/);
-  if (mSitePhotos && UUID_RE.test(mSitePhotos[1])) {
-    const url = req.nextUrl.clone();
-    url.pathname = "/api/admin/sites-photos";
-    url.searchParams.set("id", mSitePhotos[1]);
-    return NextResponse.rewrite(url);
-  }
+  // Site photos also have a first-class dynamic route at:
+  // /api/admin/sites/[id]/photos.
+  // Keep this path direct to avoid proxy protocol mismatch behind reverse proxy
+  // (EPROTO from https->localhost rewrite hop).
 
   return null;
 }
