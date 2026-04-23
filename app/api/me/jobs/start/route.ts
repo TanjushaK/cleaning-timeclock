@@ -1,7 +1,7 @@
-// app/api/me/jobs/start/route.ts
+﻿// app/api/me/jobs/start/route.ts
 import { NextResponse } from 'next/server';
 import { AppApiErrorCodes } from '@/lib/app-error-codes';
-import { ApiError, requireActiveWorker, toErrorResponse } from '@/lib/supabase-server';
+import { ApiError, requireActiveWorker, toErrorResponse } from '@/lib/route-db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -46,7 +46,7 @@ function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number)
 export async function POST(req: Request) {
   try {
     const guard = await requireActiveWorker(req);
-    const supabase = guard.supabase;
+    const db = guard.db;
     const uid = guard.userId;
 
     const body: StartBody = await req.json().catch(() => ({} as StartBody));
@@ -62,7 +62,7 @@ export async function POST(req: Request) {
       throw new ApiError(400, 'GPS lat/lng/accuracy required', AppApiErrorCodes.GPS_LAT_LNG_ACCURACY_REQUIRED);
     }
 
-    const { data: jobRaw, error: jobErr } = await supabase
+    const { data: jobRaw, error: jobErr } = await db
       .from('jobs')
       .select('id,status,worker_id,site:sites(lat,lng,radius)')
       .eq('id', jobId)
@@ -80,7 +80,7 @@ export async function POST(req: Request) {
     let allowed = job.worker_id === uid;
 
     if (!allowed) {
-      const { data: linkRaw, error: linkErr } = await supabase
+      const { data: linkRaw, error: linkErr } = await db
         .from('job_workers')
         .select('job_id')
         .eq('job_id', jobId)
@@ -124,7 +124,7 @@ export async function POST(req: Request) {
 
     const startedAt = new Date().toISOString();
 
-    const { error: insErr } = await supabase.from('time_logs').insert({
+    const { error: insErr } = await db.from('time_logs').insert({
       job_id: jobId,
       worker_id: uid,
       started_at: startedAt,
@@ -135,7 +135,7 @@ export async function POST(req: Request) {
 
     if (insErr) throw new ApiError(400, insErr.message, AppApiErrorCodes.JOB_ACCEPT_UPDATE_FAILED);
 
-    const { error: updErr } = await supabase.from('jobs').update({ status: 'in_progress' }).eq('id', jobId);
+    const { error: updErr } = await db.from('jobs').update({ status: 'in_progress' }).eq('id', jobId);
     if (updErr) throw new ApiError(400, updErr.message, AppApiErrorCodes.JOB_ACCEPT_UPDATE_FAILED);
 
     return NextResponse.json({ ok: true }, { status: 200 });

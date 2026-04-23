@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
-import { supabase } from '@/lib/supabase'
+import { appAuth } from '@/lib/browser-auth'
 import { getAccessToken, getRefreshToken, setAuthTokens } from '@/lib/auth-fetch'
 
 export default function ClientSessionWarmup() {
@@ -12,8 +12,8 @@ export default function ClientSessionWarmup() {
 
     void (async () => {
       try {
-        // 1) Try to hydrate supabase-js session from our stored tokens
-        const { error } = await supabase.auth.setSession({ access_token: at, refresh_token: rt })
+        // 1) Hydrate in-memory auth session from stored tokens
+        const { error } = await appAuth.auth.setSession({ access_token: at, refresh_token: rt })
         if (!error) return
 
         // 2) If access token is stale — refresh via API, then hydrate again
@@ -30,7 +30,7 @@ export default function ClientSessionWarmup() {
         const at2 = getAccessToken()
         const rt2 = getRefreshToken()
         if (!at2 || !rt2) return
-        await supabase.auth.setSession({ access_token: at2, refresh_token: rt2 })
+        await appAuth.auth.setSession({ access_token: at2, refresh_token: rt2 })
       } catch {
         // best-effort
       }

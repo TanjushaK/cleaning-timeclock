@@ -8,9 +8,12 @@ jobs:
     runs-on: ubuntu-latest
     env:
       NEXT_TELEMETRY_DISABLED: "1"
-      NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co"
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: "dummy_ci_anon_key"
-      SUPABASE_SERVICE_ROLE_KEY: "dummy_ci_service_role_key"
+      # Build-time placeholders for self-host stack (no external SaaS)
+      APP_PUBLIC_ORIGIN: "http://localhost:3000"
+      DATABASE_URL: "postgres://ci:ci@127.0.0.1:5432/ci"
+      JWT_SECRET: "ci_jwt_secret_at_least_32_characters_min"
+      STORAGE_SIGNING_SECRET: "ci_storage_signing_at_least_32_characters"
+      UPLOAD_ROOT: "./var/uploads"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

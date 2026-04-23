@@ -1,11 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { AdminApiErrorCode } from '@/lib/api-error-codes'
-import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
+import { localPhotoBucket } from '@/lib/server/local-photo-storage'
+import { ApiError, requireAdmin, toErrorResponse } from '@/lib/route-db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 type AvatarKey = 'avatar_path' | 'avatar_url' | 'photo_path' | null
+
+type PendingWorkerRow = {
+  id: string
+  full_name: unknown
+  phone: unknown
+  email: unknown
+  onboarding_submitted_at: unknown
+  avatar_ref: string | null
+}
 
 function parseBucketRef(raw: string | undefined | null, fallbackBucket: string) {
   const s = String(raw || '').trim().replace(/^\/+|\/+$/g, '')
@@ -39,7 +49,7 @@ async function resolveAvatarKey(sb: any): Promise<AvatarKey> {
 export async function GET(req: NextRequest) {
   try {
     const admin = await requireAdmin(req)
-    const sb = admin.supabase
+    const sb = admin.db
 
     const avatarKey = await resolveAvatarKey(sb)
 
@@ -65,7 +75,7 @@ export async function GET(req: NextRequest) {
 
     if (error) throw new ApiError(500, error.message || 'Database error', AdminApiErrorCode.DB_ERROR)
 
-    const rows = (data || []).map((p: any) => {
+    const rows: PendingWorkerRow[] = (data || []).map((p: Record<string, unknown>): PendingWorkerRow => {
       const avatar_ref = avatarKey ? (p[avatarKey] ? String(p[avatarKey]) : null) : null
       return {
         id: String(p.id),
@@ -95,7 +105,7 @@ export async function GET(req: NextRequest) {
     const signedByPath = new Map<string, string>()
     const uniq = Array.from(new Set(needSign))
     if (uniq.length) {
-      const { data: signed, error: signErr } = await sb.storage.from(WORKER_BUCKET).createSignedUrls(uniq, ttl)
+      const { data: signed, error: signErr } = await localPhotoBucket(WORKER_BUCKET).createSignedUrls(uniq, ttl)
       if (!signErr && Array.isArray(signed)) {
         for (const s of signed as any[]) {
           const p = s?.path ? String(s.path) : ''

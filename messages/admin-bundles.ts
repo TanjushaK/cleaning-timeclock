@@ -463,8 +463,8 @@ export const ADMIN_EN: Messages["admin"] = {
   },
   approvals: {
     title: "Tanija • Admin • Activations",
-    pendingIntro: "New workers (inactive): {{count}}",
-    createWorker: "Create worker",
+    pendingIntro: "New employees (inactive): {{count}}",
+    createWorker: "Create employee",
     inviteHint:
       "Enter an email — we’ll send an invite. The employee can then sign in via email (code/link) — no SMS.",
     invitePlaceholder: "name@domain.com or +31612345678",
@@ -528,10 +528,10 @@ export const ADMIN_EN: Messages["admin"] = {
   hours: {
     title: "Tanija • Admin • Hours",
     subtitleLogin: "Sign in with email/password",
-    subtitle: "How many hours the worker logged (day/week/month/period)",
-    worker: "Worker",
-    pickWorker: "Choose worker",
-    errPickWorker: "Choose a worker",
+    subtitle: "How many hours the employee logged (day/week/month/period)",
+    worker: "Employee",
+    pickWorker: "Choose employee",
+    errPickWorker: "Choose an employee",
     dateFrom: "Date from",
     dateTo: "Date to",
     openCalendar: "Open calendar",

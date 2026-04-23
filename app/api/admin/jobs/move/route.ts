@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { AdminApiErrorCode } from '@/lib/api-error-codes'
-import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
+import { ApiError, requireAdmin, toErrorResponse } from '@/lib/route-db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -94,7 +94,7 @@ export async function POST(req: Request) {
 
     if (Object.keys(patch).length === 0) throw new ApiError(400, 'Nothing to update', AdminApiErrorCode.NOTHING_TO_UPDATE)
 
-    const { data, error } = await guard.supabase
+    const { data, error } = await guard.db
       .from('jobs')
       .update(patch)
       .eq('id', jobId)

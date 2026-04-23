@@ -1,7 +1,7 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { appAuth } from "@/lib/browser-auth";
 import { clientWorkerErrorMessage } from "@/lib/app-api-message";
 import { FetchApiError } from "@/lib/fetch-api-error";
 import AppFooter from "@/app/_components/AppFooter";
@@ -27,27 +27,19 @@ export default function ResetPasswordPage() {
         const code = url.searchParams.get("code");
 
         if (code) {
-          const { error } = await supabase.auth.exchangeCodeForSession(code);
+          const { error } = await appAuth.auth.exchangeCodeForSession(code);
           if (error) throw error;
-        } else {
-          const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
-          const access_token = hash.get("access_token");
-          const refresh_token = hash.get("refresh_token");
-          if (access_token && refresh_token) {
-            const { error } = await supabase.auth.setSession({ access_token, refresh_token });
-            if (error) throw error;
-          }
         }
 
-        const { data } = await supabase.auth.getSession();
+        const { data } = await appAuth.auth.getSession();
         if (data?.session) setReady(true);
       } catch {
-        // show open-from-email hint
+        // missing or invalid code — keep hint below
       }
     })();
 
-    unsub = supabase.auth.onAuthStateChange((event) => {
-      if (event === "PASSWORD_RECOVERY") setReady(true);
+    unsub = appAuth.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") setReady(true);
     });
 
     return () => {
@@ -65,7 +57,7 @@ export default function ResetPasswordPage() {
 
     setBusy(true);
     try {
-      const { data } = await supabase.auth.getSession();
+      const { data } = await appAuth.auth.getSession();
       const at = data?.session?.access_token ? String(data.session.access_token) : null;
       if (!at) throw new Error(t("resetPassword.sessionMissing"));
 
@@ -84,7 +76,7 @@ export default function ResetPasswordPage() {
       }
 
       setMsg(t("resetPassword.success"));
-      await supabase.auth.signOut();
+      await appAuth.auth.signOut();
       setTimeout(() => {
         window.location.href = "/";
       }, 900);
@@ -118,9 +110,7 @@ export default function ResetPasswordPage() {
                 placeholder={t("resetPassword.minChars")}
                 type="password"
                 className="w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 text-zinc-100 outline-none transition focus:border-amber-300/60"
-                autoComplete="new-password"
               />
-
               <label className="block text-sm text-zinc-300">{t("resetPassword.repeatLabel")}</label>
               <input
                 value={pass2}
@@ -128,9 +118,7 @@ export default function ResetPasswordPage() {
                 placeholder={t("resetPassword.repeatPlaceholder")}
                 type="password"
                 className="w-full rounded-2xl border border-amber-400/20 bg-black/40 px-4 py-3 text-zinc-100 outline-none transition focus:border-amber-300/60"
-                autoComplete="new-password"
               />
-
               <button
                 onClick={() => void onSave()}
                 disabled={busy || !canSave}
@@ -138,21 +126,17 @@ export default function ResetPasswordPage() {
               >
                 {busy ? t("resetPassword.saving") : t("resetPassword.save")}
               </button>
-
-              {msg ? (
-                <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">{msg}</div>
-              ) : null}
-
-              {err ? (
-                <div className="rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">{err}</div>
-              ) : null}
             </div>
           )}
 
-          <a
-            href="/"
-            className="mt-6 block text-center text-sm text-zinc-400 underline decoration-amber-300/40 underline-offset-4 hover:text-zinc-200"
-          >
+          {msg ? (
+            <div className="mt-4 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">{msg}</div>
+          ) : null}
+          {err ? (
+            <div className="mt-4 rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">{err}</div>
+          ) : null}
+
+          <a href="/" className="mt-6 block text-center text-sm text-zinc-400 underline decoration-amber-300/40 underline-offset-4 hover:text-zinc-200">
             {t("resetPassword.home")}
           </a>
         </div>

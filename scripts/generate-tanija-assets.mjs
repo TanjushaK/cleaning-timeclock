@@ -41,11 +41,6 @@ const main = await sharp(src)
 
 console.log("tanija-logo.png", main);
 
-await sharp(src)
-  .resize(180, 180, { fit: "cover", position: "centre" })
-  .png()
-  .toFile(path.join(publicDir, "apple-touch-icon.png"));
-
 const iconsDir = path.join(publicDir, "icons");
 fs.mkdirSync(iconsDir, { recursive: true });
 

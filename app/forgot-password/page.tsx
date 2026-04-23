@@ -1,7 +1,7 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { appAuth } from "@/lib/browser-auth";
 import { clientWorkerErrorMessage } from "@/lib/app-api-message";
 import AppFooter from "@/app/_components/AppFooter";
 import { useI18n } from "@/components/I18nProvider";
@@ -26,9 +26,12 @@ export default function ForgotPasswordPage() {
     setBusy(true);
     try {
       const redirectTo = `${window.location.origin}/reset-password`;
-      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo });
+      const { data, error } = await appAuth.auth.resetPasswordForEmail(email.trim(), { redirectTo });
       if (error) throw error;
-      setMsg(t("forgotPassword.success"));
+      const delivery = data?.delivery;
+      if (delivery === "sent") setMsg(t("forgotPassword.successEmailSent"));
+      else if (delivery === "dev_log") setMsg(t("forgotPassword.deliveryDevLog"));
+      else setMsg(t("forgotPassword.requestAck"));
     } catch (e: unknown) {
       setErr(clientWorkerErrorMessage(t, e));
     } finally {

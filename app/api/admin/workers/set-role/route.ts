@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AdminApiErrorCode } from "@/lib/api-error-codes";
-import { ApiError, requireAdmin, toErrorResponse } from "@/lib/supabase-server";
+import { ApiError, requireAdmin, toErrorResponse } from "@/lib/route-db";
 
 export async function POST(req: NextRequest) {
   try {
@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
     const patch: Record<string, unknown> = { role };
     if (role === "admin") patch.active = true;
 
-    const { error } = await guard.supabase.from("profiles").update(patch).eq("id", workerId);
+    const { error } = await guard.db.from("profiles").update(patch).eq("id", workerId);
     if (error) throw new ApiError(500, error.message || "Update failed", AdminApiErrorCode.DB_ERROR);
 
     return NextResponse.json({ ok: true });

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { AdminApiErrorCode } from '@/lib/api-error-codes'
-import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
+import { ApiError, requireAdmin, toErrorResponse } from '@/lib/route-db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -39,7 +39,7 @@ function parseHM(s: string): number | null {
 export async function POST(req: Request) {
   try {
     const guard = await requireAdmin(req)
-    const sb = guard.supabase
+    const sb = guard.db
 
     const body = await req.json().catch(() => ({} as any))
     const jobId = String(body?.job_id || body?.jobId || '').trim()

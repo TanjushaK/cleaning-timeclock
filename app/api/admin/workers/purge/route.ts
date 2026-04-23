@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { AdminApiErrorCode } from '@/lib/api-error-codes'
-import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
+import { ApiError, requireAdmin, toErrorResponse } from '@/lib/route-db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -35,7 +35,7 @@ async function tryUpdateIn(sb: any, table: string, patch: any, col: string, ids:
 export async function POST(req: Request) {
   try {
     const guard = await requireAdmin(req)
-    const sb = guard.supabase
+    const sb = guard.db
 
     const out: {
       ok: boolean

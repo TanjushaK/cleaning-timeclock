@@ -6,7 +6,8 @@ import { parseLang, type Lang } from "@/lib/i18n-config";
 import type { I18nJson } from "@/lib/localized-records";
 import { parseI18nJson, ruSourceText, setI18nLocale } from "@/lib/localized-records";
 import { requestLocale } from "@/lib/request-lang";
-import { ApiError, requireAdmin, toErrorResponse } from "@/lib/supabase-server";
+import { ApiError, requireAdmin, toErrorResponse } from "@/lib/route-db";
+import { routeDynamicId } from "@/lib/server/route-dynamic-id";
 
 export const runtime = "nodejs";
 
@@ -28,9 +29,8 @@ function toCategoryOrNull(v: unknown): number | null {
   return i;
 }
 
-async function getSiteIdFromCtx(ctx: { params?: Promise<{ id?: string }> }): Promise<string> {
-  const p = await Promise.resolve(ctx?.params);
-  const id = String(p?.id || "").trim();
+async function getSiteIdFromReq(req: Request, ctx: unknown): Promise<string> {
+  const id = await routeDynamicId(req, ctx);
   if (!id) throw new ApiError(400, "Missing site id", AdminApiErrorCode.SITE_ID_REQUIRED);
   return id;
 }
@@ -43,11 +43,11 @@ function normTextField(v: unknown): string | null {
 
 export async function GET(req: Request, ctx: { params?: Promise<{ id?: string }> }) {
   try {
-    const { supabase } = await requireAdmin(req.headers);
-    const siteId = await getSiteIdFromCtx(ctx);
+    const { db } = await requireAdmin(req.headers);
+    const siteId = await getSiteIdFromReq(req, ctx);
     const loc = requestLocale(req);
 
-    const { data, error } = await supabase.from("sites").select(SITE_FIELDS).eq("id", siteId).single();
+    const { data, error } = await db.from("sites").select(SITE_FIELDS).eq("id", siteId).single();
 
     if (error || !data) throw new ApiError(404, "Site not found", AdminApiErrorCode.SITE_NOT_FOUND);
 
@@ -59,12 +59,12 @@ export async function GET(req: Request, ctx: { params?: Promise<{ id?: string }>
 
 export async function PUT(req: Request, ctx: { params?: Promise<{ id?: string }> }) {
   try {
-    const { supabase } = await requireAdmin(req.headers);
-    const siteId = await getSiteIdFromCtx(ctx);
+    const { db } = await requireAdmin(req.headers);
+    const siteId = await getSiteIdFromReq(req, ctx);
     const loc = requestLocale(req);
     const body = await req.json().catch(() => ({}));
 
-    const { data: existing, error: exErr } = await supabase
+    const { data: existing, error: exErr } = await db
       .from("sites")
       .select(SITE_FIELDS)
       .eq("id", siteId)
@@ -98,7 +98,7 @@ export async function PUT(req: Request, ctx: { params?: Promise<{ id?: string }>
         throw e;
       }
 
-      const { data: updated, error: updErr } = await supabase
+      const { data: updated, error: updErr } = await db
         .from("sites")
         .update({ name_i18n: nameI18n, address_i18n: addressI18n, notes_i18n: notesI18n })
         .eq("id", siteId)
@@ -156,7 +156,7 @@ export async function PUT(req: Request, ctx: { params?: Promise<{ id?: string }>
     if (body?.category !== undefined) patch.category = toCategoryOrNull(body.category);
 
     if (Object.keys(patch).length === 0) {
-      const { data, error } = await supabase.from("sites").select(SITE_FIELDS).eq("id", siteId).single();
+      const { data, error } = await db.from("sites").select(SITE_FIELDS).eq("id", siteId).single();
 
       if (error) throw new ApiError(404, "Site not found", AdminApiErrorCode.SITE_NOT_FOUND);
       return NextResponse.json({ site: shapeSiteForAdmin(data as Record<string, unknown>, loc) }, { status: 200 });
@@ -167,7 +167,7 @@ export async function PUT(req: Request, ctx: { params?: Promise<{ id?: string }>
       if (!n || !String(n).trim()) throw new ApiError(400, "Site name required", AdminApiErrorCode.SITE_NAME_REQUIRED);
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from("sites")
       .update(patch)
       .eq("id", siteId)
@@ -184,10 +184,10 @@ export async function PUT(req: Request, ctx: { params?: Promise<{ id?: string }>
 
 export async function DELETE(req: Request, ctx: { params?: Promise<{ id?: string }> }) {
   try {
-    const { supabase } = await requireAdmin(req.headers);
-    const siteId = await getSiteIdFromCtx(ctx);
+    const { db } = await requireAdmin(req.headers);
+    const siteId = await getSiteIdFromReq(req, ctx);
 
-    const { error } = await supabase.from("sites").delete().eq("id", siteId);
+    const { error } = await db.from("sites").delete().eq("id", siteId);
 
     if (error) {
       throw new ApiError(

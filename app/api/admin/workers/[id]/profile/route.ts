@@ -4,7 +4,8 @@ import { fillMissingLocalesFromRu } from "@/lib/deepl-fill.server";
 import { parseLang, type Lang } from "@/lib/i18n-config";
 import { parseI18nJson, resolveI18nField, ruSourceText, setI18nLocale } from "@/lib/localized-records";
 import { requestLocale } from "@/lib/request-lang";
-import { ApiError, requireAdmin, toErrorResponse } from "@/lib/supabase-server";
+import { routeDynamicId } from "@/lib/server/route-dynamic-id";
+import { ApiError, requireAdmin, toErrorResponse } from "@/lib/route-db";
 
 type NotesKey = "notes" | "extra_note" | "note" | null;
 type AvatarKey = "avatar_path" | "avatar_url" | "photo_path" | null;
@@ -12,12 +13,12 @@ type AvatarKey = "avatar_path" | "avatar_url" | "photo_path" | null;
 let NOTES_KEY: NotesKey = null;
 let AVATAR_KEY: AvatarKey = null;
 
-async function resolveNotesKey(supabase: { from: (t: string) => unknown }): Promise<NotesKey> {
+async function resolveNotesKey(db: { from: (t: string) => unknown }): Promise<NotesKey> {
   if (NOTES_KEY) return NOTES_KEY;
   const candidates: NotesKey[] = ["notes", "extra_note", "note"];
   for (const k of candidates) {
     if (!k) continue;
-    const { error } = await (supabase.from("profiles") as any).select(k).limit(1);
+    const { error } = await (db.from("profiles") as any).select(k).limit(1);
     if (!error) {
       NOTES_KEY = k;
       return k;
@@ -29,12 +30,12 @@ async function resolveNotesKey(supabase: { from: (t: string) => unknown }): Prom
   return NOTES_KEY;
 }
 
-async function resolveAvatarKey(supabase: { from: (t: string) => unknown }): Promise<AvatarKey> {
+async function resolveAvatarKey(db: { from: (t: string) => unknown }): Promise<AvatarKey> {
   if (AVATAR_KEY) return AVATAR_KEY;
   const candidates: AvatarKey[] = ["avatar_path", "avatar_url", "photo_path"];
   for (const k of candidates) {
     if (!k) continue;
-    const { error } = await (supabase.from("profiles") as any).select(k).limit(1);
+    const { error } = await (db.from("profiles") as any).select(k).limit(1);
     if (!error) {
       AVATAR_KEY = k;
       return k;
@@ -90,21 +91,20 @@ function shapeWorker(
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     const guard = await requireAdmin(req);
-    const supabase = (guard as { supabase: any }).supabase;
+    const db = (guard as { db: any }).db;
     const loc = requestLocale(req);
 
-    const params = await ctx.params;
-    const workerId = String(params?.id || "").trim();
+    const workerId = await routeDynamicId(req, ctx);
     if (!workerId) throw new ApiError(400, "Worker id required", AdminApiErrorCode.WORKER_ID_REQUIRED);
 
-    const notesKey = await resolveNotesKey(supabase);
-    const avatarKey = await resolveAvatarKey(supabase);
+    const notesKey = await resolveNotesKey(db);
+    const avatarKey = await resolveAvatarKey(db);
 
     const selectCols = ["id", "full_name", "role", "active", "phone", "email", "full_name_i18n", "notes_i18n"];
     if (notesKey) selectCols.push(notesKey);
     if (avatarKey) selectCols.push(avatarKey);
 
-    const { data: prof, error: profErr } = await supabase
+    const { data: prof, error: profErr } = await db
       .from("profiles")
       .select(selectCols.join(","))
       .eq("id", workerId)
@@ -116,7 +116,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     let authEmail: string | null = null;
     let authPhone: string | null = null;
     try {
-      const { data: u } = await supabase.auth.admin.getUserById(workerId);
+      const { data: u } = await db.auth.admin.getUserById(workerId);
       authEmail = u?.user?.email ?? null;
       authPhone = (u?.user as { phone?: string | null })?.phone ?? null;
     } catch {
@@ -136,17 +136,16 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     const guard = await requireAdmin(req);
-    const supabase = (guard as { supabase: any }).supabase;
+    const db = (guard as { db: any }).db;
     const loc = requestLocale(req);
 
-    const params = await ctx.params;
-    const workerId = String(params?.id || "").trim();
+    const workerId = await routeDynamicId(req, ctx);
     if (!workerId) throw new ApiError(400, "Worker id required", AdminApiErrorCode.WORKER_ID_REQUIRED);
 
     const body = await req.json().catch(() => ({}));
 
-    const notesKey = await resolveNotesKey(supabase);
-    const avatarKey = await resolveAvatarKey(supabase);
+    const notesKey = await resolveNotesKey(db);
+    const avatarKey = await resolveAvatarKey(db);
 
     if (body?.fillMissingTranslations === true) {
       const apiKey = process.env.DEEPL_API_KEY?.trim();
@@ -155,7 +154,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       const selectCols = ["id", "full_name", "full_name_i18n", "notes_i18n"];
       if (notesKey) selectCols.push(notesKey);
 
-      const { data: prof, error: profErr } = await supabase
+      const { data: prof, error: profErr } = await db
         .from("profiles")
         .select(selectCols.join(","))
         .eq("id", workerId)
@@ -183,15 +182,15 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
       const patch: Record<string, unknown> = { full_name_i18n: fnI, notes_i18n: nI };
 
-      const { error: updErr } = await supabase.from("profiles").update(patch).eq("id", workerId);
+      const { error: updErr } = await db.from("profiles").update(patch).eq("id", workerId);
       if (updErr) throw new ApiError(500, updErr.message || "Update failed", AdminApiErrorCode.PROFILE_UPDATE_FAILED);
 
-      const avatarKey2 = await resolveAvatarKey(supabase);
+      const avatarKey2 = await resolveAvatarKey(db);
       const selectCols2 = ["id", "full_name", "role", "active", "phone", "email", "full_name_i18n", "notes_i18n"];
       if (notesKey) selectCols2.push(notesKey);
       if (avatarKey2) selectCols2.push(avatarKey2);
 
-      const { data: prof2, error: p2e } = await supabase
+      const { data: prof2, error: p2e } = await db
         .from("profiles")
         .select(selectCols2.join(","))
         .eq("id", workerId)
@@ -202,7 +201,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
       let authEmail: string | null = null;
       let authPhone: string | null = null;
       try {
-        const { data: u } = await supabase.auth.admin.getUserById(workerId);
+        const { data: u } = await db.auth.admin.getUserById(workerId);
         authEmail = u?.user?.email ?? null;
         authPhone = (u?.user as { phone?: string | null })?.phone ?? null;
       } catch {
@@ -218,7 +217,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
     const editLocale: Lang = parseLang(body?.editLocale) ?? "ru";
 
-    const { data: existing, error: exErr } = await supabase
+    const { data: existing, error: exErr } = await db
       .from("profiles")
       .select(["id", "full_name", "full_name_i18n", "notes_i18n", notesKey, avatarKey].filter(Boolean).join(","))
       .eq("id", workerId)
@@ -281,7 +280,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
 
     if (Object.keys(authPatch).length > 0) {
       try {
-        const { error: uErr } = await supabase.auth.admin.updateUserById(workerId, authPatch);
+        const { error: uErr } = await db.auth.admin.updateUserById(workerId, authPatch);
         if (uErr) throw new ApiError(400, uErr.message || "Auth update failed", AdminApiErrorCode.AUTH_USER_UPDATE_FAILED);
       } catch (e: unknown) {
         if (e instanceof ApiError) throw e;
@@ -290,7 +289,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     }
 
     if (Object.keys(profilePatch).length > 0) {
-      const { error: updErr } = await supabase.from("profiles").update(profilePatch).eq("id", workerId);
+      const { error: updErr } = await db.from("profiles").update(profilePatch).eq("id", workerId);
       if (updErr) throw new ApiError(500, updErr.message || "Update failed", AdminApiErrorCode.PROFILE_UPDATE_FAILED);
     }
 
@@ -298,7 +297,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     if (notesKey) selectCols.push(notesKey);
     if (avatarKey) selectCols.push(avatarKey);
 
-    const { data: prof2, error: p2e } = await supabase
+    const { data: prof2, error: p2e } = await db
       .from("profiles")
       .select(selectCols.filter(Boolean).join(","))
       .eq("id", workerId)
@@ -309,7 +308,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     let authEmail: string | null = null;
     let authPhone: string | null = null;
     try {
-      const { data: u } = await supabase.auth.admin.getUserById(workerId);
+      const { data: u } = await db.auth.admin.getUserById(workerId);
       authEmail = u?.user?.email ?? null;
       authPhone = (u?.user as { phone?: string | null })?.phone ?? null;
     } catch {

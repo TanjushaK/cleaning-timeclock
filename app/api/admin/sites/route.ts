@@ -4,7 +4,7 @@ import { shapeSiteForAdmin } from "@/lib/admin-sites-shape.server";
 import { fillMissingLocalesFromRu } from "@/lib/deepl-fill.server";
 import type { I18nJson } from "@/lib/localized-records";
 import { requestLocale } from "@/lib/request-lang";
-import { ApiError, requireAdmin, toErrorResponse } from "@/lib/supabase-server";
+import { ApiError, requireAdmin, toErrorResponse } from "@/lib/route-db";
 
 export const runtime = "nodejs";
 
@@ -73,7 +73,7 @@ async function geocodeAddress(address: string): Promise<{ lat: number; lng: numb
 
 export async function POST(req: Request) {
   try {
-    const { supabase } = await requireAdmin(req.headers);
+    const { db } = await requireAdmin(req.headers);
     const body = await req.json();
     const loc = requestLocale(req);
 
@@ -120,7 +120,7 @@ export async function POST(req: Request) {
       }
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from("sites")
       .insert({
         name,

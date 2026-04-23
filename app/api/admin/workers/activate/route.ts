@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { AdminApiErrorCode } from '@/lib/api-error-codes'
-import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
+import { ApiError, requireAdmin, toErrorResponse } from '@/lib/route-db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -25,7 +25,7 @@ async function resolveAvatarKey(sb: any): Promise<AvatarKey> {
 export async function POST(req: Request) {
   try {
     const admin = await requireAdmin(req)
-    const sb = admin.supabase
+    const sb = admin.db
 
     const body = await req.json().catch(() => ({} as any))
     const worker_id = String(body?.worker_id || body?.id || '').trim()

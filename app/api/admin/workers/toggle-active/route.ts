@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { AdminApiErrorCode } from "@/lib/api-error-codes";
-import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { ApiError, requireAdmin, toErrorResponse } from "@/lib/supabase-server";
+import { getDbAdmin } from "@/lib/db-admin";
+import { ApiError, requireAdmin, toErrorResponse } from "@/lib/route-db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,9 +18,9 @@ export async function POST(req: Request) {
       throw new ApiError(400, "worker_id is required", AdminApiErrorCode.WORKER_ID_REQUIRED);
     }
 
-    const supabase = getSupabaseAdmin();
+    const db = getDbAdmin();
 
-    const { error } = await supabase.from("profiles").update({ active }).eq("id", workerId);
+    const { error } = await db.from("profiles").update({ active }).eq("id", workerId);
 
     if (error) {
       throw new ApiError(500, error.message || "Update failed", AdminApiErrorCode.PROFILE_UPDATE_FAILED);

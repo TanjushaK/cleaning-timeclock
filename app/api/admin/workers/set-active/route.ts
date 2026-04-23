@@ -1,7 +1,7 @@
 // app/api/admin/workers/set-active/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { AdminApiErrorCode } from "@/lib/api-error-codes";
-import { ApiError, requireAdmin, toErrorResponse } from "@/lib/supabase-server";
+import { ApiError, requireAdmin, toErrorResponse } from "@/lib/route-db";
 
 export async function POST(req: NextRequest) {
   try {
@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
 
     if (!workerId) throw new ApiError(400, "worker_id is required", AdminApiErrorCode.WORKER_ID_REQUIRED);
 
-    const { data: prof, error: profErr } = await guard.supabase
+    const { data: prof, error: profErr } = await guard.db
       .from("profiles")
       .select("id, role")
       .eq("id", workerId)
@@ -24,11 +24,11 @@ export async function POST(req: NextRequest) {
       throw new ApiError(409, "Cannot disable an admin", AdminApiErrorCode.WORKER_ADMIN_DISABLE_FORBIDDEN);
     }
 
-    const { error: updErr } = await guard.supabase.from("profiles").update({ active }).eq("id", workerId);
+    const { error: updErr } = await guard.db.from("profiles").update({ active }).eq("id", workerId);
     if (updErr) throw new ApiError(500, updErr.message || "Update failed", AdminApiErrorCode.DB_ERROR);
 
     if (!active) {
-      await guard.supabase.from("assignments").delete().eq("worker_id", workerId);
+      await guard.db.from("assignments").delete().eq("worker_id", workerId);
     }
 
     return NextResponse.json({ ok: true });

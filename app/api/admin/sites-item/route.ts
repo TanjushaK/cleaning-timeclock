@@ -5,8 +5,11 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function getId(req: NextRequest) {
-  const id = String(req.nextUrl.searchParams.get("id") || "").trim();
-  return id;
+  const fromQuery = String(req.nextUrl.searchParams.get("id") || "").trim();
+  if (fromQuery) return fromQuery;
+  const pathname = req.nextUrl.pathname || "";
+  const pretty = pathname.match(/^\/api\/admin\/sites\/([^/]+)$/);
+  return pretty?.[1]?.trim() || "";
 }
 
 export async function GET(req: NextRequest) {

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireAdmin, toErrorResponse } from '@/lib/supabase-server'
+import { requireAdmin, toErrorResponse } from '@/lib/route-db'
 
 export const runtime = 'nodejs'
 

@@ -1,8 +1,8 @@
-// app/api/me/jobs/team/route.ts
+﻿// app/api/me/jobs/team/route.ts
 import { NextResponse } from "next/server";
 import { AppApiErrorCodes } from "@/lib/app-error-codes";
 import { workerApiErrorResponse } from "@/lib/worker-api-response";
-import { requireActiveWorker, toErrorResponse } from "@/lib/supabase-server";
+import { requireActiveWorker, toErrorResponse } from "@/lib/route-db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,18 +41,18 @@ function displayName(p: ProfileRow | undefined, fallbackId: string) {
 export async function GET(req: Request) {
   try {
     const guard = await requireActiveWorker(req);
-    const supabase = guard.supabase;
+    const db = guard.db;
     const uid = guard.userId;
 
     const jobIds = new Set<string>();
 
     // 1) Jobs, где worker_id = uid
-    const { data: directJobs, error: directErr } = await supabase.from("jobs").select("id").eq("worker_id", uid);
+    const { data: directJobs, error: directErr } = await db.from("jobs").select("id").eq("worker_id", uid);
     if (directErr) return workerApiErrorResponse(400, AppApiErrorCodes.JOB_TEAM_QUERY_FAILED, directErr.message);
     for (const j of (directJobs as Array<{ id: string }> | null) || []) jobIds.add(j.id);
 
     // 2) Jobs, где worker в job_workers
-    const { data: links, error: linksErr } = await supabase.from("job_workers").select("job_id").eq("worker_id", uid);
+    const { data: links, error: linksErr } = await db.from("job_workers").select("job_id").eq("worker_id", uid);
     if (linksErr) return workerApiErrorResponse(400, AppApiErrorCodes.JOB_TEAM_QUERY_FAILED, linksErr.message);
     for (const r of (links as Array<{ job_id: string | null }> | null) || []) {
       if (r.job_id) jobIds.add(r.job_id);
@@ -65,13 +65,13 @@ export async function GET(req: Request) {
     const byJob: Record<string, Set<string>> = {};
     for (const id of ids) byJob[id] = new Set<string>();
 
-    const { data: jobs, error: jobsErr } = await supabase.from("jobs").select("id,worker_id").in("id", ids);
+    const { data: jobs, error: jobsErr } = await db.from("jobs").select("id,worker_id").in("id", ids);
     if (jobsErr) return workerApiErrorResponse(400, AppApiErrorCodes.JOB_TEAM_QUERY_FAILED, jobsErr.message);
     for (const j of (jobs as unknown as JobRow[] | null) || []) {
       if (j && j.id && j.worker_id) byJob[j.id]?.add(j.worker_id);
     }
 
-    const { data: jw, error: jwErr } = await supabase
+    const { data: jw, error: jwErr } = await db
       .from("job_workers")
       .select("job_id,worker_id,accepted_at")
       .in("job_id", ids);
@@ -90,7 +90,7 @@ export async function GET(req: Request) {
     const wids = Array.from(workerIds);
 
     for (const part of chunk(wids, 200)) {
-      const { data: ps, error: pErr } = await supabase.from("profiles").select("id,full_name,email").in("id", part);
+      const { data: ps, error: pErr } = await db.from("profiles").select("id,full_name,email").in("id", part);
       if (pErr) return workerApiErrorResponse(400, AppApiErrorCodes.JOB_TEAM_QUERY_FAILED, pErr.message);
       for (const p of (ps as unknown as ProfileRow[] | null) || []) {
         if (p && p.id) profilesById[p.id] = p;

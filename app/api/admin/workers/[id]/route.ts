@@ -1,17 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { ApiError, requireAdmin } from '@/lib/supabase-server'
+import { routeDynamicId } from '@/lib/server/route-dynamic-id'
+import { ApiError, requireAdmin } from '@/lib/route-db'
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  ctx: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await params
+    const id = await routeDynamicId(req, ctx)
     if (!id) throw new ApiError(400, 'id_required')
 
-    const { supabase } = await requireAdmin(req.headers)
+    const { db } = await requireAdmin(req.headers)
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('profiles')
       .select('id, full_name, phone, role')
       .eq('id', id)
@@ -29,13 +30,13 @@ export async function GET(
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  ctx: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await params
+    const id = await routeDynamicId(req, ctx)
     if (!id) throw new ApiError(400, 'id_required')
 
-    const { supabase } = await requireAdmin(req.headers)
+    const { db } = await requireAdmin(req.headers)
 
     let body: any = null
     try {
@@ -57,7 +58,7 @@ export async function PATCH(
 
     if (Object.keys(updates).length === 0) throw new ApiError(400, 'no_updates')
 
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from('profiles')
       .update(updates)
       .eq('id', id)
@@ -76,15 +77,15 @@ export async function PATCH(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  ctx: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await params
+    const id = await routeDynamicId(req, ctx)
     if (!id) throw new ApiError(400, 'id_required')
 
-    const { supabase } = await requireAdmin(req.headers)
+    const { db } = await requireAdmin(req.headers)
 
-    const { error } = await supabase.from('profiles').delete().eq('id', id)
+    const { error } = await db.from('profiles').delete().eq('id', id)
     if (error) throw new ApiError(400, error.message)
 
     return NextResponse.json({ ok: true })

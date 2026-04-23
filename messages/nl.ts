@@ -8,6 +8,9 @@ export const nl: Messages = {
   },
   common: {
     language: "Taal",
+    themeToggle: "Thema wisselen",
+    themeLight: "Licht",
+    themeDark: "Donker",
     loading: "Laden…",
     save: "Opslaan",
     cancel: "Annuleren",
@@ -36,7 +39,13 @@ export const nl: Messages = {
     loggedOut: "Je bent uitgelogd.",
     loginSuccess: "Succesvol ingelogd.",
     smsCodeSent: "SMS-code verzonden.",
-    phoneConfirmed: "Telefoonnummer bevestigd. Stel nu een nieuw wachtwoord in.",
+    smsCodeDevLog:
+      "SMS is niet geconfigureerd — de code staat in het serverlog (var/logs/auth-delivery.log). Voer hem hieronder in.",
+    smsResetNeutral:
+      "Als dit nummer bekend is, kan de code in var/logs/auth-delivery.log staan (SMS nog niet volledig geconfigureerd).",
+    smsResetNeutralLive:
+      "Als dit nummer bekend is, ontvang je zo een SMS met een code.",
+    phoneConfirmed: "Code geaccepteerd. Stel een nieuw wachtwoord in (minimaal 8 tekens).",
     passwordUpdated: "Wachtwoord bijgewerkt. Je kunt nu met je wachtwoord inloggen.",
     recoveryEmailSent: "Herstelmail verzonden. Controleer je inbox.",
     profileUpdated: "Profiel bijgewerkt.",
@@ -73,7 +82,7 @@ export const nl: Messages = {
     passwordMismatch: "Wachtwoorden komen niet overeen",
     nameRequired: "Voer je naam in",
     api: workerApiErrorsNl,
-    supabase: {
+    identity: {
       invalid_credentials: "Ongeldige login of wachtwoord.",
       email_not_confirmed: "Bevestig eerst je e-mail.",
       user_not_found: "Gebruiker niet gevonden.",
@@ -116,6 +125,15 @@ export const nl: Messages = {
     howItWorksItem3: "Telefoon — herstel via SMS (als gekoppeld aan het account).",
     howItWorksItem4: "E-mail — tweede herstelmethode (de pagina /forgot-password of het tabblad “Via e-mail”).",
     adminRedirectHint: "Als je beheerder bent, word je na het inloggen automatisch doorgestuurd naar /admin.",
+    biometricQuickLogin: "Inloggen met Face ID / vingerafdruk",
+    biometricEnable: "Face ID / vingerafdruk inschakelen",
+    biometricDisable: "Biometrische snelle login uitschakelen",
+    biometricPromptReason: "Bevestig je identiteit voor snelle toegang",
+    biometricPromptTitle: "Biometrie",
+    biometricCanceled: "Biometrische login geannuleerd.",
+    biometricFailed: "Biometrie mislukt. Log in met je wachtwoord.",
+    biometricEnabledOk: "Biometrische snelle login staat aan op dit apparaat.",
+    biometricDisabledOk: "Biometrische snelle login staat uit.",
   },
   nav: {
     home: "Home",
@@ -185,7 +203,7 @@ export const nl: Messages = {
     refreshData: "Vernieuwen",
     refreshBusy: "…",
     photosEmptyHint: "Upload een foto en kies een avatar.",
-    roleWorkerDefault: "worker",
+    roleWorkerDefault: "medewerker",
     activeLabelShort: "active",
     passwordSectionTitle: "Wachtwoord",
     phoneContactPlaceholder: "Telefoon (contact)",
@@ -218,14 +236,18 @@ export const nl: Messages = {
   forgotPassword: {
     needEmail: "Voer e-mail in",
     success: "Link verzonden naar e-mail. Open het bericht en volg de link.",
+    successEmailSent: "Als dit adres bekend is, is er een e-mail met een resetlink verzonden.",
+    deliveryDevLog:
+      "Uitgaande e-mail is niet geconfigureerd (EMAIL_SEND_ENABLED=1, RESEND_API_KEY en MAIL_FROM) — de resetlink staat alleen in var/logs/auth-delivery.log.",
+    requestAck: "Als dit e-mailadres geregistreerd is, volgen instructies. Controleer inbox of serverlog.",
     title: "Wachtwoord resetten",
-    subtitle: "We sturen een link naar je e-mail",
+    subtitle: "Met Resend gaat de link per e-mail; anders naar var/logs/auth-delivery.log.",
     emailLabel: "E-mail",
     emailPlaceholder: "naam@voorbeeld.nl",
     sending: "Verzenden…",
     send: "Link verzenden",
     backToLogin: "Terug naar inloggen",
-    redirectHint: "Voeg deze Redirect URL toe in Supabase Auth:",
+    redirectHint: "Zet APP_PUBLIC_ORIGIN in .env gelijk aan de URL van deze app voor een correcte link.",
   },
   resetPassword: {
     passRules: "Wachtwoord minimaal 8 tekens en beide velden moeten overeenkomen",

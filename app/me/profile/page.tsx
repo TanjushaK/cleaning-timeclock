@@ -1,7 +1,7 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { appAuth } from "@/lib/browser-auth";
 import { clientWorkerErrorMessage } from "@/lib/app-api-message";
 import { authFetchJson, clearAuthTokens, getAccessToken } from "@/lib/auth-fetch";
 import { FetchApiError } from "@/lib/fetch-api-error";
@@ -111,7 +111,7 @@ export default function WorkerProfilePage() {
   const logout = useCallback(() => {
     clearAuthTokens();
     try {
-      void supabase.auth.signOut();
+      void appAuth.auth.signOut();
     } catch {
       // ignore
     }

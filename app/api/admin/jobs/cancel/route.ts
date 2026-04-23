@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { requireAdmin, toErrorResponse } from '@/lib/supabase-server'
+import { requireAdmin, toErrorResponse } from '@/lib/route-db'
 
 function jsonError(status: number, message: string, details?: any) {
   return NextResponse.json(
@@ -8,7 +8,7 @@ function jsonError(status: number, message: string, details?: any) {
   )
 }
 
-type SupabaseErr = {
+type DbCompatErr = {
   code?: string
   message?: string
   details?: string | null
@@ -16,18 +16,18 @@ type SupabaseErr = {
 }
 
 async function deleteRowsByJobId(
-  supabase: any,
+  db: any,
   table: string,
   jobId: string,
   columns: string[]
-): Promise<{ ok: true; used?: string } | { ok: false; error: SupabaseErr } | { ok: true; skipped: true }>{
+): Promise<{ ok: true; used?: string } | { ok: false; error: DbCompatErr } | { ok: true; skipped: true }>{
   // Try each possible column name; ignore "column does not exist" errors.
-  // Supabase/Postgres error code for undefined column is 42703.
+  // db/Postgres error code for undefined column is 42703.
   for (const col of columns) {
-    const res = await supabase.from(table).delete().eq(col, jobId)
+    const res = await db.from(table).delete().eq(col, jobId)
     if (!res?.error) return { ok: true, used: col }
 
-    const err = res.error as SupabaseErr
+    const err = res.error as DbCompatErr
     if (err?.code === '42703') {
       // Column doesn't exist in this schema; try next.
       continue
@@ -60,7 +60,7 @@ export async function POST(req: Request) {
     }
 
     // 0) Load job (optional rule: only allow delete if planned)
-    const jobRes = await guard.supabase
+    const jobRes = await guard.db
       .from('jobs')
       .select('id,status')
       .eq('id', jobId)
@@ -81,7 +81,7 @@ export async function POST(req: Request) {
 
     // 1) Delete join rows (assignments) with schema-probing (no DB migrations).
     // Your DB might use a different FK column name; we try common variants.
-    const delAssign = await deleteRowsByJobId(guard.supabase, 'assignments', jobId, [
+    const delAssign = await deleteRowsByJobId(guard.db, 'assignments', jobId, [
       'job_id',
       'jobId',
       'job',
@@ -95,7 +95,7 @@ export async function POST(req: Request) {
     }
 
     // 2) Delete the job itself
-    const delJob = await guard.supabase.from('jobs').delete().eq('id', jobId)
+    const delJob = await guard.db.from('jobs').delete().eq('id', jobId)
     if (delJob.error) {
       return jsonError(500, 'Failed to delete job', delJob.error)
     }

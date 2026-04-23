@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AdminApiErrorCode } from "@/lib/api-error-codes";
-import { ApiError, requireAdmin, toErrorResponse } from "@/lib/supabase-server";
+import { ApiError, requireAdmin, toErrorResponse } from "@/lib/route-db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,7 +11,7 @@ function isISODate(s: string) {
 
 export async function GET(req: NextRequest) {
   try {
-    const { supabase: admin } = await requireAdmin(req);
+    const { db: admin } = await requireAdmin(req);
 
     const sp = req.nextUrl.searchParams;
 

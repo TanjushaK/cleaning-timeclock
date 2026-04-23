@@ -1,7 +1,10 @@
 ﻿// app/api/me/photos/route.ts
 import { NextRequest, NextResponse } from 'next/server'
+import sharp from 'sharp'
 import { AppApiErrorCodes } from '@/lib/app-error-codes'
-import { ApiError, requireUser, toErrorResponse } from '@/lib/supabase-server'
+import { localPhotoBucket } from '@/lib/server/local-photo-storage'
+import type { StorageBucketClient } from '@/lib/server/compat/storage-shim'
+import { ApiError, requireUser, toErrorResponse } from '@/lib/route-db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -139,10 +142,10 @@ async function resolveAvatarKey(sb: any): Promise<AvatarKey> {
   return 'avatar_path'
 }
 
-async function listPhotos(sb: any, userId: string): Promise<Photo[]> {
+async function listPhotos(bucketClient: StorageBucketClient, userId: string): Promise<Photo[]> {
   const p = pref(userId)
 
-  const { data, error } = await sb.storage.from(BUCKET).list(p, {
+  const { data, error } = await bucketClient.list(p, {
     limit: 100,
     sortBy: { column: 'created_at', order: 'desc' },
   })
@@ -154,7 +157,7 @@ async function listPhotos(sb: any, userId: string): Promise<Photo[]> {
 
   const ttl = getTtl()
   const urlByPath = new Map<string, string>()
-  const { data: signed, error: signErr } = await sb.storage.from(BUCKET).createSignedUrls(paths, ttl)
+  const { data: signed, error: signErr } = await bucketClient.createSignedUrls(paths, ttl)
   if (!signErr && Array.isArray(signed)) {
     for (const s of signed as any[]) {
       const pp = s?.path ? String(s.path) : ''
@@ -171,12 +174,13 @@ async function listPhotos(sb: any, userId: string): Promise<Photo[]> {
 
 export async function GET(req: NextRequest) {
   try {
-    const { supabase, userId } = await requireUser(req)
+    const { db, userId } = await requireUser(req)
+    const bucketClient = localPhotoBucket(BUCKET)
 
-    const photos = await listPhotos(supabase, userId)
+    const photos = await listPhotos(bucketClient, userId)
 
-    const avatarKey = await resolveAvatarKey(supabase)
-    const { data: prof } = await supabase.from('profiles').select(avatarKey).eq('id', userId).maybeSingle()
+    const avatarKey = await resolveAvatarKey(db)
+    const { data: prof } = await db.from('profiles').select(avatarKey).eq('id', userId).maybeSingle()
     const avatar_path = prof ? String((prof as any)[avatarKey] || '') : ''
 
     return NextResponse.json({ photos, avatar_path: avatar_path || null })
@@ -187,9 +191,10 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { supabase, userId } = await requireUser(req)
+    const { db, userId } = await requireUser(req)
+    const bucketClient = localPhotoBucket(BUCKET)
 
-    const current = await listPhotos(supabase, userId)
+    const current = await listPhotos(bucketClient, userId)
     if (current.length >= 5) throw new ApiError(400, 'Photo limit reached', AppApiErrorCodes.PHOTOS_LIMIT_REACHED)
 
     const form = await req.formData()
@@ -198,31 +203,35 @@ export async function POST(req: NextRequest) {
 
     validateImageFile(file)
 
-    const ext = canonicalExt(file)
+    let ext = canonicalExt(file)
     const base = safeName(file.name.replace(/\.[^.]+$/, '')) || 'photo'
+    let bytes = Buffer.from(await file.arrayBuffer())
+    const mime = String(file.type || '').toLowerCase()
+    if (ext === 'heic' || ext === 'heif') {
+      bytes = Buffer.from(await sharp(bytes).rotate().jpeg({ quality: 85 }).toBuffer())
+      ext = 'jpg'
+    }
     const filename = `${Date.now()}_${base}.${ext}`
 
     const path = `${pref(userId)}/${filename}`
-    const bytes = Buffer.from(await file.arrayBuffer())
 
-    const mime = String(file.type || '').toLowerCase()
-    const contentType = ALLOWED_IMAGE_TYPES.has(mime) ? String(file.type) : contentTypeFor(ext)
+    const contentType = ext === 'jpg' ? 'image/jpeg' : ALLOWED_IMAGE_TYPES.has(mime) ? String(file.type) : contentTypeFor(ext)
 
-    const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, bytes, {
+    const { error: upErr } = await bucketClient.upload(path, bytes, {
       contentType,
       upsert: false,
     })
     if (upErr) throw new ApiError(500, upErr.message, AppApiErrorCodes.PHOTOS_UPLOAD_FAILED)
 
-    const avatarKey = await resolveAvatarKey(supabase)
-    const { data: prof } = await supabase.from('profiles').select(avatarKey).eq('id', userId).maybeSingle()
+    const avatarKey = await resolveAvatarKey(db)
+    const { data: prof } = await db.from('profiles').select(avatarKey).eq('id', userId).maybeSingle()
     const cur = prof ? (prof as any)[avatarKey] : null
     if (!cur) {
-      await supabase.from('profiles').update({ [avatarKey]: path }).eq('id', userId)
+      await db.from('profiles').update({ [avatarKey]: path }).eq('id', userId)
     }
 
-    const photos = await listPhotos(supabase, userId)
-    const { data: prof2 } = await supabase.from('profiles').select(avatarKey).eq('id', userId).maybeSingle()
+    const photos = await listPhotos(bucketClient, userId)
+    const { data: prof2 } = await db.from('profiles').select(avatarKey).eq('id', userId).maybeSingle()
     const avatar_path = prof2 ? String((prof2 as any)[avatarKey] || '') : ''
 
     return NextResponse.json({ photos, avatar_path: avatar_path || null })
@@ -233,7 +242,8 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
-    const { supabase, userId } = await requireUser(req)
+    const { db, userId } = await requireUser(req)
+    const bucketClient = localPhotoBucket(BUCKET)
     const body = await req.json().catch(() => ({} as any))
 
     const action = String(body?.action || '')
@@ -242,11 +252,11 @@ export async function PATCH(req: NextRequest) {
     if (!path) throw new ApiError(400, 'path required', AppApiErrorCodes.PHOTOS_PATH_REQUIRED)
     if (!path.startsWith(`${pref(userId)}/`)) throw new ApiError(403, 'forbidden', AppApiErrorCodes.PHOTOS_FORBIDDEN)
 
-    const avatarKey = await resolveAvatarKey(supabase)
-    const r = await supabase.from('profiles').update({ [avatarKey]: path }).eq('id', userId)
+    const avatarKey = await resolveAvatarKey(db)
+    const r = await db.from('profiles').update({ [avatarKey]: path }).eq('id', userId)
     if (r.error) throw new ApiError(400, r.error.message, AppApiErrorCodes.PHOTOS_UPDATE_FAILED)
 
-    const photos = await listPhotos(supabase, userId)
+    const photos = await listPhotos(bucketClient, userId)
     return NextResponse.json({ photos, avatar_path: path })
   } catch (e) {
     return toErrorResponse(e)
@@ -255,27 +265,28 @@ export async function PATCH(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
-    const { supabase, userId } = await requireUser(req)
+    const { db, userId } = await requireUser(req)
+    const bucketClient = localPhotoBucket(BUCKET)
     const body = await req.json().catch(() => ({} as any))
 
     const path = String(body?.path || '').trim()
     if (!path) throw new ApiError(400, 'path required', AppApiErrorCodes.PHOTOS_PATH_REQUIRED)
     if (!path.startsWith(`${pref(userId)}/`)) throw new ApiError(403, 'forbidden', AppApiErrorCodes.PHOTOS_FORBIDDEN)
 
-    const { error: delErr } = await supabase.storage.from(BUCKET).remove([path])
+    const { error: delErr } = await bucketClient.remove([path])
     if (delErr) throw new ApiError(500, delErr.message, AppApiErrorCodes.PHOTOS_DELETE_FAILED)
 
-    const avatarKey = await resolveAvatarKey(supabase)
-    const photos = await listPhotos(supabase, userId)
+    const avatarKey = await resolveAvatarKey(db)
+    const photos = await listPhotos(bucketClient, userId)
 
-    const { data: prof } = await supabase.from('profiles').select(avatarKey).eq('id', userId).maybeSingle()
+    const { data: prof } = await db.from('profiles').select(avatarKey).eq('id', userId).maybeSingle()
     const cur = prof ? (prof as any)[avatarKey] : null
     if (cur && String(cur) === path) {
       const nextAvatar = photos[0]?.path || null
-      await supabase.from('profiles').update({ [avatarKey]: nextAvatar }).eq('id', userId)
+      await db.from('profiles').update({ [avatarKey]: nextAvatar }).eq('id', userId)
     }
 
-    const { data: prof2 } = await supabase.from('profiles').select(avatarKey).eq('id', userId).maybeSingle()
+    const { data: prof2 } = await db.from('profiles').select(avatarKey).eq('id', userId).maybeSingle()
     const avatar_path = prof2 ? String((prof2 as any)[avatarKey] || '') : ''
 
     return NextResponse.json({ photos, avatar_path: avatar_path || null })

@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+﻿import { NextRequest, NextResponse } from 'next/server'
 import { AppApiErrorCodes } from '@/lib/app-error-codes'
-import { requireActiveWorker, toErrorResponse } from '@/lib/supabase-server'
+import { localPhotoBucket } from '@/lib/server/local-photo-storage'
+import { requireActiveWorker, toErrorResponse } from '@/lib/route-db'
 import { workerApiErrorResponse } from '@/lib/worker-api-response'
 
 export const runtime = 'nodejs'
@@ -81,11 +82,11 @@ const { bucket: SITE_PHOTOS_BUCKET } = parseBucketRef(RAW_BUCKET, 'site-photos')
 
 let ASSIGN_TABLE: string | null | undefined = undefined
 
-async function resolveAssignmentsTable(supabase: any): Promise<string | null> {
+async function resolveAssignmentsTable(db: any): Promise<string | null> {
   if (ASSIGN_TABLE !== undefined) return ASSIGN_TABLE
   const candidates = ['assignments', 'site_assignments', 'site_workers', 'worker_sites']
   for (const t of candidates) {
-    const { error } = await supabase.from(t).select('site_id,worker_id').limit(1)
+    const { error } = await db.from(t).select('site_id,worker_id').limit(1)
     if (!error) {
       ASSIGN_TABLE = t
       return t
@@ -107,11 +108,11 @@ async function resolveAssignmentsTable(supabase: any): Promise<string | null> {
   return null
 }
 
-async function getAssignedSiteIds(supabase: any, workerId: string): Promise<string[]> {
+async function getAssignedSiteIds(db: any, workerId: string): Promise<string[]> {
   try {
-    const t = await resolveAssignmentsTable(supabase)
+    const t = await resolveAssignmentsTable(db)
     if (!t) return []
-    const { data, error } = await supabase.from(t).select('site_id').eq('worker_id', workerId)
+    const { data, error } = await db.from(t).select('site_id').eq('worker_id', workerId)
     if (error) return []
     return Array.from(new Set((data || []).map((x: any) => String(x.site_id)).filter(Boolean)))
   } catch {
@@ -119,9 +120,9 @@ async function getAssignedSiteIds(supabase: any, workerId: string): Promise<stri
   }
 }
 
-async function getJobWorkerJobIds(supabase: any, workerId: string): Promise<string[]> {
+async function getJobWorkerJobIds(db: any, workerId: string): Promise<string[]> {
   try {
-    const { data, error } = await supabase.from('job_workers').select('job_id').eq('worker_id', workerId)
+    const { data, error } = await db.from('job_workers').select('job_id').eq('worker_id', workerId)
     if (error) return []
     return Array.from(new Set((data || []).map((x: any) => String(x.job_id)).filter(Boolean)))
   } catch {
@@ -131,7 +132,7 @@ async function getJobWorkerJobIds(supabase: any, workerId: string): Promise<stri
 
 export async function GET(req: NextRequest) {
   try {
-    const { supabase, userId } = await requireActiveWorker(req)
+    const { db, userId } = await requireActiveWorker(req)
 
     const sp = req.nextUrl.searchParams
     const rawFrom = (sp.get('date_from') || sp.get('from') || '').trim()
@@ -141,14 +142,14 @@ export async function GET(req: NextRequest) {
     const dateTo = rawTo && isISODate(rawTo) ? rawTo : addDaysISO(todayISO(), 365)
 
     const [siteIds, jobIdsViaLink] = await Promise.all([
-      getAssignedSiteIds(supabase, userId),
-      getJobWorkerJobIds(supabase, userId),
+      getAssignedSiteIds(db, userId),
+      getJobWorkerJobIds(db, userId),
     ])
 
     // jobs: worker_id = me
     let jobsA: any[] = []
     {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('jobs')
         .select('id,status,job_date,scheduled_time,scheduled_end_time,site_id,worker_id')
         .eq('worker_id', userId)
@@ -156,7 +157,7 @@ export async function GET(req: NextRequest) {
         .lte('job_date', dateTo)
 
       if (error && String(error.message || '').toLowerCase().includes('scheduled_end_time')) {
-        const { data: d2, error: e2 } = await supabase
+        const { data: d2, error: e2 } = await db
           .from('jobs')
           .select('id,status,job_date,scheduled_time,site_id,worker_id')
           .eq('worker_id', userId)
@@ -173,7 +174,7 @@ export async function GET(req: NextRequest) {
     // jobs via job_workers
     let jobsB: any[] = []
     if (jobIdsViaLink.length) {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('jobs')
         .select('id,status,job_date,scheduled_time,scheduled_end_time,site_id,worker_id')
         .in('id', jobIdsViaLink)
@@ -181,7 +182,7 @@ export async function GET(req: NextRequest) {
         .lte('job_date', dateTo)
 
       if (error && String(error.message || '').toLowerCase().includes('scheduled_end_time')) {
-        const { data: d2, error: e2 } = await supabase
+        const { data: d2, error: e2 } = await db
           .from('jobs')
           .select('id,status,job_date,scheduled_time,site_id,worker_id')
           .in('id', jobIdsViaLink)
@@ -198,7 +199,7 @@ export async function GET(req: NextRequest) {
     // open jobs on assigned sites (only planned & worker_id is null)
     let jobsC: any[] = []
     if (siteIds.length) {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from('jobs')
         .select('id,status,job_date,scheduled_time,scheduled_end_time,site_id,worker_id')
         .is('worker_id', null)
@@ -208,7 +209,7 @@ export async function GET(req: NextRequest) {
         .lte('job_date', dateTo)
 
       if (error && String(error.message || '').toLowerCase().includes('scheduled_end_time')) {
-        const { data: d2, error: e2 } = await supabase
+        const { data: d2, error: e2 } = await db
           .from('jobs')
           .select('id,status,job_date,scheduled_time,site_id,worker_id')
           .is('worker_id', null)
@@ -247,10 +248,10 @@ export async function GET(req: NextRequest) {
 
     const [sitesRes0, logsRes] = await Promise.all([
       siteIds2.length
-        ? supabase.from('sites').select('id,name,address,lat,lng,radius,photos').in('id', siteIds2)
+        ? db.from('sites').select('id,name,address,lat,lng,radius,photos').in('id', siteIds2)
         : Promise.resolve({ data: [], error: null } as any),
       jobIds.length
-        ? supabase
+        ? db
             .from('time_logs')
             .select('job_id,started_at,stopped_at,start_lat,start_lng,start_accuracy')
             .in('job_id', jobIds)
@@ -260,7 +261,7 @@ export async function GET(req: NextRequest) {
     let sitesRes = sitesRes0
     if (sitesRes0.error && String(sitesRes0.error.message || '').toLowerCase().includes('photos')) {
       sitesRes = siteIds2.length
-        ? await supabase.from('sites').select('id,name,address,lat,lng,radius').in('id', siteIds2)
+        ? await db.from('sites').select('id,name,address,lat,lng,radius').in('id', siteIds2)
         : ({ data: [], error: null } as any)
     }
 
@@ -286,7 +287,7 @@ export async function GET(req: NextRequest) {
 
     if (uniquePaths.length) {
       const ttl = getSignedTtlSeconds()
-      const { data: signed, error: sErr } = await supabase.storage.from(SITE_PHOTOS_BUCKET).createSignedUrls(uniquePaths, ttl)
+      const { data: signed, error: sErr } = await localPhotoBucket(SITE_PHOTOS_BUCKET).createSignedUrls(uniquePaths, ttl)
       if (!sErr && Array.isArray(signed)) {
         for (const item of signed as any[]) {
           const p = item?.path ? String(item.path) : ''

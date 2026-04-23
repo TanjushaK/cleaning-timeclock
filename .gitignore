@@ -38,5 +38,26 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# локальные метаданные сторонних CLI (не коммитить)
-.vercel
+# локальный PostgreSQL пользовательского кластера (initdb/pg_ctl), большие binary файлы данных
+/var/postgres-bundle/data/
+
+# Локальный рантайм self-host (логи, загрузки — не коммитить)
+/var/logs/
+/var/uploads/
+# Повторяем без ведущего слеша (некоторые клиенты Git на Windows)
+var/logs/
+var/uploads/
+
+# Временные логи smoke / локального `npm run start` (при появлении)
+var/logs/local-start*.log
+var/logs/curl-*.txt
+
+# Одноразовые снимки аудита / заметки IDE (при необходимости восстановите вручную)
+/audit-reports/
+/release-audit/
+CURSOR_TASK.md
+
+# Локальные бинарные артефакты деплоя/бэкапа
+*.dump
+*.tgz
+var/imports/*.dump

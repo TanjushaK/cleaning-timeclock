@@ -1,7 +1,7 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { appAuth } from "@/lib/browser-auth";
 import { clientWorkerErrorMessage } from "@/lib/app-api-message";
 import { setAuthTokens } from "@/lib/auth-fetch";
 import AppFooter from "@/app/_components/AppFooter";
@@ -18,19 +18,19 @@ export default function AuthCallbackPage() {
         const code = url.searchParams.get("code");
 
         if (code) {
-          const { error } = await supabase.auth.exchangeCodeForSession(code);
+          const { error } = await appAuth.auth.exchangeCodeForSession(code);
           if (error) throw error;
         } else {
           const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
           const access_token = hash.get("access_token");
           const refresh_token = hash.get("refresh_token");
           if (access_token && refresh_token) {
-            const { error } = await supabase.auth.setSession({ access_token, refresh_token });
+            const { error } = await appAuth.auth.setSession({ access_token, refresh_token });
             if (error) throw error;
           }
         }
 
-        const { data, error: sErr } = await supabase.auth.getSession();
+        const { data, error: sErr } = await appAuth.auth.getSession();
         if (sErr) throw sErr;
         const session = data?.session;
         if (!session?.access_token) throw new Error(t("errors.tokenMissing"));

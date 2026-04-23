@@ -1,6 +1,8 @@
 // app/api/admin/sites/[id]/photos/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
+import { localPhotoBucket } from '@/lib/server/local-photo-storage'
+import { routeDynamicId } from '@/lib/server/route-dynamic-id'
+import { ApiError, requireAdmin, toErrorResponse } from '@/lib/route-db'
 
 export const runtime = 'nodejs'
 
@@ -78,13 +80,14 @@ function normalizePhotos(v: any): SitePhoto[] {
     }))
 }
 
-async function withSignedUrls(supabase: any, site: any) {
+async function withSignedUrls(site: any) {
   const photos = normalizePhotos(site?.photos)
   if (photos.length === 0) return { ...site, photos }
 
   const paths = Array.from(new Set(photos.map((p) => p.path).filter(Boolean)))
   const ttl = getSignedTtlSeconds()
-  const { data: signed, error } = await supabase.storage.from(BUCKET).createSignedUrls(paths, ttl)
+  const bucketClient = localPhotoBucket(BUCKET)
+  const { data: signed, error } = await bucketClient.createSignedUrls(paths, ttl)
 
   if (error || !Array.isArray(signed)) {
     return { ...site, photos }
@@ -103,12 +106,12 @@ async function withSignedUrls(supabase: any, site: any) {
   }
 }
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const { id } = await params
+    const id = await routeDynamicId(req, ctx)
     if (!id) throw new ApiError(400, 'id_required')
 
-    const { supabase } = await requireAdmin(req.headers)
+    const { db } = await requireAdmin(req.headers)
 
     const form = await req.formData()
     const file = form.get('file')
@@ -116,7 +119,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     validateImageFile(file)
 
-    const { data: siteData, error: siteErr } = await supabase.from('sites').select('id,photos').eq('id', id).single()
+    const { data: siteData, error: siteErr } = await db.from('sites').select('id,photos').eq('id', id).single()
     if (siteErr) throw new ApiError(400, siteErr.message || 'site_not_found')
 
     const currentPhotos = normalizePhotos(siteData?.photos)
@@ -138,16 +141,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           ? 'image/webp'
           : 'image/jpeg'
 
-    const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, bytes, {
+    const bucketClient = localPhotoBucket(BUCKET)
+    const { error: upErr } = await bucketClient.upload(path, bytes, {
       contentType,
       upsert: false,
     })
     if (upErr) throw new ApiError(500, upErr.message || 'upload_failed')
 
-    const publicUrl = supabase.storage.from(BUCKET).getPublicUrl(path).data.publicUrl
+    const publicUrl = bucketClient.getPublicUrl(path).data.publicUrl
     const nextPhotos = [...currentPhotos, { path, url: publicUrl, created_at: new Date().toISOString() }]
 
-    const { data: updated, error: updErr } = await supabase
+    const { data: updated, error: updErr } = await db
       .from('sites')
       .update({ photos: nextPhotos })
       .eq('id', id)
@@ -156,34 +160,34 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     if (updErr) throw new ApiError(500, updErr.message || 'db_update_failed')
 
-    const site = await withSignedUrls(supabase, updated)
+    const site = await withSignedUrls(updated)
     return NextResponse.json({ ok: true, site })
   } catch (e) {
     return toErrorResponse(e)
   }
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const { id } = await params
+    const id = await routeDynamicId(req, ctx)
     if (!id) throw new ApiError(400, 'id_required')
 
-    const { supabase } = await requireAdmin(req.headers)
+    const { db } = await requireAdmin(req.headers)
 
     const body = await req.json().catch(() => null)
     const path = String(body?.path || '')
     if (!path) throw new ApiError(400, 'path_required')
 
-    const { data: siteData, error: siteErr } = await supabase.from('sites').select('id,photos').eq('id', id).single()
+    const { data: siteData, error: siteErr } = await db.from('sites').select('id,photos').eq('id', id).single()
     if (siteErr) throw new ApiError(400, siteErr.message || 'site_not_found')
 
     const photos = normalizePhotos(siteData?.photos)
     const nextPhotos = photos.filter((p) => p.path !== path)
 
-    const { error: delErr } = await supabase.storage.from(BUCKET).remove([path])
+    const { error: delErr } = await localPhotoBucket(BUCKET).remove([path])
     if (delErr) throw new ApiError(500, delErr.message || 'remove_failed')
 
-    const { data: updated, error: updErr } = await supabase
+    const { data: updated, error: updErr } = await db
       .from('sites')
       .update({ photos: nextPhotos })
       .eq('id', id)
@@ -192,19 +196,19 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
     if (updErr) throw new ApiError(500, updErr.message || 'db_update_failed')
 
-    const site = await withSignedUrls(supabase, updated)
+    const site = await withSignedUrls(updated)
     return NextResponse.json({ ok: true, site })
   } catch (e) {
     return toErrorResponse(e)
   }
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const { id } = await params
+    const id = await routeDynamicId(req, ctx)
     if (!id) throw new ApiError(400, 'id_required')
 
-    const { supabase } = await requireAdmin(req.headers)
+    const { db } = await requireAdmin(req.headers)
 
     const body = await req.json().catch(() => null)
     const action = String(body?.action || '')
@@ -212,7 +216,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (action !== 'make_primary') throw new ApiError(400, 'invalid_action')
     if (!path) throw new ApiError(400, 'path_required')
 
-    const { data: siteData, error: siteErr } = await supabase.from('sites').select('id,photos').eq('id', id).single()
+    const { data: siteData, error: siteErr } = await db.from('sites').select('id,photos').eq('id', id).single()
     if (siteErr) throw new ApiError(400, siteErr.message || 'site_not_found')
 
     const photos = normalizePhotos(siteData?.photos)
@@ -221,7 +225,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     const nextPhotos = [photos[idx], ...photos.slice(0, idx), ...photos.slice(idx + 1)]
 
-    const { data: updated, error: updErr } = await supabase
+    const { data: updated, error: updErr } = await db
       .from('sites')
       .update({ photos: nextPhotos })
       .eq('id', id)
@@ -230,7 +234,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     if (updErr) throw new ApiError(500, updErr.message || 'db_update_failed')
 
-    const site = await withSignedUrls(supabase, updated)
+    const site = await withSignedUrls(updated)
     return NextResponse.json({ ok: true, site })
   } catch (e) {
     return toErrorResponse(e)

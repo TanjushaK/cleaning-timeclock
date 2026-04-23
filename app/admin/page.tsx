@@ -49,6 +49,11 @@ type WorkerProfile = {
   avatar_path?: string | null
 }
 
+type WorkerResetResult = {
+  login: string | null
+  temp_password: string
+}
+
 type Site = {
   id: string
   name?: string | null
@@ -381,7 +386,13 @@ async function authFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 
-function Modal(props: { open: boolean; title: string; onClose: () => void; children: React.ReactNode }) {
+function Modal(props: {
+  open: boolean
+  title: string
+  onClose: () => void
+  children: React.ReactNode
+  scopeClassName?: string
+}) {
   const { t } = useI18n()
   const boxRef = useRef<HTMLDivElement | null>(null)
   const [mounted, setMounted] = useState(false)
@@ -411,7 +422,7 @@ function Modal(props: { open: boolean; title: string; onClose: () => void; child
   if (!props.open || !mounted) return null
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-start justify-center overflow-y-auto px-4 py-6">
+    <div className={cn('adminPortalTheme fixed inset-0 z-[9999] flex items-start justify-center overflow-y-auto px-4 py-6', props.scopeClassName)}>
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={props.onClose} />
       <div
         ref={boxRef}
@@ -1207,6 +1218,8 @@ const [editOpen, setEditOpen] = useState(false)
   const [workerCardEmail, setWorkerCardEmail] = useState('')
   const [workerCardPhone, setWorkerCardPhone] = useState('')
   const [workerCardAvatarPath, setWorkerCardAvatarPath] = useState<string | null>(null)
+  const [workerResetBusy, setWorkerResetBusy] = useState(false)
+  const [workerResetResult, setWorkerResetResult] = useState<WorkerResetResult | null>(null)
 
   // worker photos meta prefetch (list badge + mini-avatar): cached + concurrency-limited
   const photoMetaQueueRef = useRef<string[]>([])
@@ -2139,6 +2152,7 @@ const [editOpen, setEditOpen] = useState(false)
     setWorkerCardEmail(String(cached?.email ?? ''))
     setWorkerCardPhone(String(cached?.phone ?? ''))
     setWorkerCardAvatarPath(cached?.avatar_path ?? null)
+    setWorkerResetResult(null)
 
     try {
       await Promise.all([loadWorkerCard(workerId), loadWorkerPhotos(workerId), loadWorkerProfile(workerId)])
@@ -2165,6 +2179,46 @@ const [editOpen, setEditOpen] = useState(false)
       setError(mapAdminErr(e, t))
     } finally {
       setWorkerProfileSaving(false)
+    }
+  }
+
+  async function resetWorkerPassword(workerId: string) {
+    setWorkerResetBusy(true)
+    setWorkerResetResult(null)
+    setError(null)
+    setNotice(null)
+    try {
+      const confirmed = window.confirm('Сбросить пароль для этого работника? Будет показан новый временный пароль.')
+      if (!confirmed) return
+      const res = await authFetchJson<{ login?: string | null; temp_password?: string }>(`/api/admin/workers/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ worker_id: workerId }),
+      })
+      const temp = String(res?.temp_password || '')
+      if (!temp) throw new Error('admin.main.errSaveGeneric')
+      setWorkerResetResult({
+        login: res?.login ? String(res.login) : null,
+        temp_password: temp,
+      })
+      setNotice('Пароль работника сброшен. Скопируйте новый временный пароль.')
+    } catch (e: unknown) {
+      setError(mapAdminErr(e, t))
+    } finally {
+      setWorkerResetBusy(false)
+    }
+  }
+
+  async function copyWorkerTempPassword(value: string) {
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value)
+      } else {
+        throw new Error('clipboard_unavailable')
+      }
+      setNotice('Временный пароль скопирован.')
+    } catch {
+      setError('Не удалось скопировать пароль. Скопируйте вручную.')
     }
   }
 
@@ -2392,7 +2446,7 @@ const [editOpen, setEditOpen] = useState(false)
     )
   }
 
-  function PlanToolbar() {
+  function renderPlanToolbar() {
     return (
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-yellow-400/15 bg-black/20 p-4">
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
@@ -2499,7 +2553,7 @@ const [editOpen, setEditOpen] = useState(false)
     )
   }
 
-  function PlanWeekGrid() {
+  function renderPlanWeekGrid() {
     return (
       <div className="mt-4 overflow-auto rounded-3xl border border-yellow-400/15 bg-black/15">
         <div className="w-full overflow-x-auto">
@@ -2591,7 +2645,7 @@ const [editOpen, setEditOpen] = useState(false)
     )
   }
 
-  function PlanDayGrid() {
+  function renderPlanDayGrid() {
     const dayISO = dateFrom
     return (
       <div className="mt-4 overflow-auto rounded-3xl border border-yellow-400/15 bg-black/15">
@@ -2673,7 +2727,7 @@ const [editOpen, setEditOpen] = useState(false)
     )
   }
 
-  function PlanMonthGrid() {
+  function renderPlanMonthGrid() {
     const from = new Date(dateFrom + 'T00:00:00')
     const to = new Date(dateTo + 'T00:00:00')
     const first = new Date(from.getFullYear(), from.getMonth(), 1)
@@ -4130,11 +4184,11 @@ const [editOpen, setEditOpen] = useState(false)
           {/* Schedule / plan */}
           {tab === 'plan' ? (
             <div className="mt-6">
-              <PlanToolbar />
+              {renderPlanToolbar()}
 
-              {planView === 'week' ? <PlanWeekGrid /> : null}
-              {planView === 'day' ? <PlanDayGrid /> : null}
-              {planView === 'month' ? <PlanMonthGrid /> : null}
+              {planView === 'week' ? renderPlanWeekGrid() : null}
+              {planView === 'day' ? renderPlanDayGrid() : null}
+              {planView === 'month' ? renderPlanMonthGrid() : null}
 
               <div className="mt-4 rounded-3xl border border-yellow-400/15 bg-black/20 p-4 text-xs text-zinc-300">
                 {t('admin.main.planHint')}
@@ -4245,7 +4299,12 @@ const [editOpen, setEditOpen] = useState(false)
       </Modal>
 
       {/* Modal: worker card */}
-      <Modal open={workerCardOpen} title={t('admin.main.workerCardTitle')} onClose={() => setWorkerCardOpen(false)}>
+      <Modal
+        open={workerCardOpen}
+        title={t('admin.main.workerCardTitle')}
+        onClose={() => setWorkerCardOpen(false)}
+        scopeClassName="workerCardModalTheme"
+      >
         <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-4">
           {(() => {
             const w = workersById.get(workerCardId)
@@ -4273,25 +4332,61 @@ const [editOpen, setEditOpen] = useState(false)
                 <div className="grid gap-2">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="text-sm font-semibold text-yellow-100">{t('admin.main.dataNotesTitle')}</div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {w?.role !== 'admin' ? (
+                        <button
+                          onClick={() => {
+                            if (!workerCardId) return
+                            void resetWorkerPassword(workerCardId)
+                          }}
+                          disabled={workerResetBusy || !workerCardId}
+                          className={cn(
+                            'rounded-xl border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-100 hover:border-red-300/55',
+                            workerResetBusy ? 'opacity-70' : '',
+                          )}
+                        >
+                          {workerResetBusy ? 'Сбрасываю…' : 'Сбросить пароль'}
+                        </button>
+                      ) : null}
 
-                    <button
-                      onClick={() => {
-                        if (!workerCardId) return
-                        void saveWorkerProfile(workerCardId)
-                      }}
-                      disabled={
-                        workerProfileSaving ||
-                        !workerCardId ||
-                        (workerCardLocale === 'ru' && !locDraftValue(workerLocDraft.name, workerCardLocale).trim())
-                      }
-                      className={cn(
-                        'rounded-xl border border-yellow-300/35 bg-yellow-400/10 px-3 py-2 text-xs font-semibold text-yellow-100 hover:border-yellow-200/70',
-                        workerProfileSaving ? 'opacity-70' : '',
-                      )}
-                    >
-                      {workerProfileSaving ? t('admin.main.saving') : t('common.save')}
-                    </button>
+                      <button
+                        onClick={() => {
+                          if (!workerCardId) return
+                          void saveWorkerProfile(workerCardId)
+                        }}
+                        disabled={
+                          workerProfileSaving ||
+                          !workerCardId ||
+                          (workerCardLocale === 'ru' && !locDraftValue(workerLocDraft.name, workerCardLocale).trim())
+                        }
+                        className={cn(
+                          'rounded-xl border border-yellow-300/35 bg-yellow-400/10 px-3 py-2 text-xs font-semibold text-yellow-100 hover:border-yellow-200/70',
+                          workerProfileSaving ? 'opacity-70' : '',
+                        )}
+                      >
+                        {workerProfileSaving ? t('admin.main.saving') : t('common.save')}
+                      </button>
+                    </div>
                   </div>
+
+                  {workerResetResult ? (
+                    <div className="rounded-2xl border border-emerald-400/25 bg-emerald-500/10 p-3 text-xs text-emerald-100/90">
+                      <div className="font-semibold">Новый временный пароль (показан один раз):</div>
+                      <div className="mt-1 break-all">
+                        Логин: <span className="font-mono">{workerResetResult.login || '—'}</span>
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-sm">{workerResetResult.temp_password}</span>
+                        <button
+                          type="button"
+                          onClick={() => void copyWorkerTempPassword(workerResetResult.temp_password)}
+                          className="rounded-lg border border-emerald-300/40 bg-emerald-500/15 px-2 py-1 text-[11px] font-semibold text-emerald-50 hover:border-emerald-200/60"
+                        >
+                          Скопировать
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
 
                   {workerProfileLoading ? (
                     <div className="rounded-2xl border border-yellow-400/10 bg-black/20 px-3 py-3 text-xs text-yellow-100/55">
@@ -4451,7 +4546,7 @@ const [editOpen, setEditOpen] = useState(false)
                       {workerCardPhotos.map((p) => (
                         <div key={p.path} className="relative overflow-hidden rounded-2xl border border-yellow-400/10 bg-black/20">
                           { }
-                          <img src={p.url || ''} alt="worker" className="h-36 w-full object-cover" loading="lazy" />
+                          <img src={p.url || ''} alt={t('admin.main.roleWorker')} className="h-36 w-full object-cover" loading="lazy" />
 
                           <div className="absolute right-2 top-2">
                             <button

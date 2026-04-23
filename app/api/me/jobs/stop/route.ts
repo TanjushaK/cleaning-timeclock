@@ -1,7 +1,7 @@
-// app/api/me/jobs/stop/route.ts
+﻿// app/api/me/jobs/stop/route.ts
 import { NextResponse } from 'next/server';
 import { AppApiErrorCodes } from '@/lib/app-error-codes';
-import { ApiError, requireActiveWorker, toErrorResponse } from '@/lib/supabase-server';
+import { ApiError, requireActiveWorker, toErrorResponse } from '@/lib/route-db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -48,7 +48,7 @@ function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number)
 export async function POST(req: Request) {
   try {
     const guard = await requireActiveWorker(req);
-    const supabase = guard.supabase;
+    const db = guard.db;
     const uid = guard.userId;
 
     const body: StopBody = await req.json().catch(() => ({} as StopBody));
@@ -64,7 +64,7 @@ export async function POST(req: Request) {
       throw new ApiError(400, 'GPS lat/lng/accuracy required', AppApiErrorCodes.GPS_LAT_LNG_ACCURACY_REQUIRED);
     }
 
-    const { data: jobRaw, error: jobErr } = await supabase
+    const { data: jobRaw, error: jobErr } = await db
       .from('jobs')
       .select('id,status,worker_id,site:sites(lat,lng,radius)')
       .eq('id', jobId)
@@ -82,7 +82,7 @@ export async function POST(req: Request) {
     let allowed = job.worker_id === uid;
 
     if (!allowed) {
-      const { data: linkRaw, error: linkErr } = await supabase
+      const { data: linkRaw, error: linkErr } = await db
         .from('job_workers')
         .select('job_id')
         .eq('job_id', jobId)
@@ -124,7 +124,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const { data: logRaw, error: logErr } = await supabase
+    const { data: logRaw, error: logErr } = await db
       .from('time_logs')
       .select('id,started_at')
       .eq('job_id', jobId)
@@ -141,7 +141,7 @@ export async function POST(req: Request) {
 
     const stoppedAt = new Date().toISOString();
 
-    const { error: updLogErr } = await supabase
+    const { error: updLogErr } = await db
       .from('time_logs')
       .update({
         stopped_at: stoppedAt,
@@ -153,7 +153,7 @@ export async function POST(req: Request) {
 
     if (updLogErr) throw new ApiError(400, updLogErr.message, AppApiErrorCodes.JOB_ACCEPT_UPDATE_FAILED);
 
-    const { error: updJobErr } = await supabase.from('jobs').update({ status: 'done' }).eq('id', jobId);
+    const { error: updJobErr } = await db.from('jobs').update({ status: 'done' }).eq('id', jobId);
     if (updJobErr) throw new ApiError(400, updJobErr.message, AppApiErrorCodes.JOB_ACCEPT_UPDATE_FAILED);
 
     return NextResponse.json({ ok: true }, { status: 200 });

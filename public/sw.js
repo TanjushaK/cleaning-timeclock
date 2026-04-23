@@ -12,7 +12,6 @@ const RUNTIME_CACHE = `ct-runtime-${SW_VERSION}`;
 const CORE = [
   "/offline",
   "/manifest.webmanifest",
-  "/apple-touch-icon.png",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
   "/icons/maskable-192.png",

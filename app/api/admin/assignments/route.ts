@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { AdminApiErrorCode } from '@/lib/api-error-codes'
-import { ApiError, requireAdmin, toErrorResponse } from '@/lib/supabase-server'
+import { ApiError, requireAdmin, toErrorResponse } from '@/lib/route-db'
 
 export const runtime = 'nodejs'
 
@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
   try {
     const guard = await requireAdmin(req.headers)
 
-    const { data, error } = await guard.supabase
+    const { data, error } = await guard.db
       .from('assignments')
       .select('site_id,worker_id')
       .order('site_id', { ascending: true })
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
     if (!siteId) throw new ApiError(400, 'site_id is required', AdminApiErrorCode.SITE_ID_REQUIRED)
     if (!workerId) throw new ApiError(400, 'worker_id is required', AdminApiErrorCode.WORKER_ID_REQUIRED)
 
-    const admin = guard.supabase
+    const admin = guard.db
 
     if (action === 'unassign') {
       const { error } = await admin.from('assignments').delete().eq('site_id', siteId).eq('worker_id', workerId)
