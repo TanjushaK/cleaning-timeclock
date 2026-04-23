@@ -5,7 +5,7 @@ import type { StorageBucketClient } from '@/lib/server/compat/storage-shim'
 import { localPhotoBucket } from '@/lib/server/local-photo-storage'
 import { routeDynamicId } from '@/lib/server/route-dynamic-id'
 import { ApiError, requireAdmin, toErrorResponse } from '@/lib/route-db'
-import sharp from 'sharp'
+import { withCookieBearer } from '@/lib/server/with-cookie-bearer'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -73,17 +73,6 @@ function getSignedTtlSeconds(): number {
   const v = Number(process.env.WORKER_PHOTOS_SIGNED_URL_TTL || '3600')
   if (!Number.isFinite(v) || v <= 0) return 3600
   return Math.min(v, 60 * 60 * 24 * 7)
-}
-
-function withCookieBearer(req: NextRequest): Headers {
-  const headers = new Headers(req.headers)
-  const auth = headers.get('authorization') || headers.get('Authorization') || ''
-  const hasBearer = /^Bearer\s+.+/i.test(auth)
-  if (!hasBearer) {
-    const cookieToken = req.cookies.get('ct_access_token')?.value?.trim()
-    if (cookieToken) headers.set('authorization', `Bearer ${cookieToken}`)
-  }
-  return headers
 }
 
 function safeName(s: string): string {
@@ -175,6 +164,7 @@ async function normalizeHeicInBucket(
 ): Promise<boolean> {
   const heic = (itemsRaw || []).filter((x: any) => isHeicName(String(x?.name || '')))
   if (heic.length === 0) return false
+  const sharp = (await import('sharp')).default
   const pref = workerPrefix(workerId)
   const names = new Set((itemsRaw || []).map((x: any) => String(x?.name || '')))
   const avatarKey = await resolveAvatarKey(sb)
@@ -309,6 +299,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     let bytes: Buffer = Buffer.from(await file.arrayBuffer())
     const mime = String(file.type || '').toLowerCase()
     if (ext === 'heic' || ext === 'heif') {
+      const sharp = (await import('sharp')).default
       bytes = await sharp(bytes).rotate().jpeg({ quality: 85 }).toBuffer()
       ext = 'jpg'
     }

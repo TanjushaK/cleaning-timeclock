@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { POST as postPhotos, DELETE as deletePhoto } from "../sites/[id]/photos/route";
 import { ApiError, requireAdmin, toErrorResponse } from "@/lib/route-db";
+import { withCookieBearer } from "@/lib/server/with-cookie-bearer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,7 +51,7 @@ export async function DELETE(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   try {
     const id = getId(req);
-    const { db } = await requireAdmin(req.headers);
+    const { db } = await requireAdmin(withCookieBearer(req));
 
     const body = await req.json().catch(() => ({} as any));
     const action = String(body?.action || "");

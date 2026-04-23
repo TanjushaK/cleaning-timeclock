@@ -89,14 +89,18 @@
 }
 
 html[data-theme='light'] .appTheme {
-  /* Light worker UI: distinct from body Inter + dark .appTheme (inherits body font otherwise). */
-  font-family: Verdana, Geneva, "DejaVu Sans", sans-serif;
+  /* Light worker UI: serif stack is visibly distinct from root `Inter` + Tailwind `font-sans` on children. */
+  font-family: Georgia, Cambria, 'Times New Roman', serif !important;
   color: #292524;
   background:
     radial-gradient(900px circle at 18% -8%, rgba(245, 158, 11, 0.10), transparent 55%),
     radial-gradient(900px circle at 82% 8%, rgba(245, 158, 11, 0.09), transparent 60%),
     radial-gradient(700px circle at 50% 110%, rgba(245, 158, 11, 0.08), transparent 55%),
     #fff7ed;
+}
+
+html[data-theme='light'] .appTheme :where(*) {
+  font-family: Georgia, Cambria, 'Times New Roman', serif !important;
 }
 
 html[data-theme='light'] .appTheme :where([class*='bg-zinc-950']) {

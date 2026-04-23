@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { localPhotoBucket } from '@/lib/server/local-photo-storage'
 import { routeDynamicId } from '@/lib/server/route-dynamic-id'
 import { ApiError, requireAdmin, toErrorResponse } from '@/lib/route-db'
+import { withCookieBearer } from '@/lib/server/with-cookie-bearer'
 
 export const runtime = 'nodejs'
 
@@ -111,7 +112,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     const id = await routeDynamicId(req, ctx)
     if (!id) throw new ApiError(400, 'id_required')
 
-    const { db } = await requireAdmin(req.headers)
+    const { db } = await requireAdmin(withCookieBearer(req))
 
     const form = await req.formData()
     const file = form.get('file')
@@ -172,7 +173,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
     const id = await routeDynamicId(req, ctx)
     if (!id) throw new ApiError(400, 'id_required')
 
-    const { db } = await requireAdmin(req.headers)
+    const { db } = await requireAdmin(withCookieBearer(req))
 
     const body = await req.json().catch(() => null)
     const path = String(body?.path || '')
@@ -208,7 +209,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     const id = await routeDynamicId(req, ctx)
     if (!id) throw new ApiError(400, 'id_required')
 
-    const { db } = await requireAdmin(req.headers)
+    const { db } = await requireAdmin(withCookieBearer(req))
 
     const body = await req.json().catch(() => null)
     const action = String(body?.action || '')
