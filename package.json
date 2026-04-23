@@ -23,7 +23,7 @@
     "@capacitor/core": "^6.2.1",
     "@capacitor/splash-screen": "^6.0.4",
     "@capacitor/status-bar": "^6.0.3",
-    "@capgo/capacitor-native-biometric": "^6.0.4",
+    "@capgo/capacitor-native-biometric": "^8.3.6",
     "dexie": "^4.3.0",
     "jose": "^6.1.0",
     "mime-types": "^2.1.35",
