@@ -6,6 +6,7 @@ import { parseI18nJson, resolveI18nField, ruSourceText, setI18nLocale } from "@/
 import { requestLocale } from "@/lib/request-lang";
 import { routeDynamicId } from "@/lib/server/route-dynamic-id";
 import { ApiError, requireAdmin, toErrorResponse } from "@/lib/route-db";
+import { withCookieBearer } from "@/lib/server/with-cookie-bearer";
 
 type NotesKey = "notes" | "extra_note" | "note" | null;
 type AvatarKey = "avatar_path" | "avatar_url" | "photo_path" | null;
@@ -90,7 +91,7 @@ function shapeWorker(
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const guard = await requireAdmin(req);
+    const guard = await requireAdmin(withCookieBearer(req));
     const db = (guard as { db: any }).db;
     const loc = requestLocale(req);
 
@@ -135,7 +136,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const guard = await requireAdmin(req);
+    const guard = await requireAdmin(withCookieBearer(req));
     const db = (guard as { db: any }).db;
     const loc = requestLocale(req);
 

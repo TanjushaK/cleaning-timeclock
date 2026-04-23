@@ -107,7 +107,7 @@ export function SearchableSelect({ label, value, onChange, items, placeholder, d
   }, []);
 
   return (
-    <div ref={rootRef} className="relative">
+    <div ref={rootRef} className="ctSearchableSelect relative">
       {label ? <div className="mb-1 text-[11px] text-zinc-300">{label}</div> : null}
 
       <input
@@ -132,12 +132,12 @@ export function SearchableSelect({ label, value, onChange, items, placeholder, d
         }}
         className={
           inputClassName ||
-          "w-full rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+          "ctSearchableSelectInput w-full rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
         }
       />
 
       {open ? (
-        <div className="absolute left-0 right-0 z-[80] mt-2 max-h-80 overflow-auto rounded-2xl border border-yellow-400/25 bg-[#0b0b0b]/95 backdrop-blur-sm shadow-2xl">
+        <div className="ctSearchableSelectMenu absolute left-0 right-0 z-[80] mt-2 max-h-80 overflow-auto rounded-2xl border border-yellow-400/25 bg-[#0b0b0b]/95 backdrop-blur-sm shadow-2xl">
           {filtered.length ? (
             filtered.map((it) => {
               const active = it.id === value;
@@ -153,7 +153,7 @@ export function SearchableSelect({ label, value, onChange, items, placeholder, d
                     setOpen(false);
                   }}
                   className={
-                    "flex w-full items-start gap-3 px-3 py-2 text-left text-xs transition " +
+                    "ctSearchableSelectOption flex w-full items-start gap-3 px-3 py-2 text-left text-xs transition " +
                     (active
                       ? "bg-yellow-400/15 text-yellow-100"
                       : "text-zinc-200 hover:bg-yellow-400/10 hover:text-yellow-100")
@@ -167,13 +167,13 @@ export function SearchableSelect({ label, value, onChange, items, placeholder, d
                   />
                   <span className="min-w-0 flex-1">
                     <span className={"block truncate font-semibold " + (active ? "" : textClass)}>{it.label}</span>
-                    {it.hint ? <span className="mt-0.5 block truncate text-[10px] text-zinc-400">{it.hint}</span> : null}
+                    {it.hint ? <span className="ctSearchableSelectHint mt-0.5 block truncate text-[10px] text-zinc-400">{it.hint}</span> : null}
                   </span>
                 </button>
               );
             })
           ) : (
-            <div className="px-3 py-3 text-xs text-zinc-400">{t("searchableSelect.empty")}</div>
+            <div className="ctSearchableSelectEmpty px-3 py-3 text-xs text-zinc-400">{t("searchableSelect.empty")}</div>
           )}
         </div>
       ) : null}

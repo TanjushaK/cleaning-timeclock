@@ -9,6 +9,13 @@ export const runtime = 'nodejs'
 
 type SitePhoto = { path: string; url?: string; created_at?: string | null }
 
+type IncomingFile = {
+  name: string
+  type: string
+  size: number
+  arrayBuffer: () => Promise<ArrayBuffer>
+}
+
 const MAX_UPLOAD_BYTES = (() => {
   const raw = process.env.SITE_PHOTOS_MAX_BYTES || process.env.MAX_UPLOAD_BYTES || '5242880' // 5MB
   const n = Number.parseInt(String(raw), 10)
@@ -16,8 +23,34 @@ const MAX_UPLOAD_BYTES = (() => {
   return Math.min(Math.max(n, 256 * 1024), 25 * 1024 * 1024)
 })()
 
-const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp'])
-const ALLOWED_EXT = new Set(['jpg', 'jpeg', 'png', 'webp'])
+const ALLOWED_IMAGE_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+  'image/heic-sequence',
+  'image/heif-sequence',
+])
+const ALLOWED_EXT = new Set(['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'])
+
+function asIncomingFile(v: FormDataEntryValue | null): IncomingFile | null {
+  if (!v) return null
+  if (typeof v === 'string') return null
+  const anyv: any = v as any
+  if (typeof anyv?.arrayBuffer !== 'function' || typeof anyv?.size !== 'number') return null
+
+  const name = typeof anyv?.name === 'string' && anyv.name ? String(anyv.name) : 'photo.jpg'
+  const type = typeof anyv?.type === 'string' ? String(anyv.type) : ''
+  const size = Number(anyv.size) || 0
+
+  return {
+    name,
+    type,
+    size,
+    arrayBuffer: () => anyv.arrayBuffer(),
+  }
+}
 
 function parseBucketRef(raw: string | undefined | null, fallbackBucket: string) {
   const s = String(raw || '').trim().replace(/^\/+|\/+$/g, '')
@@ -52,13 +85,31 @@ function sanitizeFilename(name: string) {
     .slice(0, 120)
 }
 
-function fileExt(file: File) {
+function fileExt(file: IncomingFile) {
   const ext = (file.name.split('.').pop() || '').toLowerCase()
   return ext || 'jpg'
 }
 
-function validateImageFile(file: File) {
-  if (!(file instanceof File)) throw new ApiError(400, 'file_required')
+function canonicalExt(file: IncomingFile): string {
+  const ext = fileExt(file)
+  if (ALLOWED_EXT.has(ext)) return ext
+  const mime = String(file.type || '').toLowerCase()
+  if (mime === 'image/png') return 'png'
+  if (mime === 'image/webp') return 'webp'
+  if (mime === 'image/heic' || mime === 'image/heic-sequence') return 'heic'
+  if (mime === 'image/heif' || mime === 'image/heif-sequence') return 'heif'
+  return 'jpg'
+}
+
+function contentTypeFor(ext: string): string {
+  if (ext === 'png') return 'image/png'
+  if (ext === 'webp') return 'image/webp'
+  if (ext === 'heic') return 'image/heic'
+  if (ext === 'heif') return 'image/heif'
+  return 'image/jpeg'
+}
+
+function validateImageFile(file: IncomingFile) {
   if (file.size <= 0) throw new ApiError(400, 'file_empty')
   if (file.size > MAX_UPLOAD_BYTES) throw new ApiError(400, 'file_too_large')
 
@@ -115,8 +166,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     const { db } = await requireAdmin(withCookieBearer(req))
 
     const form = await req.formData()
-    const file = form.get('file')
-    if (!(file instanceof File)) throw new ApiError(400, 'file_required')
+    const file = asIncomingFile(form.get('file'))
+    if (!file) throw new ApiError(400, 'file_required')
 
     validateImageFile(file)
 
@@ -126,21 +177,22 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     const currentPhotos = normalizePhotos(siteData?.photos)
     if (currentPhotos.length >= 5) throw new ApiError(400, 'photo_limit')
 
-    const ext = fileExt(file)
+    let ext = canonicalExt(file)
     const safeBase = sanitizeFilename(file.name.replace(/\.[^.]+$/, '')) || 'photo'
+    let bytes: Buffer = Buffer.from(await file.arrayBuffer())
+    if (ext === 'heic' || ext === 'heif') {
+      const sharp = (await import('sharp')).default
+      bytes = await sharp(bytes).rotate().jpeg({ quality: 85 }).toBuffer()
+      ext = 'jpg'
+    }
     const filename = `${Date.now()}_${safeBase}.${ext}`
 
     const path = PREFIX ? joinPath(PREFIX, id, filename) : joinPath(id, filename)
 
-    const bytes = new Uint8Array(await file.arrayBuffer())
-
-    const contentType = ALLOWED_IMAGE_TYPES.has(String(file.type || '').toLowerCase())
-      ? String(file.type)
-      : ext === 'png'
-        ? 'image/png'
-        : ext === 'webp'
-          ? 'image/webp'
-          : 'image/jpeg'
+    const mime = String(file.type || '').toLowerCase()
+    const contentType = ext === 'jpg'
+      ? 'image/jpeg'
+      : (ALLOWED_IMAGE_TYPES.has(mime) ? String(file.type) : contentTypeFor(ext))
 
     const bucketClient = localPhotoBucket(BUCKET)
     const { error: upErr } = await bucketClient.upload(path, bytes, {

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { AdminApiErrorCode } from "@/lib/api-error-codes";
 import { shapeSiteForAdmin } from "@/lib/admin-sites-shape.server";
 import { fillMissingLocalesFromRu } from "@/lib/deepl-fill.server";
@@ -8,6 +8,7 @@ import { parseI18nJson, ruSourceText, setI18nLocale } from "@/lib/localized-reco
 import { requestLocale } from "@/lib/request-lang";
 import { ApiError, requireAdmin, toErrorResponse } from "@/lib/route-db";
 import { routeDynamicId } from "@/lib/server/route-dynamic-id";
+import { withCookieBearer } from "@/lib/server/with-cookie-bearer";
 
 export const runtime = "nodejs";
 
@@ -41,9 +42,9 @@ function normTextField(v: unknown): string | null {
   return s || null;
 }
 
-export async function GET(req: Request, ctx: { params?: Promise<{ id?: string }> }) {
+export async function GET(req: NextRequest, ctx: { params?: Promise<{ id?: string }> }) {
   try {
-    const { db } = await requireAdmin(req.headers);
+    const { db } = await requireAdmin(withCookieBearer(req));
     const siteId = await getSiteIdFromReq(req, ctx);
     const loc = requestLocale(req);
 
@@ -57,9 +58,9 @@ export async function GET(req: Request, ctx: { params?: Promise<{ id?: string }>
   }
 }
 
-export async function PUT(req: Request, ctx: { params?: Promise<{ id?: string }> }) {
+export async function PUT(req: NextRequest, ctx: { params?: Promise<{ id?: string }> }) {
   try {
-    const { db } = await requireAdmin(req.headers);
+    const { db } = await requireAdmin(withCookieBearer(req));
     const siteId = await getSiteIdFromReq(req, ctx);
     const loc = requestLocale(req);
     const body = await req.json().catch(() => ({}));
@@ -182,9 +183,9 @@ export async function PUT(req: Request, ctx: { params?: Promise<{ id?: string }>
   }
 }
 
-export async function DELETE(req: Request, ctx: { params?: Promise<{ id?: string }> }) {
+export async function DELETE(req: NextRequest, ctx: { params?: Promise<{ id?: string }> }) {
   try {
-    const { db } = await requireAdmin(req.headers);
+    const { db } = await requireAdmin(withCookieBearer(req));
     const siteId = await getSiteIdFromReq(req, ctx);
 
     const { error } = await db.from("sites").delete().eq("id", siteId);
