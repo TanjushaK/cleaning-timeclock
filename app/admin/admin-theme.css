@@ -167,7 +167,8 @@ html[data-theme='light'] .workerCardModalTheme button[class*='border-red-500/25'
 html[data-theme='light'] .adminTheme button:disabled,
 html[data-theme='light'] .adminPortalTheme button:disabled,
 html[data-theme='light'] .workerCardModalTheme button:disabled {
-  opacity: 0.72 !important;
+  /* Let per-button disabled:opacity-* still read; avoid “washed out” ghost labels on pale cards */
+  opacity: 0.88 !important;
 }
 
 html[data-theme='light'] .adminTheme button:disabled.text-yellow-100,

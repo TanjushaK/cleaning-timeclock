@@ -246,17 +246,20 @@ function cn(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(' ')
 }
 
-/** Segmented tabs / plan toggles: chocolate look only when `data-theme=dark`. */
-const ADM_TAB_ACTIVE = 'border-yellow-300/70 bg-yellow-400/10 text-amber-950 dark:text-yellow-100'
+/** Segmented tabs / plan toggles: strong borders+text on light; chocolate unchanged in dark. */
+const ADM_TAB_ACTIVE =
+  'border-amber-800/60 bg-amber-100/45 text-amber-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)] dark:border-yellow-300/70 dark:bg-yellow-400/10 dark:text-yellow-100 dark:shadow-none'
 const ADM_TAB_INACTIVE =
-  'border-amber-900/30 bg-black/30 text-stone-800 hover:border-amber-800/45 dark:border-yellow-400/15 dark:text-zinc-200 dark:hover:border-yellow-300/40'
+  'border-stone-400/75 bg-white/85 text-stone-900 hover:border-amber-700/55 hover:bg-amber-50/55 dark:border-yellow-400/15 dark:bg-black/30 dark:text-zinc-200 dark:hover:border-yellow-300/40'
 
-const ADM_LANG_ACTIVE = 'border-yellow-300/50 bg-yellow-400/15 text-amber-950 dark:text-yellow-50'
+const ADM_LANG_ACTIVE =
+  'border-amber-800/55 bg-amber-100/50 text-amber-950 dark:border-yellow-300/50 dark:bg-yellow-400/15 dark:text-yellow-50'
 const ADM_LANG_INACTIVE =
-  'border-amber-900/30 bg-black/30 text-stone-800 hover:border-amber-800/45 dark:border-yellow-400/15 dark:text-zinc-200 dark:hover:border-yellow-300/35'
+  'border-stone-400/75 bg-white/85 text-stone-900 hover:border-amber-700/50 hover:bg-amber-50/50 dark:border-yellow-400/15 dark:bg-black/30 dark:text-zinc-200 dark:hover:border-yellow-300/35'
 
 const ADM_REPORT_ACTIVE = 'bg-yellow-400/10 text-amber-950 dark:text-yellow-100'
-const ADM_REPORT_INACTIVE = 'text-stone-700 hover:text-amber-900 dark:text-zinc-200 dark:hover:text-yellow-100'
+const ADM_REPORT_INACTIVE =
+  'text-stone-800 font-semibold hover:text-amber-950 dark:text-zinc-200 dark:hover:text-yellow-100'
 
 const ADM_WORKER_ARCHIVE_ACTIVE =
   'border-yellow-300/45 bg-yellow-400/10 text-amber-950 hover:border-amber-700/55 hover:bg-amber-100/25 dark:text-yellow-100 dark:hover:border-yellow-200/70 dark:hover:bg-yellow-400/15'
@@ -452,7 +455,7 @@ function Modal(props: {
           <div className="text-sm font-semibold text-amber-950 dark:text-yellow-100">{props.title}</div>
           <button
             onClick={props.onClose}
-            className="rounded-xl border border-amber-900/35 bg-black/30 px-3 py-1 text-xs text-stone-800 hover:border-amber-700/50 dark:border-yellow-400/15 dark:text-zinc-200 dark:hover:border-yellow-300/40"
+            className="rounded-xl border border-stone-500/55 bg-white/90 px-3 py-1 text-xs font-semibold text-stone-900 hover:border-amber-700/55 dark:border-yellow-400/15 dark:bg-black/30 dark:text-zinc-200 dark:hover:border-yellow-300/40"
           >
             {t('common.close')}
           </button>
@@ -571,14 +574,14 @@ function CategoryPicker(props: { value: number | null; onChange: (v: number | nu
         disabled={props.disabled}
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          'flex items-center gap-2 rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-3 py-2 text-xs text-amber-900/90 dark:text-yellow-100/80',
-          props.disabled ? 'opacity-70' : 'hover:border-yellow-300/40'
+          'flex items-center gap-2 rounded-2xl border border-stone-400/70 dark:border-yellow-400/15 bg-white/90 dark:bg-black/30 px-3 py-2 text-xs font-semibold text-amber-950 dark:text-yellow-100/80',
+          props.disabled ? 'opacity-70' : 'hover:border-amber-700/55 dark:hover:border-yellow-300/40'
         )}
       >
         <span className={cn('h-3 w-3 rounded-full ring-2 ring-black/40 shadow', meta.dotClass)} />
         <span className="font-semibold">{props.value ? `#${props.value}` : '—'}</span>
-        <span className="hidden sm:inline text-amber-900/70 dark:text-yellow-100/55">{meta.label}</span>
-        <span className="ml-1 text-amber-900/50 dark:text-yellow-100/35">▾</span>
+        <span className="hidden sm:inline text-stone-800 dark:text-yellow-100/55">{meta.label}</span>
+        <span className="ml-1 text-stone-600 dark:text-yellow-100/35">▾</span>
       </button>
 
       {open ? (
@@ -588,7 +591,7 @@ function CategoryPicker(props: { value: number | null; onChange: (v: number | nu
               props.onChange(null)
               setOpen(false)
             }}
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-amber-900/85 dark:text-yellow-100/70 hover:bg-yellow-400/5"
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-amber-950 dark:text-yellow-100/70 hover:bg-amber-100/40 dark:hover:bg-yellow-400/5"
           >
             <span className={cn('h-3 w-3 rounded-full ring-2 ring-black/40 shadow', 'bg-zinc-500')} />
             <span className="font-semibold">—</span>
@@ -602,11 +605,11 @@ function CategoryPicker(props: { value: number | null; onChange: (v: number | nu
                 props.onChange(c.id)
                 setOpen(false)
               }}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-amber-900/90 dark:text-yellow-100/80 hover:bg-yellow-400/5"
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-amber-950 dark:text-yellow-100/80 hover:bg-amber-100/40 dark:hover:bg-yellow-400/5"
             >
               <span className={cn('h-3 w-3 rounded-full ring-2 ring-black/40 shadow', c.dotClass)} />
               <span className="font-semibold">#{c.id}</span>
-              <span className="text-amber-900/75 dark:text-yellow-100/60">{t('admin.main.categoryLabel', { n: c.id })}</span>
+              <span className="text-stone-800 dark:text-yellow-100/60">{t('admin.main.categoryLabel', { n: c.id })}</span>
             </button>
           ))}
         </div>
@@ -702,9 +705,9 @@ function MultiWorkerPicker(props: {
         )}
       >
         {selectedNames.length === 0 ? (
-          <span className="text-zinc-400">{t('admin.main.multiPickWorkers')}</span>
+          <span className="text-stone-500 dark:text-zinc-400">{t('admin.main.multiPickWorkers')}</span>
         ) : (
-          <span className="text-zinc-100">
+          <span className="text-stone-900 dark:text-zinc-100">
             {selectedNames.slice(0, 3).join(', ')}
             {selectedNames.length > 3 ? t('admin.main.multiAndMore', { n: selectedNames.length - 3 }) : ''}
           </span>
@@ -721,7 +724,9 @@ function MultiWorkerPicker(props: {
           />
 
           <div className="max-h-[240px] overflow-auto rounded-2xl border border-yellow-400/10 bg-black/20">
-            {filtered.length === 0 ? <div className="px-3 py-3 text-xs text-zinc-500">{t('admin.main.multiNothing')}</div> : null}
+            {filtered.length === 0 ? (
+              <div className="px-3 py-3 text-xs text-stone-600 dark:text-zinc-500">{t('admin.main.multiNothing')}</div>
+            ) : null}
 
             {filtered.map((w) => {
               const on = props.value.includes(w.id)
@@ -735,11 +740,13 @@ function MultiWorkerPicker(props: {
                     'border-b border-yellow-400/5 last:border-b-0 hover:bg-yellow-400/5'
                   )}
                 >
-                  <span className="text-zinc-100">{w.name}</span>
+                  <span className="text-stone-900 dark:text-zinc-100">{w.name}</span>
                   <span
                     className={cn(
                       'rounded-xl border px-2 py-1 text-[11px]',
-                      on ? 'border-yellow-300/60 bg-yellow-400/10 text-amber-950 dark:text-yellow-100' : 'border-amber-900/30 dark:border-yellow-400/15 bg-black/30 text-stone-600 dark:text-zinc-300'
+                      on
+                        ? 'border-yellow-300/60 bg-yellow-400/10 text-amber-950 dark:text-yellow-100'
+                        : 'border-stone-400/70 dark:border-yellow-400/15 bg-white/80 dark:bg-black/30 text-stone-800 dark:text-zinc-300'
                     )}
                   >
                     {on ? t('admin.main.multiSelected') : ' '}
@@ -929,7 +936,7 @@ function ReportsPanel() {
             value={reportSearch}
             onChange={(e) => setReportSearch(e.target.value)}
             placeholder={t('admin.main.reportsSearchPh')}
-            className="mt-2 w-full rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/35 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 outline-none focus:border-yellow-300/40"
+            className="mt-2 w-full rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/35 px-3 py-2 text-sm text-stone-900 placeholder:text-stone-500 outline-none focus:border-yellow-300/40 dark:text-zinc-100 dark:placeholder:text-zinc-500"
           />
           {reportError ? (
             <div className="mt-2 rounded-2xl border border-red-500/30 bg-red-950/30 px-3 py-2 text-xs text-red-900 dark:text-red-100">{reportError}</div>
@@ -967,7 +974,7 @@ function ReportsPanel() {
                     )}
                   </div>
                   <div className="min-w-0">
-                    <div className="truncate text-sm font-semibold text-zinc-100">{title}</div>
+                    <div className="truncate text-sm font-semibold text-stone-900 dark:text-zinc-100">{title}</div>
                     <div className="mt-0.5 text-[11px] text-zinc-400">
                       {reportsView === 'workers' ? t('admin.main.colWorker') : t('admin.main.colSite')}
                     </div>
@@ -1008,7 +1015,7 @@ function ReportsPanel() {
             <button
               type="button"
               onClick={() => setReportPickerOpen(false)}
-              className="rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-3 py-2 text-xs text-stone-800 dark:text-zinc-200 hover:border-yellow-300/40"
+              className="rounded-2xl border border-stone-400/75 bg-white/90 px-3 py-2 text-xs font-semibold text-stone-900 hover:border-amber-700/50 dark:border-yellow-400/15 dark:bg-black/30 dark:text-zinc-200 dark:hover:border-yellow-300/40"
             >
               {t('common.close')}
             </button>
@@ -1021,7 +1028,9 @@ function ReportsPanel() {
                 onClick={() => setReportPickerTab('payroll')}
                 className={cn(
                   'flex-1 rounded-2xl px-3 py-2 text-[11px] font-semibold transition',
-                  reportPickerTab === 'payroll' ? 'bg-yellow-400/10 text-amber-950 dark:text-yellow-100' : 'text-stone-800 dark:text-zinc-200 hover:text-amber-950 dark:text-yellow-100'
+                  reportPickerTab === 'payroll'
+                    ? 'bg-yellow-400/10 text-amber-950 dark:text-yellow-100'
+                    : 'text-stone-900 dark:text-zinc-200 hover:bg-white/60 hover:text-amber-950 dark:hover:bg-transparent dark:hover:text-yellow-100'
                 )}
               >
                 {t('admin.main.payrollTab')}
@@ -1031,7 +1040,9 @@ function ReportsPanel() {
                 onClick={() => setReportPickerTab('custom')}
                 className={cn(
                   'flex-1 rounded-2xl px-3 py-2 text-[11px] font-semibold transition',
-                  reportPickerTab === 'custom' ? 'bg-yellow-400/10 text-amber-950 dark:text-yellow-100' : 'text-stone-800 dark:text-zinc-200 hover:text-amber-950 dark:text-yellow-100'
+                  reportPickerTab === 'custom'
+                    ? 'bg-yellow-400/10 text-amber-950 dark:text-yellow-100'
+                    : 'text-stone-900 dark:text-zinc-200 hover:bg-white/60 hover:text-amber-950 dark:hover:bg-transparent dark:hover:text-yellow-100'
                 )}
               >
                 {t('admin.main.customTab')}
@@ -1048,7 +1059,7 @@ function ReportsPanel() {
                       onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
                       value={reportFrom}
                       onChange={(e) => setReportFrom(e.target.value)}
-                      className="w-full rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/35 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-yellow-300/40"
+                      className="w-full rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/35 px-3 py-2 text-sm text-stone-900 outline-none focus:border-yellow-300/40 dark:text-zinc-100"
                     />
                   </label>
                   <label className="grid gap-1 text-xs text-stone-600 dark:text-zinc-300">
@@ -1058,12 +1069,12 @@ function ReportsPanel() {
                       onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
                       value={reportTo}
                       onChange={(e) => setReportTo(e.target.value)}
-                      className="w-full rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/35 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-yellow-300/40"
+                      className="w-full rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/35 px-3 py-2 text-sm text-stone-900 outline-none focus:border-yellow-300/40 dark:text-zinc-100"
                     />
                   </label>
                 </div>
   
-                <div className="text-[11px] text-zinc-400">{t('admin.main.customRangeHint')}</div>
+                <div className="text-[11px] text-stone-600 dark:text-zinc-400">{t('admin.main.customRangeHint')}</div>
               </div>
             ) : (
               <div className="mt-4 max-h-[52vh] overflow-auto rounded-3xl border border-yellow-400/10 bg-black/25">
@@ -1082,13 +1093,15 @@ function ReportsPanel() {
                         'border-b border-yellow-400/5 last:border-b-0 hover:bg-yellow-400/5'
                       )}
                     >
-                      <span className="text-zinc-100">
-                        {p.label} <span className="ml-2 text-[11px] text-zinc-400">{p.year}</span>
+                      <span className="text-stone-900 dark:text-zinc-100">
+                        {p.label} <span className="ml-2 text-[11px] text-stone-600 dark:text-zinc-400">{p.year}</span>
                       </span>
                       <span
                         className={cn(
                           'rounded-xl border px-2 py-1 text-[11px]',
-                          checked ? 'border-yellow-300/60 bg-yellow-400/10 text-amber-950 dark:text-yellow-100' : 'border-amber-900/30 dark:border-yellow-400/15 bg-black/30 text-stone-600 dark:text-zinc-300'
+                          checked
+                            ? 'border-yellow-300/60 bg-yellow-400/10 text-amber-950 dark:text-yellow-100'
+                            : 'border-stone-400/70 dark:border-yellow-400/15 bg-white/80 dark:bg-black/30 text-stone-800 dark:text-zinc-300'
                         )}
                       >
                         {checked ? t('admin.main.multiSelected') : ' '}
@@ -1103,7 +1116,7 @@ function ReportsPanel() {
             <button
               type="button"
               onClick={() => setReportPickerOpen(false)}
-              className="rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-4 py-2 text-sm text-stone-800 dark:text-zinc-200 hover:border-yellow-300/40"
+              className="rounded-2xl border border-stone-400/75 bg-white/90 px-4 py-2 text-sm font-semibold text-stone-900 hover:border-amber-700/50 dark:border-yellow-400/15 dark:bg-black/30 dark:text-zinc-200 dark:hover:border-yellow-300/40"
             >
               {t('common.cancel')}
             </button>
@@ -2840,8 +2853,10 @@ const [editOpen, setEditOpen] = useState(false)
               <Image src="/tanija-logo.png" alt="Tanija" fill className="object-contain p-2" priority />
             </div>
             <div>
-              <div className="text-lg font-semibold tracking-wide">{t('admin.main.headerTitle')}</div>
-              <div className="text-xs text-yellow-200/70">{t('admin.main.headerTagline')}</div>
+              <div className="text-lg font-semibold tracking-wide text-stone-900 dark:text-zinc-100">
+                {t('admin.main.headerTitle')}
+              </div>
+              <div className="text-xs text-amber-900/90 dark:text-yellow-200/70">{t('admin.main.headerTagline')}</div>
             </div>
           </div>
 
@@ -2853,7 +2868,9 @@ const [editOpen, setEditOpen] = useState(false)
             ) : null}
 
             {notice ? (
-              <div className="mt-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">{notice}</div>
+              <div className="mt-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-900 dark:text-emerald-100">
+                {notice}
+              </div>
             ) : null}
 
             <form onSubmit={onLogin} className="mt-5 grid gap-3">
@@ -2914,8 +2931,10 @@ const [editOpen, setEditOpen] = useState(false)
               <Image src="/tanija-logo.png" alt="Tanija" fill className="object-contain p-2" priority />
             </div>
             <div>
-              <div className="text-lg font-semibold tracking-wide">{t('admin.main.headerTitle')}</div>
-              <div className="text-xs text-yellow-200/70">{t('admin.main.headerTagline')}</div>
+              <div className="text-lg font-semibold tracking-wide text-stone-900 dark:text-zinc-100">
+                {t('admin.main.headerTitle')}
+              </div>
+              <div className="text-xs text-amber-900/90 dark:text-yellow-200/70">{t('admin.main.headerTagline')}</div>
             </div>
           </div>
 
@@ -2924,7 +2943,7 @@ const [editOpen, setEditOpen] = useState(false)
               onClick={refreshAll}
               disabled={busy || refreshing}
               className={cn(
-                'rounded-xl border border-amber-800/50 bg-black/40 px-4 py-2 text-sm text-amber-900 transition hover:border-amber-700/70 hover:bg-black/60 dark:border-yellow-400/40 dark:text-yellow-100 dark:hover:border-yellow-300/70',
+                'rounded-xl border border-stone-500/55 bg-white/90 px-4 py-2 text-sm font-semibold text-amber-950 transition hover:border-amber-700/60 hover:bg-amber-50/60 dark:border-yellow-400/40 dark:bg-black/40 dark:text-yellow-100 dark:hover:border-yellow-300/70',
                 ADM_DIS,
               )}
             >
@@ -2935,7 +2954,7 @@ const [editOpen, setEditOpen] = useState(false)
               onClick={onLogout}
               disabled={busy || refreshing}
               className={cn(
-                'rounded-xl border border-amber-800/45 bg-black/30 px-4 py-2 text-sm text-amber-900/95 transition hover:border-amber-700/60 hover:bg-black/50 dark:border-yellow-400/25 dark:text-yellow-100/90 dark:hover:border-yellow-300/60',
+                'rounded-xl border border-stone-400/70 bg-white/85 px-4 py-2 text-sm font-semibold text-stone-900 transition hover:border-amber-700/50 hover:bg-amber-50/50 dark:border-yellow-400/25 dark:bg-black/30 dark:text-yellow-100/90 dark:hover:border-yellow-300/60',
                 ADM_DIS,
               )}
             >
@@ -2993,7 +3012,9 @@ const [editOpen, setEditOpen] = useState(false)
           ) : null}
 
           {notice ? (
-            <div className="mt-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">{notice}</div>
+            <div className="mt-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-900 dark:text-emerald-100">
+              {notice}
+            </div>
           ) : null}
 
 
@@ -3177,7 +3198,7 @@ const [editOpen, setEditOpen] = useState(false)
                                         <button
                                           onClick={() => openSiteCard(s)}
                                           disabled={busy}
-                                          className="rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-stone-800 dark:text-zinc-200 transition hover:border-yellow-300/40 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
+                                          className="rounded-2xl border border-stone-400/75 bg-white/90 px-4 py-2 text-xs font-semibold text-stone-900 transition hover:border-amber-700/50 disabled:text-stone-400 disabled:opacity-90 dark:border-yellow-400/15 dark:bg-black/30 dark:text-zinc-200 dark:hover:border-yellow-300/40 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
                                         >
                                           {t('admin.main.siteCardBtn')}
                                         </button>
@@ -3193,7 +3214,7 @@ const [editOpen, setEditOpen] = useState(false)
                                         <button
                                           onClick={() => setArchived(s.id, !archived)}
                                           disabled={busy}
-                                          className="rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-stone-800 dark:text-zinc-200 transition hover:border-yellow-300/40 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
+                                          className="rounded-2xl border border-stone-400/75 bg-white/90 px-4 py-2 text-xs font-semibold text-stone-900 transition hover:border-amber-700/50 disabled:text-stone-400 disabled:opacity-90 dark:border-yellow-400/15 dark:bg-black/30 dark:text-zinc-200 dark:hover:border-yellow-300/40 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
                                         >
                                           {archived ? t('admin.main.restoreFromArchive') : t('admin.main.toArchive')}
                                         </button>
@@ -3206,7 +3227,9 @@ const [editOpen, setEditOpen] = useState(false)
                                         <div className="mt-2 flex flex-wrap gap-2">
                                           {assigned.map((w) => (
                                             <div key={w.id} className="flex items-center gap-2 rounded-2xl border border-yellow-400/10 bg-black/35 px-3 py-2 text-xs">
-                                              <span className="text-zinc-100">{w.full_name || t('admin.main.fallbackWorker')}</span>
+                                              <span className="text-stone-900 dark:text-zinc-100">
+                                                {w.full_name || t('admin.main.fallbackWorker')}
+                                              </span>
                                               <button
                                                 onClick={() => unassign(s.id, w.id)}
                                                 disabled={busy}
@@ -3478,11 +3501,21 @@ const [editOpen, setEditOpen] = useState(false)
                                   <div className="grid gap-2">
                                     <div className="text-sm font-semibold text-amber-950 dark:text-yellow-100">{t('admin.main.mapTitle')}</div>
                                     <MapLarge lat={lat} lng={lng} />
-                                    <div className="flex flex-wrap items-center gap-3 text-xs text-amber-900/85 dark:text-yellow-100/70">
-                                      <a className="underline decoration-yellow-400/20 hover:decoration-yellow-300/50" href={googleNavUrl(lat, lng)} target="_blank" rel="noreferrer">
+                                    <div className="flex flex-wrap items-center gap-3 text-xs font-medium text-amber-950 dark:text-yellow-100/70">
+                                      <a
+                                        className="underline decoration-amber-700/40 hover:decoration-amber-900/70 dark:decoration-yellow-400/20 dark:hover:decoration-yellow-300/50"
+                                        href={googleNavUrl(lat, lng)}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                      >
                                         {t('admin.main.googleNav')}
                                       </a>
-                                      <a className="underline decoration-yellow-400/20 hover:decoration-yellow-300/50" href={appleNavUrl(lat, lng)} target="_blank" rel="noreferrer">
+                                      <a
+                                        className="underline decoration-amber-700/40 hover:decoration-amber-900/70 dark:decoration-yellow-400/20 dark:hover:decoration-yellow-300/50"
+                                        href={appleNavUrl(lat, lng)}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                      >
                                         {t('admin.main.appleNav')}
                                       </a>
                                     </div>
@@ -3494,12 +3527,14 @@ const [editOpen, setEditOpen] = useState(false)
                                 <div className="text-sm font-semibold text-amber-950 dark:text-yellow-100">{t('admin.main.photosSection')}</div>
 
                                 <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <div className="text-xs text-amber-900/70 dark:text-yellow-100/55">{t('admin.main.nowCount', { n: siteCardPhotos.length })}</div>
+                                  <div className="text-xs font-medium text-stone-800 dark:text-yellow-100/55">
+                                    {t('admin.main.nowCount', { n: siteCardPhotos.length })}
+                                  </div>
 
                                   <div className="flex flex-wrap gap-2">
                                     <label
                                       className={cn(
-                                        'rounded-xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-3 py-2 text-xs text-amber-900/85 dark:text-yellow-100/70 hover:border-yellow-300/40',
+                                        'rounded-xl border border-stone-500/55 bg-white/90 px-3 py-2 text-xs font-semibold text-amber-950 hover:border-amber-700/55 dark:border-yellow-400/15 dark:bg-black/30 dark:text-yellow-100/70 dark:hover:border-yellow-300/40',
                                         photoBusy || !siteCardId || siteCardPhotos.length >= 5 ? 'opacity-70' : ''
                                       )}
                                     >
@@ -3559,13 +3594,13 @@ const [editOpen, setEditOpen] = useState(false)
                                 ) : null}
 
                                 {photoUiNotice ? (
-                                  <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-3 text-xs text-emerald-100/85">
+                                  <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-3 text-xs text-emerald-900 dark:text-emerald-100/85">
                                     {photoUiNotice}
                                   </div>
                                 ) : null}
 
                                 {siteCardPhotos.length === 0 ? (
-                                  <div className="rounded-2xl border border-yellow-400/10 bg-black/20 px-3 py-3 text-xs text-amber-900/70 dark:text-yellow-100/55">
+                                  <div className="rounded-2xl border border-yellow-400/10 bg-black/20 px-3 py-3 text-xs font-medium text-stone-800 dark:text-yellow-100/55">
                                     {t('admin.main.noPhotos')}
                                   </div>
                                 ) : (
@@ -3724,7 +3759,7 @@ const [editOpen, setEditOpen] = useState(false)
                             <div className="mt-2 flex flex-wrap gap-2">
                               {sitesList.map((s) => (
                                 <div key={s.id} className="flex items-center gap-2 rounded-2xl border border-yellow-400/10 bg-black/35 px-3 py-2 text-xs">
-                                  <span className="text-zinc-100">{s.name || s.id}</span>
+                                  <span className="text-stone-900 dark:text-zinc-100">{s.name || s.id}</span>
                                   <button
                                     onClick={() => unassign(s.id, w.id)}
                                     disabled={busy}
@@ -4039,7 +4074,7 @@ const [editOpen, setEditOpen] = useState(false)
                       .map((j) => (
                         <div key={j.id} className="rounded-3xl border border-yellow-400/10 bg-black/20 p-4">
                           <div className="flex items-start justify-between gap-3">
-                            <div className="text-sm font-semibold text-zinc-100">
+                            <div className="text-sm font-semibold text-stone-900 dark:text-zinc-100">
                               {fmtD(j.job_date)} • {timeRangeHHMM(j.scheduled_time, j.scheduled_end_time)}
                             </div>
                             <div className="text-xs"><StatusTag status={String(j.status || '')} /></div>
@@ -4051,19 +4086,19 @@ const [editOpen, setEditOpen] = useState(false)
 
                           <div className="mt-3 grid gap-2 text-xs text-stone-800 dark:text-zinc-200">
                             <div className="flex gap-2">
-                              <span className="text-zinc-400">{t('admin.main.labelSiteColon')}</span>
+                              <span className="text-stone-600 dark:text-zinc-400">{t('admin.main.labelSiteColon')}</span>
                               <span className="truncate">{j.site_name || '—'}</span>
                             </div>
                             <div className="flex gap-2">
-                              <span className="text-zinc-400">{t('admin.main.labelWorkerColon')}</span>
+                              <span className="text-stone-600 dark:text-zinc-400">{t('admin.main.labelWorkerColon')}</span>
                               <span className="truncate">{j.worker_name || '—'}</span>
                             </div>
                             <div className="flex gap-2">
-                              <span className="text-zinc-400">{t('admin.main.startedColon')}</span>
+                              <span className="text-stone-600 dark:text-zinc-400">{t('admin.main.startedColon')}</span>
                               <span>{fmtDT(j.started_at)}</span>
                             </div>
                             <div className="flex gap-2">
-                              <span className="text-zinc-400">{t('admin.main.stoppedColon')}</span>
+                              <span className="text-stone-600 dark:text-zinc-400">{t('admin.main.stoppedColon')}</span>
                               <span>{fmtDT(j.stopped_at)}</span>
                             </div>
                           </div>
@@ -4071,7 +4106,7 @@ const [editOpen, setEditOpen] = useState(false)
                           <div className="mt-3 flex flex-wrap items-center gap-2">
                             <button
                               onClick={() => openEditForJob(j)}
-                              className="rounded-xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-3 py-2 text-xs font-semibold text-stone-800 dark:text-zinc-200 hover:border-yellow-300/40"
+                              className="rounded-xl border border-stone-400/75 bg-white/90 px-3 py-2 text-xs font-semibold text-stone-900 hover:border-amber-700/50 dark:border-yellow-400/15 dark:bg-black/30 dark:text-zinc-200 dark:hover:border-yellow-300/40"
                             >
                               {t('admin.main.edit')}
                             </button>
@@ -4100,7 +4135,7 @@ const [editOpen, setEditOpen] = useState(false)
                           <th className="px-4 py-3"></th>
                         </tr>
                       </thead>
-                      <tbody className="text-sm text-zinc-100">
+                      <tbody className="text-sm text-stone-900 dark:text-zinc-100">
                         {scheduleFiltered
                           .slice()
                           .sort((a, b) => `${a.job_date || ''} ${timeHHMM(a.scheduled_time)}`.localeCompare(`${b.job_date || ''} ${timeHHMM(b.scheduled_time)}`))
@@ -4457,7 +4492,7 @@ const [editOpen, setEditOpen] = useState(false)
 
                       <div className="grid gap-2 md:grid-cols-2">
                         <div className="grid gap-1">
-                          <div className="text-[11px] text-zinc-400">{t('admin.main.fio')}</div>
+                          <div className="text-[11px] text-stone-600 dark:text-zinc-400">{t('admin.main.fio')}</div>
                           <input
                             value={locDraftValue(workerLocDraft.name, workerCardLocale)}
                             onChange={(e) =>
@@ -4467,32 +4502,32 @@ const [editOpen, setEditOpen] = useState(false)
                               }))
                             }
                             placeholder={t('admin.main.workerNamePh')}
-                            className="w-full rounded-xl border border-yellow-400/10 bg-black/30 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-yellow-300/40"
+                            className="w-full rounded-xl border border-stone-400/40 bg-white/90 px-3 py-2 text-sm text-stone-900 outline-none focus:border-amber-600/50 dark:border-yellow-400/10 dark:bg-black/30 dark:text-zinc-100 dark:focus:border-yellow-300/40"
                           />
                         </div>
 
                         <div className="grid gap-1">
-                          <div className="text-[11px] text-zinc-400">{t('admin.main.contacts')}</div>
+                          <div className="text-[11px] text-stone-600 dark:text-zinc-400">{t('admin.main.contacts')}</div>
                           <div className="grid gap-2">
                             <input
                               value={workerCardEmail}
                               onChange={(e) => setWorkerCardEmail(e.target.value)}
                               placeholder={t('admin.main.emailLoginPh')}
                               autoComplete="email"
-                              className="w-full rounded-xl border border-yellow-400/10 bg-black/30 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-yellow-300/40"
+                              className="w-full rounded-xl border border-stone-400/40 bg-white/90 px-3 py-2 text-sm text-stone-900 outline-none focus:border-amber-600/50 dark:border-yellow-400/10 dark:bg-black/30 dark:text-zinc-100 dark:focus:border-yellow-300/40"
                             />
                             <input
                               value={workerCardPhone}
                               onChange={(e) => setWorkerCardPhone(e.target.value)}
                               placeholder={t('admin.main.phoneSmsPh')}
-                              className="w-full rounded-xl border border-yellow-400/10 bg-black/30 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-yellow-300/40"
+                              className="w-full rounded-xl border border-stone-400/40 bg-white/90 px-3 py-2 text-sm text-stone-900 outline-none focus:border-amber-600/50 dark:border-yellow-400/10 dark:bg-black/30 dark:text-zinc-100 dark:focus:border-yellow-300/40"
                             />
                           </div>
                         </div>
                       </div>
 
                       <div className="grid gap-1">
-                        <div className="text-[11px] text-zinc-400">{t('admin.main.notes')}</div>
+                        <div className="text-[11px] text-stone-600 dark:text-zinc-400">{t('admin.main.notes')}</div>
                         <textarea
                           value={locDraftValue(workerLocDraft.notes, workerCardLocale)}
                           onChange={(e) =>
@@ -4503,7 +4538,7 @@ const [editOpen, setEditOpen] = useState(false)
                           }
                           placeholder={t('admin.main.notesPh')}
                           rows={4}
-                          className="w-full resize-none rounded-2xl border border-yellow-400/10 bg-black/30 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-yellow-300/40"
+                          className="w-full resize-none rounded-2xl border border-stone-400/40 bg-white/90 px-3 py-2 text-sm text-stone-900 outline-none focus:border-amber-600/50 dark:border-yellow-400/10 dark:bg-black/30 dark:text-zinc-100 dark:focus:border-yellow-300/40"
                         />
                       </div>
                     </div>
@@ -4514,12 +4549,14 @@ const [editOpen, setEditOpen] = useState(false)
                   <div className="text-sm font-semibold text-amber-950 dark:text-yellow-100">{t('admin.main.photosSection')}</div>
 
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-xs text-amber-900/70 dark:text-yellow-100/55">{t('admin.main.nowCount', { n: workerCardPhotos.length })}</div>
+                      <div className="text-xs font-medium text-stone-800 dark:text-yellow-100/55">
+                        {t('admin.main.nowCount', { n: workerCardPhotos.length })}
+                      </div>
 
                     <div className="flex flex-wrap gap-2">
                       <label
                         className={cn(
-                          'rounded-xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-3 py-2 text-xs text-amber-900/85 dark:text-yellow-100/70 hover:border-yellow-300/40',
+                          'rounded-xl border border-stone-500/55 bg-white/90 px-3 py-2 text-xs font-semibold text-amber-950 hover:border-amber-700/55 dark:border-yellow-400/15 dark:bg-black/30 dark:text-yellow-100/70 dark:hover:border-yellow-300/40',
                           workerPhotoBusy || !workerCardId || workerCardPhotos.length >= 5 ? 'opacity-70' : ''
                         )}
                       >
@@ -4620,7 +4657,7 @@ const [editOpen, setEditOpen] = useState(false)
                   <div className="text-sm font-semibold text-amber-950 dark:text-yellow-100">{t('admin.main.shiftsTitle')}</div>
 
                   {workerCardItems.length === 0 ? (
-                    <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-3 text-xs text-zinc-500">
+                    <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-3 text-xs text-stone-600 dark:text-zinc-500">
                       {t('admin.main.noShiftsWorker')}
                     </div>
                   ) : null}
@@ -4628,8 +4665,9 @@ const [editOpen, setEditOpen] = useState(false)
                   {workerCardItems.map((j) => (
                     <div key={j.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-yellow-400/10 bg-black/30 px-3 py-2">
                       <div className="text-xs text-stone-800 dark:text-zinc-200">
-                        <span className="text-zinc-100">{fmtD(j.job_date)}</span> • <span className="text-zinc-100">{timeRangeHHMM(j.scheduled_time, j.scheduled_end_time)}</span> •{' '}
-                        <span className="inline-flex items-center gap-2 text-zinc-100">
+                        <span className="text-stone-900 dark:text-zinc-100">{fmtD(j.job_date)}</span> •{' '}
+                        <span className="text-stone-900 dark:text-zinc-100">{timeRangeHHMM(j.scheduled_time, j.scheduled_end_time)}</span> •{' '}
+                        <span className="inline-flex items-center gap-2 text-stone-900 dark:text-zinc-100">
                           {(() => {
                             const ss = j.site_id ? sitesById.get(j.site_id) : null
                             const photos = ss && Array.isArray((ss as any).photos) ? ((ss as any).photos as any[]) : []
