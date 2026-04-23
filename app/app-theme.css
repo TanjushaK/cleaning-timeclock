@@ -59,6 +59,36 @@
   color: rgba(254, 243, 199, 0.72);
 }
 
+.appFooterRow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.appFooterLinks {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 4px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.appFooterLinks a {
+  color: rgba(253, 230, 138, 0.85);
+  text-decoration: none;
+}
+
+.appFooterLinks a:hover {
+  text-decoration: underline;
+}
+
+.appFooterSep {
+  opacity: 0.45;
+  padding: 0 2px;
+}
+
 html[data-theme='light'] .appTheme {
   color: #292524;
   background:
@@ -117,4 +147,8 @@ html[data-theme='light'] .appFooter {
 
 html[data-theme='light'] .appFooterYear {
   color: rgba(68, 64, 60, 0.92);
+}
+
+html[data-theme='light'] .appFooterLinks a {
+  color: rgba(146, 64, 14, 0.95);
 }

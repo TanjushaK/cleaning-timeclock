@@ -59,6 +59,7 @@ export const en: Messages = {
     stopped: "Stopped.",
     stoppedQueued: "No network. Stop queued.",
     dataReloaded: "Updated.",
+    accountDeletionRequested: "Account deletion request received. Keep your reference ID for support.",
   },
   errors: {
     gpsUnavailable: "GPS is unavailable.",
@@ -269,6 +270,45 @@ export const en: Messages = {
     loadingSubtitle: "Restoring session and profile.",
     offlineNotice: "Offline. Actions will be sent when the network is back.",
     syncNow: "Sync now",
+  },
+  legalNav: {
+    hub: "Legal",
+    privacy: "Privacy Policy",
+    terms: "Terms of Use",
+    support: "Support",
+    contact: "Contact",
+    returns: "Returns",
+    shipping: "Shipping",
+  },
+  permissions: {
+    geoModalTitle: "Location access",
+    geoModalBody:
+      "Start and stop of a shift use a one-time GPS reading to verify you are at the job site. The app does not track your location in the background. You can refuse — then start/stop may be blocked when your organisation requires GPS validation.",
+    geoContinue: "Continue",
+    photoRationaleTitle: "Profile photos",
+    photoRationaleBody:
+      "When you choose a file, the system may ask for photo library access so you can upload an optional profile image (up to 5). Photos are stored for identification inside your team.",
+    photoRationaleDismiss: "Got it",
+    biometricExplain:
+      "Optional: store an encrypted refresh token in the device secure store after you prove with Face ID / Touch ID. Your account password is not stored in the biometric vault.",
+  },
+  accountDeletion: {
+    sectionTitle: "Delete account",
+    intro:
+      "You can initiate deletion of your worker account from this screen. This is a request — your organisation will verify and complete processing; some records may be retained where the law requires.",
+    consequences:
+      "You may lose access to shifts, time history in the app, and profile photos. This cannot always be undone.",
+    confirmHint: "Confirm that you want to send a deletion request.",
+    confirmLabel: "I understand the consequences and want to send a deletion request",
+    noteLabel: "Optional note to the operator",
+    notePlaceholder: "Reason / context (optional)",
+    submit: "Send deletion request",
+    submitting: "Sending…",
+    successDetail: "Request registered. Reference:",
+    alreadyPending: "You already have a pending deletion request.",
+    helpLink: "Support",
+    openPrivacy: "Privacy Policy",
+    requestQueuedHint: "Your organisation will verify and complete deletion when allowed by law and contracts. You may be signed out after processing.",
   },
   admin: ADMIN_EN,
 };

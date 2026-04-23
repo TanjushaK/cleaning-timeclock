@@ -15,19 +15,31 @@ function required(name) {
   return value
 }
 
-const sqlPath = path.join(root, 'db', 'migrations', '001_init.sql')
-if (!fs.existsSync(sqlPath)) {
-  throw new Error(`Migration file not found: ${sqlPath}`)
+const migDir = path.join(root, 'db', 'migrations')
+if (!fs.existsSync(migDir)) {
+  throw new Error(`Migrations directory not found: ${migDir}`)
+}
+
+const files = fs
+  .readdirSync(migDir)
+  .filter((f) => f.endsWith('.sql'))
+  .sort()
+
+if (!files.length) {
+  throw new Error(`No .sql files in ${migDir}`)
 }
 
 const connectionString = required('DATABASE_URL')
-const sql = fs.readFileSync(sqlPath, 'utf8')
 
 const client = new Client({ connectionString })
 await client.connect()
 try {
-  await client.query(sql)
-  console.log(JSON.stringify({ ok: true, migration: path.relative(root, sqlPath) }))
+  for (const f of files) {
+    const sqlPath = path.join(migDir, f)
+    const sql = fs.readFileSync(sqlPath, 'utf8')
+    await client.query(sql)
+    console.log(JSON.stringify({ ok: true, migration: path.relative(root, sqlPath) }))
+  }
 } finally {
   await client.end()
 }

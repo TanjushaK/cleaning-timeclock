@@ -59,6 +59,7 @@ export const nl: Messages = {
     stopped: "Stop.",
     stoppedQueued: "Geen netwerk. Stop in wachtrij.",
     dataReloaded: "Bijgewerkt.",
+    accountDeletionRequested: "Verwijderverzoek ontvangen. Bewaar het referentienummer voor support.",
   },
   errors: {
     gpsUnavailable: "GPS is niet beschikbaar.",
@@ -269,6 +270,46 @@ export const nl: Messages = {
     loadingSubtitle: "Sessie en profiel worden hersteld.",
     offlineNotice: "Offline. Acties worden verzonden zodra de verbinding terug is.",
     syncNow: "Nu synchroniseren",
+  },
+  legalNav: {
+    hub: "Juridisch",
+    privacy: "Privacybeleid",
+    terms: "Gebruiksvoorwaarden",
+    support: "Support",
+    contact: "Contact",
+    returns: "Retour",
+    shipping: "Verzending",
+  },
+  permissions: {
+    geoModalTitle: "Locatietoegang",
+    geoModalBody:
+      "Start en stop van een dienst gebruiken een eenmalige GPS-meting om te controleren of u op de locatie bent. Er is geen achtergrondtracking. U kunt weigeren — dan kunnen start/stop geblokkeerd worden als uw organisatie GPS-validatie vereist.",
+    geoContinue: "Doorgaan",
+    photoRationaleTitle: "Profielfoto’s",
+    photoRationaleBody:
+      "Wanneer u een bestand kiest, kan het systeem toegang tot de fotobibliotheek vragen om een optionele profielfoto te uploaden (max. 5). Foto’s worden bewaard voor herkenning binnen het team.",
+    photoRationaleDismiss: "Begrepen",
+    biometricExplain:
+      "Optioneel: na Face ID / Touch ID wordt een versleutelde refresh-token in het beveiligde opslaggedeelte van het apparaat bewaard. Uw accountwachtwoord wordt niet in de biometrische kluis opgeslagen.",
+  },
+  accountDeletion: {
+    sectionTitle: "Account verwijderen",
+    intro:
+      "U kunt hier een verwijderverzoek voor uw werknemersaccount starten. Dit is een aanvraag — uw organisatie controleert en verwerkt asynchroon; sommige gegevens blijven mogelijk bewaard wettelijk verplicht.",
+    consequences:
+      "U verliest toegang tot diensten, tijdgeschiedenis in de app en profielfoto’s. Niet alles is terug te draaien.",
+    confirmHint: "Bevestig dat u een verwijderverzoek wilt verzenden.",
+    confirmLabel: "Ik begrijp de gevolgen en wil een verwijderverzoek verzenden",
+    noteLabel: "Optionele toelichting voor de operator",
+    notePlaceholder: "Reden / context (optioneel)",
+    submit: "Verwijderverzoek verzenden",
+    submitting: "Verzenden…",
+    successDetail: "Aanvraag geregistreerd. Referentie:",
+    alreadyPending: "Er is al een openstaand verwijderverzoek.",
+    helpLink: "Support",
+    openPrivacy: "Privacybeleid",
+    requestQueuedHint:
+      "Uw organisatie controleert en voltooit de verwijdering wanneer wet- en contractregels dat toestaan. Na verwerking kan toegang worden uitgeschakeld.",
   },
   admin: ADMIN_NL,
 };

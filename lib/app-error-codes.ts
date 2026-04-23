@@ -63,6 +63,8 @@ export const AppApiErrorCodes = {
   /** PostgreSQL down, bad DATABASE_URL, or auth to DB failed (e.g. 28P01). */
   DB_UNAVAILABLE: "DB_UNAVAILABLE",
   INTERNAL: "INTERNAL",
+  ACCOUNT_DELETION_CREATE_FAILED: "ACCOUNT_DELETION_CREATE_FAILED",
+  ACCOUNT_DELETION_LIST_FAILED: "ACCOUNT_DELETION_LIST_FAILED",
 } as const;
 
 export type AppApiErrorCode = (typeof AppApiErrorCodes)[keyof typeof AppApiErrorCodes];

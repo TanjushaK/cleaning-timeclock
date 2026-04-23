@@ -1,5 +1,6 @@
 ﻿"use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { appAuth } from "@/lib/browser-auth";
 import { clientWorkerErrorMessage } from "@/lib/app-api-message";
@@ -67,7 +68,30 @@ export default function WorkerProfilePage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  const PHOTO_RATIONALE_KEY = "ct_photo_rationale_v1";
+  const [photoRationaleOpen, setPhotoRationaleOpen] = useState(true);
+
+  const [deletionRequest, setDeletionRequest] = useState<{
+    id: string;
+    status: string;
+    created_at: string;
+    note?: string | null;
+  } | null>(null);
+  const [delConfirm, setDelConfirm] = useState(false);
+  const [delNote, setDelNote] = useState("");
+  const [delBusy, setDelBusy] = useState(false);
+
   const authed = useMemo(() => !!getAccessToken(), []);
+
+  useEffect(() => {
+    try {
+      if (typeof sessionStorage !== "undefined" && sessionStorage.getItem(PHOTO_RATIONALE_KEY)) {
+        setPhotoRationaleOpen(false);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const loadPhotos = useCallback(async () => {
     const r = await fetch("/api/me/photos", { headers: bearerHeaders(), cache: "no-store" });
@@ -92,6 +116,22 @@ export default function WorkerProfilePage() {
     await loadPhotos().catch(() => {});
   }, [loadPhotos]);
 
+  const loadDeletionRequest = useCallback(async () => {
+    try {
+      const r = await fetch("/api/me/account-deletion", { headers: bearerHeaders(), cache: "no-store" });
+      const data = (await r.json().catch(() => ({}))) as {
+        request?: { id: string; status: string; created_at: string; note?: string | null } | null;
+      };
+      if (!r.ok) {
+        setDeletionRequest(null);
+        return;
+      }
+      setDeletionRequest(data.request ?? null);
+    } catch {
+      setDeletionRequest(null);
+    }
+  }, []);
+
   useEffect(() => {
     void (async () => {
       try {
@@ -100,13 +140,14 @@ export default function WorkerProfilePage() {
           return;
         }
         await loadMe();
+        await loadDeletionRequest();
       } catch (e: unknown) {
         setError(clientWorkerErrorMessage(t, e));
       } finally {
         setBooting(false);
       }
     })();
-  }, [loadMe, t]);
+  }, [loadDeletionRequest, loadMe, t]);
 
   const logout = useCallback(() => {
     clearAuthTokens();
@@ -408,6 +449,27 @@ export default function WorkerProfilePage() {
             <div className="text-sm opacity-70">{photos.length}/5</div>
           </div>
 
+          {photoRationaleOpen ? (
+            <div className="mt-3 rounded-xl border border-amber-500/25 bg-amber-500/10 p-3 text-sm">
+              <div className="font-semibold text-amber-100">{t("permissions.photoRationaleTitle")}</div>
+              <div className="mt-2 opacity-90">{t("permissions.photoRationaleBody")}</div>
+              <button
+                type="button"
+                className="mt-3 rounded-lg border border-amber-500/40 px-3 py-1.5 text-xs font-semibold hover:bg-amber-500/15"
+                onClick={() => {
+                  try {
+                    sessionStorage.setItem(PHOTO_RATIONALE_KEY, "1");
+                  } catch {
+                    // ignore
+                  }
+                  setPhotoRationaleOpen(false);
+                }}
+              >
+                {t("permissions.photoRationaleDismiss")}
+              </button>
+            </div>
+          ) : null}
+
           <div className="mt-3">
             <input
               ref={fileRef}
@@ -456,6 +518,94 @@ export default function WorkerProfilePage() {
           </div>
 
           {photos.length === 0 ? <div className="mt-3 text-sm opacity-70">{t("profile.photosEmptyHint")}</div> : null}
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-950/20 p-5 shadow-xl">
+          <div className="text-lg font-semibold text-red-200">{t("accountDeletion.sectionTitle")}</div>
+          <p className="mt-2 text-sm text-red-100/90">{t("accountDeletion.intro")}</p>
+          <p className="mt-2 text-sm text-red-100/80">{t("accountDeletion.consequences")}</p>
+
+          {deletionRequest?.status === "pending" ? (
+            <div className="mt-3 rounded-xl border border-amber-500/25 bg-zinc-950/50 p-3 text-sm">
+              <div className="font-semibold text-amber-100">{t("feedback.accountDeletionRequested")}</div>
+              <div className="mt-1 font-mono text-xs opacity-90">ID: {deletionRequest.id}</div>
+              <div className="mt-2 text-xs opacity-80">{t("accountDeletion.requestQueuedHint")}</div>
+            </div>
+          ) : (
+            <>
+              <label className="mt-4 flex cursor-pointer items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={delConfirm}
+                  onChange={(e) => setDelConfirm(e.target.checked)}
+                  className="mt-1 h-4 w-4 accent-amber-400"
+                />
+                <span>{t("accountDeletion.confirmLabel")}</span>
+              </label>
+              <div className="mt-2 text-xs opacity-70">{t("accountDeletion.confirmHint")}</div>
+
+              <label className="mt-4 grid gap-1">
+                <span className="text-xs opacity-80">{t("accountDeletion.noteLabel")}</span>
+                <textarea
+                  className="min-h-[72px] rounded-xl bg-zinc-900/60 border border-red-500/20 px-3 py-2 text-sm outline-none focus:border-red-400/50"
+                  value={delNote}
+                  onChange={(e) => setDelNote(e.target.value)}
+                  placeholder={t("accountDeletion.notePlaceholder")}
+                  maxLength={4000}
+                />
+              </label>
+
+              <button
+                type="button"
+                className="mt-4 rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+                disabled={delBusy || !delConfirm}
+                onClick={async () => {
+                  if (!delConfirm) return;
+                  setDelBusy(true);
+                  setError(null);
+                  setNotice(null);
+                  try {
+                    const r = await fetch("/api/me/account-deletion", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json", ...bearerHeaders() },
+                      body: JSON.stringify({ note: delNote.trim() || undefined }),
+                    });
+                    const data = (await r.json().catch(() => ({}))) as {
+                      ok?: boolean;
+                      request_id?: string;
+                      already_pending?: boolean;
+                      error?: string;
+                      errorCode?: string;
+                    };
+                    throwIfApiError(r, data);
+                    if (data.already_pending) {
+                      setNotice(t("accountDeletion.alreadyPending"));
+                    } else if (data.request_id) {
+                      setNotice(`${t("feedback.accountDeletionRequested")} (${t("accountDeletion.successDetail")} ${data.request_id})`);
+                    }
+                    setDelConfirm(false);
+                    setDelNote("");
+                    await loadDeletionRequest();
+                  } catch (e: unknown) {
+                    setError(clientWorkerErrorMessage(t, e));
+                  } finally {
+                    setDelBusy(false);
+                  }
+                }}
+              >
+                {delBusy ? t("accountDeletion.submitting") : t("accountDeletion.submit")}
+              </button>
+            </>
+          )}
+
+          <div className="mt-4 flex flex-wrap gap-3 text-xs">
+            <Link className="text-amber-300 underline hover:text-amber-200" href="/privacy">
+              {t("accountDeletion.openPrivacy")}
+            </Link>
+            <Link className="text-amber-300 underline hover:text-amber-200" href="/support">
+              {t("accountDeletion.helpLink")}
+            </Link>
+          </div>
         </div>
       </div>
       <AppFooter />

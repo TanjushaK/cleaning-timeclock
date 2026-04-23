@@ -52,6 +52,7 @@ export type Messages = {
     stopped: string;
     stoppedQueued: string;
     dataReloaded: string;
+    accountDeletionRequested: string;
   };
   errors: {
     gpsUnavailable: string;
@@ -249,6 +250,40 @@ export type Messages = {
     loadingSubtitle: string;
     offlineNotice: string;
     syncNow: string;
+  };
+  legalNav: {
+    hub: string;
+    privacy: string;
+    terms: string;
+    support: string;
+    contact: string;
+    returns: string;
+    shipping: string;
+  };
+  permissions: {
+    geoModalTitle: string;
+    geoModalBody: string;
+    geoContinue: string;
+    photoRationaleTitle: string;
+    photoRationaleBody: string;
+    photoRationaleDismiss: string;
+    biometricExplain: string;
+  };
+  accountDeletion: {
+    sectionTitle: string;
+    intro: string;
+    consequences: string;
+    confirmHint: string;
+    confirmLabel: string;
+    noteLabel: string;
+    notePlaceholder: string;
+    submit: string;
+    submitting: string;
+    successDetail: string;
+    alreadyPending: string;
+    helpLink: string;
+    openPrivacy: string;
+    requestQueuedHint: string;
   };
   /** Namespaced: admin.approvals.*, admin.fact.*, admin.hours.*, admin.main.*, admin.common.*, admin.api.* */
   admin: {

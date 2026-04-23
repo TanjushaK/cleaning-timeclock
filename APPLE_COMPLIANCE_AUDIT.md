@@ -84,3 +84,11 @@
 
 - **Не заявлять «Apple-compliant» без ваших собственных прогонов на устройстве и выбранной политики приватности.**  
 - Техническая готовность к review: **READY WITH WARNINGS** по состоянию на дату правок в этом аудите.
+
+---
+
+## Обновления (2026-04-23)
+
+- **Account deletion:** in-app initiation via `POST /api/me/account-deletion` + UI на `/me/profile` (очередь `account_deletion_requests`, не мгновенный hard-delete).  
+- **Legal pages:** `/privacy`, `/terms`, `/legal`, `/support`, `/contact`, `/returns`, `/shipping` + тексты в `lib/apple-legal-docs.ts`.  
+- **Расширенный чеклист:** `APPLE_APP_READINESS_CHECKLIST.md`, `APPLE_RISK_MATRIX.md`, `APPLE_METADATA_REVIEW.md`.

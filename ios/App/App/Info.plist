@@ -49,5 +49,9 @@
 	<string>Location is used to verify you are at the job site when starting or ending a shift.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Use Face ID to unlock your saved sign-in on this device. Your account password is not stored.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Lets you choose photos from your library when you upload optional profile or job documentation images.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>The camera is used only when you choose “take photo” to capture an image for upload (for example site or profile photos in the web app).</string>
 </dict>
 </plist>
