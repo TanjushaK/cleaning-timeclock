@@ -14,7 +14,7 @@ import { authFetchJson, clearAuthTokens, getAccessToken, getRefreshToken, setAut
 import { clientWorkerErrorMessage } from "@/lib/app-api-message";
 import { FetchApiError } from "@/lib/fetch-api-error";
 import { formatDateShort, formatDateTimeShort, formatWallTime } from "@/lib/locale-format";
-import AppFooter from "@/app/_components/AppFooter";
+import AppWorkerShell from "@/app/_components/AppWorkerShell";
 import { useI18n } from "@/components/I18nProvider";
 import { OutboxEvent, outboxAdd, outboxCount as outboxCountDb, outboxList, outboxRemove, outboxUpdate } from "@/lib/offline/outbox";
 
@@ -1160,20 +1160,19 @@ const loadAll = useCallback(async () => {
 
   if (loading) {
     return (
-      <div className="appTheme min-h-screen flex flex-col">
+      <AppWorkerShell>
         <main className="flex-1 bg-black text-zinc-100 flex items-center justify-center p-6">
           <div className={clsx(card, "p-6 w-full max-w-md")}>
             <div className="text-lg font-semibold">{tr("home.loadingTitle")}</div>
             <div className="mt-2 text-sm opacity-70">{tr("home.loadingSubtitle")}</div>
           </div>
         </main>
-        <AppFooter />
-      </div>
+      </AppWorkerShell>
     );
   }
 
   return (
-    <div className="appTheme min-h-screen flex flex-col">
+    <AppWorkerShell>
       <main className="flex-1 bg-black text-zinc-100 p-6">
         <div className="max-w-6xl mx-auto">
         <header className="flex items-center justify-between gap-3">
@@ -1628,7 +1627,6 @@ const loadAll = useCallback(async () => {
 
         </div>
       </main>
-      <AppFooter />
-    </div>
+    </AppWorkerShell>
   );
 }

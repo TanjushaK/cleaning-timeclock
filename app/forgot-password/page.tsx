@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { appAuth } from "@/lib/browser-auth";
 import { clientWorkerErrorMessage } from "@/lib/app-api-message";
-import AppFooter from "@/app/_components/AppFooter";
+import AppWorkerShell from "@/app/_components/AppWorkerShell";
 import { useI18n } from "@/components/I18nProvider";
 
 export default function ForgotPasswordPage() {
@@ -40,8 +40,7 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="appTheme min-h-screen flex flex-col">
-      <div className="mx-auto max-w-md px-5 py-10 flex-1">
+    <AppWorkerShell mainClassName="mx-auto max-w-md w-full px-5 py-10">
         <div className="rounded-3xl border border-amber-400/20 bg-gradient-to-b from-[#0b0b12] to-[#07070b] p-6 shadow-2xl">
           <div className="flex items-center gap-3">
             <img src="/tanija-logo.png" alt="" className="h-10 w-10 rounded-xl" />
@@ -90,8 +89,6 @@ export default function ForgotPasswordPage() {
         <div className="mt-4 text-center text-xs text-zinc-500">
           {t("forgotPassword.redirectHint")} <span className="text-zinc-300">/reset-password</span>
         </div>
-      </div>
-      <AppFooter />
-    </div>
+    </AppWorkerShell>
   );
 }

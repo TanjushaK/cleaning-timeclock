@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import AppWorkerShell from "@/app/_components/AppWorkerShell";
 import { useI18n } from "@/components/I18nProvider";
 
 export default function NotFoundClient() {
   const { t } = useI18n();
 
   return (
-    <main className="min-h-[100svh] px-4 py-10">
+    <AppWorkerShell mainClassName="px-4 py-10">
       <div className="mx-auto w-full max-w-xl rounded-3xl border border-amber-500/25 bg-black/35 p-6 shadow-[0_0_0_1px_rgba(245,158,11,0.20),0_0_70px_rgba(245,158,11,0.12),0_25px_90px_rgba(0,0,0,0.65)]">
         <h1 className="text-2xl font-semibold tracking-tight text-amber-50">{t("notFoundPage.title")}</h1>
         <p className="mt-2 text-amber-50/70">{t("notFoundPage.description")}</p>
@@ -21,6 +22,6 @@ export default function NotFoundClient() {
           </Link>
         </div>
       </div>
-    </main>
+    </AppWorkerShell>
   );
 }
