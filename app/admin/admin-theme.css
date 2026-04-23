@@ -136,6 +136,65 @@ html[data-theme='light'] .adminFooterYear {
   color: rgba(68, 64, 60, 0.92);
 }
 
+html[data-theme='light'] .adminTheme .ctSearchableSelectInput,
+html[data-theme='light'] .adminPortalTheme .ctSearchableSelectInput,
+html[data-theme='light'] .workerCardModalTheme .ctSearchableSelectInput {
+  background-color: rgba(255, 255, 255, 0.82) !important;
+  color: #292524 !important;
+  border-color: rgba(180, 83, 9, 0.35) !important;
+}
+
+html[data-theme='light'] .adminTheme .ctSearchableSelectInput::placeholder,
+html[data-theme='light'] .adminPortalTheme .ctSearchableSelectInput::placeholder,
+html[data-theme='light'] .workerCardModalTheme .ctSearchableSelectInput::placeholder {
+  color: #78716c !important;
+}
+
+html[data-theme='light'] .adminTheme .ctSearchableSelectMenu,
+html[data-theme='light'] .adminPortalTheme .ctSearchableSelectMenu,
+html[data-theme='light'] .workerCardModalTheme .ctSearchableSelectMenu {
+  background: rgba(255, 251, 235, 0.97) !important;
+  border-color: rgba(180, 83, 9, 0.28) !important;
+  box-shadow:
+    0 0 0 1px rgba(180, 83, 9, 0.12),
+    0 18px 48px rgba(41, 37, 36, 0.18) !important;
+}
+
+html[data-theme='light'] .adminTheme .ctSearchableSelectOption,
+html[data-theme='light'] .adminPortalTheme .ctSearchableSelectOption,
+html[data-theme='light'] .workerCardModalTheme .ctSearchableSelectOption {
+  color: #292524 !important;
+}
+
+html[data-theme='light'] .adminTheme .ctSearchableSelectOption:hover,
+html[data-theme='light'] .adminPortalTheme .ctSearchableSelectOption:hover,
+html[data-theme='light'] .workerCardModalTheme .ctSearchableSelectOption:hover {
+  background-color: rgba(245, 158, 11, 0.12) !important;
+  color: #92400e !important;
+}
+
+html[data-theme='light'] .adminTheme .ctSearchableSelectOption.bg-yellow-400\/15,
+html[data-theme='light'] .adminPortalTheme .ctSearchableSelectOption.bg-yellow-400\/15,
+html[data-theme='light'] .workerCardModalTheme .ctSearchableSelectOption.bg-yellow-400\/15 {
+  background-color: rgba(245, 158, 11, 0.16) !important;
+  color: #92400e !important;
+}
+
+html[data-theme='light'] .adminTheme .ctSearchableSelectOption .font-semibold,
+html[data-theme='light'] .adminPortalTheme .ctSearchableSelectOption .font-semibold,
+html[data-theme='light'] .workerCardModalTheme .ctSearchableSelectOption .font-semibold {
+  color: inherit !important;
+}
+
+html[data-theme='light'] .adminTheme .ctSearchableSelectHint,
+html[data-theme='light'] .adminTheme .ctSearchableSelectEmpty,
+html[data-theme='light'] .adminPortalTheme .ctSearchableSelectHint,
+html[data-theme='light'] .adminPortalTheme .ctSearchableSelectEmpty,
+html[data-theme='light'] .workerCardModalTheme .ctSearchableSelectHint,
+html[data-theme='light'] .workerCardModalTheme .ctSearchableSelectEmpty {
+  color: #57534e !important;
+}
+
 /* Approvals page uses explicit hex backgrounds; normalize them in light mode. */
 html[data-theme='light'] .adminTheme .bg-\[\#0b0604\] {
   background-color: #fff7ed !important;
@@ -224,6 +283,7 @@ html[data-theme='light'] .adminPortalTheme .text-red-100\/85,
 html[data-theme='light'] .workerCardModalTheme .text-red-100\/85 {
   color: #991b1b !important;
 }
+
 /* Mobile: make top tabs horizontally scrollable instead of overflowing page */
 @media (hover: none) and (pointer: coarse) {
   .adminTheme {
