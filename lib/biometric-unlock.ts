@@ -46,6 +46,26 @@ export async function biometricHardwareAvailable(): Promise<boolean> {
   }
 }
 
+/**
+ * Checks whether biometric refresh credentials already exist in Keychain/Keystore.
+ * Useful when localStorage flag was cleared but native secure storage still has data.
+ */
+export async function hasStoredBiometricCredentials(): Promise<boolean> {
+  if (!isNativeCapacitorApp()) return false
+  try {
+    const { NativeBiometric } = await import('@capgo/capacitor-native-biometric')
+    const avail = await NativeBiometric.isAvailable({ useFallback: false })
+    if (!avail?.isAvailable) return false
+    const creds = await NativeBiometric.getCredentials({ server: BIOMETRIC_CREDENTIAL_SERVER })
+    const refresh = String(creds?.password || '').trim()
+    const hasCreds = refresh.length > 0
+    if (hasCreds) setBiometricUnlockFlag(true)
+    return hasCreds
+  } catch {
+    return false
+  }
+}
+
 export async function clearBiometricStoredCredentials(): Promise<void> {
   if (!isNativeCapacitorApp()) return
   try {

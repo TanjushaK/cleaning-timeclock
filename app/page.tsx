@@ -6,6 +6,7 @@ import {
   biometricHardwareAvailable,
   clearBiometricStoredCredentials,
   enableBiometricUnlock,
+  hasStoredBiometricCredentials,
   hasBiometricUnlockFlag,
   isNativeCapacitorApp,
   unlockSessionWithBiometrics,
@@ -320,7 +321,11 @@ export default function AppPage() {
         return;
       }
       const hw = await biometricHardwareAvailable();
-      const saved = hasBiometricUnlockFlag();
+      let saved = hasBiometricUnlockFlag();
+      // If localStorage flag was lost, restore visibility from native secure storage.
+      if (hw && !saved) {
+        saved = await hasStoredBiometricCredentials();
+      }
       if (!cancelled) {
         setBioHardware(hw);
         setBioSaved(saved);
