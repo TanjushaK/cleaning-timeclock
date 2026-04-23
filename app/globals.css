@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* App theme toggle uses `data-theme` on <html> (see ThemeProvider); map Tailwind `dark:` to that, not OS media. */
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
 html,
 body {
   height: 100%;

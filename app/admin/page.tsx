@@ -246,13 +246,32 @@ function cn(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(' ')
 }
 
+/** Segmented tabs / plan toggles: chocolate look only when `data-theme=dark`. */
+const ADM_TAB_ACTIVE = 'border-yellow-300/70 bg-yellow-400/10 text-amber-950 dark:text-yellow-100'
+const ADM_TAB_INACTIVE =
+  'border-amber-900/30 bg-black/30 text-stone-800 hover:border-amber-800/45 dark:border-yellow-400/15 dark:text-zinc-200 dark:hover:border-yellow-300/40'
+
+const ADM_LANG_ACTIVE = 'border-yellow-300/50 bg-yellow-400/15 text-amber-950 dark:text-yellow-50'
+const ADM_LANG_INACTIVE =
+  'border-amber-900/30 bg-black/30 text-stone-800 hover:border-amber-800/45 dark:border-yellow-400/15 dark:text-zinc-200 dark:hover:border-yellow-300/35'
+
+const ADM_REPORT_ACTIVE = 'bg-yellow-400/10 text-amber-950 dark:text-yellow-100'
+const ADM_REPORT_INACTIVE = 'text-stone-700 hover:text-amber-900 dark:text-zinc-200 dark:hover:text-yellow-100'
+
+const ADM_WORKER_ARCHIVE_ACTIVE =
+  'border-yellow-300/45 bg-yellow-400/10 text-amber-950 hover:border-amber-700/55 hover:bg-amber-100/25 dark:text-yellow-100 dark:hover:border-yellow-200/70 dark:hover:bg-yellow-400/15'
+
+/** Disabled: keep label legible in light theme (avoid “vanished” text from low opacity). */
+const ADM_DIS =
+  'disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75'
+
 
 function statusPillClasses(s: string) {
-  if (s === 'in_progress') return 'border-emerald-400/30 bg-emerald-500/15 text-emerald-200'
-  if (s === 'planned') return 'border-rose-400/30 bg-rose-500/15 text-rose-200'
-  if (s === 'done') return 'border-sky-400/30 bg-sky-500/15 text-sky-200'
-  if (s === 'cancelled') return 'border-zinc-400/20 bg-zinc-500/10 text-zinc-300'
-  return 'border-yellow-400/20 bg-yellow-400/10 text-yellow-100/85'
+  if (s === 'in_progress') return 'border-emerald-400/30 bg-emerald-500/15 text-emerald-800 dark:text-emerald-200'
+  if (s === 'planned') return 'border-rose-400/30 bg-rose-500/15 text-rose-800 dark:text-rose-200'
+  if (s === 'done') return 'border-sky-400/30 bg-sky-500/15 text-sky-800 dark:text-sky-200'
+  if (s === 'cancelled') return 'border-zinc-400/20 bg-zinc-500/10 text-stone-700 dark:text-zinc-300'
+  return 'border-yellow-400/20 bg-yellow-400/10 text-amber-900 dark:text-yellow-100/85'
 }
 
 function fmtHMS(ms: number) {
@@ -278,7 +297,7 @@ function ElapsedSince({ startedAt, className }: { startedAt: string | null | und
   const since = startedAt ? new Date(startedAt).getTime() : null
   const nowMs = useNowMs(since != null)
   if (since == null) return null
-  return <span className={className || 'text-[11px] text-zinc-300'}>⏱ {fmtHMS(nowMs - since)}</span>
+  return <span className={className || 'text-[11px] text-stone-600 dark:text-zinc-300'}>⏱ {fmtHMS(nowMs - since)}</span>
 }
 
 function StatusPill({ status, startedAt }: { status: string; startedAt?: string | null }) {
@@ -430,10 +449,10 @@ function Modal(props: {
         className="relative flex w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-yellow-400/20 bg-zinc-950/90 p-5 shadow-[0_25px_90px_rgba(0,0,0,0.75)] max-h-[calc(100vh-3rem)] outline-none"
       >
         <div className="flex items-center justify-between gap-3">
-          <div className="text-sm font-semibold text-yellow-100">{props.title}</div>
+          <div className="text-sm font-semibold text-amber-950 dark:text-yellow-100">{props.title}</div>
           <button
             onClick={props.onClose}
-            className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40"
+            className="rounded-xl border border-amber-900/35 bg-black/30 px-3 py-1 text-xs text-stone-800 hover:border-amber-700/50 dark:border-yellow-400/15 dark:text-zinc-200 dark:hover:border-yellow-300/40"
           >
             {t('common.close')}
           </button>
@@ -448,7 +467,7 @@ function Modal(props: {
 
 function Pill({ children }: { children: any }) {
   return (
-    <span className="inline-flex items-center rounded-full border border-yellow-400/15 bg-yellow-400/5 px-2 py-0.5 text-[11px] text-yellow-100/70">
+    <span className="inline-flex items-center rounded-full border border-amber-800/25 bg-yellow-400/10 px-2 py-0.5 text-[11px] text-amber-900/85 dark:border-yellow-400/15 dark:bg-yellow-400/5 dark:text-yellow-100/70">
       {children}
     </span>
   )
@@ -552,24 +571,24 @@ function CategoryPicker(props: { value: number | null; onChange: (v: number | nu
         disabled={props.disabled}
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          'flex items-center gap-2 rounded-2xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-xs text-yellow-100/80',
+          'flex items-center gap-2 rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-3 py-2 text-xs text-amber-900/90 dark:text-yellow-100/80',
           props.disabled ? 'opacity-70' : 'hover:border-yellow-300/40'
         )}
       >
         <span className={cn('h-3 w-3 rounded-full ring-2 ring-black/40 shadow', meta.dotClass)} />
         <span className="font-semibold">{props.value ? `#${props.value}` : '—'}</span>
-        <span className="hidden sm:inline text-yellow-100/55">{meta.label}</span>
-        <span className="ml-1 text-yellow-100/35">▾</span>
+        <span className="hidden sm:inline text-amber-900/70 dark:text-yellow-100/55">{meta.label}</span>
+        <span className="ml-1 text-amber-900/50 dark:text-yellow-100/35">▾</span>
       </button>
 
       {open ? (
-        <div className="absolute right-0 z-30 mt-2 w-56 overflow-hidden rounded-2xl border border-yellow-400/15 bg-zinc-950 shadow-2xl">
+        <div className="absolute right-0 z-30 mt-2 w-56 overflow-hidden rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-zinc-950 shadow-2xl">
           <button
             onClick={() => {
               props.onChange(null)
               setOpen(false)
             }}
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-yellow-100/70 hover:bg-yellow-400/5"
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-amber-900/85 dark:text-yellow-100/70 hover:bg-yellow-400/5"
           >
             <span className={cn('h-3 w-3 rounded-full ring-2 ring-black/40 shadow', 'bg-zinc-500')} />
             <span className="font-semibold">—</span>
@@ -583,11 +602,11 @@ function CategoryPicker(props: { value: number | null; onChange: (v: number | nu
                 props.onChange(c.id)
                 setOpen(false)
               }}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-yellow-100/80 hover:bg-yellow-400/5"
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-amber-900/90 dark:text-yellow-100/80 hover:bg-yellow-400/5"
             >
               <span className={cn('h-3 w-3 rounded-full ring-2 ring-black/40 shadow', c.dotClass)} />
               <span className="font-semibold">#{c.id}</span>
-              <span className="text-yellow-100/60">{t('admin.main.categoryLabel', { n: c.id })}</span>
+              <span className="text-amber-900/75 dark:text-yellow-100/60">{t('admin.main.categoryLabel', { n: c.id })}</span>
             </button>
           ))}
         </div>
@@ -601,7 +620,7 @@ function MapMini(props: { lat: number | null; lng: number | null; onClick: () =>
   const { lat, lng } = props
   if (lat == null || lng == null) {
     return (
-      <div className="flex h-[92px] w-full sm:w-[150px] items-center justify-center rounded-2xl border border-yellow-400/10 bg-black/20 text-[11px] text-yellow-100/40">
+      <div className="flex h-[92px] w-full sm:w-[150px] items-center justify-center rounded-2xl border border-yellow-400/10 bg-black/20 text-[11px] text-amber-900/55 dark:text-yellow-100/40">
         {t('admin.main.noCoords')}
       </div>
     )
@@ -611,7 +630,7 @@ function MapMini(props: { lat: number | null; lng: number | null; onClick: () =>
     <div className="relative h-[92px] w-full sm:w-[150px] overflow-hidden rounded-2xl border border-yellow-400/20 bg-black/20">
       <iframe src={osmEmbedUrl(lat, lng, 0.004)} className="h-full w-full" loading="lazy" />
       <button onClick={props.onClick} className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/0 to-black/0" title={t('admin.main.navOpen')} />
-      <div className="absolute bottom-1 left-2 text-[10px] font-semibold text-yellow-100/90">{t('admin.main.navBadge')}</div>
+      <div className="absolute bottom-1 left-2 text-[10px] font-semibold text-amber-900/95 dark:text-yellow-100/90">{t('admin.main.navBadge')}</div>
     </div>
   )
 }
@@ -627,7 +646,7 @@ function MapLarge(props: { lat: number; lng: number }) {
         className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/0 to-black/0"
         title={t('admin.main.navOpen')}
       />
-      <div className="absolute bottom-2 left-3 text-xs font-semibold text-yellow-100/90">{t('admin.main.navOpenFull')}</div>
+      <div className="absolute bottom-2 left-3 text-xs font-semibold text-amber-900/95 dark:text-yellow-100/90">{t('admin.main.navOpenFull')}</div>
     </div>
   )
 }
@@ -693,12 +712,12 @@ function MultiWorkerPicker(props: {
       </button>
 
       {open ? (
-        <div className="absolute z-20 mt-2 w-full rounded-2xl border border-yellow-400/15 bg-zinc-950/95 p-3 shadow-[0_18px_60px_rgba(0,0,0,0.7)]">
+        <div className="absolute z-20 mt-2 w-full rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-zinc-950/95 p-3 shadow-[0_18px_60px_rgba(0,0,0,0.7)]">
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder={t('admin.main.multiSearch')}
-            className="mb-2 w-full rounded-2xl border border-yellow-400/15 bg-black/40 px-3 py-2 text-xs text-zinc-200 outline-none focus:border-yellow-300/50"
+            className="mb-2 w-full rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/40 px-3 py-2 text-xs text-stone-800 dark:text-zinc-200 outline-none focus:border-yellow-300/50"
           />
 
           <div className="max-h-[240px] overflow-auto rounded-2xl border border-yellow-400/10 bg-black/20">
@@ -720,7 +739,7 @@ function MultiWorkerPicker(props: {
                   <span
                     className={cn(
                       'rounded-xl border px-2 py-1 text-[11px]',
-                      on ? 'border-yellow-300/60 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-300'
+                      on ? 'border-yellow-300/60 bg-yellow-400/10 text-amber-950 dark:text-yellow-100' : 'border-amber-900/30 dark:border-yellow-400/15 bg-black/30 text-stone-600 dark:text-zinc-300'
                     )}
                   >
                     {on ? t('admin.main.multiSelected') : ' '}
@@ -731,13 +750,13 @@ function MultiWorkerPicker(props: {
           </div>
 
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-            <div className="text-[11px] text-zinc-300">
+            <div className="text-[11px] text-stone-600 dark:text-zinc-300">
               {t('admin.main.multiStats', { shown: filtered.length, picked: props.value.length })}
             </div>
             <button
               type="button"
               onClick={() => props.onChange([])}
-              className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40"
+              className="rounded-xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-stone-800 dark:text-zinc-200 hover:border-yellow-300/40"
             >
               {t('admin.main.multiClear')}
             </button>
@@ -833,11 +852,11 @@ function ReportsPanel() {
 
   return (
   <div className="mt-6 grid gap-4">
-    <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
+    <div className="rounded-3xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/25 p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="text-sm font-semibold text-yellow-100">{t('admin.main.reportsTitle')}</div>
-          <div className="mt-1 text-xs text-zinc-300">
+          <div className="text-sm font-semibold text-amber-950 dark:text-yellow-100">{t('admin.main.reportsTitle')}</div>
+          <div className="mt-1 text-xs text-stone-600 dark:text-zinc-300">
             {t('admin.main.periodPrefix')} {fmtD(reportFrom)} — {fmtD(reportTo)}
           </div>
         </div>
@@ -846,20 +865,20 @@ function ReportsPanel() {
           <button
             type="button"
             onClick={() => setReportPickerOpen(true)}
-            className="w-full sm:w-auto rounded-2xl border border-yellow-400/25 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/50"
+            className="w-full sm:w-auto rounded-2xl border border-yellow-400/25 bg-black/30 px-4 py-2 text-xs font-semibold text-stone-800 dark:text-zinc-200 hover:border-yellow-300/50"
           >
             {t('admin.main.pickPeriod')}
           </button>
 
           <a
             href="/admin/fact"
-            className="w-full sm:w-auto rounded-2xl border border-yellow-400/25 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/50"
+            className="w-full sm:w-auto rounded-2xl border border-yellow-400/25 bg-black/30 px-4 py-2 text-xs font-semibold text-stone-800 dark:text-zinc-200 hover:border-yellow-300/50"
           >
             {t('admin.main.linkFactEdit')}
           </a>
 
 <a
-  className="w-full sm:w-auto rounded-2xl border border-yellow-400/25 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/50"
+  className="w-full sm:w-auto rounded-2xl border border-yellow-400/25 bg-black/30 px-4 py-2 text-xs font-semibold text-stone-800 dark:text-zinc-200 hover:border-yellow-300/50"
   href="/admin/approvals"
 >
   {t('admin.main.linkActivations')}
@@ -871,7 +890,7 @@ function ReportsPanel() {
               onClick={() => setReportsView('workers')}
               className={cn(
                 'rounded-2xl px-3 py-2 text-[11px] font-semibold transition',
-                reportsView === 'workers' ? 'bg-yellow-400/10 text-yellow-100' : 'text-zinc-200 hover:text-yellow-100'
+                reportsView === 'workers' ? ADM_REPORT_ACTIVE : ADM_REPORT_INACTIVE
               )}
             >
               {t('admin.main.reportsByWorkers')}
@@ -881,7 +900,7 @@ function ReportsPanel() {
               onClick={() => setReportsView('sites')}
               className={cn(
                 'rounded-2xl px-3 py-2 text-[11px] font-semibold transition',
-                reportsView === 'sites' ? 'bg-yellow-400/10 text-yellow-100' : 'text-zinc-200 hover:text-yellow-100'
+                reportsView === 'sites' ? ADM_REPORT_ACTIVE : ADM_REPORT_INACTIVE
               )}
             >
               {t('admin.main.reportsBySites')}
@@ -892,8 +911,8 @@ function ReportsPanel() {
   
       <div className="mt-4 grid gap-3 md:grid-cols-3">
         <div className="rounded-3xl border border-yellow-400/10 bg-black/30 p-4">
-          <div className="text-[11px] text-zinc-300">{t('admin.main.reportsPeriodTotal')}</div>
-          <div className="mt-1 text-2xl font-semibold tracking-tight text-yellow-100">
+          <div className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.reportsPeriodTotal')}</div>
+          <div className="mt-1 text-2xl font-semibold tracking-tight text-amber-950 dark:text-yellow-100">
             {fmtMinutesHM(reportData?.total_minutes ?? 0)}
           </div>
           <div className="mt-1 text-[11px] text-zinc-400">{t('admin.main.reportsHm')}</div>
@@ -901,7 +920,7 @@ function ReportsPanel() {
   
         <div className="rounded-3xl border border-yellow-400/10 bg-black/30 p-4 md:col-span-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-[11px] text-zinc-300">{t('admin.main.reportsSearch')}</div>
+            <div className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.reportsSearch')}</div>
             <div className="text-[11px] text-zinc-400">
               {reportLoading ? t('admin.main.reportsCalculating') : reportData ? t('admin.main.reportsReady') : '—'}
             </div>
@@ -910,10 +929,10 @@ function ReportsPanel() {
             value={reportSearch}
             onChange={(e) => setReportSearch(e.target.value)}
             placeholder={t('admin.main.reportsSearchPh')}
-            className="mt-2 w-full rounded-2xl border border-yellow-400/15 bg-black/35 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 outline-none focus:border-yellow-300/40"
+            className="mt-2 w-full rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/35 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 outline-none focus:border-yellow-300/40"
           />
           {reportError ? (
-            <div className="mt-2 rounded-2xl border border-red-500/30 bg-red-950/30 px-3 py-2 text-xs text-red-100">{reportError}</div>
+            <div className="mt-2 rounded-2xl border border-red-500/30 bg-red-950/30 px-3 py-2 text-xs text-red-900 dark:text-red-100">{reportError}</div>
           ) : null}
         </div>
       </div>
@@ -937,12 +956,12 @@ function ReportsPanel() {
                 className="flex flex-col gap-3 border-b border-yellow-400/5 px-4 py-3 last:border-b-0 sm:flex-row sm:items-center sm:justify-between"
               >
                 <div className="flex items-center gap-3">
-                  <div className="relative h-10 w-10 overflow-hidden rounded-2xl border border-yellow-400/15 bg-black/40">
+                  <div className="relative h-10 w-10 overflow-hidden rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/40">
                     {avatarUrl ? (
                        
                       <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
                     ) : (
-                      <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-zinc-200">
+                      <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-stone-800 dark:text-zinc-200">
                         {reportsView === 'workers' ? initials(title) : '🏠'}
                       </div>
                     )}
@@ -956,13 +975,13 @@ function ReportsPanel() {
                 </div>
   
                 <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center">
-                <div className="w-full shrink-0 rounded-2xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-center text-sm font-semibold text-yellow-100 sm:w-auto">
+                <div className="w-full shrink-0 rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-3 py-2 text-center text-sm font-semibold text-amber-950 dark:text-yellow-100 sm:w-auto">
                   {fmtMinutesHM(Number(x.minutes) || 0)}
                 </div>
                 {reportsView === 'workers' ? (
                   <a
                     href={`/admin/hours?worker_id=${encodeURIComponent(id)}&from=${encodeURIComponent(reportFrom)}&to=${encodeURIComponent(reportTo)}`}
-                    className="w-full rounded-2xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-center text-xs font-semibold text-zinc-200 hover:border-yellow-300/40 sm:w-auto"
+                    className="w-full rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-3 py-2 text-center text-xs font-semibold text-stone-800 dark:text-zinc-200 hover:border-yellow-300/40 sm:w-auto"
                     title={t('admin.main.openHoursTitle')}
                   >
                     {t('admin.main.openHours')}
@@ -983,13 +1002,13 @@ function ReportsPanel() {
     {/* Picker modal */}
     {reportPickerOpen ? (
       <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4">
-        <div className="w-full max-w-xl overflow-hidden rounded-3xl border border-yellow-400/15 bg-zinc-950/95 shadow-[0_20px_80px_rgba(0,0,0,0.75)] backdrop-blur">
+        <div className="w-full max-w-xl overflow-hidden rounded-3xl border border-amber-900/30 dark:border-yellow-400/15 bg-zinc-950/95 shadow-[0_20px_80px_rgba(0,0,0,0.75)] backdrop-blur">
           <div className="flex items-center justify-between gap-2 border-b border-yellow-400/10 px-5 py-4">
-            <div className="text-sm font-semibold text-yellow-100">{t('admin.main.reportPeriodTitle')}</div>
+            <div className="text-sm font-semibold text-amber-950 dark:text-yellow-100">{t('admin.main.reportPeriodTitle')}</div>
             <button
               type="button"
               onClick={() => setReportPickerOpen(false)}
-              className="rounded-2xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-xs text-zinc-200 hover:border-yellow-300/40"
+              className="rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-3 py-2 text-xs text-stone-800 dark:text-zinc-200 hover:border-yellow-300/40"
             >
               {t('common.close')}
             </button>
@@ -1002,7 +1021,7 @@ function ReportsPanel() {
                 onClick={() => setReportPickerTab('payroll')}
                 className={cn(
                   'flex-1 rounded-2xl px-3 py-2 text-[11px] font-semibold transition',
-                  reportPickerTab === 'payroll' ? 'bg-yellow-400/10 text-yellow-100' : 'text-zinc-200 hover:text-yellow-100'
+                  reportPickerTab === 'payroll' ? 'bg-yellow-400/10 text-amber-950 dark:text-yellow-100' : 'text-stone-800 dark:text-zinc-200 hover:text-amber-950 dark:text-yellow-100'
                 )}
               >
                 {t('admin.main.payrollTab')}
@@ -1012,7 +1031,7 @@ function ReportsPanel() {
                 onClick={() => setReportPickerTab('custom')}
                 className={cn(
                   'flex-1 rounded-2xl px-3 py-2 text-[11px] font-semibold transition',
-                  reportPickerTab === 'custom' ? 'bg-yellow-400/10 text-yellow-100' : 'text-zinc-200 hover:text-yellow-100'
+                  reportPickerTab === 'custom' ? 'bg-yellow-400/10 text-amber-950 dark:text-yellow-100' : 'text-stone-800 dark:text-zinc-200 hover:text-amber-950 dark:text-yellow-100'
                 )}
               >
                 {t('admin.main.customTab')}
@@ -1022,24 +1041,24 @@ function ReportsPanel() {
             {reportPickerTab === 'custom' ? (
               <div className="mt-4 grid gap-3">
                 <div className="grid gap-3 md:grid-cols-2">
-                  <label className="grid gap-1 text-xs text-zinc-300">
+                  <label className="grid gap-1 text-xs text-stone-600 dark:text-zinc-300">
                     {t('admin.main.dateFromShort')}
                     <input
                       type="date"
                       onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
                       value={reportFrom}
                       onChange={(e) => setReportFrom(e.target.value)}
-                      className="w-full rounded-2xl border border-yellow-400/15 bg-black/35 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-yellow-300/40"
+                      className="w-full rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/35 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-yellow-300/40"
                     />
                   </label>
-                  <label className="grid gap-1 text-xs text-zinc-300">
+                  <label className="grid gap-1 text-xs text-stone-600 dark:text-zinc-300">
                     {t('admin.main.dateToShort')}
                     <input
                       type="date"
                       onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
                       value={reportTo}
                       onChange={(e) => setReportTo(e.target.value)}
-                      className="w-full rounded-2xl border border-yellow-400/15 bg-black/35 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-yellow-300/40"
+                      className="w-full rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/35 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-yellow-300/40"
                     />
                   </label>
                 </div>
@@ -1069,7 +1088,7 @@ function ReportsPanel() {
                       <span
                         className={cn(
                           'rounded-xl border px-2 py-1 text-[11px]',
-                          checked ? 'border-yellow-300/60 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-300'
+                          checked ? 'border-yellow-300/60 bg-yellow-400/10 text-amber-950 dark:text-yellow-100' : 'border-amber-900/30 dark:border-yellow-400/15 bg-black/30 text-stone-600 dark:text-zinc-300'
                         )}
                       >
                         {checked ? t('admin.main.multiSelected') : ' '}
@@ -1084,7 +1103,7 @@ function ReportsPanel() {
             <button
               type="button"
               onClick={() => setReportPickerOpen(false)}
-              className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-sm text-zinc-200 hover:border-yellow-300/40"
+              className="rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-4 py-2 text-sm text-stone-800 dark:text-zinc-200 hover:border-yellow-300/40"
             >
               {t('common.cancel')}
             </button>
@@ -1097,7 +1116,7 @@ function ReportsPanel() {
                 }
                 setReportPickerOpen(false)
               }}
-              className="rounded-2xl border border-yellow-400/40 bg-yellow-400/15 px-5 py-2 text-sm font-semibold text-yellow-100 hover:border-yellow-300/70"
+              className="rounded-2xl border border-yellow-400/40 bg-yellow-400/15 px-5 py-2 text-sm font-semibold text-amber-950 dark:text-yellow-100 hover:border-yellow-300/70"
             >
               {t('admin.main.reportApply')}
             </button>
@@ -2356,7 +2375,7 @@ const [editOpen, setEditOpen] = useState(false)
         onClick={() => openEditForJob(j)}
         className={cn(
           'group cursor-pointer select-none rounded-2xl border bg-black/35 shadow-[0_10px_35px_rgba(0,0,0,0.55)]',
-          'border-yellow-400/15 hover:border-yellow-300/40',
+          'border-amber-900/30 dark:border-yellow-400/15 hover:border-yellow-300/40',
           compact ? 'text-[9px] px-2 py-1 leading-tight' : 'text-xs px-3 py-2'
         )}
       >
@@ -2370,12 +2389,12 @@ const [editOpen, setEditOpen] = useState(false)
                   const url = photos?.[0]?.url || null
                   if (!url) {
                     return (
-                      <div className="flex h-5 w-5 items-center justify-center rounded-full border border-yellow-400/15 bg-black/30 text-[9px] font-semibold text-yellow-100/70">🏠</div>
+                      <div className="flex h-5 w-5 items-center justify-center rounded-full border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 text-[9px] font-semibold text-amber-900/85 dark:text-yellow-100/70">🏠</div>
                     )
                   }
                   return (
                      
-                    <img src={url} alt="" className="h-5 w-5 rounded-full border border-yellow-400/15 object-cover" loading="lazy" />
+                    <img src={url} alt="" className="h-5 w-5 rounded-full border border-amber-900/30 dark:border-yellow-400/15 object-cover" loading="lazy" />
                   )
                 }
 
@@ -2383,12 +2402,12 @@ const [editOpen, setEditOpen] = useState(false)
                 const thumb = wid ? workerPhotoMeta[wid]?.thumb || null : null
                 if (!thumb) {
                   return (
-                    <div className="flex h-5 w-5 items-center justify-center rounded-full border border-yellow-400/15 bg-black/30 text-[9px] font-semibold text-yellow-100/70">{initials(left)}</div>
+                    <div className="flex h-5 w-5 items-center justify-center rounded-full border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 text-[9px] font-semibold text-amber-900/85 dark:text-yellow-100/70">{initials(left)}</div>
                   )
                 }
                 return (
                    
-                  <img src={thumb} alt="" className="h-5 w-5 rounded-full border border-yellow-400/15 object-cover" loading="lazy" />
+                  <img src={thumb} alt="" className="h-5 w-5 rounded-full border border-amber-900/30 dark:border-yellow-400/15 object-cover" loading="lazy" />
                 )
               })()}
               <div className="flex min-w-0 items-center gap-2">
@@ -2401,10 +2420,10 @@ const [editOpen, setEditOpen] = useState(false)
                   loading="lazy"
                 />
               ) : null}
-              <div className="truncate font-semibold text-yellow-100">{left}</div>
+              <div className="truncate font-semibold text-amber-950 dark:text-yellow-100">{left}</div>
             </div>
             </div>
-            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-zinc-300">
+            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-stone-600 dark:text-zinc-300">
               <span>{timeText}</span>
               <StatusTag status={st} />
               {st === 'in_progress' && j.started_at ? (
@@ -2421,7 +2440,7 @@ const [editOpen, setEditOpen] = useState(false)
                   setCancelJobId(j.id)
                   setCancelOpen(true)
                 }}
-                className="rounded-xl border border-yellow-400/10 bg-black/25 px-2 py-1 text-[9px] text-zinc-200 hover:border-yellow-300/30"
+                className="rounded-xl border border-yellow-400/10 bg-black/25 px-2 py-1 text-[9px] text-stone-800 dark:text-zinc-200 hover:border-yellow-300/30"
               >
                 {t('admin.main.cancelJob')}
               </button>
@@ -2434,7 +2453,7 @@ const [editOpen, setEditOpen] = useState(false)
                     setMoveJobTargetWorker(j.worker_id || '')
                     setMoveJobOpen(true)
                   }}
-                  className="rounded-xl border border-yellow-400/10 bg-black/25 px-2 py-1 text-[9px] text-zinc-200 hover:border-yellow-300/30"
+                  className="rounded-xl border border-yellow-400/10 bg-black/25 px-2 py-1 text-[9px] text-stone-800 dark:text-zinc-200 hover:border-yellow-300/30"
                 >
                   {t('admin.main.moveJob')}
                 </button>
@@ -2448,7 +2467,7 @@ const [editOpen, setEditOpen] = useState(false)
 
   function renderPlanToolbar() {
     return (
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-yellow-400/15 bg-black/20 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/20 p-4">
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
           <button
             onClick={() => {
@@ -2457,7 +2476,7 @@ const [editOpen, setEditOpen] = useState(false)
             }}
             className={cn(
               'rounded-2xl border px-4 py-2 text-xs font-semibold transition flex-1 text-center sm:flex-none',
-              planView === 'day' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
+              planView === 'day' ? ADM_TAB_ACTIVE : ADM_TAB_INACTIVE
             )}
           >
             {t('admin.main.planDay')}
@@ -2469,7 +2488,7 @@ const [editOpen, setEditOpen] = useState(false)
             }}
             className={cn(
               'rounded-2xl border px-4 py-2 text-xs font-semibold transition flex-1 text-center sm:flex-none',
-              planView === 'week' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
+              planView === 'week' ? ADM_TAB_ACTIVE : ADM_TAB_INACTIVE
             )}
           >
             {t('admin.main.planWeek')}
@@ -2481,7 +2500,7 @@ const [editOpen, setEditOpen] = useState(false)
             }}
             className={cn(
               'rounded-2xl border px-4 py-2 text-xs font-semibold transition flex-1 text-center sm:flex-none',
-              planView === 'month' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
+              planView === 'month' ? ADM_TAB_ACTIVE : ADM_TAB_INACTIVE
             )}
           >
             {t('admin.main.planMonth')}
@@ -2493,7 +2512,7 @@ const [editOpen, setEditOpen] = useState(false)
             onClick={() => setPlanMode('workers')}
             className={cn(
               'rounded-2xl border px-4 py-2 text-xs font-semibold transition flex-1 text-center sm:flex-none',
-              planMode === 'workers' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
+              planMode === 'workers' ? ADM_TAB_ACTIVE : ADM_TAB_INACTIVE
             )}
           >
             {t('admin.main.planByWorkers')}
@@ -2502,7 +2521,7 @@ const [editOpen, setEditOpen] = useState(false)
             onClick={() => setPlanMode('sites')}
             className={cn(
               'rounded-2xl border px-4 py-2 text-xs font-semibold transition flex-1 text-center sm:flex-none',
-              planMode === 'sites' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
+              planMode === 'sites' ? ADM_TAB_ACTIVE : ADM_TAB_INACTIVE
             )}
           >
             {t('admin.main.planBySites')}
@@ -2511,7 +2530,7 @@ const [editOpen, setEditOpen] = useState(false)
 
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
           <label className="grid gap-1">
-            <span className="text-[11px] text-zinc-300">{t('admin.main.labelDate')}</span>
+            <span className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.labelDate')}</span>
             <input
               type="date"
                       onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
@@ -2521,7 +2540,7 @@ const [editOpen, setEditOpen] = useState(false)
                 setAnchorDate(v)
                 recalcRange(planView, v)
               }}
-              className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs text-zinc-200 outline-none transition focus:border-yellow-300/60"
+              className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs text-stone-800 dark:text-zinc-200 outline-none transition focus:border-yellow-300/60"
             />
           </label>
 
@@ -2531,7 +2550,7 @@ const [editOpen, setEditOpen] = useState(false)
               setAnchorDate(todayIso)
               recalcRange(planView, todayIso)
             }}
-            className="mt-5 rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/40"
+            className="mt-5 rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-stone-800 dark:text-zinc-200 hover:border-yellow-300/40"
           >
             {t('admin.main.today')}
           </button>
@@ -2544,7 +2563,7 @@ const [editOpen, setEditOpen] = useState(false)
               setMoveDayOnlyPlanned(true)
               setMoveDayOpen(true)
             }}
-            className="mt-5 rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 hover:border-yellow-200/70"
+            className="mt-5 rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-amber-950 dark:text-yellow-100 hover:border-yellow-200/70"
           >
             {t('admin.main.moveDayBtn')}
           </button>
@@ -2555,16 +2574,16 @@ const [editOpen, setEditOpen] = useState(false)
 
   function renderPlanWeekGrid() {
     return (
-      <div className="mt-4 overflow-auto rounded-3xl border border-yellow-400/15 bg-black/15">
+      <div className="mt-4 overflow-auto rounded-3xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/15">
         <div className="w-full overflow-x-auto">
         <div className="min-w-[760px]">
           <div className="grid" style={{ gridTemplateColumns: `200px repeat(${planDates.length}, minmax(130px, 1fr))` }}>
-            <div className="sticky top-0 z-10 border-b border-yellow-400/10 bg-zinc-950/90 px-4 py-3 text-xs font-semibold text-zinc-200">
+            <div className="sticky top-0 z-10 border-b border-yellow-400/10 bg-zinc-950/90 px-4 py-3 text-xs font-semibold text-stone-800 dark:text-zinc-200">
               {planMode === 'workers' ? t('admin.main.colWorker') : t('admin.main.colSite')}
             </div>
 
             {planDates.map((d) => (
-              <div key={d.iso} className="sticky top-0 z-10 border-b border-yellow-400/10 bg-zinc-950/90 px-4 py-3 text-xs font-semibold text-zinc-200">
+              <div key={d.iso} className="sticky top-0 z-10 border-b border-yellow-400/10 bg-zinc-950/90 px-4 py-3 text-xs font-semibold text-stone-800 dark:text-zinc-200">
                 <div className="flex items-center justify-between">
                   <span>
                     {d.dow} • {d.label}
@@ -2589,7 +2608,7 @@ const [editOpen, setEditOpen] = useState(false)
                           loading="lazy"
                         />
                       ) : null}
-                      <div className="truncate text-sm font-semibold text-yellow-100">{ent.name}</div>
+                      <div className="truncate text-sm font-semibold text-amber-950 dark:text-yellow-100">{ent.name}</div>
                     </div>
                       <div className="mt-1 text-[11px] text-zinc-400">
                         {planMode === 'workers'
@@ -2603,7 +2622,7 @@ const [editOpen, setEditOpen] = useState(false)
                     {planMode === 'workers' ? (
                       <button
                         onClick={() => openWorkerCard(ent.id)}
-                        className="rounded-2xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-[11px] text-zinc-200 hover:border-yellow-300/40"
+                        className="rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-3 py-2 text-[11px] text-stone-800 dark:text-zinc-200 hover:border-yellow-300/40"
                       >
                         {t('admin.main.cardShort')}
                       </button>
@@ -2648,11 +2667,11 @@ const [editOpen, setEditOpen] = useState(false)
   function renderPlanDayGrid() {
     const dayISO = dateFrom
     return (
-      <div className="mt-4 overflow-auto rounded-3xl border border-yellow-400/15 bg-black/15">
+      <div className="mt-4 overflow-auto rounded-3xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/15">
         <div className="w-full overflow-x-auto">
         <div className="min-w-[760px]">
           <div className="grid" style={{ gridTemplateColumns: `70px repeat(${planEntities.length}, minmax(130px, 1fr))` }}>
-            <div className="sticky top-0 z-10 border-b border-yellow-400/10 bg-zinc-950/90 px-3 py-3 text-xs font-semibold text-zinc-200">
+            <div className="sticky top-0 z-10 border-b border-yellow-400/10 bg-zinc-950/90 px-3 py-3 text-xs font-semibold text-stone-800 dark:text-zinc-200">
               {t('admin.main.timeCol')}
             </div>
 
@@ -2670,7 +2689,7 @@ const [editOpen, setEditOpen] = useState(false)
                         loading="lazy"
                       />
                     ) : null}
-                    <div className="truncate text-xs font-semibold text-yellow-100">{ent.name}</div>
+                    <div className="truncate text-xs font-semibold text-amber-950 dark:text-yellow-100">{ent.name}</div>
                   </div>
                     <div className="text-[10px] text-zinc-400">{fmtD(dayISO)}</div>
                   </div>
@@ -2678,7 +2697,7 @@ const [editOpen, setEditOpen] = useState(false)
                   {planMode === 'workers' ? (
                     <button
                       onClick={() => openWorkerCard(ent.id)}
-                      className="rounded-xl border border-yellow-400/10 bg-black/25 px-2 py-1 text-[10px] text-zinc-200 hover:border-yellow-300/30"
+                      className="rounded-xl border border-yellow-400/10 bg-black/25 px-2 py-1 text-[10px] text-stone-800 dark:text-zinc-200 hover:border-yellow-300/30"
                     >
                       {t('admin.main.cardShort')}
                     </button>
@@ -2689,7 +2708,7 @@ const [editOpen, setEditOpen] = useState(false)
 
             {hours.map((h) => (
               <div key={h} className="contents">
-                <div className="border-b border-yellow-400/10 bg-black/10 px-3 py-3 text-[11px] font-semibold text-zinc-300">
+                <div className="border-b border-yellow-400/10 bg-black/10 px-3 py-3 text-[11px] font-semibold text-stone-600 dark:text-zinc-300">
                   {h}
                 </div>
 
@@ -2739,12 +2758,12 @@ const [editOpen, setEditOpen] = useState(false)
     const days = enumerateDates(toISODate(start), toISODate(end), dowLabelsSunFirst)
 
     return (
-      <div className="mt-4 overflow-auto rounded-3xl border border-yellow-400/15 bg-black/15">
+      <div className="mt-4 overflow-auto rounded-3xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/15">
         <div className="w-full overflow-x-auto">
         <div className="min-w-[760px] p-4">
           <div className="grid grid-cols-7 gap-3">
             {weekHdrMonFirst.map((d, idx) => (
-              <div key={idx} className="text-xs font-semibold text-zinc-300">
+              <div key={idx} className="text-xs font-semibold text-stone-600 dark:text-zinc-300">
                 {d}
               </div>
             ))}
@@ -2767,7 +2786,7 @@ const [editOpen, setEditOpen] = useState(false)
                   )}
                 >
                   <div className="flex items-center justify-between">
-                    <div className="text-xs font-semibold text-yellow-100">
+                    <div className="text-xs font-semibold text-amber-950 dark:text-yellow-100">
                       {d.label} <span className="text-zinc-500">({d.dow})</span>
                     </div>
                     <div className="text-[10px] text-zinc-400">{fmtD(d.iso)}</div>
@@ -2805,7 +2824,7 @@ const [editOpen, setEditOpen] = useState(false)
       <main className="min-h-screen bg-gradient-to-b from-zinc-950 via-black to-zinc-950 text-zinc-100">
         <div className="mx-auto max-w-6xl px-4 py-10">
           <div className="rounded-3xl border border-yellow-400/20 bg-zinc-950/50 p-6 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur">
-            <div className="text-sm text-zinc-300">{t('admin.main.sessionChecking')}</div>
+            <div className="text-sm text-stone-600 dark:text-zinc-300">{t('admin.main.sessionChecking')}</div>
           </div>
         </div>
       </main>
@@ -2827,10 +2846,10 @@ const [editOpen, setEditOpen] = useState(false)
           </div>
 
           <div className="rounded-3xl border border-yellow-400/20 bg-zinc-950/50 p-6 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur">
-            <h1 className="text-xl font-semibold text-yellow-100">{t('admin.main.loginTitle')}</h1>
+            <h1 className="text-xl font-semibold text-amber-950 dark:text-yellow-100">{t('admin.main.loginTitle')}</h1>
 
             {error ? (
-              <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-950/30 px-4 py-3 text-sm text-red-100">{error}</div>
+              <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-950/30 px-4 py-3 text-sm text-red-900 dark:text-red-100">{error}</div>
             ) : null}
 
             {notice ? (
@@ -2839,7 +2858,7 @@ const [editOpen, setEditOpen] = useState(false)
 
             <form onSubmit={onLogin} className="mt-5 grid gap-3">
               <label className="grid gap-1">
-                <span className="text-xs text-zinc-300">{t('admin.main.loginUserLabel')}</span>
+                <span className="text-xs text-stone-600 dark:text-zinc-300">{t('admin.main.loginUserLabel')}</span>
                 <input
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -2852,7 +2871,7 @@ const [editOpen, setEditOpen] = useState(false)
               </label>
 
               <label className="grid gap-1">
-                <span className="text-xs text-zinc-300">{t('admin.main.loginPassLabel')}</span>
+                <span className="text-xs text-stone-600 dark:text-zinc-300">{t('admin.main.loginPassLabel')}</span>
                 <input
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -2867,7 +2886,7 @@ const [editOpen, setEditOpen] = useState(false)
               <button
                 type="submit"
                 disabled={busy}
-                className="mt-2 rounded-2xl border border-yellow-300/40 bg-gradient-to-r from-yellow-500/10 via-yellow-400/10 to-yellow-300/10 px-4 py-3 text-sm font-semibold text-yellow-100 shadow-[0_0_0_1px_rgba(255,215,0,0.18)] transition hover:border-yellow-200/70 hover:bg-yellow-400/10 disabled:opacity-60"
+                className="mt-2 rounded-2xl border border-yellow-300/40 bg-gradient-to-r from-yellow-500/10 via-yellow-400/10 to-yellow-300/10 px-4 py-3 text-sm font-semibold text-amber-950 dark:text-yellow-100 shadow-[0_0_0_1px_rgba(255,215,0,0.18)] transition hover:border-yellow-200/70 hover:bg-yellow-400/10 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
               >
                 {busy ? t('admin.common.signingIn') : t('admin.common.signIn')}
               </button>
@@ -2904,7 +2923,10 @@ const [editOpen, setEditOpen] = useState(false)
             <button
               onClick={refreshAll}
               disabled={busy || refreshing}
-              className="rounded-xl border border-yellow-400/40 bg-black/40 px-4 py-2 text-sm text-yellow-100 transition hover:border-yellow-300/70 hover:bg-black/60 disabled:opacity-60"
+              className={cn(
+                'rounded-xl border border-amber-800/50 bg-black/40 px-4 py-2 text-sm text-amber-900 transition hover:border-amber-700/70 hover:bg-black/60 dark:border-yellow-400/40 dark:text-yellow-100 dark:hover:border-yellow-300/70',
+                ADM_DIS,
+              )}
             >
               {refreshing ? t('admin.main.refreshing') : t('admin.main.refreshData')}
             </button>
@@ -2912,7 +2934,10 @@ const [editOpen, setEditOpen] = useState(false)
             <button
               onClick={onLogout}
               disabled={busy || refreshing}
-              className="rounded-xl border border-yellow-400/25 bg-black/30 px-4 py-2 text-sm text-yellow-100/90 transition hover:border-yellow-300/60 hover:bg-black/50 disabled:opacity-60"
+              className={cn(
+                'rounded-xl border border-amber-800/45 bg-black/30 px-4 py-2 text-sm text-amber-900/95 transition hover:border-amber-700/60 hover:bg-black/50 dark:border-yellow-400/25 dark:text-yellow-100/90 dark:hover:border-yellow-300/60',
+                ADM_DIS,
+              )}
             >
               {t('admin.common.logout')}
             </button>
@@ -2928,7 +2953,7 @@ const [editOpen, setEditOpen] = useState(false)
                   onClick={() => setTab(k)}
                   className={cn(
                     'rounded-2xl border px-4 py-2 text-xs font-semibold transition flex-1 text-center sm:flex-none',
-                    tab === k ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
+                    tab === k ? ADM_TAB_ACTIVE : ADM_TAB_INACTIVE
                   )}
                 >
                   {k === 'sites'
@@ -2946,7 +2971,7 @@ const [editOpen, setEditOpen] = useState(false)
 
             <div className="flex items-center gap-3">
               {tab === 'sites' ? (
-                <label className="flex items-center gap-2 rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-[11px] text-zinc-200">
+                <label className="flex items-center gap-2 rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-[11px] text-stone-800 dark:text-zinc-200">
                   <input
                     type="checkbox"
                     checked={showArchivedSites}
@@ -2957,14 +2982,14 @@ const [editOpen, setEditOpen] = useState(false)
                 </label>
               ) : null}
 
-              <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-[11px] text-zinc-200">
+              <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-[11px] text-stone-800 dark:text-zinc-200">
                 {t('admin.main.statsLine', { sites: sites.length, workers: workers.length, jobs: schedule.length })}
               </div>
             </div>
           </div>
 
           {error ? (
-            <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-950/30 px-4 py-3 text-sm text-red-100">{error}</div>
+            <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-950/30 px-4 py-3 text-sm text-red-900 dark:text-red-100">{error}</div>
           ) : null}
 
           {notice ? (
@@ -2982,17 +3007,17 @@ const [editOpen, setEditOpen] = useState(false)
           {/* Sites */}
                     {tab === 'sites' ? (
                       <div className="mt-6 grid gap-4">
-                        <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
+                        <div className="rounded-3xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/25 p-5">
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div>
-                              <div className="text-sm font-semibold text-yellow-100">{t('admin.main.sitesSectionTitle')}</div>
-                              <div className="mt-1 text-xs text-zinc-300">{t('admin.main.sitesSectionHint')}</div>
+                              <div className="text-sm font-semibold text-amber-950 dark:text-yellow-100">{t('admin.main.sitesSectionTitle')}</div>
+                              <div className="mt-1 text-xs text-stone-600 dark:text-zinc-300">{t('admin.main.sitesSectionHint')}</div>
                             </div>
 
                             <button
                               onClick={() => setSiteCreateOpen(true)}
                               disabled={busy}
-                              className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
+                              className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-amber-950 dark:text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
                             >
                               {t('admin.main.addSite')}
                             </button>
@@ -3013,7 +3038,7 @@ const [editOpen, setEditOpen] = useState(false)
                             </div>
 
                             <label className="grid gap-1">
-                              <span className="text-[11px] text-zinc-300">{t('admin.main.qaWorkerLabel')}</span>
+                              <span className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.qaWorkerLabel')}</span>
                               <select
                                 value={qaWorker}
                                 onChange={(e) => setQaWorker(e.target.value)}
@@ -3031,7 +3056,7 @@ const [editOpen, setEditOpen] = useState(false)
                             <button
                               onClick={quickAssign}
                               disabled={busy || !qaSite || !qaWorker}
-                              className="w-full sm:w-auto rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
+                              className="w-full sm:w-auto rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-amber-950 dark:text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
                             >
                               {t('admin.main.assignBtn')}
                             </button>
@@ -3049,7 +3074,7 @@ const [editOpen, setEditOpen] = useState(false)
                             const primaryUrl = photos?.[0]?.url || null
 
                             return (
-                              <div key={s.id} className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
+                              <div key={s.id} className="rounded-3xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/25 p-5">
                                 <div className="flex flex-wrap items-start justify-between gap-4">
                                   <div className="flex min-w-0 flex-1 flex-wrap items-start gap-4">
                                     <div className="w-full sm:w-[150px] shrink-0">
@@ -3073,7 +3098,7 @@ const [editOpen, setEditOpen] = useState(false)
                                             className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-black/0"
                                             title={(s.lat != null && s.lng != null) || !!s.address ? t('admin.main.navOrCard') : t('admin.main.openCard')}
                                           />
-                                          <div className="absolute bottom-1 left-2 text-[10px] font-semibold text-yellow-100/90">
+                                          <div className="absolute bottom-1 left-2 text-[10px] font-semibold text-amber-900/95 dark:text-yellow-100/90">
                                             {(s.lat != null && s.lng != null) || !!s.address ? t('admin.main.navBadge') : t('admin.main.siteCardBtn')}
                                           </div>
                                         </div>
@@ -3093,30 +3118,30 @@ const [editOpen, setEditOpen] = useState(false)
                                       <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
                                         <button
                                           onClick={() => openSiteCard(s)}
-                                          className="truncate text-left text-base font-semibold text-yellow-100 hover:underline"
+                                          className="truncate text-left text-base font-semibold text-amber-950 dark:text-yellow-100 hover:underline"
                                           title={t('admin.main.openSiteCardTitle')}
                                         >
                                           {s.name || t('admin.main.fallbackSite')}
                                         </button>
 
                                         {archived ? (
-                                          <span className="rounded-xl border border-yellow-400/20 bg-black/30 px-2 py-1 text-[11px] text-zinc-200">
+                                          <span className="rounded-xl border border-yellow-400/20 bg-black/30 px-2 py-1 text-[11px] text-stone-800 dark:text-zinc-200">
                                             {t('admin.main.badgeArchived')}
                                           </span>
                                         ) : (
-                                          <span className="rounded-xl border border-yellow-300/40 bg-yellow-400/10 px-2 py-1 text-[11px] text-yellow-100">
+                                          <span className="rounded-xl border border-yellow-300/40 bg-yellow-400/10 px-2 py-1 text-[11px] text-amber-950 dark:text-yellow-100">
                                             {t('admin.main.badgeActive')}
                                           </span>
                                         )}
 
-                                        <span className="inline-flex items-center gap-2 rounded-xl border border-yellow-400/15 bg-black/30 px-2 py-1 text-[11px] text-yellow-100/70">
+                                        <span className="inline-flex items-center gap-2 rounded-xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-2 py-1 text-[11px] text-amber-900/85 dark:text-yellow-100/70">
                                           <span className={cn('h-2.5 w-2.5 rounded-full', meta.dotClass)} />
                                           {s.category ? `#${s.category}` : t('admin.main.noCategoryShort')}
                                         </span>
                                       </div>
 
                                       {s.address ? (
-                                        <div className="mt-2 text-xs text-zinc-300">
+                                        <div className="mt-2 text-xs text-stone-600 dark:text-zinc-300">
                                           {t('admin.main.addressLabel')} {s.address}
                                         </div>
                                       ) : null}
@@ -3135,7 +3160,7 @@ const [editOpen, setEditOpen] = useState(false)
                                       </div>
 
                                       {s.notes ? (
-                                        <div className="mt-2 text-xs text-zinc-300">
+                                        <div className="mt-2 text-xs text-stone-600 dark:text-zinc-300">
                                           {t('admin.main.notesLabel')} {String(s.notes).slice(0, 160)}
                                         </div>
                                       ) : null}
@@ -3152,7 +3177,7 @@ const [editOpen, setEditOpen] = useState(false)
                                         <button
                                           onClick={() => openSiteCard(s)}
                                           disabled={busy}
-                                          className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 transition hover:border-yellow-300/40 disabled:opacity-60"
+                                          className="rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-stone-800 dark:text-zinc-200 transition hover:border-yellow-300/40 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
                                         >
                                           {t('admin.main.siteCardBtn')}
                                         </button>
@@ -3160,7 +3185,7 @@ const [editOpen, setEditOpen] = useState(false)
                                         <button
                                           onClick={() => deleteObjectSite(s.id)}
                                           disabled={busy}
-                                          className="w-full sm:w-auto rounded-2xl border border-red-500/25 bg-red-500/15 px-4 py-2 text-xs font-semibold text-red-100/85 transition hover:border-red-400/45 disabled:opacity-60"
+                                          className="w-full sm:w-auto rounded-2xl border border-red-600/45 dark:border-red-500/25 bg-red-500/15 px-4 py-2 text-xs font-semibold text-red-900 dark:text-red-100/85 transition hover:border-red-400/45 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
                                         >
                                           {t('admin.main.delete')}
                                         </button>
@@ -3168,13 +3193,13 @@ const [editOpen, setEditOpen] = useState(false)
                                         <button
                                           onClick={() => setArchived(s.id, !archived)}
                                           disabled={busy}
-                                          className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 transition hover:border-yellow-300/40 disabled:opacity-60"
+                                          className="rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-stone-800 dark:text-zinc-200 transition hover:border-yellow-300/40 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
                                         >
                                           {archived ? t('admin.main.restoreFromArchive') : t('admin.main.toArchive')}
                                         </button>
                                       </div>
 
-                                      <div className="mt-3 text-xs text-zinc-300">{t('admin.main.assignedTo')}</div>
+                                      <div className="mt-3 text-xs text-stone-600 dark:text-zinc-300">{t('admin.main.assignedTo')}</div>
                                       {assigned.length === 0 ? (
                                         <div className="mt-1 text-xs text-zinc-500">—</div>
                                       ) : (
@@ -3185,7 +3210,7 @@ const [editOpen, setEditOpen] = useState(false)
                                               <button
                                                 onClick={() => unassign(s.id, w.id)}
                                                 disabled={busy}
-                                                className="rounded-xl border border-yellow-400/20 bg-black/30 px-2 py-1 text-[11px] text-yellow-100/80 transition hover:border-yellow-300/50 disabled:opacity-60"
+                                                className="rounded-xl border border-yellow-400/20 bg-black/30 px-2 py-1 text-[11px] text-amber-900/90 dark:text-yellow-100/80 transition hover:border-yellow-300/50 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
                                               >
                                                 {t('admin.main.unassign')}
                                               </button>
@@ -3200,7 +3225,7 @@ const [editOpen, setEditOpen] = useState(false)
                                     {!archived ? (
                                       <div className="flex flex-wrap items-end gap-2">
                                         <label className="grid gap-1">
-                                          <span className="text-[11px] text-zinc-300">{t('admin.main.addWorkerHint')}</span>
+                                          <span className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.addWorkerHint')}</span>
                                           <select
                                             value={workerPickSite[s.id] || ''}
                                             onChange={(e) => setWorkerPickSite((p) => ({ ...p, [s.id]: e.target.value }))}
@@ -3222,13 +3247,13 @@ const [editOpen, setEditOpen] = useState(false)
                                             void assign(s.id, wid)
                                           }}
                                           disabled={busy || !workerPickSite[s.id]}
-                                          className="w-full sm:w-auto rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
+                                          className="w-full sm:w-auto rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-amber-950 dark:text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
                                         >
                                           {t('admin.main.assignBtn')}
                                         </button>
                                       </div>
                                     ) : (
-                                      <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-xs text-zinc-300">
+                                      <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-xs text-stone-600 dark:text-zinc-300">
                                         {t('admin.main.archivedSiteBanner')}
                                       </div>
                                     )}
@@ -3241,48 +3266,48 @@ const [editOpen, setEditOpen] = useState(false)
                         <Modal open={siteCreateOpen} title={t('admin.main.modalNewSite')} onClose={() => setSiteCreateOpen(false)}>
                           <div className="grid gap-3">
                             <label className="grid gap-1">
-                              <span className="text-[11px] text-zinc-300">{t('admin.main.fieldName')}</span>
+                              <span className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.fieldName')}</span>
                               <input
                                 value={newObjName}
                                 onChange={(e) => setNewObjName(e.target.value)}
-                                className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
+                                className="rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
                                 placeholder={t('admin.main.phSiteExample')}
                               />
                             </label>
 
                             <label className="grid gap-1">
-                              <span className="text-[11px] text-zinc-300">{t('admin.main.fieldAddress')}</span>
+                              <span className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.fieldAddress')}</span>
                               <input
                                 value={newObjAddress}
                                 onChange={(e) => setNewObjAddress(e.target.value)}
-                                className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
+                                className="rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
                                 placeholder={t('admin.main.optional')}
                               />
                             </label>
 
                             <div className="grid gap-3 sm:grid-cols-2">
                               <label className="grid gap-1">
-                                <span className="text-[11px] text-zinc-300">{t('admin.main.radiusM')}</span>
+                                <span className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.radiusM')}</span>
                                 <input
                                   value={newObjRadius}
                                   onChange={(e) => setNewObjRadius(e.target.value)}
-                                  className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
+                                  className="rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
                                   placeholder="150"
                                 />
                               </label>
 
                               <div className="grid gap-1">
-                                <span className="text-[11px] text-zinc-300">{t('admin.main.category')}</span>
+                                <span className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.category')}</span>
                                 <CategoryPicker value={newObjCategory} onChange={setNewObjCategory} disabled={busy} />
                               </div>
                             </div>
 
                             <label className="grid gap-1">
-                              <span className="text-[11px] text-zinc-300">{t('admin.main.notes')}</span>
+                              <span className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.notes')}</span>
                               <textarea
                                 value={newObjNotes}
                                 onChange={(e) => setNewObjNotes(e.target.value)}
-                                className="min-h-[100px] rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
+                                className="min-h-[100px] rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
                                 placeholder={t('admin.main.optional')}
                               />
                             </label>
@@ -3291,14 +3316,14 @@ const [editOpen, setEditOpen] = useState(false)
                               <button
                                 onClick={createObjectSite}
                                 disabled={busy || !newObjName.trim()}
-                                className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-yellow-100 transition hover:border-yellow-200/70 disabled:opacity-60"
+                                className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-amber-950 dark:text-yellow-100 transition hover:border-yellow-200/70 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
                               >
                                 {t('admin.main.create')}
                               </button>
                               <button
                                 onClick={() => setSiteCreateOpen(false)}
                                 disabled={busy}
-                                className="rounded-2xl border border-yellow-400/15 bg-black/30 px-5 py-3 text-sm text-zinc-200 transition hover:border-yellow-300/40 disabled:opacity-60"
+                                className="rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-5 py-3 text-sm text-stone-800 dark:text-zinc-200 transition hover:border-yellow-300/40 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
                               >
                                 {t('common.cancel')}
                               </button>
@@ -3312,7 +3337,7 @@ const [editOpen, setEditOpen] = useState(false)
                           onClose={() => setSiteCardOpen(false)}
                         >
                           {!siteCardId ? (
-                            <div className="text-sm text-zinc-300">{t('admin.main.noSite')}</div>
+                            <div className="text-sm text-stone-600 dark:text-zinc-300">{t('admin.main.noSite')}</div>
                           ) : (
                             <div className="grid gap-4">
                               <div className="flex flex-wrap items-center gap-2">
@@ -3324,8 +3349,8 @@ const [editOpen, setEditOpen] = useState(false)
                                     className={cn(
                                       'rounded-xl border px-3 py-1.5 text-xs font-semibold transition',
                                       siteCardLocale === L
-                                        ? 'border-yellow-300/50 bg-yellow-400/15 text-yellow-50'
-                                        : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/35',
+                                        ? ADM_LANG_ACTIVE
+                                        : ADM_LANG_INACTIVE,
                                     )}
                                   >
                                     {L === 'ru'
@@ -3341,7 +3366,7 @@ const [editOpen, setEditOpen] = useState(false)
                                   type="button"
                                   onClick={() => void fillSiteCardI18nEmpty()}
                                   disabled={busy || !siteCardId}
-                                  className="rounded-xl border border-sky-400/25 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-100/90 transition hover:border-sky-300/45 disabled:opacity-50"
+                                  className="rounded-xl border border-sky-400/25 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-900 dark:text-sky-100/90 transition hover:border-sky-300/45 disabled:text-sky-700 disabled:opacity-90 dark:disabled:text-sky-400 dark:disabled:opacity-70"
                                 >
                                   {t('admin.common.fillEmptyFromRu')}
                                 </button>
@@ -3349,7 +3374,7 @@ const [editOpen, setEditOpen] = useState(false)
 
                               <div className="grid gap-3 sm:grid-cols-2">
                                 <label className="grid gap-1 sm:col-span-2">
-                                  <span className="text-[11px] text-zinc-300">{t('admin.main.fieldName')}</span>
+                                  <span className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.fieldName')}</span>
                                   <input
                                     value={locDraftValue(siteLocDraft.name, siteCardLocale)}
                                     onChange={(e) =>
@@ -3358,12 +3383,12 @@ const [editOpen, setEditOpen] = useState(false)
                                         name: { ...prev.name, [siteCardLocale]: e.target.value },
                                       }))
                                     }
-                                    className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
+                                    className="rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
                                   />
                                 </label>
 
                                 <label className="grid gap-1 sm:col-span-2">
-                                  <span className="text-[11px] text-zinc-300">{t('admin.main.fieldAddress')}</span>
+                                  <span className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.fieldAddress')}</span>
                                   <input
                                     value={locDraftValue(siteLocDraft.address, siteCardLocale)}
                                     onChange={(e) =>
@@ -3372,46 +3397,46 @@ const [editOpen, setEditOpen] = useState(false)
                                         address: { ...prev.address, [siteCardLocale]: e.target.value },
                                       }))
                                     }
-                                    className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
+                                    className="rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
                                   />
                                 </label>
 
                                 <label className="grid gap-1">
-                                  <span className="text-[11px] text-zinc-300">{t('admin.main.radiusM')}</span>
+                                  <span className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.radiusM')}</span>
                                   <input
                                     value={siteCardRadius}
                                     onChange={(e) => setSiteCardRadius(e.target.value)}
-                                    className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
+                                    className="rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
                                   />
                                 </label>
 
                                 <div className="grid gap-1">
-                                  <span className="text-[11px] text-zinc-300">{t('admin.main.category')}</span>
+                                  <span className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.category')}</span>
                                   <CategoryPicker value={siteCardCategory} onChange={setSiteCardCategory} disabled={busy} />
                                 </div>
 
                                 <label className="grid gap-1">
-                                  <span className="text-[11px] text-zinc-300">{t('admin.main.lat')}</span>
+                                  <span className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.lat')}</span>
                                   <input
                                     value={siteCardLat}
                                     onChange={(e) => setSiteCardLat(e.target.value)}
-                                    className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
+                                    className="rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
                                     placeholder={t('admin.main.phLat')}
                                   />
                                 </label>
 
                                 <label className="grid gap-1">
-                                  <span className="text-[11px] text-zinc-300">{t('admin.main.lng')}</span>
+                                  <span className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.lng')}</span>
                                   <input
                                     value={siteCardLng}
                                     onChange={(e) => setSiteCardLng(e.target.value)}
-                                    className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
+                                    className="rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
                                     placeholder={t('admin.main.phLng')}
                                   />
                                 </label>
 
                                 <label className="grid gap-1 sm:col-span-2">
-                                  <span className="text-[11px] text-zinc-300">{t('admin.main.notes')}</span>
+                                  <span className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.notes')}</span>
                                   <textarea
                                     value={locDraftValue(siteLocDraft.notes, siteCardLocale)}
                                     onChange={(e) =>
@@ -3420,7 +3445,7 @@ const [editOpen, setEditOpen] = useState(false)
                                         notes: { ...prev.notes, [siteCardLocale]: e.target.value },
                                       }))
                                     }
-                                    className="min-h-[120px] rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
+                                    className="min-h-[120px] rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
                                   />
                                 </label>
 
@@ -3431,14 +3456,14 @@ const [editOpen, setEditOpen] = useState(false)
                                       busy ||
                                       (siteCardLocale === 'ru' && !locDraftValue(siteLocDraft.name, siteCardLocale).trim())
                                     }
-                                    className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-yellow-100 transition hover:border-yellow-200/70 disabled:opacity-60"
+                                    className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-amber-950 dark:text-yellow-100 transition hover:border-yellow-200/70 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
                                   >
                                     {t('common.save')}
                                   </button>
                                   <button
                                     onClick={() => deleteObjectSite(siteCardId)}
                                     disabled={busy}
-                                    className="w-full sm:w-auto rounded-2xl border border-red-500/25 bg-red-500/15 px-5 py-3 text-sm font-semibold text-red-100/85 transition hover:border-red-400/45 disabled:opacity-60"
+                                    className="w-full sm:w-auto rounded-2xl border border-red-600/45 dark:border-red-500/25 bg-red-500/15 px-5 py-3 text-sm font-semibold text-red-900 dark:text-red-100/85 transition hover:border-red-400/45 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
                                   >
                                     {t('admin.main.deleteSiteBtn')}
                                   </button>
@@ -3451,9 +3476,9 @@ const [editOpen, setEditOpen] = useState(false)
                                 if (lat == null || lng == null || Number.isNaN(lat) || Number.isNaN(lng)) return null
                                 return (
                                   <div className="grid gap-2">
-                                    <div className="text-sm font-semibold text-yellow-100">{t('admin.main.mapTitle')}</div>
+                                    <div className="text-sm font-semibold text-amber-950 dark:text-yellow-100">{t('admin.main.mapTitle')}</div>
                                     <MapLarge lat={lat} lng={lng} />
-                                    <div className="flex flex-wrap items-center gap-3 text-xs text-yellow-100/70">
+                                    <div className="flex flex-wrap items-center gap-3 text-xs text-amber-900/85 dark:text-yellow-100/70">
                                       <a className="underline decoration-yellow-400/20 hover:decoration-yellow-300/50" href={googleNavUrl(lat, lng)} target="_blank" rel="noreferrer">
                                         {t('admin.main.googleNav')}
                                       </a>
@@ -3466,15 +3491,15 @@ const [editOpen, setEditOpen] = useState(false)
                               })()}
 
                               <div className="grid gap-2">
-                                <div className="text-sm font-semibold text-yellow-100">{t('admin.main.photosSection')}</div>
+                                <div className="text-sm font-semibold text-amber-950 dark:text-yellow-100">{t('admin.main.photosSection')}</div>
 
                                 <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <div className="text-xs text-yellow-100/55">{t('admin.main.nowCount', { n: siteCardPhotos.length })}</div>
+                                  <div className="text-xs text-amber-900/70 dark:text-yellow-100/55">{t('admin.main.nowCount', { n: siteCardPhotos.length })}</div>
 
                                   <div className="flex flex-wrap gap-2">
                                     <label
                                       className={cn(
-                                        'rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-xs text-yellow-100/70 hover:border-yellow-300/40',
+                                        'rounded-xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-3 py-2 text-xs text-amber-900/85 dark:text-yellow-100/70 hover:border-yellow-300/40',
                                         photoBusy || !siteCardId || siteCardPhotos.length >= 5 ? 'opacity-70' : ''
                                       )}
                                     >
@@ -3500,7 +3525,7 @@ const [editOpen, setEditOpen] = useState(false)
 
                                     <label
                                       className={cn(
-                                        'rounded-xl border border-yellow-300/35 bg-yellow-400/10 px-3 py-2 text-xs font-semibold text-yellow-100 hover:border-yellow-200/70',
+                                        'rounded-xl border border-yellow-300/35 bg-yellow-400/10 px-3 py-2 text-xs font-semibold text-amber-950 dark:text-yellow-100 hover:border-yellow-200/70',
                                         photoBusy || !siteCardId || siteCardPhotos.length >= 5 ? 'opacity-70' : ''
                                       )}
                                     >
@@ -3528,7 +3553,7 @@ const [editOpen, setEditOpen] = useState(false)
 
 
                                 {photoUiError ? (
-                                  <div className="rounded-2xl border border-red-500/25 bg-red-500/10 px-3 py-3 text-xs text-red-100/85">
+                                  <div className="rounded-2xl border border-red-600/45 dark:border-red-500/25 bg-red-500/10 px-3 py-3 text-xs text-red-900 dark:text-red-100/85">
                                     {photoUiError}
                                   </div>
                                 ) : null}
@@ -3540,7 +3565,7 @@ const [editOpen, setEditOpen] = useState(false)
                                 ) : null}
 
                                 {siteCardPhotos.length === 0 ? (
-                                  <div className="rounded-2xl border border-yellow-400/10 bg-black/20 px-3 py-3 text-xs text-yellow-100/55">
+                                  <div className="rounded-2xl border border-yellow-400/10 bg-black/20 px-3 py-3 text-xs text-amber-900/70 dark:text-yellow-100/55">
                                     {t('admin.main.noPhotos')}
                                   </div>
                                 ) : (
@@ -3550,7 +3575,7 @@ const [editOpen, setEditOpen] = useState(false)
                                         { }
                                         <img src={p.url || ""} alt="site" className="h-36 w-full object-cover" loading="lazy" />
 
-                                        <div className="absolute left-2 top-2 rounded-xl border border-yellow-400/15 bg-black/50 px-2 py-1 text-[11px] text-yellow-100/80">
+                                        <div className="absolute left-2 top-2 rounded-xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/50 px-2 py-1 text-[11px] text-amber-900/90 dark:text-yellow-100/80">
                                           {idx === 0 ? t('admin.main.primaryBadge') : ''}
                                         </div>
 
@@ -3563,7 +3588,7 @@ const [editOpen, setEditOpen] = useState(false)
                                               }}
                                               disabled={photoBusy || !siteCardId}
                                               className={cn(
-                                                'rounded-xl border border-yellow-300/35 bg-yellow-400/10 px-2 py-1 text-[11px] font-semibold text-yellow-100',
+                                                'rounded-xl border border-yellow-300/35 bg-yellow-400/10 px-2 py-1 text-[11px] font-semibold text-amber-950 dark:text-yellow-100',
                                                 photoBusy ? 'opacity-70' : 'hover:border-yellow-200/70'
                                               )}
                                             >
@@ -3578,7 +3603,7 @@ const [editOpen, setEditOpen] = useState(false)
                                             }}
                                             disabled={photoBusy || !siteCardId}
                                             className={cn(
-                                              'rounded-xl border border-red-500/25 bg-red-500/15 px-2 py-1 text-[11px] text-red-100/85',
+                                              'rounded-xl border border-red-600/45 dark:border-red-500/25 bg-red-500/15 px-2 py-1 text-[11px] text-red-900 dark:text-red-100/85',
                                               photoBusy ? 'opacity-70' : 'hover:border-red-400/45'
                                             )}
                                           >
@@ -3590,7 +3615,7 @@ const [editOpen, setEditOpen] = useState(false)
                                   </div>
                                 )}
 
-                                {photoBusy ? <div className="text-xs text-yellow-100/45">{t('admin.main.processing')}</div> : null}
+                                {photoBusy ? <div className="text-xs text-amber-900/60 dark:text-yellow-100/45">{t('admin.main.processing')}</div> : null}
                               </div>
                             </div>
                           )}
@@ -3602,16 +3627,16 @@ const [editOpen, setEditOpen] = useState(false)
           {/* Workers */}
           {tab === 'workers' ? (
             <div className="mt-6 grid gap-3">
-              <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
+              <div className="rounded-3xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/25 p-5">
                 <div className="flex flex-wrap items-end justify-between gap-3">
                   <div>
-                    <div className="text-sm font-semibold text-yellow-100">{t('admin.main.workersCreateTitle')}</div>
-                    <div className="mt-1 text-xs text-zinc-300">{t('admin.main.workersCreateHint')}</div>
+                    <div className="text-sm font-semibold text-amber-950 dark:text-yellow-100">{t('admin.main.workersCreateTitle')}</div>
+                    <div className="mt-1 text-xs text-stone-600 dark:text-zinc-300">{t('admin.main.workersCreateHint')}</div>
                   </div>
 
                   <div className="flex flex-wrap items-end gap-2">
                     <label className="grid gap-1">
-                      <span className="text-[11px] text-zinc-300">{t('admin.main.loginUserLabel')}</span>
+                      <span className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.loginUserLabel')}</span>
                       <input
                         value={inviteEmail}
                         onChange={(e) => setInviteEmail(e.target.value)}
@@ -3626,7 +3651,7 @@ const [editOpen, setEditOpen] = useState(false)
                       type="button"
                       onClick={() => void inviteWorker()}
                       disabled={busy || !inviteEmail.trim()}
-                      className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
+                      className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-amber-950 dark:text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
                     >
                       {t('admin.main.create')}
                     </button>
@@ -3645,11 +3670,11 @@ const [editOpen, setEditOpen] = useState(false)
                   const isMe = !!meId && w.id === meId
 
                   return (
-                    <div key={w.id} className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
+                    <div key={w.id} className="rounded-3xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/25 p-5">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="flex items-start gap-3">
                           <div className="relative mt-0.5 h-10 w-10">
-                            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-yellow-400/15 bg-black/30 text-[12px] font-semibold text-yellow-100/80">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 text-[12px] font-semibold text-amber-900/90 dark:text-yellow-100/80">
                               {initials(w.full_name)}
                             </div>
                             {workerPhotoMeta[w.id]?.thumb ? (
@@ -3666,33 +3691,33 @@ const [editOpen, setEditOpen] = useState(false)
                                 }}
                               />
                             ) : null}
-                            <div className="absolute -bottom-1 -right-1 rounded-xl border border-yellow-400/20 bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-yellow-100">
+                            <div className="absolute -bottom-1 -right-1 rounded-xl border border-yellow-400/20 bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-amber-950 dark:text-yellow-100">
                               {(workerPhotoMeta[w.id]?.count ?? '…')}/5
                             </div>
                           </div>
 
                           <div className="min-w-full sm:w-[220px]">
-                            <div className="text-base font-semibold text-yellow-100">
-                              <button onClick={() => openWorkerCard(w.id)} className="hover:text-yellow-100">
+                            <div className="text-base font-semibold text-amber-950 dark:text-yellow-100">
+                              <button onClick={() => openWorkerCard(w.id)} className="hover:text-amber-950 dark:text-yellow-100">
                                 {w.full_name || t('admin.main.noName')}
                               </button>{' '}
                             {isAdmin ? (
-                              <span className="ml-2 rounded-xl border border-yellow-400/30 bg-yellow-400/10 px-2 py-1 text-[11px] text-yellow-100">
+                              <span className="ml-2 rounded-xl border border-yellow-400/30 bg-yellow-400/10 px-2 py-1 text-[11px] text-amber-950 dark:text-yellow-100">
                                 {t('admin.main.badgeAdmin')}
                               </span>
                             ) : (
-                              <span className="ml-2 rounded-xl border border-yellow-400/15 bg-black/30 px-2 py-1 text-[11px] text-zinc-200">
+                              <span className="ml-2 rounded-xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-2 py-1 text-[11px] text-stone-800 dark:text-zinc-200">
                                 {t('admin.main.badgeWorker')}
                               </span>
                             )}
                             {w.active === false ? (
-                              <span className="ml-2 rounded-xl border border-red-400/20 bg-red-500/10 px-2 py-1 text-[11px] text-red-100">
+                              <span className="ml-2 rounded-xl border border-red-400/20 bg-red-500/10 px-2 py-1 text-[11px] text-red-900 dark:text-red-100">
                                 {t('admin.main.badgeDisabled')}
                               </span>
                             ) : null}
                           </div>
 
-                          <div className="mt-3 text-xs text-zinc-300">{t('admin.main.sitesColon')}</div>
+                          <div className="mt-3 text-xs text-stone-600 dark:text-zinc-300">{t('admin.main.sitesColon')}</div>
                           {sitesList.length === 0 ? (
                             <div className="mt-1 text-xs text-zinc-500">—</div>
                           ) : (
@@ -3703,7 +3728,7 @@ const [editOpen, setEditOpen] = useState(false)
                                   <button
                                     onClick={() => unassign(s.id, w.id)}
                                     disabled={busy}
-                                    className="rounded-xl border border-yellow-400/20 bg-black/30 px-2 py-1 text-[11px] text-yellow-100/80 transition hover:border-yellow-300/50 disabled:opacity-60"
+                                    className="rounded-xl border border-yellow-400/20 bg-black/30 px-2 py-1 text-[11px] text-amber-900/90 dark:text-yellow-100/80 transition hover:border-yellow-300/50 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
                                   >
                                     {t('admin.main.unassign')}
                                   </button>
@@ -3720,7 +3745,7 @@ const [editOpen, setEditOpen] = useState(false)
                               <button
                                 onClick={() => setRole(w.id, 'admin')}
                                 disabled={busy}
-                                className="w-full sm:w-auto rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
+                                className="w-full sm:w-auto rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-amber-950 dark:text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
                               >
                                 {t('admin.main.makeAdmin')}
                               </button>
@@ -3728,7 +3753,7 @@ const [editOpen, setEditOpen] = useState(false)
                               <button
                                 onClick={() => setRole(w.id, 'worker')}
                                 disabled={busy || isMe}
-                                className="w-full sm:w-auto rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 transition hover:border-yellow-300/40 disabled:opacity-60"
+                                className="w-full sm:w-auto rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-stone-800 dark:text-zinc-200 transition hover:border-yellow-300/40 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
                               >
                                 {t('admin.main.makeWorker')}
                               </button>
@@ -3741,10 +3766,10 @@ const [editOpen, setEditOpen] = useState(false)
                                 onClick={() => setWorkerArchived(w.id, w.active !== false)}
                                 disabled={busy}
                                 className={cn(
-                                  'w-full sm:w-auto rounded-2xl border px-4 py-2 text-xs font-semibold transition disabled:opacity-60',
+                                  'w-full sm:w-auto rounded-2xl border px-4 py-2 text-xs font-semibold transition disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75',
                                   w.active === false
-                                    ? 'border-yellow-300/45 bg-yellow-400/10 text-yellow-100 hover:border-yellow-200/70 hover:bg-yellow-400/15'
-                                    : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
+                                    ? ADM_WORKER_ARCHIVE_ACTIVE
+                                    : ADM_TAB_INACTIVE
                                 )}
                               >
                                 {w.active === false ? t('admin.main.restoreWorker') : t('admin.main.archiveWorker')}
@@ -3753,7 +3778,7 @@ const [editOpen, setEditOpen] = useState(false)
                               <button
                                 onClick={() => deleteWorker(w.id)}
                                 disabled={busy}
-                                className="w-full sm:w-auto rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-2 text-xs font-semibold text-red-900 dark:text-red-100 transition hover:border-red-300/40 hover:bg-red-500/15 disabled:opacity-60 disabled:text-red-500 dark:disabled:text-red-300"
+                                className="w-full sm:w-auto rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-2 text-xs font-semibold text-red-900 dark:text-red-100 transition hover:border-red-300/40 hover:bg-red-500/15 disabled:text-red-700 disabled:opacity-90 dark:disabled:text-red-300 dark:disabled:opacity-75"
                               >
                                 {t('admin.main.delete')}
                               </button>
@@ -3778,13 +3803,13 @@ const [editOpen, setEditOpen] = useState(false)
                               <button
                                 onClick={() => pick && assign(pick, w.id)}
                                 disabled={busy || !pick}
-                                className="w-full sm:w-auto rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
+                                className="w-full sm:w-auto rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-amber-950 dark:text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
                               >
                                 {t('admin.main.assignBtn')}
                               </button>
                             </div>
                           ) : (
-                            <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-xs text-zinc-300">
+                            <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-xs text-stone-600 dark:text-zinc-300">
                               {t('admin.main.adminNoAssign')}
                             </div>
                           )}
@@ -3799,9 +3824,9 @@ const [editOpen, setEditOpen] = useState(false)
           {/* Shifts / jobs */}
           {tab === 'jobs' ? (
             <div className="mt-6 grid gap-4">
-              <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
-                <div className="text-sm font-semibold text-yellow-100">{t('admin.main.jobsCreateTitle')}</div>
-                <div className="mt-1 text-xs text-zinc-300">{t('admin.main.jobsCreateHint')}</div>
+              <div className="rounded-3xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/25 p-5">
+                <div className="text-sm font-semibold text-amber-950 dark:text-yellow-100">{t('admin.main.jobsCreateTitle')}</div>
+                <div className="mt-1 text-xs text-stone-600 dark:text-zinc-300">{t('admin.main.jobsCreateHint')}</div>
 
                 <div className="mt-4 grid gap-3 lg:grid-cols-2 2xl:grid-cols-[1.3fr_1.7fr_0.8fr_0.7fr_0.7fr_auto]">
                   
@@ -3821,12 +3846,12 @@ const [editOpen, setEditOpen] = useState(false)
 </div>
 
                   <label className="grid gap-1">
-                    <span className="text-[11px] text-zinc-300">{t('admin.main.labelWorkersMulti')}</span>
+                    <span className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.labelWorkersMulti')}</span>
                     <MultiWorkerPicker workers={workersForPicker} value={newWorkers} onChange={setNewWorkers} disabled={!newSiteId} />
                   </label>
 
                   <label className="grid gap-1">
-                    <span className="text-[11px] text-zinc-300">{t('admin.main.labelDate')}</span>
+                    <span className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.labelDate')}</span>
                     <input
                       type="date"
                       onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
@@ -3837,7 +3862,7 @@ const [editOpen, setEditOpen] = useState(false)
                   </label>
 
                   <label className="grid gap-1">
-                    <span className="text-[11px] text-zinc-300">{t('admin.main.labelTime')}</span>
+                    <span className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.labelTime')}</span>
                     <input
                       type="time"
                       value={newTime}
@@ -3847,7 +3872,7 @@ const [editOpen, setEditOpen] = useState(false)
                   </label>
 
                   <label className="grid gap-1">
-                    <span className="text-[11px] text-zinc-300">{t('admin.main.labelEnd')}</span>
+                    <span className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.labelEnd')}</span>
                     <input
                       type="time"
                       onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
@@ -3861,7 +3886,7 @@ const [editOpen, setEditOpen] = useState(false)
                   <button
                     onClick={createJobs}
                     disabled={busy || !newSiteId || newWorkers.length === 0}
-                    className="w-full rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-center text-sm font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:cursor-not-allowed disabled:opacity-60 lg:mt-5 lg:w-auto"
+                    className="w-full rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-center text-sm font-semibold text-amber-950 dark:text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:cursor-not-allowed disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75 lg:mt-5 lg:w-auto"
                   >
                     {busy
                       ? t('admin.main.creating')
@@ -3878,7 +3903,7 @@ const [editOpen, setEditOpen] = useState(false)
                     onClick={() => setJobsView('table')}
                     className={cn(
                       'rounded-2xl border px-4 py-2 text-xs font-semibold transition flex-1 text-center sm:flex-none',
-                      jobsView === 'table' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
+                      jobsView === 'table' ? ADM_TAB_ACTIVE : ADM_TAB_INACTIVE
                     )}
                   >
                     {t('admin.main.viewTable')}
@@ -3887,7 +3912,7 @@ const [editOpen, setEditOpen] = useState(false)
                     onClick={() => setJobsView('board')}
                     className={cn(
                       'rounded-2xl border px-4 py-2 text-xs font-semibold transition flex-1 text-center sm:flex-none',
-                      jobsView === 'board' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
+                      jobsView === 'board' ? ADM_TAB_ACTIVE : ADM_TAB_INACTIVE
                     )}
                   >
                     {t('admin.main.viewBoard')}
@@ -3899,7 +3924,7 @@ const [editOpen, setEditOpen] = useState(false)
                         setAnchorDate(toISODate(new Date()))
                         recalcRange('day', toISODate(new Date()))
                       }}
-                      className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/40"
+                      className="rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-stone-800 dark:text-zinc-200 hover:border-yellow-300/40"
                     >
                       {t('admin.main.today')}
                     </button>
@@ -3910,7 +3935,7 @@ const [editOpen, setEditOpen] = useState(false)
                         setDateFrom(toISODate(startOfWeek(d)))
                         setDateTo(toISODate(endOfWeek(d)))
                       }}
-                      className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/40"
+                      className="rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-stone-800 dark:text-zinc-200 hover:border-yellow-300/40"
                     >
                       {t('admin.main.planWeek')}
                     </button>
@@ -3921,7 +3946,7 @@ const [editOpen, setEditOpen] = useState(false)
                         setDateFrom(toISODate(startOfMonth(d)))
                         setDateTo(toISODate(endOfMonth(d)))
                       }}
-                      className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/40"
+                      className="rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-stone-800 dark:text-zinc-200 hover:border-yellow-300/40"
                     >
                       {t('admin.main.planMonth')}
                     </button>
@@ -3929,13 +3954,13 @@ const [editOpen, setEditOpen] = useState(false)
                 </div>
               </div>
 
-              <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
+              <div className="rounded-3xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/25 p-5">
                 <div className="flex flex-wrap items-end justify-between gap-3">
-                  <div className="text-sm font-semibold text-yellow-100">{t('admin.main.filtersTitle')}</div>
+                  <div className="text-sm font-semibold text-amber-950 dark:text-yellow-100">{t('admin.main.filtersTitle')}</div>
 
                   <div className="mt-4 grid w-full gap-3 lg:grid-cols-4">
                     <label className="grid gap-1">
-                      <span className="text-[11px] text-zinc-300">{t('admin.main.dateFrom')}</span>
+                      <span className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.dateFrom')}</span>
                       <input
                         type="date"
                       onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
@@ -3945,7 +3970,7 @@ const [editOpen, setEditOpen] = useState(false)
                       />
                     </label>
                     <label className="grid gap-1">
-                      <span className="text-[11px] text-zinc-300">{t('admin.main.dateTo')}</span>
+                      <span className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.dateTo')}</span>
                       <input
                         type="date"
                       onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
@@ -3968,7 +3993,7 @@ const [editOpen, setEditOpen] = useState(false)
 </div>
 
                     <label className="grid gap-1">
-                      <span className="text-[11px] text-zinc-300">{t('admin.main.colWorker')}</span>
+                      <span className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.colWorker')}</span>
                       <select
                         value={filterWorker}
                         onChange={(e) => setFilterWorker(e.target.value)}
@@ -3997,7 +4022,7 @@ const [editOpen, setEditOpen] = useState(false)
                       { key: 'cancelled', title: t('admin.main.jobCancelled'), items: cancelled },
                     ].map((col) => (
                       <div key={col.key} className="rounded-3xl border border-yellow-400/12 bg-black/20 p-4">
-                        <div className="text-xs font-semibold text-zinc-200">{col.title}</div>
+                        <div className="text-xs font-semibold text-stone-800 dark:text-zinc-200">{col.title}</div>
                         <div className="mt-3 grid gap-2">
                           {col.items.map((j) => jobCard(j, false))}
                           {col.items.length === 0 ? <div className="text-xs text-zinc-500">—</div> : null}
@@ -4021,10 +4046,10 @@ const [editOpen, setEditOpen] = useState(false)
                           </div>
 
                           {String(j.status || '') === 'planned' && j.worker_id ? (
-                            <div className="mt-1 text-[11px] font-semibold text-yellow-100/80">{t('admin.main.accepted')}</div>
+                            <div className="mt-1 text-[11px] font-semibold text-amber-900/90 dark:text-yellow-100/80">{t('admin.main.accepted')}</div>
                           ) : null}
 
-                          <div className="mt-3 grid gap-2 text-xs text-zinc-200">
+                          <div className="mt-3 grid gap-2 text-xs text-stone-800 dark:text-zinc-200">
                             <div className="flex gap-2">
                               <span className="text-zinc-400">{t('admin.main.labelSiteColon')}</span>
                               <span className="truncate">{j.site_name || '—'}</span>
@@ -4046,7 +4071,7 @@ const [editOpen, setEditOpen] = useState(false)
                           <div className="mt-3 flex flex-wrap items-center gap-2">
                             <button
                               onClick={() => openEditForJob(j)}
-                              className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/40"
+                              className="rounded-xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-3 py-2 text-xs font-semibold text-stone-800 dark:text-zinc-200 hover:border-yellow-300/40"
                             >
                               {t('admin.main.edit')}
                             </button>
@@ -4063,7 +4088,7 @@ const [editOpen, setEditOpen] = useState(false)
                     <div className="hidden lg:block">
                       <div className="overflow-auto rounded-3xl border border-yellow-400/10 bg-black/20">
                     <table className="min-w-[920px] w-full text-left text-sm">
-                      <thead className="bg-black/30 text-xs text-zinc-300">
+                      <thead className="bg-black/30 text-xs text-stone-600 dark:text-zinc-300">
                         <tr>
                           <th className="px-4 py-3">{t('admin.main.thDate')}</th>
                           <th className="px-4 py-3">{t('admin.main.thTime')}</th>
@@ -4106,7 +4131,7 @@ const [editOpen, setEditOpen] = useState(false)
                                           }
                                         }}
                                         className={cn(
-                                          'relative h-7 w-10 overflow-hidden rounded-xl border border-yellow-400/15 bg-black/30',
+                                          'relative h-7 w-10 overflow-hidden rounded-xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30',
                                           canNav ? 'hover:border-yellow-300/40' : ''
                                         )}
                                         title={canNav ? t('admin.main.navOpen') : t('admin.main.navPhotoObject')}
@@ -4123,7 +4148,7 @@ const [editOpen, setEditOpen] = useState(false)
                                 {j.worker_id ? (
                                   <button
                                     onClick={() => openWorkerCard(j.worker_id!)}
-                                    className="flex items-center gap-2 text-yellow-100 hover:text-yellow-50"
+                                    className="flex items-center gap-2 text-amber-950 dark:text-yellow-100 hover:text-amber-950 dark:text-yellow-50"
                                   >
                                     {workerPhotoMeta[j.worker_id!]?.thumb ? (
                                        
@@ -4134,7 +4159,7 @@ const [editOpen, setEditOpen] = useState(false)
                                         loading="lazy"
                                       />
                                     ) : (
-                                      <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-yellow-400/15 bg-black/30 text-[10px] font-semibold text-yellow-100/80">
+                                      <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 text-[10px] font-semibold text-amber-900/90 dark:text-yellow-100/80">
                                         {initials(j.worker_name)}
                                       </span>
                                     )}
@@ -4148,7 +4173,7 @@ const [editOpen, setEditOpen] = useState(false)
                                 <div className="grid gap-1">
                                   <StatusPill status={String(j.status || '')} startedAt={j.started_at} />
                                   {String(j.status || '') === 'planned' && j.worker_id ? (
-                                    <div className="text-[11px] font-semibold text-yellow-100/80">{t('admin.main.accepted')}</div>
+                                    <div className="text-[11px] font-semibold text-amber-900/90 dark:text-yellow-100/80">{t('admin.main.accepted')}</div>
                                   ) : null}
                                 </div>
                               </td>
@@ -4157,7 +4182,7 @@ const [editOpen, setEditOpen] = useState(false)
                               <td className="px-4 py-3">
                                 <button
                                   onClick={() => openEditForJob(j)}
-                                  className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40"
+                                  className="rounded-xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-stone-800 dark:text-zinc-200 hover:border-yellow-300/40"
                                 >
                                   {t('admin.main.edit')}
                                 </button>
@@ -4190,7 +4215,7 @@ const [editOpen, setEditOpen] = useState(false)
               {planView === 'day' ? renderPlanDayGrid() : null}
               {planView === 'month' ? renderPlanMonthGrid() : null}
 
-              <div className="mt-4 rounded-3xl border border-yellow-400/15 bg-black/20 p-4 text-xs text-zinc-300">
+              <div className="mt-4 rounded-3xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/20 p-4 text-xs text-stone-600 dark:text-zinc-300">
                 {t('admin.main.planHint')}
               </div>
             </div>
@@ -4214,7 +4239,7 @@ const [editOpen, setEditOpen] = useState(false)
 </div>
 
           <div className="grid gap-1">
-            <span className="text-[11px] text-zinc-300">{t('admin.main.workerField')}</span>
+            <span className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.workerField')}</span>
             <select
               value={editWorkerId}
               onChange={(e) => setEditWorkerId(e.target.value)}
@@ -4231,7 +4256,7 @@ const [editOpen, setEditOpen] = useState(false)
 
           <div className="grid gap-3 sm:grid-cols-3">
             <label className="grid gap-1">
-              <span className="text-[11px] text-zinc-300">{t('admin.main.labelDate')}</span>
+              <span className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.labelDate')}</span>
               <input
                 type="date"
                       onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
@@ -4241,7 +4266,7 @@ const [editOpen, setEditOpen] = useState(false)
               />
             </label>
             <label className="grid gap-1">
-              <span className="text-[11px] text-zinc-300">{t('admin.main.startTime')}</span>
+              <span className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.startTime')}</span>
               <input
                 type="time"
                 value={editTime}
@@ -4250,7 +4275,7 @@ const [editOpen, setEditOpen] = useState(false)
               />
             </label>
             <label className="grid gap-1">
-              <span className="text-[11px] text-zinc-300">{t('admin.main.labelEnd')}</span>
+              <span className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.labelEnd')}</span>
               <input
                 type="time"
                       onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
@@ -4262,7 +4287,7 @@ const [editOpen, setEditOpen] = useState(false)
           </div>
 
           <div className="grid gap-1">
-            <span className="text-[11px] text-zinc-300">{t('admin.main.status')}</span>
+            <span className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.status')}</span>
             <select
               value={String(editStatus)}
               onChange={(e) => setEditStatus(e.target.value)}
@@ -4282,7 +4307,7 @@ const [editOpen, setEditOpen] = useState(false)
                 setCancelJobId(editJobId)
                 setCancelOpen(true)
               }}
-              className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/40"
+              className="rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-stone-800 dark:text-zinc-200 hover:border-yellow-300/40"
             >
               {t('admin.main.cancelShiftBtn')}
             </button>
@@ -4290,7 +4315,7 @@ const [editOpen, setEditOpen] = useState(false)
             <button
               onClick={saveEdit}
               disabled={busy || !editJobId}
-              className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-2 text-xs font-semibold text-yellow-100 hover:border-yellow-200/70 disabled:opacity-60"
+              className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-2 text-xs font-semibold text-amber-950 dark:text-yellow-100 hover:border-yellow-200/70 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
             >
               {t('common.save')}
             </button>
@@ -4305,7 +4330,7 @@ const [editOpen, setEditOpen] = useState(false)
         onClose={() => setWorkerCardOpen(false)}
         scopeClassName="workerCardModalTheme"
       >
-        <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-4">
+        <div className="rounded-3xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/25 p-4">
           {(() => {
             const w = workersById.get(workerCardId)
             const archived = w?.active === false
@@ -4315,15 +4340,15 @@ const [editOpen, setEditOpen] = useState(false)
               <div className="grid gap-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <div className="text-sm font-semibold text-yellow-100">{w?.full_name || t('admin.main.fallbackWorker')}</div>
-                    <div className="mt-1 text-xs text-zinc-300">
+                    <div className="text-sm font-semibold text-amber-950 dark:text-yellow-100">{w?.full_name || t('admin.main.fallbackWorker')}</div>
+                    <div className="mt-1 text-xs text-stone-600 dark:text-zinc-300">
                       {role}
                       {archived ? t('admin.main.archivedMark') : t('admin.main.activeMark')}
                       <span className="text-zinc-500"> • </span>
                       <span className="text-zinc-400">ID:</span>{' '}
                       <span className="font-mono text-[11px] text-zinc-400">{workerCardId}</span>
                     </div>
-                    <div className="mt-1 text-xs text-zinc-300">
+                    <div className="mt-1 text-xs text-stone-600 dark:text-zinc-300">
                       {t('admin.main.rangeLine', { from: fmtD(dateFrom), to: fmtD(dateTo) })}
                     </div>
                   </div>
@@ -4331,7 +4356,7 @@ const [editOpen, setEditOpen] = useState(false)
 
                 <div className="grid gap-2">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-sm font-semibold text-yellow-100">{t('admin.main.dataNotesTitle')}</div>
+                    <div className="text-sm font-semibold text-amber-950 dark:text-yellow-100">{t('admin.main.dataNotesTitle')}</div>
                     <div className="flex flex-wrap items-center gap-2">
                       {w?.role !== 'admin' ? (
                         <button
@@ -4341,7 +4366,7 @@ const [editOpen, setEditOpen] = useState(false)
                           }}
                           disabled={workerResetBusy || !workerCardId}
                           className={cn(
-                            'rounded-xl border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-100 hover:border-red-300/55',
+                            'rounded-xl border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-900 dark:text-red-100 hover:border-red-300/55',
                             workerResetBusy ? 'opacity-70' : '',
                           )}
                         >
@@ -4360,7 +4385,8 @@ const [editOpen, setEditOpen] = useState(false)
                           (workerCardLocale === 'ru' && !locDraftValue(workerLocDraft.name, workerCardLocale).trim())
                         }
                         className={cn(
-                          'rounded-xl border border-yellow-300/35 bg-yellow-400/10 px-3 py-2 text-xs font-semibold text-yellow-100 hover:border-yellow-200/70',
+                          'rounded-xl border border-yellow-300/35 bg-yellow-400/10 px-3 py-2 text-xs font-semibold text-amber-950 dark:text-yellow-100 hover:border-yellow-200/70',
+                          ADM_DIS,
                           workerProfileSaving ? 'opacity-70' : '',
                         )}
                       >
@@ -4370,7 +4396,7 @@ const [editOpen, setEditOpen] = useState(false)
                   </div>
 
                   {workerResetResult ? (
-                    <div className="rounded-2xl border border-emerald-400/25 bg-emerald-500/10 p-3 text-xs text-emerald-100/90">
+                    <div className="rounded-2xl border border-emerald-400/25 bg-emerald-500/10 p-3 text-xs text-emerald-900 dark:text-emerald-100/90">
                       <div className="font-semibold">Новый временный пароль (показан один раз):</div>
                       <div className="mt-1 break-all">
                         Логин: <span className="font-mono">{workerResetResult.login || '—'}</span>
@@ -4380,7 +4406,7 @@ const [editOpen, setEditOpen] = useState(false)
                         <button
                           type="button"
                           onClick={() => void copyWorkerTempPassword(workerResetResult.temp_password)}
-                          className="rounded-lg border border-emerald-300/40 bg-emerald-500/15 px-2 py-1 text-[11px] font-semibold text-emerald-50 hover:border-emerald-200/60"
+                          className="rounded-lg border border-emerald-300/40 bg-emerald-500/15 px-2 py-1 text-[11px] font-semibold text-emerald-950 dark:text-emerald-50 hover:border-emerald-200/60"
                         >
                           Скопировать
                         </button>
@@ -4389,7 +4415,7 @@ const [editOpen, setEditOpen] = useState(false)
                   ) : null}
 
                   {workerProfileLoading ? (
-                    <div className="rounded-2xl border border-yellow-400/10 bg-black/20 px-3 py-3 text-xs text-yellow-100/55">
+                    <div className="rounded-2xl border border-yellow-400/10 bg-black/20 px-3 py-3 text-xs text-amber-900/70 dark:text-yellow-100/55">
                       {t('admin.main.loadingData')}
                     </div>
                   ) : (
@@ -4403,8 +4429,8 @@ const [editOpen, setEditOpen] = useState(false)
                             className={cn(
                               'rounded-xl border px-3 py-1.5 text-xs font-semibold transition',
                               workerCardLocale === L
-                                ? 'border-yellow-300/50 bg-yellow-400/15 text-yellow-50'
-                                : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/35',
+                                ? ADM_LANG_ACTIVE
+                                : ADM_LANG_INACTIVE,
                             )}
                           >
                             {L === 'ru'
@@ -4423,7 +4449,7 @@ const [editOpen, setEditOpen] = useState(false)
                             void fillWorkerCardI18nEmpty(workerCardId)
                           }}
                           disabled={workerProfileSaving || !workerCardId}
-                          className="rounded-xl border border-sky-400/25 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-100/90 transition hover:border-sky-300/45 disabled:opacity-50"
+                          className="rounded-xl border border-sky-400/25 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-900 dark:text-sky-100/90 transition hover:border-sky-300/45 disabled:text-sky-700 disabled:opacity-90 dark:disabled:text-sky-400 dark:disabled:opacity-70"
                         >
                           {t('admin.common.fillEmptyFromRu')}
                         </button>
@@ -4485,15 +4511,15 @@ const [editOpen, setEditOpen] = useState(false)
                 </div>
 
                 <div className="grid gap-2">
-                  <div className="text-sm font-semibold text-yellow-100">{t('admin.main.photosSection')}</div>
+                  <div className="text-sm font-semibold text-amber-950 dark:text-yellow-100">{t('admin.main.photosSection')}</div>
 
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-xs text-yellow-100/55">{t('admin.main.nowCount', { n: workerCardPhotos.length })}</div>
+                    <div className="text-xs text-amber-900/70 dark:text-yellow-100/55">{t('admin.main.nowCount', { n: workerCardPhotos.length })}</div>
 
                     <div className="flex flex-wrap gap-2">
                       <label
                         className={cn(
-                          'rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-xs text-yellow-100/70 hover:border-yellow-300/40',
+                          'rounded-xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-3 py-2 text-xs text-amber-900/85 dark:text-yellow-100/70 hover:border-yellow-300/40',
                           workerPhotoBusy || !workerCardId || workerCardPhotos.length >= 5 ? 'opacity-70' : ''
                         )}
                       >
@@ -4515,7 +4541,7 @@ const [editOpen, setEditOpen] = useState(false)
 
                       <label
                         className={cn(
-                          'rounded-xl border border-yellow-300/35 bg-yellow-400/10 px-3 py-2 text-xs font-semibold text-yellow-100 hover:border-yellow-200/70',
+                          'rounded-xl border border-yellow-300/35 bg-yellow-400/10 px-3 py-2 text-xs font-semibold text-amber-950 dark:text-yellow-100 hover:border-yellow-200/70',
                           workerPhotoBusy || !workerCardId || workerCardPhotos.length >= 5 ? 'opacity-70' : ''
                         )}
                       >
@@ -4538,7 +4564,7 @@ const [editOpen, setEditOpen] = useState(false)
                   </div>
 
                   {workerCardPhotos.length === 0 ? (
-                    <div className="rounded-2xl border border-yellow-400/10 bg-black/20 px-3 py-3 text-xs text-yellow-100/55">
+                    <div className="rounded-2xl border border-yellow-400/10 bg-black/20 px-3 py-3 text-xs text-amber-900/70 dark:text-yellow-100/55">
                       {t('admin.main.noPhotos')}
                     </div>
                   ) : (
@@ -4556,7 +4582,7 @@ const [editOpen, setEditOpen] = useState(false)
                               }}
                               disabled={workerPhotoBusy || !workerCardId}
                               className={cn(
-                                'rounded-xl border border-red-500/25 bg-red-500/15 px-2 py-1 text-[11px] text-red-100/85',
+                                'rounded-xl border border-red-600/45 dark:border-red-500/25 bg-red-500/15 px-2 py-1 text-[11px] text-red-900 dark:text-red-100/85',
                                 workerPhotoBusy ? 'opacity-70' : 'hover:border-red-400/45'
                               )}
                             >
@@ -4572,10 +4598,10 @@ const [editOpen, setEditOpen] = useState(false)
                               }}
                               disabled={workerPhotoBusy || !workerCardId}
                               className={cn(
-                                'rounded-xl border bg-black/40 px-2 py-1 text-[11px] text-yellow-100/85',
+                                'rounded-xl border bg-black/40 px-2 py-1 text-[11px] text-amber-900/90 dark:text-yellow-100/85',
                                 workerCardAvatarPath === p.path
                                   ? 'border-yellow-300/60 bg-yellow-400/15'
-                                  : 'border-yellow-400/15 hover:border-yellow-300/40',
+                                  : 'border-amber-900/30 dark:border-yellow-400/15 hover:border-yellow-300/40',
                                 workerPhotoBusy ? 'opacity-70' : ''
                               )}
                             >
@@ -4587,11 +4613,11 @@ const [editOpen, setEditOpen] = useState(false)
                     </div>
                   )}
 
-                  {workerPhotoBusy ? <div className="text-xs text-yellow-100/45">{t('admin.main.processing')}</div> : null}
+                  {workerPhotoBusy ? <div className="text-xs text-amber-900/60 dark:text-yellow-100/45">{t('admin.main.processing')}</div> : null}
                 </div>
 
                 <div className="mt-1 grid gap-2">
-                  <div className="text-sm font-semibold text-yellow-100">{t('admin.main.shiftsTitle')}</div>
+                  <div className="text-sm font-semibold text-amber-950 dark:text-yellow-100">{t('admin.main.shiftsTitle')}</div>
 
                   {workerCardItems.length === 0 ? (
                     <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-3 text-xs text-zinc-500">
@@ -4601,7 +4627,7 @@ const [editOpen, setEditOpen] = useState(false)
 
                   {workerCardItems.map((j) => (
                     <div key={j.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-yellow-400/10 bg-black/30 px-3 py-2">
-                      <div className="text-xs text-zinc-200">
+                      <div className="text-xs text-stone-800 dark:text-zinc-200">
                         <span className="text-zinc-100">{fmtD(j.job_date)}</span> • <span className="text-zinc-100">{timeRangeHHMM(j.scheduled_time, j.scheduled_end_time)}</span> •{' '}
                         <span className="inline-flex items-center gap-2 text-zinc-100">
                           {(() => {
@@ -4625,7 +4651,7 @@ const [editOpen, setEditOpen] = useState(false)
                                   }
                                 }}
                                 className={cn(
-                                  'relative h-5 w-7 overflow-hidden rounded-lg border border-yellow-400/15 bg-black/30',
+                                  'relative h-5 w-7 overflow-hidden rounded-lg border border-amber-900/30 dark:border-yellow-400/15 bg-black/30',
                                   canNav ? 'hover:border-yellow-300/40' : ''
                                 )}
                                 title={canNav ? t('admin.main.navOpen') : t('admin.main.navPhotoObject')}
@@ -4653,7 +4679,7 @@ const [editOpen, setEditOpen] = useState(false)
                       <button
                         onClick={() => openEditForJob(j)}
                         disabled={busy}
-                        className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40 disabled:opacity-60"
+                        className="rounded-xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-stone-800 dark:text-zinc-200 hover:border-yellow-300/40 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
                       >
                         {t('admin.main.edit')}
                       </button>
@@ -4670,7 +4696,7 @@ const [editOpen, setEditOpen] = useState(false)
       <Modal open={moveJobOpen} title={t('admin.main.moveJobTitle')} onClose={() => setMoveJobOpen(false)}>
         <div className="grid gap-3">
           <div className="grid gap-1">
-            <span className="text-[11px] text-zinc-300">{t('admin.main.moveToWho')}</span>
+            <span className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.moveToWho')}</span>
             <select
               value={moveJobTargetWorker}
               onChange={(e) => setMoveJobTargetWorker(e.target.value)}
@@ -4692,7 +4718,7 @@ const [editOpen, setEditOpen] = useState(false)
               setMoveJobOpen(false)
             }}
             disabled={busy || !moveJobId || !moveJobTargetWorker}
-            className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-yellow-100 hover:border-yellow-200/70 disabled:opacity-60"
+            className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-amber-950 dark:text-yellow-100 hover:border-yellow-200/70 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
           >
             {t('admin.main.btnMove')}
           </button>
@@ -4703,7 +4729,7 @@ const [editOpen, setEditOpen] = useState(false)
       <Modal open={moveDayOpen} title={t('admin.main.moveDayTitle')} onClose={() => setMoveDayOpen(false)}>
         <div className="grid gap-3">
           <div className="grid gap-1">
-            <span className="text-[11px] text-zinc-300">{t('admin.main.labelDate')}</span>
+            <span className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.labelDate')}</span>
             <input
               type="date"
                       onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
@@ -4715,7 +4741,7 @@ const [editOpen, setEditOpen] = useState(false)
 
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="grid gap-1">
-              <span className="text-[11px] text-zinc-300">{t('admin.main.fromWorker')}</span>
+              <span className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.fromWorker')}</span>
               <select
                 value={moveDayFromWorker}
                 onChange={(e) => setMoveDayFromWorker(e.target.value)}
@@ -4731,7 +4757,7 @@ const [editOpen, setEditOpen] = useState(false)
             </label>
 
             <label className="grid gap-1">
-              <span className="text-[11px] text-zinc-300">{t('admin.main.toWorker')}</span>
+              <span className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.toWorker')}</span>
               <select
                 value={moveDayToWorker}
                 onChange={(e) => setMoveDayToWorker(e.target.value)}
@@ -4747,7 +4773,7 @@ const [editOpen, setEditOpen] = useState(false)
             </label>
           </div>
 
-          <label className="flex items-center gap-2 rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-3 text-xs text-zinc-200">
+          <label className="flex items-center gap-2 rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-3 text-xs text-stone-800 dark:text-zinc-200">
             <input
               type="checkbox"
               checked={moveDayOnlyPlanned}
@@ -4760,7 +4786,7 @@ const [editOpen, setEditOpen] = useState(false)
           <button
             onClick={moveDay}
             disabled={busy || !moveDayFromWorker || !moveDayToWorker || !moveDayDate}
-            className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-yellow-100 hover:border-yellow-200/70 disabled:opacity-60"
+            className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-amber-950 dark:text-yellow-100 hover:border-yellow-200/70 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
           >
             {t('admin.main.moveDayBtn')}
           </button>
@@ -4770,14 +4796,14 @@ const [editOpen, setEditOpen] = useState(false)
       {/* Modal: cancel shift */}
       <Modal open={cancelOpen} title={t('admin.main.cancelModalTitle')} onClose={() => setCancelOpen(false)}>
         <div className="grid gap-3">
-          <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-4 py-3 text-sm text-zinc-200">
+          <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-4 py-3 text-sm text-stone-800 dark:text-zinc-200">
             {t('admin.main.cancelModalBody')}
           </div>
 
           <button
             onClick={() => cancelJob(cancelJobId)}
             disabled={busy || !cancelJobId}
-            className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-yellow-100 hover:border-yellow-200/70 disabled:opacity-60"
+            className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-amber-950 dark:text-yellow-100 hover:border-yellow-200/70 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
           >
             {t('admin.main.cancelWord')}
           </button>
