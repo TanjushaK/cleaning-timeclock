@@ -21,8 +21,23 @@ type JobRow = {
   id: string;
   status: string | null;
   worker_id: string | null;
-  site: JobSite;
+  site: JobSite | JobSite[] | unknown;
 };
+
+/** Default site check-in radius (m), aligned with admin new-site default when DB radius is unset. */
+const DEFAULT_CHECKIN_RADIUS_M = 150;
+
+function normalizeSiteEmbed(raw: unknown): { lat: number | null; lng: number | null; radius: number | null } | null {
+  if (raw == null) return null;
+  const row = Array.isArray(raw) ? raw[0] : raw;
+  if (!row || typeof row !== 'object') return null;
+  const o = row as Record<string, unknown>;
+  return {
+    lat: toNum(o.lat),
+    lng: toNum(o.lng),
+    radius: toNum(o.radius),
+  };
+}
 
 type JobWorkerRow = { job_id: string | null };
 
@@ -71,7 +86,7 @@ export async function POST(req: Request) {
     if (jobErr) throw new ApiError(400, jobErr.message, AppApiErrorCodes.JOB_LIST_QUERY_FAILED);
     if (!jobRaw) throw new ApiError(404, 'Job not found', AppApiErrorCodes.JOB_NOT_FOUND);
 
-    const job: JobRow = jobRaw as unknown as JobRow;
+    const job = jobRaw as unknown as JobRow;
 
     if (job.status !== 'planned') {
       throw new ApiError(400, 'Invalid job status for start', AppApiErrorCodes.JOB_START_STATUS_INVALID);
@@ -95,15 +110,12 @@ export async function POST(req: Request) {
 
     if (!allowed) throw new ApiError(403, 'Job access denied', AppApiErrorCodes.JOB_ACCESS_DENIED);
 
-    const site = job.site;
+    const site = normalizeSiteEmbed(job.site);
     if (!site || site.lat === null || site.lng === null) {
       throw new ApiError(400, 'Site coordinates missing', AppApiErrorCodes.SITE_COORDINATES_MISSING);
     }
 
-    const radius = site.radius ?? 0;
-    if (!radius || radius <= 0) {
-      throw new ApiError(400, 'Site radius missing', AppApiErrorCodes.SITE_RADIUS_MISSING);
-    }
+    const radius = site.radius != null && site.radius > 0 ? site.radius : DEFAULT_CHECKIN_RADIUS_M;
 
     if (acc > 80) {
       throw new ApiError(

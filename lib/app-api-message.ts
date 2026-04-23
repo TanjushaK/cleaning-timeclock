@@ -6,18 +6,20 @@ function messageFromApiPayload(
   t: TFn,
   payload: { error?: string; errorCode?: string },
 ): string {
+  const server = String(payload.error || "").trim();
+  if (server) return server;
   const code = payload.errorCode;
   if (code) {
     const key = `errors.api.${code}`;
     const m = t(key);
     if (m !== key) return m;
   }
-  return payload.error || t("error.generic");
+  return t("error.generic");
 }
 
 export function clientApiErrorMessage(t: TFn, e: unknown): string {
   if (e instanceof FetchApiError) {
-    return messageFromApiPayload(t, { error: e.message, errorCode: e.errorCode });
+    return messageFromApiPayload(t, { error: e.serverError || e.message, errorCode: e.errorCode });
   }
   return String((e as Error)?.message ?? e);
 }
@@ -28,7 +30,7 @@ export function clientApiErrorMessage(t: TFn, e: unknown): string {
  */
 export function clientWorkerErrorMessage(t: TFn, e: unknown): string {
   if (e instanceof FetchApiError) {
-    return messageFromApiPayload(t, { error: e.message, errorCode: e.errorCode });
+    return messageFromApiPayload(t, { error: e.serverError || e.message, errorCode: e.errorCode });
   }
   if (e && typeof e === "object" && "code" in e) {
     const code = (e as { code?: unknown }).code;

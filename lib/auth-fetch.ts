@@ -120,9 +120,11 @@ export async function authFetchJson<T = AnyJson>(input: RequestInfo | URL, init?
       (obj?.error || obj?.message) ||
       (typeof payload === 'string' && payload.trim()) ||
       `HTTP ${res.status}`;
-    throw new FetchApiError(code ? `admin.api.${code}` : String(fallback), {
+    const human = String(fallback).trim();
+    throw new FetchApiError(code ? `admin.api.${code}` : human, {
       status: res.status,
       errorCode: code || undefined,
+      serverError: human,
     });
   }
 

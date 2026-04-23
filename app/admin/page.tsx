@@ -163,6 +163,17 @@ function clampISODateToRange(d: string, from: string, to: string) {
   return d
 }
 
+/** Same window defaults as GET /api/me/jobs so admin worker card lists the same shifts the worker sees. */
+function addDaysISO(iso: string, deltaDays: number) {
+  const [y, m, d] = iso.split('-').map((x) => parseInt(x, 10))
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  dt.setUTCDate(dt.getUTCDate() + deltaDays)
+  const yy = dt.getUTCFullYear()
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(dt.getUTCDate()).padStart(2, '0')
+  return `${yy}-${mm}-${dd}`
+}
+
 function startOfWeek(d: Date) {
   const x = new Date(d)
   const day = x.getDay()
@@ -2021,7 +2032,15 @@ export default function AdminPage() {
   }
 
   async function loadWorkerCard(workerId: string) {
-    const url = `/api/admin/schedule?date_from=${encodeURIComponent(dateFrom)}&date_to=${encodeURIComponent(dateTo)}&worker_id=${encodeURIComponent(workerId)}`
+    const today = toISODate(new Date())
+    const workerVisibleFrom = addDaysISO(today, -180)
+    const workerVisibleTo = addDaysISO(today, 365)
+    const qFrom = dateFrom < workerVisibleFrom ? dateFrom : workerVisibleFrom
+    const qTo = dateTo > workerVisibleTo ? dateTo : workerVisibleTo
+    const url =
+      `/api/admin/schedule?date_from=${encodeURIComponent(qFrom)}` +
+      `&date_to=${encodeURIComponent(qTo)}` +
+      `&worker_id=${encodeURIComponent(workerId)}`
     const sch = await authFetchJson<{ items: ScheduleItem[] }>(url)
     setWorkerCardItems(Array.isArray(sch?.items) ? sch.items : [])
   }
