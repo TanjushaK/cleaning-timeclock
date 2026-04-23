@@ -1487,6 +1487,13 @@ const [editOpen, setEditOpen] = useState(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, workers, sessionToken])
 
+  useEffect(() => {
+    if (!sessionToken) return
+    if (tab !== 'plan') return
+    void refreshSchedule()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, sessionToken])
+
   async function onLogin(e: React.FormEvent) {
     e.preventDefault()
     setBusy(true)
