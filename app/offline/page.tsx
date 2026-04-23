@@ -1,12 +1,13 @@
 "use client";
 
+import AppWorkerShell from "@/app/_components/AppWorkerShell";
 import { useI18n } from "@/components/I18nProvider";
 
 export default function OfflinePage() {
   const { t } = useI18n();
 
   return (
-    <main className="min-h-screen bg-[#120805] text-white flex items-center justify-center p-6">
+    <AppWorkerShell mainClassName="items-center justify-center p-6">
       <div className="w-full max-w-md rounded-2xl border border-amber-500/30 bg-black/40 p-6 shadow-xl">
         <div className="text-2xl font-semibold text-amber-400">{t("offlinePage.title")}</div>
         <div className="mt-3 text-sm text-white/80">{t("offlinePage.body")}</div>
@@ -17,6 +18,6 @@ export default function OfflinePage() {
           {t("offlinePage.retry")}
         </button>
       </div>
-    </main>
+    </AppWorkerShell>
   );
 }

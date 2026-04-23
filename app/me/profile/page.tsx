@@ -5,7 +5,7 @@ import { appAuth } from "@/lib/browser-auth";
 import { clientWorkerErrorMessage } from "@/lib/app-api-message";
 import { authFetchJson, clearAuthTokens, getAccessToken } from "@/lib/auth-fetch";
 import { FetchApiError } from "@/lib/fetch-api-error";
-import AppFooter from "@/app/_components/AppFooter";
+import AppWorkerShell from "@/app/_components/AppWorkerShell";
 import { useI18n } from "@/components/I18nProvider";
 
 type Profile = {
@@ -246,18 +246,17 @@ export default function WorkerProfilePage() {
 
   if (booting) {
     return (
-      <div className="appTheme min-h-screen flex flex-col">
+      <AppWorkerShell>
         <div className="flex-1 flex items-center justify-center">
           <div className="text-sm opacity-80">{t("common.loading")}</div>
         </div>
-        <AppFooter />
-      </div>
+      </AppWorkerShell>
     );
   }
 
   if (!authed) {
     return (
-      <div className="appTheme min-h-screen flex flex-col p-6">
+      <AppWorkerShell mainClassName="p-6">
         <div className="flex-1 flex items-center justify-center">
           <div className="w-full max-w-md rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-6 shadow-xl">
             <div className="text-lg font-semibold">{t("profile.needLoginTitle")}</div>
@@ -270,8 +269,7 @@ export default function WorkerProfilePage() {
             </a>
           </div>
         </div>
-        <AppFooter />
-      </div>
+      </AppWorkerShell>
     );
   }
 
@@ -279,7 +277,7 @@ export default function WorkerProfilePage() {
   const activeYes = me?.profile?.active === true;
 
   return (
-    <div className="appTheme min-h-screen flex flex-col p-6">
+    <AppWorkerShell mainClassName="p-6">
       <div className="mx-auto max-w-4xl flex-1 w-full">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -458,7 +456,6 @@ export default function WorkerProfilePage() {
           {photos.length === 0 ? <div className="mt-3 text-sm opacity-70">{t("profile.photosEmptyHint")}</div> : null}
         </div>
       </div>
-      <AppFooter />
-    </div>
+    </AppWorkerShell>
   );
 }

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { appAuth } from "@/lib/browser-auth";
 import { clientWorkerErrorMessage } from "@/lib/app-api-message";
 import { setAuthTokens } from "@/lib/auth-fetch";
-import AppFooter from "@/app/_components/AppFooter";
+import AppWorkerShell from "@/app/_components/AppWorkerShell";
 import { useI18n } from "@/components/I18nProvider";
 
 export default function AuthCallbackPage() {
@@ -45,13 +45,12 @@ export default function AuthCallbackPage() {
   }, [t]);
 
   return (
-    <div className="appTheme min-h-screen flex flex-col p-6">
+    <AppWorkerShell mainClassName="p-6">
       <div className="flex-1 flex items-center justify-center">
         <div className="w-full max-w-md rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-6 shadow-xl">
           <div className="text-sm opacity-80">{msg ?? t("authCallback.loading")}</div>
         </div>
       </div>
-      <AppFooter />
-    </div>
+    </AppWorkerShell>
   );
 }
