@@ -1417,10 +1417,31 @@ export default function AdminPage() {
 
   const planEntities = useMemo(() => {
     if (planMode === 'workers') {
-      return workersForSelect.map((w) => ({ id: w.id, name: w.full_name || t('admin.main.fallbackWorker') }))
+      const byId = new Map<string, { id: string; name: string }>()
+      for (const w of workersForSelect) {
+        byId.set(w.id, { id: w.id, name: w.full_name || t('admin.main.fallbackWorker') })
+      }
+      // Rows only came from workersForSelect; shifts for admins / edge workers had no row → grid looked empty.
+      for (const j of schedule) {
+        const wid = j.worker_id ? String(j.worker_id) : ''
+        if (!wid || byId.has(wid)) continue
+        const w = workersById.get(wid)
+        byId.set(wid, { id: wid, name: w?.full_name || t('admin.main.fallbackWorker') })
+      }
+      return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name))
     }
-    return activeSites.map((s) => ({ id: s.id, name: s.name || t('admin.main.fallbackSite') }))
-  }, [planMode, workersForSelect, activeSites, t])
+    const byId = new Map<string, { id: string; name: string }>()
+    for (const s of activeSites) {
+      byId.set(s.id, { id: s.id, name: s.name || t('admin.main.fallbackSite') })
+    }
+    for (const j of schedule) {
+      const sid = j.site_id ? String(j.site_id) : ''
+      if (!sid || byId.has(sid)) continue
+      const s = sitesById.get(sid)
+      byId.set(sid, { id: sid, name: s?.name || t('admin.main.fallbackSite') })
+    }
+    return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name))
+  }, [planMode, workersForSelect, activeSites, schedule, workersById, sitesById, t])
 
   const hours = useMemo(() => Array.from({ length: 24 }, (_, i) => pad2(i) + ':00'), [])
 

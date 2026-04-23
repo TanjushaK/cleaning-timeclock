@@ -20,6 +20,23 @@ function toFiniteOrNull(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/** DB column `sites.radius` is integer — floats / strings must round or Postgres can reject updates. */
+function toRadiusIntOrNull(v: unknown): number | null {
+  const n = toFiniteOrNull(v);
+  if (n == null) return null;
+  const r = Math.round(n);
+  if (r < 1 || r > 2_000_000) return null;
+  return r;
+}
+
+function omitUndefined<T extends Record<string, unknown>>(row: T): Partial<T> {
+  const out: Partial<T> = {};
+  for (const [k, val] of Object.entries(row)) {
+    if (val !== undefined) (out as Record<string, unknown>)[k] = val;
+  }
+  return out;
+}
+
 function toCategoryOrNull(v: unknown): number | null {
   if (v == null || v === "" || v === 0 || v === "0") return null;
   const n = Number(v);
@@ -43,7 +60,7 @@ function normTextField(v: unknown): string | null {
 
 export async function GET(req: Request, ctx: { params?: Promise<{ id?: string }> }) {
   try {
-    const { db } = await requireAdmin(req.headers);
+    const { db } = await requireAdmin(req);
     const siteId = await getSiteIdFromReq(req, ctx);
     const loc = requestLocale(req);
 
@@ -59,7 +76,7 @@ export async function GET(req: Request, ctx: { params?: Promise<{ id?: string }>
 
 export async function PUT(req: Request, ctx: { params?: Promise<{ id?: string }> }) {
   try {
-    const { db } = await requireAdmin(req.headers);
+    const { db } = await requireAdmin(req);
     const siteId = await getSiteIdFromReq(req, ctx);
     const loc = requestLocale(req);
     const body = await req.json().catch(() => ({}));
@@ -152,7 +169,7 @@ export async function PUT(req: Request, ctx: { params?: Promise<{ id?: string }>
     if (body?.lat !== undefined) patch.lat = toFiniteOrNull(body.lat);
     if (body?.lng !== undefined) patch.lng = toFiniteOrNull(body.lng);
     const radiusRaw = body?.radius ?? body?.radius_m;
-    if (radiusRaw !== undefined) patch.radius = toFiniteOrNull(radiusRaw);
+    if (radiusRaw !== undefined) patch.radius = toRadiusIntOrNull(radiusRaw);
     if (body?.category !== undefined) patch.category = toCategoryOrNull(body.category);
 
     if (Object.keys(patch).length === 0) {
@@ -167,9 +184,11 @@ export async function PUT(req: Request, ctx: { params?: Promise<{ id?: string }>
       if (!n || !String(n).trim()) throw new ApiError(400, "Site name required", AdminApiErrorCode.SITE_NAME_REQUIRED);
     }
 
+    const patchClean = omitUndefined(patch as Record<string, unknown>) as Record<string, unknown>;
+
     const { data, error } = await db
       .from("sites")
-      .update(patch)
+      .update(patchClean)
       .eq("id", siteId)
       .select(SITE_FIELDS)
       .single();
@@ -184,7 +203,7 @@ export async function PUT(req: Request, ctx: { params?: Promise<{ id?: string }>
 
 export async function DELETE(req: Request, ctx: { params?: Promise<{ id?: string }> }) {
   try {
-    const { db } = await requireAdmin(req.headers);
+    const { db } = await requireAdmin(req);
     const siteId = await getSiteIdFromReq(req, ctx);
 
     const { error } = await db.from("sites").delete().eq("id", siteId);
