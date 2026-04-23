@@ -133,23 +133,24 @@ export async function GET(req: Request) {
       })
     }
 
-    const startAtMin = `${fromISO}T00:00:00.000Z`
-    const startAtMax = `${toISO}T23:59:59.999Z`
-
-    const logsRes = await sb
-      .from('time_logs')
-      .select('job_id, started_at, stopped_at')
-      .gte('started_at', startAtMin)
-      .lte('started_at', startAtMax)
-
-    if (logsRes.error) {
-      return NextResponse.json({ error: logsRes.error.message }, { status: 500 })
+    // Load logs by job id (not by started_at window): UTC date-range filters on started_at drop rows
+    // when timestamps are offset/locally shifted or spans sit on job_date boundaries.
+    const jobIdsAll = (jobs as any[]).map((j: any) => String(j.id)).filter(Boolean)
+    const allLogsRows: any[] = []
+    const logsChunkSize = 150
+    for (let i = 0; i < jobIdsAll.length; i += logsChunkSize) {
+      const chunk = jobIdsAll.slice(i, i + logsChunkSize)
+      const logsRes = await sb.from('time_logs').select('job_id, started_at, stopped_at').in('job_id', chunk)
+      if (logsRes.error) {
+        return NextResponse.json({ error: logsRes.error.message }, { status: 500 })
+      }
+      allLogsRows.push(...(logsRes.data || []))
     }
 
     const minutesByJob = new Map<string, number>()
     const logsByJob = new Map<string, { started_at: string; stopped_at: string; minutes: number }[]>()
 
-    for (const l of logsRes.data || []) {
+    for (const l of allLogsRows) {
       const jobId = (l as any)?.job_id
       const started = (l as any)?.started_at
       const stopped = (l as any)?.stopped_at
