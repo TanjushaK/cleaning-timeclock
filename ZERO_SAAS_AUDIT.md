@@ -18,13 +18,14 @@ Audit target: legacy cloud vendor token set across local current tree, server ac
 
 ## Server scan
 
-- server matches: pending final verify
+- server matches: 0 (active runtime paths)
 - notes:
   - historical rollback/archive artifacts are evaluated separately from active runtime
+  - historical artifacts with legacy tokens: 2 backup files inside rollback storage
 
 ## Active GitHub refs scan
 
-- active GitHub refs matches: pending final verify
+- active GitHub refs matches: 0
 - refs in scope:
   - working branch
   - `baseline-2026-04-23` tag
@@ -37,3 +38,10 @@ Audit target: legacy cloud vendor token set across local current tree, server ac
 - interpretation:
   - this is HISTORY-ONLY unless present in current tree/active refs/runtime
   - no history rewrite performed in this run
+
+## Final summary
+
+- final current tree matches: 0
+- server matches: 0
+- active GitHub refs matches: 0
+- git history matches: yes (history-only)
