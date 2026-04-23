@@ -121,6 +121,39 @@ html[data-theme='light'] .adminTheme :where([class*='text-amber-']) {
   color: #92400e !important;
 }
 
+/* Light-mode control contrast:
+   shared admin buttons/tabs rely on dark-theme text tokens (zinc/yellow with low alpha).
+   Once backgrounds are repainted to light surfaces, these tokens become too pale,
+   especially for secondary/active/disabled states. Keep this scoped to light mode only. */
+html[data-theme='light'] .adminTheme button,
+html[data-theme='light'] .adminTheme a[role='button'],
+html[data-theme='light'] .adminPortalTheme button,
+html[data-theme='light'] .workerCardModalTheme button {
+  color: #1f2937 !important;
+}
+
+html[data-theme='light'] .adminTheme button[class*='text-yellow-'],
+html[data-theme='light'] .adminTheme a[role='button'][class*='text-yellow-'],
+html[data-theme='light'] .adminPortalTheme button[class*='text-yellow-'],
+html[data-theme='light'] .workerCardModalTheme button[class*='text-yellow-'] {
+  color: #78350f !important;
+}
+
+html[data-theme='light'] .adminTheme button[class*='bg-red-'],
+html[data-theme='light'] .adminTheme a[role='button'][class*='bg-red-'],
+html[data-theme='light'] .adminPortalTheme button[class*='bg-red-'],
+html[data-theme='light'] .workerCardModalTheme button[class*='bg-red-'] {
+  color: #991b1b !important;
+}
+
+html[data-theme='light'] .adminTheme button:disabled,
+html[data-theme='light'] .adminTheme a[role='button'][aria-disabled='true'],
+html[data-theme='light'] .adminPortalTheme button:disabled,
+html[data-theme='light'] .workerCardModalTheme button:disabled {
+  opacity: 0.72 !important;
+  color: #57534e !important;
+}
+
 html[data-theme='light'] .adminTheme :where([class*='shadow-xl'], [class*='shadow-2xl'], [class*='shadow-[']) {
   box-shadow:
     0 0 0 1px rgba(180, 83, 9, 0.15),
