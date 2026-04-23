@@ -246,27 +246,26 @@ function cn(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(' ')
 }
 
-/** Segmented tabs / plan toggles: strong borders+text on light; chocolate unchanged in dark. */
+/** Segmented tabs / plan toggles: light text per palette; dark unchanged except paired classes. */
 const ADM_TAB_ACTIVE =
-  'border-amber-800/60 bg-amber-100/45 text-amber-950 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)] dark:border-yellow-300/70 dark:bg-yellow-400/10 dark:text-yellow-100 dark:shadow-none'
+  'border-amber-800/60 bg-amber-100/45 text-amber-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)] dark:border-yellow-300/70 dark:bg-yellow-400/10 dark:text-yellow-100 dark:shadow-none'
 const ADM_TAB_INACTIVE =
-  'border-stone-400/75 bg-white/85 text-stone-900 hover:border-amber-700/55 hover:bg-amber-50/55 dark:border-yellow-400/15 dark:bg-black/30 dark:text-zinc-200 dark:hover:border-yellow-300/40'
+  'border-stone-400/75 bg-white/85 text-stone-700 hover:border-amber-700/55 hover:bg-amber-50/55 dark:border-yellow-400/15 dark:bg-black/30 dark:text-zinc-200 dark:hover:border-yellow-300/40'
 
 const ADM_LANG_ACTIVE =
-  'border-amber-800/55 bg-amber-100/50 text-amber-950 dark:border-yellow-300/50 dark:bg-yellow-400/15 dark:text-yellow-50'
+  'border-amber-800/55 bg-amber-100/50 text-amber-900 dark:border-yellow-300/50 dark:bg-yellow-400/15 dark:text-yellow-100'
 const ADM_LANG_INACTIVE =
-  'border-stone-400/75 bg-white/85 text-stone-900 hover:border-amber-700/50 hover:bg-amber-50/50 dark:border-yellow-400/15 dark:bg-black/30 dark:text-zinc-200 dark:hover:border-yellow-300/35'
+  'border-stone-400/75 bg-white/85 text-stone-700 hover:border-amber-700/50 hover:bg-amber-50/50 dark:border-yellow-400/15 dark:bg-black/30 dark:text-zinc-200 dark:hover:border-yellow-300/35'
 
-const ADM_REPORT_ACTIVE = 'bg-yellow-400/10 text-amber-950 dark:text-yellow-100'
+const ADM_REPORT_ACTIVE = 'bg-yellow-400/10 text-amber-900 dark:text-yellow-100'
 const ADM_REPORT_INACTIVE =
-  'text-stone-800 font-semibold hover:text-amber-950 dark:text-zinc-200 dark:hover:text-yellow-100'
+  'text-stone-700 font-semibold hover:text-amber-900 dark:text-zinc-200 dark:hover:text-yellow-100'
 
 const ADM_WORKER_ARCHIVE_ACTIVE =
-  'border-yellow-300/45 bg-yellow-400/10 text-amber-950 hover:border-amber-700/55 hover:bg-amber-100/25 dark:text-yellow-100 dark:hover:border-yellow-200/70 dark:hover:bg-yellow-400/15'
+  'border-yellow-300/45 bg-yellow-400/10 text-amber-900 hover:border-amber-700/55 hover:bg-amber-100/25 dark:text-yellow-100 dark:hover:border-yellow-200/70 dark:hover:bg-yellow-400/15'
 
-/** Disabled: keep label legible in light theme (avoid “vanished” text from low opacity). */
-const ADM_DIS =
-  'disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75'
+/** Disabled: readable light labels; do not stack extra dark opacity fades. */
+const ADM_DIS = 'disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500'
 
 
 function statusPillClasses(s: string) {
@@ -274,7 +273,7 @@ function statusPillClasses(s: string) {
   if (s === 'planned') return 'border-rose-400/30 bg-rose-500/15 text-rose-800 dark:text-rose-200'
   if (s === 'done') return 'border-sky-400/30 bg-sky-500/15 text-sky-800 dark:text-sky-200'
   if (s === 'cancelled') return 'border-zinc-400/20 bg-zinc-500/10 text-stone-700 dark:text-zinc-300'
-  return 'border-yellow-400/20 bg-yellow-400/10 text-amber-900 dark:text-yellow-100/85'
+  return 'border-yellow-400/20 bg-yellow-400/10 text-amber-900 dark:text-yellow-100'
 }
 
 function fmtHMS(ms: number) {
@@ -452,10 +451,10 @@ function Modal(props: {
         className="relative flex w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-yellow-400/20 bg-zinc-950/90 p-5 shadow-[0_25px_90px_rgba(0,0,0,0.75)] max-h-[calc(100vh-3rem)] outline-none"
       >
         <div className="flex items-center justify-between gap-3">
-          <div className="text-sm font-semibold text-amber-950 dark:text-yellow-100">{props.title}</div>
+          <div className="text-sm font-semibold text-amber-900 dark:text-yellow-100">{props.title}</div>
           <button
             onClick={props.onClose}
-            className="rounded-xl border border-stone-500/55 bg-white/90 px-3 py-1 text-xs font-semibold text-stone-900 hover:border-amber-700/55 dark:border-yellow-400/15 dark:bg-black/30 dark:text-zinc-200 dark:hover:border-yellow-300/40"
+            className="rounded-xl border border-stone-500/55 bg-white/90 px-3 py-1 text-xs font-semibold text-stone-700 hover:border-amber-700/55 dark:border-yellow-400/15 dark:bg-black/30 dark:text-zinc-200 dark:hover:border-yellow-300/40"
           >
             {t('common.close')}
           </button>
@@ -470,7 +469,7 @@ function Modal(props: {
 
 function Pill({ children }: { children: any }) {
   return (
-    <span className="inline-flex items-center rounded-full border border-amber-800/25 bg-yellow-400/10 px-2 py-0.5 text-[11px] text-amber-900/85 dark:border-yellow-400/15 dark:bg-yellow-400/5 dark:text-yellow-100/70">
+    <span className="inline-flex items-center rounded-full border border-amber-800/25 bg-yellow-400/10 px-2 py-0.5 text-[11px] text-amber-900 dark:border-yellow-400/15 dark:bg-yellow-400/5 dark:text-yellow-100">
       {children}
     </span>
   )
@@ -574,14 +573,14 @@ function CategoryPicker(props: { value: number | null; onChange: (v: number | nu
         disabled={props.disabled}
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          'flex items-center gap-2 rounded-2xl border border-stone-400/70 dark:border-yellow-400/15 bg-white/90 dark:bg-black/30 px-3 py-2 text-xs font-semibold text-amber-950 dark:text-yellow-100/80',
+          'flex items-center gap-2 rounded-2xl border border-stone-400/70 dark:border-yellow-400/15 bg-white/90 dark:bg-black/30 px-3 py-2 text-xs font-semibold text-amber-900 dark:text-yellow-100',
           props.disabled ? 'opacity-70' : 'hover:border-amber-700/55 dark:hover:border-yellow-300/40'
         )}
       >
         <span className={cn('h-3 w-3 rounded-full ring-2 ring-black/40 shadow', meta.dotClass)} />
         <span className="font-semibold">{props.value ? `#${props.value}` : '—'}</span>
-        <span className="hidden sm:inline text-stone-800 dark:text-yellow-100/55">{meta.label}</span>
-        <span className="ml-1 text-stone-600 dark:text-yellow-100/35">▾</span>
+        <span className="hidden sm:inline text-stone-800 dark:text-yellow-100">{meta.label}</span>
+        <span className="ml-1 text-stone-600 dark:text-yellow-100">▾</span>
       </button>
 
       {open ? (
@@ -591,7 +590,7 @@ function CategoryPicker(props: { value: number | null; onChange: (v: number | nu
               props.onChange(null)
               setOpen(false)
             }}
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-amber-950 dark:text-yellow-100/70 hover:bg-amber-100/40 dark:hover:bg-yellow-400/5"
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-amber-900 dark:text-yellow-100 hover:bg-amber-100/40 dark:hover:bg-yellow-400/5"
           >
             <span className={cn('h-3 w-3 rounded-full ring-2 ring-black/40 shadow', 'bg-zinc-500')} />
             <span className="font-semibold">—</span>
@@ -605,11 +604,11 @@ function CategoryPicker(props: { value: number | null; onChange: (v: number | nu
                 props.onChange(c.id)
                 setOpen(false)
               }}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-amber-950 dark:text-yellow-100/80 hover:bg-amber-100/40 dark:hover:bg-yellow-400/5"
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-amber-900 dark:text-yellow-100 hover:bg-amber-100/40 dark:hover:bg-yellow-400/5"
             >
               <span className={cn('h-3 w-3 rounded-full ring-2 ring-black/40 shadow', c.dotClass)} />
               <span className="font-semibold">#{c.id}</span>
-              <span className="text-stone-800 dark:text-yellow-100/60">{t('admin.main.categoryLabel', { n: c.id })}</span>
+              <span className="text-stone-800 dark:text-yellow-100">{t('admin.main.categoryLabel', { n: c.id })}</span>
             </button>
           ))}
         </div>
@@ -623,7 +622,7 @@ function MapMini(props: { lat: number | null; lng: number | null; onClick: () =>
   const { lat, lng } = props
   if (lat == null || lng == null) {
     return (
-      <div className="flex h-[92px] w-full sm:w-[150px] items-center justify-center rounded-2xl border border-yellow-400/10 bg-black/20 text-[11px] text-amber-900/55 dark:text-yellow-100/40">
+      <div className="flex h-[92px] w-full sm:w-[150px] items-center justify-center rounded-2xl border border-yellow-400/10 bg-black/20 text-[11px] text-amber-900 dark:text-yellow-100">
         {t('admin.main.noCoords')}
       </div>
     )
@@ -633,7 +632,7 @@ function MapMini(props: { lat: number | null; lng: number | null; onClick: () =>
     <div className="relative h-[92px] w-full sm:w-[150px] overflow-hidden rounded-2xl border border-yellow-400/20 bg-black/20">
       <iframe src={osmEmbedUrl(lat, lng, 0.004)} className="h-full w-full" loading="lazy" />
       <button onClick={props.onClick} className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/0 to-black/0" title={t('admin.main.navOpen')} />
-      <div className="absolute bottom-1 left-2 text-[10px] font-semibold text-amber-900/95 dark:text-yellow-100/90">{t('admin.main.navBadge')}</div>
+      <div className="absolute bottom-1 left-2 text-[10px] font-semibold text-amber-900 dark:text-yellow-100">{t('admin.main.navBadge')}</div>
     </div>
   )
 }
@@ -649,7 +648,7 @@ function MapLarge(props: { lat: number; lng: number }) {
         className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/0 to-black/0"
         title={t('admin.main.navOpen')}
       />
-      <div className="absolute bottom-2 left-3 text-xs font-semibold text-amber-900/95 dark:text-yellow-100/90">{t('admin.main.navOpenFull')}</div>
+      <div className="absolute bottom-2 left-3 text-xs font-semibold text-amber-900 dark:text-yellow-100">{t('admin.main.navOpenFull')}</div>
     </div>
   )
 }
@@ -745,8 +744,8 @@ function MultiWorkerPicker(props: {
                     className={cn(
                       'rounded-xl border px-2 py-1 text-[11px]',
                       on
-                        ? 'border-yellow-300/60 bg-yellow-400/10 text-amber-950 dark:text-yellow-100'
-                        : 'border-stone-400/70 dark:border-yellow-400/15 bg-white/80 dark:bg-black/30 text-stone-800 dark:text-zinc-300'
+                        ? 'border-yellow-300/60 bg-yellow-400/10 text-amber-900 dark:text-yellow-100'
+                        : 'border-stone-400/70 dark:border-yellow-400/15 bg-white/80 dark:bg-black/30 text-stone-700 dark:text-zinc-200'
                     )}
                   >
                     {on ? t('admin.main.multiSelected') : ' '}
@@ -862,7 +861,7 @@ function ReportsPanel() {
     <div className="rounded-3xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/25 p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="text-sm font-semibold text-amber-950 dark:text-yellow-100">{t('admin.main.reportsTitle')}</div>
+          <div className="text-sm font-semibold text-amber-900 dark:text-yellow-100">{t('admin.main.reportsTitle')}</div>
           <div className="mt-1 text-xs text-stone-600 dark:text-zinc-300">
             {t('admin.main.periodPrefix')} {fmtD(reportFrom)} — {fmtD(reportTo)}
           </div>
@@ -919,7 +918,7 @@ function ReportsPanel() {
       <div className="mt-4 grid gap-3 md:grid-cols-3">
         <div className="rounded-3xl border border-yellow-400/10 bg-black/30 p-4">
           <div className="text-[11px] text-stone-600 dark:text-zinc-300">{t('admin.main.reportsPeriodTotal')}</div>
-          <div className="mt-1 text-2xl font-semibold tracking-tight text-amber-950 dark:text-yellow-100">
+          <div className="mt-1 text-2xl font-semibold tracking-tight text-amber-900 dark:text-yellow-100">
             {fmtMinutesHM(reportData?.total_minutes ?? 0)}
           </div>
           <div className="mt-1 text-[11px] text-zinc-400">{t('admin.main.reportsHm')}</div>
@@ -982,7 +981,7 @@ function ReportsPanel() {
                 </div>
   
                 <div className="flex w-full flex-col items-stretch gap-2 sm:w-auto sm:flex-row sm:items-center">
-                <div className="w-full shrink-0 rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-3 py-2 text-center text-sm font-semibold text-amber-950 dark:text-yellow-100 sm:w-auto">
+                <div className="w-full shrink-0 rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-3 py-2 text-center text-sm font-semibold text-amber-900 dark:text-yellow-100 sm:w-auto">
                   {fmtMinutesHM(Number(x.minutes) || 0)}
                 </div>
                 {reportsView === 'workers' ? (
@@ -1011,11 +1010,11 @@ function ReportsPanel() {
       <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4">
         <div className="w-full max-w-xl overflow-hidden rounded-3xl border border-amber-900/30 dark:border-yellow-400/15 bg-zinc-950/95 shadow-[0_20px_80px_rgba(0,0,0,0.75)] backdrop-blur">
           <div className="flex items-center justify-between gap-2 border-b border-yellow-400/10 px-5 py-4">
-            <div className="text-sm font-semibold text-amber-950 dark:text-yellow-100">{t('admin.main.reportPeriodTitle')}</div>
+            <div className="text-sm font-semibold text-amber-900 dark:text-yellow-100">{t('admin.main.reportPeriodTitle')}</div>
             <button
               type="button"
               onClick={() => setReportPickerOpen(false)}
-              className="rounded-2xl border border-stone-400/75 bg-white/90 px-3 py-2 text-xs font-semibold text-stone-900 hover:border-amber-700/50 dark:border-yellow-400/15 dark:bg-black/30 dark:text-zinc-200 dark:hover:border-yellow-300/40"
+              className="rounded-2xl border border-stone-400/75 bg-white/90 px-3 py-2 text-xs font-semibold text-stone-700 hover:border-amber-700/50 dark:border-yellow-400/15 dark:bg-black/30 dark:text-zinc-200 dark:hover:border-yellow-300/40"
             >
               {t('common.close')}
             </button>
@@ -1029,8 +1028,8 @@ function ReportsPanel() {
                 className={cn(
                   'flex-1 rounded-2xl px-3 py-2 text-[11px] font-semibold transition',
                   reportPickerTab === 'payroll'
-                    ? 'bg-yellow-400/10 text-amber-950 dark:text-yellow-100'
-                    : 'text-stone-900 dark:text-zinc-200 hover:bg-white/60 hover:text-amber-950 dark:hover:bg-transparent dark:hover:text-yellow-100'
+                    ? 'bg-yellow-400/10 text-amber-900 dark:text-yellow-100'
+                    : 'text-stone-700 dark:text-zinc-200 hover:bg-white/60 hover:text-amber-900 dark:hover:bg-transparent dark:hover:text-yellow-100'
                 )}
               >
                 {t('admin.main.payrollTab')}
@@ -1041,8 +1040,8 @@ function ReportsPanel() {
                 className={cn(
                   'flex-1 rounded-2xl px-3 py-2 text-[11px] font-semibold transition',
                   reportPickerTab === 'custom'
-                    ? 'bg-yellow-400/10 text-amber-950 dark:text-yellow-100'
-                    : 'text-stone-900 dark:text-zinc-200 hover:bg-white/60 hover:text-amber-950 dark:hover:bg-transparent dark:hover:text-yellow-100'
+                    ? 'bg-yellow-400/10 text-amber-900 dark:text-yellow-100'
+                    : 'text-stone-700 dark:text-zinc-200 hover:bg-white/60 hover:text-amber-900 dark:hover:bg-transparent dark:hover:text-yellow-100'
                 )}
               >
                 {t('admin.main.customTab')}
@@ -1100,8 +1099,8 @@ function ReportsPanel() {
                         className={cn(
                           'rounded-xl border px-2 py-1 text-[11px]',
                           checked
-                            ? 'border-yellow-300/60 bg-yellow-400/10 text-amber-950 dark:text-yellow-100'
-                            : 'border-stone-400/70 dark:border-yellow-400/15 bg-white/80 dark:bg-black/30 text-stone-800 dark:text-zinc-300'
+                            ? 'border-yellow-300/60 bg-yellow-400/10 text-amber-900 dark:text-yellow-100'
+                            : 'border-stone-400/70 dark:border-yellow-400/15 bg-white/80 dark:bg-black/30 text-stone-700 dark:text-zinc-200'
                         )}
                       >
                         {checked ? t('admin.main.multiSelected') : ' '}
@@ -1116,7 +1115,7 @@ function ReportsPanel() {
             <button
               type="button"
               onClick={() => setReportPickerOpen(false)}
-              className="rounded-2xl border border-stone-400/75 bg-white/90 px-4 py-2 text-sm font-semibold text-stone-900 hover:border-amber-700/50 dark:border-yellow-400/15 dark:bg-black/30 dark:text-zinc-200 dark:hover:border-yellow-300/40"
+              className="rounded-2xl border border-stone-400/75 bg-white/90 px-4 py-2 text-sm font-semibold text-stone-700 hover:border-amber-700/50 dark:border-yellow-400/15 dark:bg-black/30 dark:text-zinc-200 dark:hover:border-yellow-300/40"
             >
               {t('common.cancel')}
             </button>
@@ -1129,7 +1128,7 @@ function ReportsPanel() {
                 }
                 setReportPickerOpen(false)
               }}
-              className="rounded-2xl border border-yellow-400/40 bg-yellow-400/15 px-5 py-2 text-sm font-semibold text-amber-950 dark:text-yellow-100 hover:border-yellow-300/70"
+              className="rounded-2xl border border-yellow-400/40 bg-yellow-400/15 px-5 py-2 text-sm font-semibold text-amber-900 dark:text-yellow-100 hover:border-yellow-300/70"
             >
               {t('admin.main.reportApply')}
             </button>
@@ -2402,7 +2401,7 @@ const [editOpen, setEditOpen] = useState(false)
                   const url = photos?.[0]?.url || null
                   if (!url) {
                     return (
-                      <div className="flex h-5 w-5 items-center justify-center rounded-full border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 text-[9px] font-semibold text-amber-900/85 dark:text-yellow-100/70">🏠</div>
+                      <div className="flex h-5 w-5 items-center justify-center rounded-full border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 text-[9px] font-semibold text-amber-900 dark:text-yellow-100">🏠</div>
                     )
                   }
                   return (
@@ -2415,7 +2414,7 @@ const [editOpen, setEditOpen] = useState(false)
                 const thumb = wid ? workerPhotoMeta[wid]?.thumb || null : null
                 if (!thumb) {
                   return (
-                    <div className="flex h-5 w-5 items-center justify-center rounded-full border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 text-[9px] font-semibold text-amber-900/85 dark:text-yellow-100/70">{initials(left)}</div>
+                    <div className="flex h-5 w-5 items-center justify-center rounded-full border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 text-[9px] font-semibold text-amber-900 dark:text-yellow-100">{initials(left)}</div>
                   )
                 }
                 return (
@@ -2433,7 +2432,7 @@ const [editOpen, setEditOpen] = useState(false)
                   loading="lazy"
                 />
               ) : null}
-              <div className="truncate font-semibold text-amber-950 dark:text-yellow-100">{left}</div>
+              <div className="truncate font-semibold text-amber-900 dark:text-yellow-100">{left}</div>
             </div>
             </div>
             <div className="mt-0.5 flex flex-wrap items-center gap-2 text-stone-600 dark:text-zinc-300">
@@ -2576,7 +2575,7 @@ const [editOpen, setEditOpen] = useState(false)
               setMoveDayOnlyPlanned(true)
               setMoveDayOpen(true)
             }}
-            className="mt-5 rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-amber-950 dark:text-yellow-100 hover:border-yellow-200/70"
+            className="mt-5 rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-amber-900 dark:text-yellow-100 hover:border-yellow-200/70"
           >
             {t('admin.main.moveDayBtn')}
           </button>
@@ -2621,7 +2620,7 @@ const [editOpen, setEditOpen] = useState(false)
                           loading="lazy"
                         />
                       ) : null}
-                      <div className="truncate text-sm font-semibold text-amber-950 dark:text-yellow-100">{ent.name}</div>
+                      <div className="truncate text-sm font-semibold text-amber-900 dark:text-yellow-100">{ent.name}</div>
                     </div>
                       <div className="mt-1 text-[11px] text-zinc-400">
                         {planMode === 'workers'
@@ -2702,7 +2701,7 @@ const [editOpen, setEditOpen] = useState(false)
                         loading="lazy"
                       />
                     ) : null}
-                    <div className="truncate text-xs font-semibold text-amber-950 dark:text-yellow-100">{ent.name}</div>
+                    <div className="truncate text-xs font-semibold text-amber-900 dark:text-yellow-100">{ent.name}</div>
                   </div>
                     <div className="text-[10px] text-zinc-400">{fmtD(dayISO)}</div>
                   </div>
@@ -2799,7 +2798,7 @@ const [editOpen, setEditOpen] = useState(false)
                   )}
                 >
                   <div className="flex items-center justify-between">
-                    <div className="text-xs font-semibold text-amber-950 dark:text-yellow-100">
+                    <div className="text-xs font-semibold text-amber-900 dark:text-yellow-100">
                       {d.label} <span className="text-zinc-500">({d.dow})</span>
                     </div>
                     <div className="text-[10px] text-zinc-400">{fmtD(d.iso)}</div>
@@ -2856,12 +2855,12 @@ const [editOpen, setEditOpen] = useState(false)
               <div className="text-lg font-semibold tracking-wide text-stone-900 dark:text-zinc-100">
                 {t('admin.main.headerTitle')}
               </div>
-              <div className="text-xs text-amber-900/90 dark:text-yellow-200/70">{t('admin.main.headerTagline')}</div>
+              <div className="text-xs text-stone-700 dark:text-zinc-300">{t('admin.main.headerTagline')}</div>
             </div>
           </div>
 
           <div className="rounded-3xl border border-yellow-400/20 bg-zinc-950/50 p-6 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur">
-            <h1 className="text-xl font-semibold text-amber-950 dark:text-yellow-100">{t('admin.main.loginTitle')}</h1>
+            <h1 className="text-xl font-semibold text-amber-900 dark:text-yellow-100">{t('admin.main.loginTitle')}</h1>
 
             {error ? (
               <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-950/30 px-4 py-3 text-sm text-red-900 dark:text-red-100">{error}</div>
@@ -2903,7 +2902,7 @@ const [editOpen, setEditOpen] = useState(false)
               <button
                 type="submit"
                 disabled={busy}
-                className="mt-2 rounded-2xl border border-yellow-300/40 bg-gradient-to-r from-yellow-500/10 via-yellow-400/10 to-yellow-300/10 px-4 py-3 text-sm font-semibold text-amber-950 dark:text-yellow-100 shadow-[0_0_0_1px_rgba(255,215,0,0.18)] transition hover:border-yellow-200/70 hover:bg-yellow-400/10 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
+                className="mt-2 rounded-2xl border border-yellow-300/40 bg-gradient-to-r from-yellow-500/10 via-yellow-400/10 to-yellow-300/10 px-4 py-3 text-sm font-semibold text-amber-900 dark:text-yellow-100 shadow-[0_0_0_1px_rgba(255,215,0,0.18)] transition hover:border-yellow-200/70 hover:bg-yellow-400/10 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500"
               >
                 {busy ? t('admin.common.signingIn') : t('admin.common.signIn')}
               </button>
@@ -2934,7 +2933,7 @@ const [editOpen, setEditOpen] = useState(false)
               <div className="text-lg font-semibold tracking-wide text-stone-900 dark:text-zinc-100">
                 {t('admin.main.headerTitle')}
               </div>
-              <div className="text-xs text-amber-900/90 dark:text-yellow-200/70">{t('admin.main.headerTagline')}</div>
+              <div className="text-xs text-stone-700 dark:text-zinc-300">{t('admin.main.headerTagline')}</div>
             </div>
           </div>
 
@@ -2943,7 +2942,7 @@ const [editOpen, setEditOpen] = useState(false)
               onClick={refreshAll}
               disabled={busy || refreshing}
               className={cn(
-                'rounded-xl border border-stone-500/55 bg-white/90 px-4 py-2 text-sm font-semibold text-amber-950 transition hover:border-amber-700/60 hover:bg-amber-50/60 dark:border-yellow-400/40 dark:bg-black/40 dark:text-yellow-100 dark:hover:border-yellow-300/70',
+                'rounded-xl border border-stone-500/55 bg-white/90 px-4 py-2 text-sm font-semibold text-amber-900 transition hover:border-amber-700/60 hover:bg-amber-50/60 dark:border-yellow-400/40 dark:bg-black/40 dark:text-yellow-100 dark:hover:border-yellow-300/70',
                 ADM_DIS,
               )}
             >
@@ -2954,7 +2953,7 @@ const [editOpen, setEditOpen] = useState(false)
               onClick={onLogout}
               disabled={busy || refreshing}
               className={cn(
-                'rounded-xl border border-stone-400/70 bg-white/85 px-4 py-2 text-sm font-semibold text-stone-900 transition hover:border-amber-700/50 hover:bg-amber-50/50 dark:border-yellow-400/25 dark:bg-black/30 dark:text-yellow-100/90 dark:hover:border-yellow-300/60',
+                'rounded-xl border border-stone-400/70 bg-white/85 px-4 py-2 text-sm font-semibold text-stone-700 transition hover:border-amber-700/50 hover:bg-amber-50/50 dark:border-yellow-400/25 dark:bg-black/30 dark:text-zinc-200 dark:hover:border-yellow-300/60',
                 ADM_DIS,
               )}
             >
@@ -3031,14 +3030,14 @@ const [editOpen, setEditOpen] = useState(false)
                         <div className="rounded-3xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/25 p-5">
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <div>
-                              <div className="text-sm font-semibold text-amber-950 dark:text-yellow-100">{t('admin.main.sitesSectionTitle')}</div>
+                              <div className="text-sm font-semibold text-amber-900 dark:text-yellow-100">{t('admin.main.sitesSectionTitle')}</div>
                               <div className="mt-1 text-xs text-stone-600 dark:text-zinc-300">{t('admin.main.sitesSectionHint')}</div>
                             </div>
 
                             <button
                               onClick={() => setSiteCreateOpen(true)}
                               disabled={busy}
-                              className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-amber-950 dark:text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
+                              className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-amber-900 dark:text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500"
                             >
                               {t('admin.main.addSite')}
                             </button>
@@ -3077,7 +3076,7 @@ const [editOpen, setEditOpen] = useState(false)
                             <button
                               onClick={quickAssign}
                               disabled={busy || !qaSite || !qaWorker}
-                              className="w-full sm:w-auto rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-amber-950 dark:text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
+                              className="w-full sm:w-auto rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-amber-900 dark:text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500"
                             >
                               {t('admin.main.assignBtn')}
                             </button>
@@ -3119,7 +3118,7 @@ const [editOpen, setEditOpen] = useState(false)
                                             className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-black/0"
                                             title={(s.lat != null && s.lng != null) || !!s.address ? t('admin.main.navOrCard') : t('admin.main.openCard')}
                                           />
-                                          <div className="absolute bottom-1 left-2 text-[10px] font-semibold text-amber-900/95 dark:text-yellow-100/90">
+                                          <div className="absolute bottom-1 left-2 text-[10px] font-semibold text-amber-900 dark:text-yellow-100">
                                             {(s.lat != null && s.lng != null) || !!s.address ? t('admin.main.navBadge') : t('admin.main.siteCardBtn')}
                                           </div>
                                         </div>
@@ -3139,7 +3138,7 @@ const [editOpen, setEditOpen] = useState(false)
                                       <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
                                         <button
                                           onClick={() => openSiteCard(s)}
-                                          className="truncate text-left text-base font-semibold text-amber-950 dark:text-yellow-100 hover:underline"
+                                          className="truncate text-left text-base font-semibold text-amber-900 dark:text-yellow-100 hover:underline"
                                           title={t('admin.main.openSiteCardTitle')}
                                         >
                                           {s.name || t('admin.main.fallbackSite')}
@@ -3150,12 +3149,12 @@ const [editOpen, setEditOpen] = useState(false)
                                             {t('admin.main.badgeArchived')}
                                           </span>
                                         ) : (
-                                          <span className="rounded-xl border border-yellow-300/40 bg-yellow-400/10 px-2 py-1 text-[11px] text-amber-950 dark:text-yellow-100">
+                                          <span className="rounded-xl border border-yellow-300/40 bg-yellow-400/10 px-2 py-1 text-[11px] text-amber-900 dark:text-yellow-100">
                                             {t('admin.main.badgeActive')}
                                           </span>
                                         )}
 
-                                        <span className="inline-flex items-center gap-2 rounded-xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-2 py-1 text-[11px] text-amber-900/85 dark:text-yellow-100/70">
+                                        <span className="inline-flex items-center gap-2 rounded-xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-2 py-1 text-[11px] text-amber-900 dark:text-yellow-100">
                                           <span className={cn('h-2.5 w-2.5 rounded-full', meta.dotClass)} />
                                           {s.category ? `#${s.category}` : t('admin.main.noCategoryShort')}
                                         </span>
@@ -3198,7 +3197,7 @@ const [editOpen, setEditOpen] = useState(false)
                                         <button
                                           onClick={() => openSiteCard(s)}
                                           disabled={busy}
-                                          className="rounded-2xl border border-stone-400/75 bg-white/90 px-4 py-2 text-xs font-semibold text-stone-900 transition hover:border-amber-700/50 disabled:text-stone-400 disabled:opacity-90 dark:border-yellow-400/15 dark:bg-black/30 dark:text-zinc-200 dark:hover:border-yellow-300/40 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
+                                          className="rounded-2xl border border-stone-400/75 bg-white/90 px-4 py-2 text-xs font-semibold text-stone-700 transition hover:border-amber-700/50 disabled:text-stone-400 disabled:opacity-90 dark:border-yellow-400/15 dark:bg-black/30 dark:text-zinc-200 dark:hover:border-yellow-300/40 dark:disabled:text-zinc-500"
                                         >
                                           {t('admin.main.siteCardBtn')}
                                         </button>
@@ -3206,7 +3205,7 @@ const [editOpen, setEditOpen] = useState(false)
                                         <button
                                           onClick={() => deleteObjectSite(s.id)}
                                           disabled={busy}
-                                          className="w-full sm:w-auto rounded-2xl border border-red-600/45 dark:border-red-500/25 bg-red-500/15 px-4 py-2 text-xs font-semibold text-red-900 dark:text-red-100/85 transition hover:border-red-400/45 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
+                                          className="w-full sm:w-auto rounded-2xl border border-red-600/45 dark:border-red-500/25 bg-red-500/15 px-4 py-2 text-xs font-semibold text-red-900 dark:text-red-100 transition hover:border-red-400/45 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500"
                                         >
                                           {t('admin.main.delete')}
                                         </button>
@@ -3214,7 +3213,7 @@ const [editOpen, setEditOpen] = useState(false)
                                         <button
                                           onClick={() => setArchived(s.id, !archived)}
                                           disabled={busy}
-                                          className="rounded-2xl border border-stone-400/75 bg-white/90 px-4 py-2 text-xs font-semibold text-stone-900 transition hover:border-amber-700/50 disabled:text-stone-400 disabled:opacity-90 dark:border-yellow-400/15 dark:bg-black/30 dark:text-zinc-200 dark:hover:border-yellow-300/40 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
+                                          className="rounded-2xl border border-stone-400/75 bg-white/90 px-4 py-2 text-xs font-semibold text-stone-700 transition hover:border-amber-700/50 disabled:text-stone-400 disabled:opacity-90 dark:border-yellow-400/15 dark:bg-black/30 dark:text-zinc-200 dark:hover:border-yellow-300/40 dark:disabled:text-zinc-500"
                                         >
                                           {archived ? t('admin.main.restoreFromArchive') : t('admin.main.toArchive')}
                                         </button>
@@ -3233,7 +3232,7 @@ const [editOpen, setEditOpen] = useState(false)
                                               <button
                                                 onClick={() => unassign(s.id, w.id)}
                                                 disabled={busy}
-                                                className="rounded-xl border border-yellow-400/20 bg-black/30 px-2 py-1 text-[11px] text-amber-900/90 dark:text-yellow-100/80 transition hover:border-yellow-300/50 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
+                                                className="rounded-xl border border-yellow-400/20 bg-black/30 px-2 py-1 text-[11px] text-amber-900 dark:text-yellow-100 transition hover:border-yellow-300/50 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500"
                                               >
                                                 {t('admin.main.unassign')}
                                               </button>
@@ -3270,7 +3269,7 @@ const [editOpen, setEditOpen] = useState(false)
                                             void assign(s.id, wid)
                                           }}
                                           disabled={busy || !workerPickSite[s.id]}
-                                          className="w-full sm:w-auto rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-amber-950 dark:text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
+                                          className="w-full sm:w-auto rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-amber-900 dark:text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500"
                                         >
                                           {t('admin.main.assignBtn')}
                                         </button>
@@ -3339,14 +3338,14 @@ const [editOpen, setEditOpen] = useState(false)
                               <button
                                 onClick={createObjectSite}
                                 disabled={busy || !newObjName.trim()}
-                                className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-amber-950 dark:text-yellow-100 transition hover:border-yellow-200/70 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
+                                className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-amber-900 dark:text-yellow-100 transition hover:border-yellow-200/70 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500"
                               >
                                 {t('admin.main.create')}
                               </button>
                               <button
                                 onClick={() => setSiteCreateOpen(false)}
                                 disabled={busy}
-                                className="rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-5 py-3 text-sm text-stone-800 dark:text-zinc-200 transition hover:border-yellow-300/40 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
+                                className="rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-5 py-3 text-sm text-stone-800 dark:text-zinc-200 transition hover:border-yellow-300/40 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500"
                               >
                                 {t('common.cancel')}
                               </button>
@@ -3389,7 +3388,7 @@ const [editOpen, setEditOpen] = useState(false)
                                   type="button"
                                   onClick={() => void fillSiteCardI18nEmpty()}
                                   disabled={busy || !siteCardId}
-                                  className="rounded-xl border border-sky-400/25 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-900 dark:text-sky-100/90 transition hover:border-sky-300/45 disabled:text-sky-700 disabled:opacity-90 dark:disabled:text-sky-400 dark:disabled:opacity-70"
+                                  className="rounded-xl border border-sky-400/25 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-900 dark:text-sky-100 transition hover:border-sky-300/45 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500"
                                 >
                                   {t('admin.common.fillEmptyFromRu')}
                                 </button>
@@ -3479,14 +3478,14 @@ const [editOpen, setEditOpen] = useState(false)
                                       busy ||
                                       (siteCardLocale === 'ru' && !locDraftValue(siteLocDraft.name, siteCardLocale).trim())
                                     }
-                                    className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-amber-950 dark:text-yellow-100 transition hover:border-yellow-200/70 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
+                                    className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-amber-900 dark:text-yellow-100 transition hover:border-yellow-200/70 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500"
                                   >
                                     {t('common.save')}
                                   </button>
                                   <button
                                     onClick={() => deleteObjectSite(siteCardId)}
                                     disabled={busy}
-                                    className="w-full sm:w-auto rounded-2xl border border-red-600/45 dark:border-red-500/25 bg-red-500/15 px-5 py-3 text-sm font-semibold text-red-900 dark:text-red-100/85 transition hover:border-red-400/45 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
+                                    className="w-full sm:w-auto rounded-2xl border border-red-600/45 dark:border-red-500/25 bg-red-500/15 px-5 py-3 text-sm font-semibold text-red-900 dark:text-red-100 transition hover:border-red-400/45 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500"
                                   >
                                     {t('admin.main.deleteSiteBtn')}
                                   </button>
@@ -3499,9 +3498,9 @@ const [editOpen, setEditOpen] = useState(false)
                                 if (lat == null || lng == null || Number.isNaN(lat) || Number.isNaN(lng)) return null
                                 return (
                                   <div className="grid gap-2">
-                                    <div className="text-sm font-semibold text-amber-950 dark:text-yellow-100">{t('admin.main.mapTitle')}</div>
+                                    <div className="text-sm font-semibold text-amber-900 dark:text-yellow-100">{t('admin.main.mapTitle')}</div>
                                     <MapLarge lat={lat} lng={lng} />
-                                    <div className="flex flex-wrap items-center gap-3 text-xs font-medium text-amber-950 dark:text-yellow-100/70">
+                                    <div className="flex flex-wrap items-center gap-3 text-xs font-medium text-amber-900 dark:text-yellow-100">
                                       <a
                                         className="underline decoration-amber-700/40 hover:decoration-amber-900/70 dark:decoration-yellow-400/20 dark:hover:decoration-yellow-300/50"
                                         href={googleNavUrl(lat, lng)}
@@ -3524,17 +3523,17 @@ const [editOpen, setEditOpen] = useState(false)
                               })()}
 
                               <div className="grid gap-2">
-                                <div className="text-sm font-semibold text-amber-950 dark:text-yellow-100">{t('admin.main.photosSection')}</div>
+                                <div className="text-sm font-semibold text-amber-900 dark:text-yellow-100">{t('admin.main.photosSection')}</div>
 
                                 <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <div className="text-xs font-medium text-stone-800 dark:text-yellow-100/55">
+                                  <div className="text-xs font-medium text-stone-800 dark:text-yellow-100">
                                     {t('admin.main.nowCount', { n: siteCardPhotos.length })}
                                   </div>
 
                                   <div className="flex flex-wrap gap-2">
                                     <label
                                       className={cn(
-                                        'rounded-xl border border-stone-500/55 bg-white/90 px-3 py-2 text-xs font-semibold text-amber-950 hover:border-amber-700/55 dark:border-yellow-400/15 dark:bg-black/30 dark:text-yellow-100/70 dark:hover:border-yellow-300/40',
+                                        'rounded-xl border border-stone-500/55 bg-white/90 px-3 py-2 text-xs font-semibold text-amber-900 hover:border-amber-700/55 dark:border-yellow-400/15 dark:bg-black/30 dark:text-yellow-100 dark:hover:border-yellow-300/40',
                                         photoBusy || !siteCardId || siteCardPhotos.length >= 5 ? 'opacity-70' : ''
                                       )}
                                     >
@@ -3560,7 +3559,7 @@ const [editOpen, setEditOpen] = useState(false)
 
                                     <label
                                       className={cn(
-                                        'rounded-xl border border-yellow-300/35 bg-yellow-400/10 px-3 py-2 text-xs font-semibold text-amber-950 dark:text-yellow-100 hover:border-yellow-200/70',
+                                        'rounded-xl border border-yellow-300/35 bg-yellow-400/10 px-3 py-2 text-xs font-semibold text-amber-900 dark:text-yellow-100 hover:border-yellow-200/70',
                                         photoBusy || !siteCardId || siteCardPhotos.length >= 5 ? 'opacity-70' : ''
                                       )}
                                     >
@@ -3588,7 +3587,7 @@ const [editOpen, setEditOpen] = useState(false)
 
 
                                 {photoUiError ? (
-                                  <div className="rounded-2xl border border-red-600/45 dark:border-red-500/25 bg-red-500/10 px-3 py-3 text-xs text-red-900 dark:text-red-100/85">
+                                  <div className="rounded-2xl border border-red-600/45 dark:border-red-500/25 bg-red-500/10 px-3 py-3 text-xs text-red-900 dark:text-red-100">
                                     {photoUiError}
                                   </div>
                                 ) : null}
@@ -3600,7 +3599,7 @@ const [editOpen, setEditOpen] = useState(false)
                                 ) : null}
 
                                 {siteCardPhotos.length === 0 ? (
-                                  <div className="rounded-2xl border border-yellow-400/10 bg-black/20 px-3 py-3 text-xs font-medium text-stone-800 dark:text-yellow-100/55">
+                                  <div className="rounded-2xl border border-yellow-400/10 bg-black/20 px-3 py-3 text-xs font-medium text-stone-800 dark:text-yellow-100">
                                     {t('admin.main.noPhotos')}
                                   </div>
                                 ) : (
@@ -3610,7 +3609,7 @@ const [editOpen, setEditOpen] = useState(false)
                                         { }
                                         <img src={p.url || ""} alt="site" className="h-36 w-full object-cover" loading="lazy" />
 
-                                        <div className="absolute left-2 top-2 rounded-xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/50 px-2 py-1 text-[11px] text-amber-900/90 dark:text-yellow-100/80">
+                                        <div className="absolute left-2 top-2 rounded-xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/50 px-2 py-1 text-[11px] text-amber-900 dark:text-yellow-100">
                                           {idx === 0 ? t('admin.main.primaryBadge') : ''}
                                         </div>
 
@@ -3623,7 +3622,7 @@ const [editOpen, setEditOpen] = useState(false)
                                               }}
                                               disabled={photoBusy || !siteCardId}
                                               className={cn(
-                                                'rounded-xl border border-yellow-300/35 bg-yellow-400/10 px-2 py-1 text-[11px] font-semibold text-amber-950 dark:text-yellow-100',
+                                                'rounded-xl border border-yellow-300/35 bg-yellow-400/10 px-2 py-1 text-[11px] font-semibold text-amber-900 dark:text-yellow-100',
                                                 photoBusy ? 'opacity-70' : 'hover:border-yellow-200/70'
                                               )}
                                             >
@@ -3638,7 +3637,7 @@ const [editOpen, setEditOpen] = useState(false)
                                             }}
                                             disabled={photoBusy || !siteCardId}
                                             className={cn(
-                                              'rounded-xl border border-red-600/45 dark:border-red-500/25 bg-red-500/15 px-2 py-1 text-[11px] text-red-900 dark:text-red-100/85',
+                                              'rounded-xl border border-red-600/45 dark:border-red-500/25 bg-red-500/15 px-2 py-1 text-[11px] text-red-900 dark:text-red-100',
                                               photoBusy ? 'opacity-70' : 'hover:border-red-400/45'
                                             )}
                                           >
@@ -3650,7 +3649,7 @@ const [editOpen, setEditOpen] = useState(false)
                                   </div>
                                 )}
 
-                                {photoBusy ? <div className="text-xs text-amber-900/60 dark:text-yellow-100/45">{t('admin.main.processing')}</div> : null}
+                                {photoBusy ? <div className="text-xs text-amber-900 dark:text-yellow-100">{t('admin.main.processing')}</div> : null}
                               </div>
                             </div>
                           )}
@@ -3665,7 +3664,7 @@ const [editOpen, setEditOpen] = useState(false)
               <div className="rounded-3xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/25 p-5">
                 <div className="flex flex-wrap items-end justify-between gap-3">
                   <div>
-                    <div className="text-sm font-semibold text-amber-950 dark:text-yellow-100">{t('admin.main.workersCreateTitle')}</div>
+                    <div className="text-sm font-semibold text-amber-900 dark:text-yellow-100">{t('admin.main.workersCreateTitle')}</div>
                     <div className="mt-1 text-xs text-stone-600 dark:text-zinc-300">{t('admin.main.workersCreateHint')}</div>
                   </div>
 
@@ -3686,7 +3685,7 @@ const [editOpen, setEditOpen] = useState(false)
                       type="button"
                       onClick={() => void inviteWorker()}
                       disabled={busy || !inviteEmail.trim()}
-                      className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-amber-950 dark:text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
+                      className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-amber-900 dark:text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500"
                     >
                       {t('admin.main.create')}
                     </button>
@@ -3709,7 +3708,7 @@ const [editOpen, setEditOpen] = useState(false)
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="flex items-start gap-3">
                           <div className="relative mt-0.5 h-10 w-10">
-                            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 text-[12px] font-semibold text-amber-900/90 dark:text-yellow-100/80">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 text-[12px] font-semibold text-amber-900 dark:text-yellow-100">
                               {initials(w.full_name)}
                             </div>
                             {workerPhotoMeta[w.id]?.thumb ? (
@@ -3726,18 +3725,18 @@ const [editOpen, setEditOpen] = useState(false)
                                 }}
                               />
                             ) : null}
-                            <div className="absolute -bottom-1 -right-1 rounded-xl border border-yellow-400/20 bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-amber-950 dark:text-yellow-100">
+                            <div className="absolute -bottom-1 -right-1 rounded-xl border border-yellow-400/20 bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900 dark:text-yellow-100">
                               {(workerPhotoMeta[w.id]?.count ?? '…')}/5
                             </div>
                           </div>
 
                           <div className="min-w-full sm:w-[220px]">
-                            <div className="text-base font-semibold text-amber-950 dark:text-yellow-100">
-                              <button onClick={() => openWorkerCard(w.id)} className="hover:text-amber-950 dark:text-yellow-100">
+                            <div className="text-base font-semibold text-amber-900 dark:text-yellow-100">
+                              <button onClick={() => openWorkerCard(w.id)} className="hover:text-amber-900 dark:text-yellow-100">
                                 {w.full_name || t('admin.main.noName')}
                               </button>{' '}
                             {isAdmin ? (
-                              <span className="ml-2 rounded-xl border border-yellow-400/30 bg-yellow-400/10 px-2 py-1 text-[11px] text-amber-950 dark:text-yellow-100">
+                              <span className="ml-2 rounded-xl border border-yellow-400/30 bg-yellow-400/10 px-2 py-1 text-[11px] text-amber-900 dark:text-yellow-100">
                                 {t('admin.main.badgeAdmin')}
                               </span>
                             ) : (
@@ -3763,7 +3762,7 @@ const [editOpen, setEditOpen] = useState(false)
                                   <button
                                     onClick={() => unassign(s.id, w.id)}
                                     disabled={busy}
-                                    className="rounded-xl border border-yellow-400/20 bg-black/30 px-2 py-1 text-[11px] text-amber-900/90 dark:text-yellow-100/80 transition hover:border-yellow-300/50 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
+                                    className="rounded-xl border border-yellow-400/20 bg-black/30 px-2 py-1 text-[11px] text-amber-900 dark:text-yellow-100 transition hover:border-yellow-300/50 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500"
                                   >
                                     {t('admin.main.unassign')}
                                   </button>
@@ -3780,7 +3779,7 @@ const [editOpen, setEditOpen] = useState(false)
                               <button
                                 onClick={() => setRole(w.id, 'admin')}
                                 disabled={busy}
-                                className="w-full sm:w-auto rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-amber-950 dark:text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
+                                className="w-full sm:w-auto rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-amber-900 dark:text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500"
                               >
                                 {t('admin.main.makeAdmin')}
                               </button>
@@ -3788,7 +3787,7 @@ const [editOpen, setEditOpen] = useState(false)
                               <button
                                 onClick={() => setRole(w.id, 'worker')}
                                 disabled={busy || isMe}
-                                className="w-full sm:w-auto rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-stone-800 dark:text-zinc-200 transition hover:border-yellow-300/40 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
+                                className="w-full sm:w-auto rounded-2xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-stone-800 dark:text-zinc-200 transition hover:border-yellow-300/40 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500"
                               >
                                 {t('admin.main.makeWorker')}
                               </button>
@@ -3801,7 +3800,7 @@ const [editOpen, setEditOpen] = useState(false)
                                 onClick={() => setWorkerArchived(w.id, w.active !== false)}
                                 disabled={busy}
                                 className={cn(
-                                  'w-full sm:w-auto rounded-2xl border px-4 py-2 text-xs font-semibold transition disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75',
+                                  'w-full sm:w-auto rounded-2xl border px-4 py-2 text-xs font-semibold transition disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500',
                                   w.active === false
                                     ? ADM_WORKER_ARCHIVE_ACTIVE
                                     : ADM_TAB_INACTIVE
@@ -3813,7 +3812,7 @@ const [editOpen, setEditOpen] = useState(false)
                               <button
                                 onClick={() => deleteWorker(w.id)}
                                 disabled={busy}
-                                className="w-full sm:w-auto rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-2 text-xs font-semibold text-red-900 dark:text-red-100 transition hover:border-red-300/40 hover:bg-red-500/15 disabled:text-red-700 disabled:opacity-90 dark:disabled:text-red-300 dark:disabled:opacity-75"
+                                className="w-full sm:w-auto rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-2 text-xs font-semibold text-red-900 dark:text-red-100 transition hover:border-red-300/40 hover:bg-red-500/15 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500"
                               >
                                 {t('admin.main.delete')}
                               </button>
@@ -3838,7 +3837,7 @@ const [editOpen, setEditOpen] = useState(false)
                               <button
                                 onClick={() => pick && assign(pick, w.id)}
                                 disabled={busy || !pick}
-                                className="w-full sm:w-auto rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-amber-950 dark:text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
+                                className="w-full sm:w-auto rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-amber-900 dark:text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500"
                               >
                                 {t('admin.main.assignBtn')}
                               </button>
@@ -3860,7 +3859,7 @@ const [editOpen, setEditOpen] = useState(false)
           {tab === 'jobs' ? (
             <div className="mt-6 grid gap-4">
               <div className="rounded-3xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/25 p-5">
-                <div className="text-sm font-semibold text-amber-950 dark:text-yellow-100">{t('admin.main.jobsCreateTitle')}</div>
+                <div className="text-sm font-semibold text-amber-900 dark:text-yellow-100">{t('admin.main.jobsCreateTitle')}</div>
                 <div className="mt-1 text-xs text-stone-600 dark:text-zinc-300">{t('admin.main.jobsCreateHint')}</div>
 
                 <div className="mt-4 grid gap-3 lg:grid-cols-2 2xl:grid-cols-[1.3fr_1.7fr_0.8fr_0.7fr_0.7fr_auto]">
@@ -3921,7 +3920,7 @@ const [editOpen, setEditOpen] = useState(false)
                   <button
                     onClick={createJobs}
                     disabled={busy || !newSiteId || newWorkers.length === 0}
-                    className="w-full rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-center text-sm font-semibold text-amber-950 dark:text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:cursor-not-allowed disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75 lg:mt-5 lg:w-auto"
+                    className="w-full rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-center text-sm font-semibold text-amber-900 dark:text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:cursor-not-allowed disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 lg:mt-5 lg:w-auto"
                   >
                     {busy
                       ? t('admin.main.creating')
@@ -3991,7 +3990,7 @@ const [editOpen, setEditOpen] = useState(false)
 
               <div className="rounded-3xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/25 p-5">
                 <div className="flex flex-wrap items-end justify-between gap-3">
-                  <div className="text-sm font-semibold text-amber-950 dark:text-yellow-100">{t('admin.main.filtersTitle')}</div>
+                  <div className="text-sm font-semibold text-amber-900 dark:text-yellow-100">{t('admin.main.filtersTitle')}</div>
 
                   <div className="mt-4 grid w-full gap-3 lg:grid-cols-4">
                     <label className="grid gap-1">
@@ -4081,7 +4080,7 @@ const [editOpen, setEditOpen] = useState(false)
                           </div>
 
                           {String(j.status || '') === 'planned' && j.worker_id ? (
-                            <div className="mt-1 text-[11px] font-semibold text-amber-900/90 dark:text-yellow-100/80">{t('admin.main.accepted')}</div>
+                            <div className="mt-1 text-[11px] font-semibold text-amber-900 dark:text-yellow-100">{t('admin.main.accepted')}</div>
                           ) : null}
 
                           <div className="mt-3 grid gap-2 text-xs text-stone-800 dark:text-zinc-200">
@@ -4106,7 +4105,7 @@ const [editOpen, setEditOpen] = useState(false)
                           <div className="mt-3 flex flex-wrap items-center gap-2">
                             <button
                               onClick={() => openEditForJob(j)}
-                              className="rounded-xl border border-stone-400/75 bg-white/90 px-3 py-2 text-xs font-semibold text-stone-900 hover:border-amber-700/50 dark:border-yellow-400/15 dark:bg-black/30 dark:text-zinc-200 dark:hover:border-yellow-300/40"
+                              className="rounded-xl border border-stone-400/75 bg-white/90 px-3 py-2 text-xs font-semibold text-stone-700 hover:border-amber-700/50 dark:border-yellow-400/15 dark:bg-black/30 dark:text-zinc-200 dark:hover:border-yellow-300/40"
                             >
                               {t('admin.main.edit')}
                             </button>
@@ -4183,7 +4182,7 @@ const [editOpen, setEditOpen] = useState(false)
                                 {j.worker_id ? (
                                   <button
                                     onClick={() => openWorkerCard(j.worker_id!)}
-                                    className="flex items-center gap-2 text-amber-950 dark:text-yellow-100 hover:text-amber-950 dark:text-yellow-50"
+                                    className="flex items-center gap-2 text-amber-900 dark:text-yellow-100 hover:text-amber-950 dark:hover:text-yellow-100"
                                   >
                                     {workerPhotoMeta[j.worker_id!]?.thumb ? (
                                        
@@ -4194,7 +4193,7 @@ const [editOpen, setEditOpen] = useState(false)
                                         loading="lazy"
                                       />
                                     ) : (
-                                      <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 text-[10px] font-semibold text-amber-900/90 dark:text-yellow-100/80">
+                                      <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 text-[10px] font-semibold text-amber-900 dark:text-yellow-100">
                                         {initials(j.worker_name)}
                                       </span>
                                     )}
@@ -4208,7 +4207,7 @@ const [editOpen, setEditOpen] = useState(false)
                                 <div className="grid gap-1">
                                   <StatusPill status={String(j.status || '')} startedAt={j.started_at} />
                                   {String(j.status || '') === 'planned' && j.worker_id ? (
-                                    <div className="text-[11px] font-semibold text-amber-900/90 dark:text-yellow-100/80">{t('admin.main.accepted')}</div>
+                                    <div className="text-[11px] font-semibold text-amber-900 dark:text-yellow-100">{t('admin.main.accepted')}</div>
                                   ) : null}
                                 </div>
                               </td>
@@ -4350,7 +4349,7 @@ const [editOpen, setEditOpen] = useState(false)
             <button
               onClick={saveEdit}
               disabled={busy || !editJobId}
-              className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-2 text-xs font-semibold text-amber-950 dark:text-yellow-100 hover:border-yellow-200/70 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
+              className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-2 text-xs font-semibold text-amber-900 dark:text-yellow-100 hover:border-yellow-200/70 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500"
             >
               {t('common.save')}
             </button>
@@ -4375,7 +4374,7 @@ const [editOpen, setEditOpen] = useState(false)
               <div className="grid gap-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <div className="text-sm font-semibold text-amber-950 dark:text-yellow-100">{w?.full_name || t('admin.main.fallbackWorker')}</div>
+                    <div className="text-sm font-semibold text-amber-900 dark:text-yellow-100">{w?.full_name || t('admin.main.fallbackWorker')}</div>
                     <div className="mt-1 text-xs text-stone-600 dark:text-zinc-300">
                       {role}
                       {archived ? t('admin.main.archivedMark') : t('admin.main.activeMark')}
@@ -4391,7 +4390,7 @@ const [editOpen, setEditOpen] = useState(false)
 
                 <div className="grid gap-2">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-sm font-semibold text-amber-950 dark:text-yellow-100">{t('admin.main.dataNotesTitle')}</div>
+                    <div className="text-sm font-semibold text-amber-900 dark:text-yellow-100">{t('admin.main.dataNotesTitle')}</div>
                     <div className="flex flex-wrap items-center gap-2">
                       {w?.role !== 'admin' ? (
                         <button
@@ -4420,7 +4419,7 @@ const [editOpen, setEditOpen] = useState(false)
                           (workerCardLocale === 'ru' && !locDraftValue(workerLocDraft.name, workerCardLocale).trim())
                         }
                         className={cn(
-                          'rounded-xl border border-yellow-300/35 bg-yellow-400/10 px-3 py-2 text-xs font-semibold text-amber-950 dark:text-yellow-100 hover:border-yellow-200/70',
+                          'rounded-xl border border-yellow-300/35 bg-yellow-400/10 px-3 py-2 text-xs font-semibold text-amber-900 dark:text-yellow-100 hover:border-yellow-200/70',
                           ADM_DIS,
                           workerProfileSaving ? 'opacity-70' : '',
                         )}
@@ -4450,7 +4449,7 @@ const [editOpen, setEditOpen] = useState(false)
                   ) : null}
 
                   {workerProfileLoading ? (
-                    <div className="rounded-2xl border border-yellow-400/10 bg-black/20 px-3 py-3 text-xs text-amber-900/70 dark:text-yellow-100/55">
+                    <div className="rounded-2xl border border-yellow-400/10 bg-black/20 px-3 py-3 text-xs text-amber-900 dark:text-yellow-100">
                       {t('admin.main.loadingData')}
                     </div>
                   ) : (
@@ -4484,7 +4483,7 @@ const [editOpen, setEditOpen] = useState(false)
                             void fillWorkerCardI18nEmpty(workerCardId)
                           }}
                           disabled={workerProfileSaving || !workerCardId}
-                          className="rounded-xl border border-sky-400/25 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-900 dark:text-sky-100/90 transition hover:border-sky-300/45 disabled:text-sky-700 disabled:opacity-90 dark:disabled:text-sky-400 dark:disabled:opacity-70"
+                          className="rounded-xl border border-sky-400/25 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-900 dark:text-sky-100 transition hover:border-sky-300/45 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500"
                         >
                           {t('admin.common.fillEmptyFromRu')}
                         </button>
@@ -4546,17 +4545,17 @@ const [editOpen, setEditOpen] = useState(false)
                 </div>
 
                 <div className="grid gap-2">
-                  <div className="text-sm font-semibold text-amber-950 dark:text-yellow-100">{t('admin.main.photosSection')}</div>
+                  <div className="text-sm font-semibold text-amber-900 dark:text-yellow-100">{t('admin.main.photosSection')}</div>
 
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="text-xs font-medium text-stone-800 dark:text-yellow-100/55">
+                      <div className="text-xs font-medium text-stone-800 dark:text-yellow-100">
                         {t('admin.main.nowCount', { n: workerCardPhotos.length })}
                       </div>
 
                     <div className="flex flex-wrap gap-2">
                       <label
                         className={cn(
-                          'rounded-xl border border-stone-500/55 bg-white/90 px-3 py-2 text-xs font-semibold text-amber-950 hover:border-amber-700/55 dark:border-yellow-400/15 dark:bg-black/30 dark:text-yellow-100/70 dark:hover:border-yellow-300/40',
+                          'rounded-xl border border-stone-500/55 bg-white/90 px-3 py-2 text-xs font-semibold text-amber-900 hover:border-amber-700/55 dark:border-yellow-400/15 dark:bg-black/30 dark:text-yellow-100 dark:hover:border-yellow-300/40',
                           workerPhotoBusy || !workerCardId || workerCardPhotos.length >= 5 ? 'opacity-70' : ''
                         )}
                       >
@@ -4578,7 +4577,7 @@ const [editOpen, setEditOpen] = useState(false)
 
                       <label
                         className={cn(
-                          'rounded-xl border border-yellow-300/35 bg-yellow-400/10 px-3 py-2 text-xs font-semibold text-amber-950 dark:text-yellow-100 hover:border-yellow-200/70',
+                          'rounded-xl border border-yellow-300/35 bg-yellow-400/10 px-3 py-2 text-xs font-semibold text-amber-900 dark:text-yellow-100 hover:border-yellow-200/70',
                           workerPhotoBusy || !workerCardId || workerCardPhotos.length >= 5 ? 'opacity-70' : ''
                         )}
                       >
@@ -4601,7 +4600,7 @@ const [editOpen, setEditOpen] = useState(false)
                   </div>
 
                   {workerCardPhotos.length === 0 ? (
-                    <div className="rounded-2xl border border-yellow-400/10 bg-black/20 px-3 py-3 text-xs text-amber-900/70 dark:text-yellow-100/55">
+                    <div className="rounded-2xl border border-yellow-400/10 bg-black/20 px-3 py-3 text-xs text-amber-900 dark:text-yellow-100">
                       {t('admin.main.noPhotos')}
                     </div>
                   ) : (
@@ -4619,7 +4618,7 @@ const [editOpen, setEditOpen] = useState(false)
                               }}
                               disabled={workerPhotoBusy || !workerCardId}
                               className={cn(
-                                'rounded-xl border border-red-600/45 dark:border-red-500/25 bg-red-500/15 px-2 py-1 text-[11px] text-red-900 dark:text-red-100/85',
+                                'rounded-xl border border-red-600/45 dark:border-red-500/25 bg-red-500/15 px-2 py-1 text-[11px] text-red-900 dark:text-red-100',
                                 workerPhotoBusy ? 'opacity-70' : 'hover:border-red-400/45'
                               )}
                             >
@@ -4635,7 +4634,7 @@ const [editOpen, setEditOpen] = useState(false)
                               }}
                               disabled={workerPhotoBusy || !workerCardId}
                               className={cn(
-                                'rounded-xl border bg-black/40 px-2 py-1 text-[11px] text-amber-900/90 dark:text-yellow-100/85',
+                                'rounded-xl border bg-black/40 px-2 py-1 text-[11px] text-amber-900 dark:text-yellow-100',
                                 workerCardAvatarPath === p.path
                                   ? 'border-yellow-300/60 bg-yellow-400/15'
                                   : 'border-amber-900/30 dark:border-yellow-400/15 hover:border-yellow-300/40',
@@ -4650,11 +4649,11 @@ const [editOpen, setEditOpen] = useState(false)
                     </div>
                   )}
 
-                  {workerPhotoBusy ? <div className="text-xs text-amber-900/60 dark:text-yellow-100/45">{t('admin.main.processing')}</div> : null}
+                  {workerPhotoBusy ? <div className="text-xs text-amber-900 dark:text-yellow-100">{t('admin.main.processing')}</div> : null}
                 </div>
 
                 <div className="mt-1 grid gap-2">
-                  <div className="text-sm font-semibold text-amber-950 dark:text-yellow-100">{t('admin.main.shiftsTitle')}</div>
+                  <div className="text-sm font-semibold text-amber-900 dark:text-yellow-100">{t('admin.main.shiftsTitle')}</div>
 
                   {workerCardItems.length === 0 ? (
                     <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-3 text-xs text-stone-600 dark:text-zinc-500">
@@ -4717,7 +4716,7 @@ const [editOpen, setEditOpen] = useState(false)
                       <button
                         onClick={() => openEditForJob(j)}
                         disabled={busy}
-                        className="rounded-xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-stone-800 dark:text-zinc-200 hover:border-yellow-300/40 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
+                        className="rounded-xl border border-amber-900/30 dark:border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-stone-800 dark:text-zinc-200 hover:border-yellow-300/40 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500"
                       >
                         {t('admin.main.edit')}
                       </button>
@@ -4756,7 +4755,7 @@ const [editOpen, setEditOpen] = useState(false)
               setMoveJobOpen(false)
             }}
             disabled={busy || !moveJobId || !moveJobTargetWorker}
-            className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-amber-950 dark:text-yellow-100 hover:border-yellow-200/70 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
+            className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-amber-900 dark:text-yellow-100 hover:border-yellow-200/70 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500"
           >
             {t('admin.main.btnMove')}
           </button>
@@ -4824,7 +4823,7 @@ const [editOpen, setEditOpen] = useState(false)
           <button
             onClick={moveDay}
             disabled={busy || !moveDayFromWorker || !moveDayToWorker || !moveDayDate}
-            className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-amber-950 dark:text-yellow-100 hover:border-yellow-200/70 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
+            className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-amber-900 dark:text-yellow-100 hover:border-yellow-200/70 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500"
           >
             {t('admin.main.moveDayBtn')}
           </button>
@@ -4841,7 +4840,7 @@ const [editOpen, setEditOpen] = useState(false)
           <button
             onClick={() => cancelJob(cancelJobId)}
             disabled={busy || !cancelJobId}
-            className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-amber-950 dark:text-yellow-100 hover:border-yellow-200/70 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500 dark:disabled:opacity-75"
+            className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-amber-900 dark:text-yellow-100 hover:border-yellow-200/70 disabled:text-stone-400 disabled:opacity-90 dark:disabled:text-zinc-500"
           >
             {t('admin.main.cancelWord')}
           </button>
