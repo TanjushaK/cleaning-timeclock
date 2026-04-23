@@ -147,6 +147,23 @@ html[data-theme='light'] .workerCardModalTheme button.text-red-900 {
   color: #991b1b !important;
 }
 
+/* Secondary / outline / ghost variants on light surfaces:
+   keep the same geometry, only raise border+text contrast for readable controls. */
+html[data-theme='light'] .adminTheme button[class*='border-yellow-400/15'][class*='bg-black/30'][class*='text-zinc-200'],
+html[data-theme='light'] .adminTheme button[class*='border-yellow-400/15'][class*='bg-black/30'][class*='text-zinc-300'],
+html[data-theme='light'] .adminPortalTheme button[class*='border-yellow-400/15'][class*='bg-black/30'][class*='text-zinc-200'],
+html[data-theme='light'] .workerCardModalTheme button[class*='border-yellow-400/15'][class*='bg-black/30'][class*='text-zinc-200'] {
+  color: #1f2937 !important;
+  border-color: rgba(146, 64, 14, 0.48) !important;
+}
+
+/* Modal/site-card danger variant keeps same palette, with stronger light-mode contrast. */
+html[data-theme='light'] .adminPortalTheme button[class*='border-red-500/25'][class*='text-red-100/85'],
+html[data-theme='light'] .workerCardModalTheme button[class*='border-red-500/25'][class*='text-red-100/85'] {
+  color: #991b1b !important;
+  border-color: rgba(153, 27, 27, 0.45) !important;
+}
+
 html[data-theme='light'] .adminTheme button:disabled,
 html[data-theme='light'] .adminPortalTheme button:disabled,
 html[data-theme='light'] .workerCardModalTheme button:disabled {
@@ -159,6 +176,12 @@ html[data-theme='light'] .adminTheme button:disabled.text-red-900,
 html[data-theme='light'] .adminPortalTheme button:disabled,
 html[data-theme='light'] .workerCardModalTheme button:disabled {
   color: #57534e !important;
+}
+
+html[data-theme='light'] .adminTheme button:disabled[class*='text-yellow-100'],
+html[data-theme='light'] .adminPortalTheme button:disabled[class*='text-yellow-100'],
+html[data-theme='light'] .workerCardModalTheme button:disabled[class*='text-yellow-100'] {
+  color: #6b4f1d !important;
 }
 
 html[data-theme='light'] .adminTheme :where([class*='shadow-xl'], [class*='shadow-2xl'], [class*='shadow-[']) {
