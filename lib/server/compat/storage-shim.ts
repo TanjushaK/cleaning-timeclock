@@ -15,6 +15,15 @@ async function pathExists(filePath: string): Promise<boolean> {
   }
 }
 
+async function fileExistsInBucket(bucket: string, objectPath: string): Promise<boolean> {
+  try {
+    const absolute = resolveStoragePath(bucket, safeRelativePath(objectPath))
+    return await pathExists(absolute)
+  } catch {
+    return false
+  }
+}
+
 async function listDirectory(root: string): Promise<StorageListItem[]> {
   if (!(await pathExists(root))) return []
   const entries = await fs.readdir(root, { withFileTypes: true })
@@ -101,6 +110,9 @@ export class StorageBucketClient {
   async createSignedUrl(objectPath: string, ttlSeconds: number): Promise<CompatResponse<{ signedUrl: string; path: string }>> {
     try {
       const safeObjectPath = safeRelativePath(objectPath)
+      if (!(await fileExistsInBucket(this.bucket, safeObjectPath))) {
+        return { data: null, error: { message: 'Storage object not found' } }
+      }
       const signedUrl = await createSignedStorageUrl(this.bucket, safeObjectPath, ttlSeconds)
       return { data: { signedUrl, path: safeObjectPath }, error: null }
     } catch (error) {
@@ -113,6 +125,7 @@ export class StorageBucketClient {
       const data: StorageSignedUrl[] = []
       for (const item of paths) {
         const safeObjectPath = safeRelativePath(item)
+        if (!(await fileExistsInBucket(this.bucket, safeObjectPath))) continue
         data.push({
           path: safeObjectPath,
           signedUrl: await createSignedStorageUrl(this.bucket, safeObjectPath, ttlSeconds),

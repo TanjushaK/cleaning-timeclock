@@ -3143,7 +3143,18 @@ const [editOpen, setEditOpen] = useState(false)
                                       {primaryUrl ? (
                                         <div className="relative h-[92px] w-full sm:w-[150px] overflow-hidden rounded-2xl border border-yellow-400/20 bg-black/20">
                                           { }
-                                          <img src={primaryUrl} alt="site" className="h-full w-full object-cover" loading="lazy" />
+                                          <img
+                                            src={primaryUrl}
+                                            alt="site"
+                                            className="h-full w-full object-cover"
+                                            loading="lazy"
+                                            onError={(e) => {
+                                              try {
+                                                ;(e.currentTarget as HTMLImageElement).style.display = 'none'
+                                                ;(e.currentTarget as HTMLImageElement).removeAttribute('src')
+                                              } catch {}
+                                            }}
+                                          />
                                           <button
                                             type="button"
                                             onClick={() => {
@@ -3635,7 +3646,18 @@ const [editOpen, setEditOpen] = useState(false)
                                     {siteCardPhotos.map((p, idx) => (
                                       <div key={p.path} className="relative overflow-hidden rounded-2xl border border-yellow-400/10 bg-black/20">
                                         { }
-                                        <img src={p.url || ""} alt="site" className="h-36 w-full object-cover" loading="lazy" />
+                                        <img
+                                          src={p.url || ''}
+                                          alt="site"
+                                          className="h-36 w-full object-cover"
+                                          loading="lazy"
+                                          onError={(e) => {
+                                            try {
+                                              ;(e.currentTarget as HTMLImageElement).style.display = 'none'
+                                              ;(e.currentTarget as HTMLImageElement).removeAttribute('src')
+                                            } catch {}
+                                          }}
+                                        />
 
                                         <div className="absolute left-2 top-2 rounded-xl border border-yellow-400/15 bg-black/50 px-2 py-1 text-[11px] text-yellow-100/80">
                                           {idx === 0 ? t('admin.main.primaryBadge') : ''}
@@ -3749,6 +3771,7 @@ const [editOpen, setEditOpen] = useState(false)
                                 onError={(e) => {
                                   try {
                                     ;(e.currentTarget as HTMLImageElement).style.display = 'none'
+                                    ;(e.currentTarget as HTMLImageElement).removeAttribute('src')
                                   } catch {}
                                 }}
                               />
@@ -4633,7 +4656,18 @@ const [editOpen, setEditOpen] = useState(false)
                       {workerCardPhotos.map((p) => (
                         <div key={p.path} className="relative overflow-hidden rounded-2xl border border-yellow-400/10 bg-black/20">
                           { }
-                          <img src={p.url || ''} alt={t('admin.main.roleWorker')} className="h-36 w-full object-cover" loading="lazy" />
+                          <img
+                            src={p.url || ''}
+                            alt={t('admin.main.roleWorker')}
+                            className="h-36 w-full object-cover"
+                            loading="lazy"
+                            onError={(e) => {
+                              try {
+                                ;(e.currentTarget as HTMLImageElement).style.display = 'none'
+                                ;(e.currentTarget as HTMLImageElement).removeAttribute('src')
+                              } catch {}
+                            }}
+                          />
 
                           <div className="absolute right-2 top-2">
                             <button

@@ -1503,6 +1503,7 @@ const loadAll = useCallback(async () => {
                                   onError={(e) => {
                                     try {
                                       ;(e.currentTarget as HTMLImageElement).style.display = "none"
+                                      ;(e.currentTarget as HTMLImageElement).removeAttribute("src")
                                     } catch {}
                                   }}
                                 />
