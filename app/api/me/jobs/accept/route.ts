@@ -60,18 +60,35 @@ export async function POST(req: Request) {
     const siteId = String(job.site_id || '').trim()
     if (!siteId) throw new ApiError(400, 'site_id missing', AppApiErrorCodes.JOB_SITE_ID_MISSING)
 
-    const t = await resolveAssignmentsTable(db)
-    if (!t) throw new ApiError(500, 'assignments table missing', AppApiErrorCodes.ASSIGNMENTS_TABLE_MISSING)
+    // Accept eligibility must match listing semantics:
+    // either explicit job link in `job_workers` OR site-level assignment.
+    const [{ data: jw, error: jwErr }, t] = await Promise.all([
+      db
+        .from('job_workers')
+        .select('job_id')
+        .eq('job_id', jobId)
+        .eq('worker_id', userId)
+        .limit(1),
+      resolveAssignmentsTable(db),
+    ])
+    if (jwErr) throw new ApiError(400, jwErr.message, AppApiErrorCodes.JOB_ACCEPT_QUERY_FAILED)
+    const viaJobWorkers = Array.isArray(jw) && jw.length > 0
 
-    const { data: a, error: aErr } = await db
-      .from(t)
-      .select('site_id,worker_id')
-      .eq('site_id', siteId)
-      .eq('worker_id', userId)
-      .limit(1)
+    let viaAssignments = false
+    if (t) {
+      const { data: a, error: aErr } = await db
+        .from(t)
+        .select('site_id,worker_id')
+        .eq('site_id', siteId)
+        .eq('worker_id', userId)
+        .limit(1)
+      if (aErr) throw new ApiError(400, aErr.message, AppApiErrorCodes.JOB_ACCEPT_QUERY_FAILED)
+      viaAssignments = Array.isArray(a) && a.length > 0
+    }
 
-    if (aErr) throw new ApiError(400, aErr.message, AppApiErrorCodes.JOB_ACCEPT_QUERY_FAILED)
-    if (!Array.isArray(a) || a.length === 0) throw new ApiError(403, 'Site not assigned', AppApiErrorCodes.SITE_NOT_IN_ASSIGNMENTS)
+    if (!viaJobWorkers && !viaAssignments) {
+      throw new ApiError(403, 'Site not assigned', AppApiErrorCodes.SITE_NOT_IN_ASSIGNMENTS)
+    }
 
     const { error: updErr } = await db
       .from('jobs')
@@ -80,7 +97,6 @@ export async function POST(req: Request) {
       .is('worker_id', null)
 
     if (updErr) throw new ApiError(400, updErr.message, AppApiErrorCodes.JOB_ACCEPT_UPDATE_FAILED)
-
     return NextResponse.json({ ok: true }, { status: 200 })
   } catch (e) {
     return toErrorResponse(e)

@@ -377,7 +377,12 @@ export async function GET(req: NextRequest) {
         distance_m = Math.round(haversineMeters(agg.latest_start_lat, agg.latest_start_lng, si.lat, si.lng))
       }
 
-      const can_accept = String(j.status || '') === 'planned' && j.worker_id == null && siteIds.includes(String(j.site_id || ''))
+      const linkedViaJobWorkers = jobIdsViaLink.includes(String(j.id))
+      const assignedViaSite = siteIds.includes(String(j.site_id || ''))
+      const can_accept =
+        String(j.status || '') === 'planned' &&
+        j.worker_id == null &&
+        (assignedViaSite || linkedViaJobWorkers)
 
       return {
         id: String(j.id),
