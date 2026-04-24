@@ -15,13 +15,11 @@ type StartBody = {
   accuracy?: number;
 };
 
-type JobSite = { lat: number | null; lng: number | null; radius: number | null } | null;
-
 type JobRow = {
   id: string;
   status: string | null;
   worker_id: string | null;
-  site: JobSite;
+  site_id: string | null;
 };
 
 type JobWorkerRow = { job_id: string | null };
@@ -64,7 +62,7 @@ export async function POST(req: Request) {
 
     const { data: jobRaw, error: jobErr } = await db
       .from('jobs')
-      .select('id,status,worker_id,site:sites(lat,lng,radius)')
+      .select('id,status,worker_id,site_id')
       .eq('id', jobId)
       .maybeSingle();
 
@@ -95,7 +93,22 @@ export async function POST(req: Request) {
 
     if (!allowed) throw new ApiError(403, 'Job access denied', AppApiErrorCodes.JOB_ACCESS_DENIED);
 
-    const site = job.site;
+    const siteId = job.site_id;
+    if (!siteId) {
+      throw new ApiError(400, 'Site coordinates missing', AppApiErrorCodes.SITE_COORDINATES_MISSING);
+    }
+
+    const { data: siteRaw, error: siteErr } = await guard.service
+      .from('sites')
+      .select('id,lat,lng,radius')
+      .eq('id', siteId)
+      .maybeSingle();
+
+    if (siteErr) {
+      throw new ApiError(400, siteErr.message, AppApiErrorCodes.JOB_LIST_QUERY_FAILED);
+    }
+
+    const site = (siteRaw as { id: string; lat: number | null; lng: number | null; radius: number | null } | null) ?? null;
     if (!site || site.lat === null || site.lng === null) {
       throw new ApiError(400, 'Site coordinates missing', AppApiErrorCodes.SITE_COORDINATES_MISSING);
     }
