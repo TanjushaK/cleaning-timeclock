@@ -15,12 +15,6 @@ function mapAdminErr(e: unknown, t: (key: string, vars?: Record<string, string |
   return m
 }
 
-function siteHasCoordsForStart(site: Site): boolean {
-  if (site.lat == null || site.lng == null) return false
-  const radius = Number(site.radius ?? 0)
-  return Number.isFinite(radius) && radius > 0
-}
-
 // Token (localStorage)
 function getAccessTokenOrNull(): string | null {
   if (typeof window === 'undefined') return null
@@ -1789,7 +1783,7 @@ const [editOpen, setEditOpen] = useState(false)
       )
       const repaired = Array.isArray(res?.repaired) ? res.repaired.length : 0
       const failed = Array.isArray(res?.failed) ? res.failed.length : 0
-      setNotice(`Координаты: исправлено ${repaired}, ошибок ${failed}.`)
+      setNotice(t('admin.main.repairCoordsDone', { repaired, failed }))
       await refreshCore()
     } catch (e: unknown) {
       setError(mapAdminErr(e, t))
@@ -1798,7 +1792,6 @@ const [editOpen, setEditOpen] = useState(false)
     }
   }
 
-  const coordsRequiredMsg = t('admin.api.SITE_COORDINATES_REQUIRED')
   const addressRequiredForCoordsMsg = t('admin.api.SITE_ADDRESS_REQUIRED_FOR_COORDINATES')
 
   async function fillSiteCardI18nEmpty() {
