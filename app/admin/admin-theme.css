@@ -121,6 +121,18 @@ html[data-theme='light'] .adminTheme :where([class*='text-amber-']) {
   color: #92400e !important;
 }
 
+html[data-theme='light'] .adminTheme :where([class*='text-emerald-700']) {
+  color: #047857 !important;
+}
+
+html[data-theme='light'] .adminTheme :where([class*='text-rose-700']) {
+  color: #be123c !important;
+}
+
+html[data-theme='light'] .adminTheme :where([class*='text-sky-700']) {
+  color: #0369a1 !important;
+}
+
 html[data-theme='light'] .adminTheme :where([class*='shadow-xl'], [class*='shadow-2xl'], [class*='shadow-[']) {
   box-shadow:
     0 0 0 1px rgba(180, 83, 9, 0.15),

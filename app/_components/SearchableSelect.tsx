@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "@/components/I18nProvider";
+import { useTheme } from "@/components/ThemeProvider";
 import type { Lang } from "@/lib/i18n-config";
 
 export type SearchableSelectItem = {
@@ -69,6 +70,8 @@ function dotToTextClass(dotClass?: string) {
 
 export function SearchableSelect({ label, value, onChange, items, placeholder, disabled, inputClassName }: Props) {
   const { t, lang } = useI18n();
+  const { theme } = useTheme();
+  const isLight = theme === "light";
   const sortLocale = SORT_LOCALE[lang] ?? "en";
   const rootRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -131,17 +134,25 @@ export function SearchableSelect({ label, value, onChange, items, placeholder, d
           }
         }}
         className={
-          inputClassName ||
-          "ctSearchableSelectInput w-full rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
+          inputClassName
+            ? `ctSearchableSelectInput ${inputClassName}`
+            : "ctSearchableSelectInput w-full rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60"
         }
       />
 
       {open ? (
-        <div className="ctSearchableSelectMenu absolute left-0 right-0 z-[80] mt-2 max-h-80 overflow-auto rounded-2xl border border-yellow-400/25 bg-[#0b0b0b]/95 backdrop-blur-sm shadow-2xl">
+        <div
+          className={
+            "ctSearchableSelectMenu absolute left-0 right-0 z-[80] mt-2 max-h-80 overflow-auto rounded-2xl border backdrop-blur-sm " +
+            (isLight
+              ? "border-amber-500/30 bg-white/95 shadow-xl"
+              : "border-yellow-400/25 bg-[#0b0b0b]/95 shadow-2xl")
+          }
+        >
           {filtered.length ? (
             filtered.map((it) => {
               const active = it.id === value;
-              const textClass = dotToTextClass(it.dotClass);
+              const textClass = isLight ? "text-zinc-700" : dotToTextClass(it.dotClass);
               return (
                 <button
                   key={it.id}
@@ -155,25 +166,39 @@ export function SearchableSelect({ label, value, onChange, items, placeholder, d
                   className={
                     "ctSearchableSelectOption flex w-full items-start gap-3 px-3 py-2 text-left text-xs transition " +
                     (active
-                      ? "bg-yellow-400/15 text-yellow-100"
-                      : "text-zinc-200 hover:bg-yellow-400/10 hover:text-yellow-100")
+                      ? (isLight ? "bg-amber-500/15 text-amber-800" : "bg-yellow-400/15 text-yellow-100")
+                      : (isLight
+                          ? "text-zinc-700 hover:bg-amber-500/10 hover:text-amber-800"
+                          : "text-zinc-200 hover:bg-yellow-400/10 hover:text-yellow-100"))
                   }
                 >
                   <span
                     className={
-                      "mt-[3px] h-2.5 w-2.5 shrink-0 rounded-full ring-2 ring-black/40 shadow " +
+                      "mt-[3px] h-2.5 w-2.5 shrink-0 rounded-full ring-2 shadow " +
+                      (isLight ? "ring-amber-950/10 " : "ring-black/40 ") +
                       (it.dotClass || "bg-zinc-500")
                     }
                   />
                   <span className="min-w-0 flex-1">
                     <span className={"block truncate font-semibold " + (active ? "" : textClass)}>{it.label}</span>
-                    {it.hint ? <span className="ctSearchableSelectHint mt-0.5 block truncate text-[10px] text-zinc-400">{it.hint}</span> : null}
+                    {it.hint ? (
+                      <span
+                        className={
+                          "ctSearchableSelectHint mt-0.5 block truncate text-[10px] " +
+                          (isLight ? "text-zinc-500" : "text-zinc-400")
+                        }
+                      >
+                        {it.hint}
+                      </span>
+                    ) : null}
                   </span>
                 </button>
               );
             })
           ) : (
-            <div className="ctSearchableSelectEmpty px-3 py-3 text-xs text-zinc-400">{t("searchableSelect.empty")}</div>
+            <div className={"ctSearchableSelectEmpty px-3 py-3 text-xs " + (isLight ? "text-zinc-500" : "text-zinc-400")}>
+              {t("searchableSelect.empty")}
+            </div>
           )}
         </div>
       ) : null}
