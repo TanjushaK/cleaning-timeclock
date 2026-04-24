@@ -10,7 +10,7 @@ import {
   isNativeCapacitorApp,
   unlockSessionWithBiometrics,
 } from "@/lib/biometric-unlock";
-import { authFetchJson, clearAuthTokens, getAccessToken, getRefreshToken, setAuthTokens } from "@/lib/auth-fetch";
+import { authFetch, authFetchJson, clearAuthTokens, getAccessToken, getRefreshToken, setAuthTokens } from "@/lib/auth-fetch";
 import { clientWorkerErrorMessage } from "@/lib/app-api-message";
 import { FetchApiError } from "@/lib/fetch-api-error";
 import { formatDateShort, formatDateTimeShort, formatWallTime } from "@/lib/locale-format";
@@ -411,6 +411,17 @@ const loadAll = useCallback(async () => {
 
         for (const ev of items) {
           try {
+            if (ev.kind === "start") {
+              const currentJob = jobs.find((j) => j.id === ev.job_id);
+              const currentStatus = String(currentJob?.status || "").toLowerCase();
+              const hasOpenStartLog = Boolean(currentJob?.started_at && !currentJob?.stopped_at);
+              if (currentStatus === "in_progress" || hasOpenStartLog) {
+                // Drop stale queued START events for already running shifts.
+                await outboxRemove(ev.event_id);
+                await refreshOutbox();
+                continue;
+              }
+            }
             const endpoint = ev.kind === "start" ? "/api/me/jobs/start" : "/api/me/jobs/stop";
             const res = await authFetchJson<any>(endpoint, {
               method: "POST",
@@ -449,7 +460,7 @@ const loadAll = useCallback(async () => {
         setSyncing(false);
       }
     },
-    [loadAll, refreshOutbox, syncing, token, tr]
+    [jobs, loadAll, refreshOutbox, syncing, token, tr]
   );
 
   useEffect(() => {
@@ -971,6 +982,12 @@ const loadAll = useCallback(async () => {
 
   const doStart = useCallback(
     async (jobId: string) => {
+      const currentJob = jobs.find((j) => j.id === jobId);
+      const pending = outboxItems.find((ev) => ev?.job_id === jobId) || null;
+      const currentStatus = String(currentJob?.status || "").toLowerCase();
+      const hasOpenStartLog = Boolean(currentJob?.started_at && !currentJob?.stopped_at);
+      if (pending?.kind === "start" || currentStatus === "in_progress" || hasOpenStartLog) return;
+
       setBusy(true);
       setError(null);
       setNotice(null);
@@ -981,11 +998,24 @@ const loadAll = useCallback(async () => {
 
       try {
         gps = await getGpsOnce(gpsErrorMessages);
-        const res = await authFetchJson<any>("/api/me/jobs/start", {
+        const response = await authFetch("/api/me/jobs/start", {
           method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: jobId, event_id, ...gps }),
         });
-        if (res?.error) throw new Error(String(res.error));
+        const payload = await response.json().catch(() => ({} as any));
+        if (!response.ok) {
+          const errorCode = typeof payload?.errorCode === "string" ? payload.errorCode : "";
+          const errorText = typeof payload?.error === "string" ? payload.error : "";
+          if (response.status === 400 && (errorCode || errorText)) {
+            throw new Error(errorCode && errorText ? `${errorCode}: ${errorText}` : errorCode || errorText);
+          }
+          if (errorCode) {
+            throw new FetchApiError(`admin.api.${errorCode}`, { status: response.status, errorCode });
+          }
+          throw new Error(errorText || `HTTP ${response.status}`);
+        }
+        if (payload?.error) throw new Error(String(payload.error));
         const startedLocal = Date.now();
         setLocalStartMs((p) => ({ ...p, [jobId]: startedLocal }));
         setJobs((prev) =>
@@ -1026,7 +1056,7 @@ const loadAll = useCallback(async () => {
         setBusy(false);
       }
     },
-    [gpsErrorMessages, loadAll, outboxN, refreshOutbox, syncOutbox, tr]
+    [gpsErrorMessages, jobs, loadAll, outboxItems, outboxN, refreshOutbox, syncOutbox, tr]
   );
 
   const doStop = useCallback(
@@ -1419,7 +1449,12 @@ const loadAll = useCallback(async () => {
                 ) : (
                   jobsSorted.map((j) => {
                     const pending = pendingByJob[j.id];
-                    const effStatus = pending ? (pending.kind === "start" ? "in_progress" : pending.kind === "stop" ? "done" : j.status) : j.status;
+                    const rawStatus = String(j.status || "").toLowerCase();
+                    const hasOpenStartLog = Boolean(j.started_at && !j.stopped_at);
+                    const baseStatus = hasOpenStartLog ? "in_progress" : rawStatus;
+                    const effStatus = pending
+                      ? (pending.kind === "start" ? "in_progress" : pending.kind === "stop" ? "done" : baseStatus)
+                      : baseStatus;
                     const planned = effStatus === "planned";
                     const inProg = effStatus === "in_progress";
                     const done = effStatus === "done";
@@ -1498,7 +1533,7 @@ const loadAll = useCallback(async () => {
                                 {pending && pending.kind === "stop" ? tr("jobs.stopQueued") : tr("jobs.stop")}
                               </button>
                             )}
-                            {planned && !Boolean(j.can_accept) && (
+                            {planned && !Boolean(j.can_accept) && !Boolean(j.started_at && !j.stopped_at) && (
                               <button className={btnStartSolid} onClick={() => doStart(j.id)} disabled={busy}>
                                 {pending && pending.kind === "start" ? tr("jobs.startQueued") : tr("jobs.start")}
                               </button>
