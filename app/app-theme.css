@@ -131,6 +131,14 @@ html[data-theme='light'] .appTheme :where([class*='text-emerald-200']) {
   color: #047857 !important;
 }
 
+html[data-theme='light'] .appTheme :where([class*='text-rose-200']) {
+  color: #9f1239 !important;
+}
+
+html[data-theme='light'] .appTheme :where([class*='text-sky-200']) {
+  color: #075985 !important;
+}
+
 html[data-theme='light'] .appTheme :where([class*='border-yellow-400'], [class*='border-amber-500'], [class*='border-amber-400']) {
   border-color: rgba(180, 83, 9, 0.35) !important;
 }
