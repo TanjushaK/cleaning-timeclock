@@ -259,9 +259,9 @@ function cn(...xs: Array<string | false | null | undefined>) {
 
 
 function statusPillClasses(s: string) {
-  if (s === 'in_progress') return 'adminStatusPill adminStatusPillInProgress border-emerald-400/30 bg-emerald-500/15 text-emerald-100'
-  if (s === 'planned') return 'adminStatusPill adminStatusPillPlanned border-rose-400/30 bg-rose-500/15 text-rose-100'
-  if (s === 'done') return 'adminStatusPill adminStatusPillDone border-sky-400/30 bg-sky-500/15 text-sky-100'
+  if (s === 'in_progress') return 'adminStatusPill adminStatusPillInProgress border-emerald-400/30 bg-emerald-500/15 text-[#3b2414]'
+  if (s === 'planned') return 'adminStatusPill adminStatusPillPlanned border-rose-400/30 bg-rose-500/15 text-[#3b2414]'
+  if (s === 'done') return 'adminStatusPill adminStatusPillDone border-sky-400/30 bg-sky-500/15 text-[#3b2414]'
   if (s === 'cancelled') return 'border-zinc-400/20 bg-zinc-500/10 text-zinc-300'
   return 'border-yellow-400/20 bg-yellow-400/10 text-yellow-100/85'
 }
