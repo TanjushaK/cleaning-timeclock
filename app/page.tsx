@@ -81,6 +81,15 @@ type MyPhotosResponse = {
   avatar_path?: string | null;
 };
 
+function hasValidSiteStartCoords(job: MeJobsResponse["jobs"][number] | null | undefined): boolean {
+  if (!job) return false;
+  if (job.site_lat == null || job.site_lng == null || job.site_radius == null) return false;
+  const lat = Number(job.site_lat);
+  const lng = Number(job.site_lng);
+  const radius = Number(job.site_radius);
+  return Number.isFinite(lat) && Number.isFinite(lng) && Number.isFinite(radius) && radius > 0;
+}
+
 function clsx(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(" ");
 }
@@ -986,6 +995,12 @@ const loadAll = useCallback(async () => {
       const pending = outboxItems.find((ev) => ev?.job_id === jobId) || null;
       const currentStatus = String(currentJob?.status || "").toLowerCase();
       const hasOpenStartLog = Boolean(currentJob?.started_at && !currentJob?.stopped_at);
+      const hasSiteCoords = hasValidSiteStartCoords(currentJob);
+      if (!hasSiteCoords) {
+        setNotice(null);
+        setError("У объекта не заданы координаты.");
+        return;
+      }
       if (pending?.kind === "start" || currentStatus === "in_progress" || hasOpenStartLog) return;
 
       setBusy(true);
@@ -1458,8 +1473,8 @@ const loadAll = useCallback(async () => {
                     const planned = effStatus === "planned";
                     const inProg = effStatus === "in_progress";
                     const done = effStatus === "done";
-                    const hasSiteCoords = j.site_lat != null && j.site_lng != null && Number(j.site_radius || 0) > 0;
-                    const blockedByMissingCoords = planned && !Boolean(j.can_accept) && !hasSiteCoords;
+                    const hasSiteCoords = hasValidSiteStartCoords(j);
+                    const blockedByMissingCoords = planned && !hasSiteCoords;
 
                     const baseStart = (localStartMs as any)[j.id] ?? (j.started_at ? new Date(j.started_at).getTime() : null);
                     const elapsedMs = inProg && baseStart ? Math.max(0, nowMs - baseStart) : null;
