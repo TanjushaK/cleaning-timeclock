@@ -9,6 +9,13 @@ import { requestLocale } from "@/lib/request-lang";
 import { ApiError, requireAdmin, toErrorResponse } from "@/lib/route-db";
 import { routeDynamicId } from "@/lib/server/route-dynamic-id";
 import { withCookieBearer } from "@/lib/server/with-cookie-bearer";
+import {
+  geocodeAddress,
+  normalizeRadius,
+  siteAddressRequiredErrorMessage,
+  siteCoordinatesMissingErrorMessage,
+  siteHasCoordinates,
+} from "@/lib/server/admin-geocode";
 
 export const runtime = "nodejs";
 
@@ -166,6 +173,43 @@ export async function PUT(req: NextRequest, ctx: { params?: Promise<{ id?: strin
     if (Object.prototype.hasOwnProperty.call(patch, "name")) {
       const n = patch.name as string | null;
       if (!n || !String(n).trim()) throw new ApiError(400, "Site name required", AdminApiErrorCode.SITE_NAME_REQUIRED);
+    }
+
+    const addressRuRaw = body?.address_ru;
+    const addressRu = addressRuRaw == null ? null : String(addressRuRaw).trim() || null;
+    const nextAddress = Object.prototype.hasOwnProperty.call(patch, "address")
+      ? (patch.address as string | null)
+      : ((row.address as string | null) ?? null);
+    const geocodeAddressText = nextAddress || addressRu;
+    let nextLat = Object.prototype.hasOwnProperty.call(patch, "lat")
+      ? (patch.lat as number | null)
+      : ((row.lat as number | null) ?? null);
+    let nextLng = Object.prototype.hasOwnProperty.call(patch, "lng")
+      ? (patch.lng as number | null)
+      : ((row.lng as number | null) ?? null);
+
+    const nextRadius = Object.prototype.hasOwnProperty.call(patch, "radius")
+      ? normalizeRadius(patch.radius as number | null)
+      : normalizeRadius((row.radius as number | null) ?? null);
+    if (Object.prototype.hasOwnProperty.call(patch, "radius")) {
+      patch.radius = nextRadius;
+    }
+
+    if (nextAddress && (nextLat == null || nextLng == null)) {
+      const geo = await geocodeAddress(nextAddress);
+      if (geo) {
+        nextLat = geo.lat;
+        nextLng = geo.lng;
+        patch.lat = geo.lat;
+        patch.lng = geo.lng;
+      }
+    }
+
+    if (nextAddress && !siteHasCoordinates(nextLat, nextLng, nextRadius)) {
+      throw new ApiError(400, siteCoordinatesMissingErrorMessage(), AdminApiErrorCode.SITE_COORDINATES_REQUIRED);
+    }
+    if (!nextAddress && (nextLat != null || nextLng != null)) {
+      throw new ApiError(400, siteAddressRequiredErrorMessage(), AdminApiErrorCode.SITE_ADDRESS_REQUIRED_FOR_COORDINATES);
     }
 
     const { data, error } = await db

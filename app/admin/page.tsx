@@ -1138,6 +1138,7 @@ export default function AdminPage() {
   const refreshSeqRef = useRef(0)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [repairingCoords, setRepairingCoords] = useState(false)
 
   // Safety-net: if refresh UI sticks on "refreshing", release the button and show an error.
   useEffect(() => {
@@ -1677,6 +1678,11 @@ const [editOpen, setEditOpen] = useState(false)
   async function createObjectSite() {
     const name = newObjName.trim()
     if (!name) return
+    const address = newObjAddress.trim()
+    if (!address) {
+      setError(addressRequiredForCoordsMsg)
+      return
+    }
 
     const radiusNum = Number(newObjRadius)
     const radius = Number.isFinite(radiusNum) ? radiusNum : 150
@@ -1689,7 +1695,7 @@ const [editOpen, setEditOpen] = useState(false)
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name,
-          address: newObjAddress.trim() || null,
+          address,
           radius,
           category: newObjCategory,
           notes: newObjNotes || null,
@@ -1724,6 +1730,11 @@ const [editOpen, setEditOpen] = useState(false)
 
     const lat = latNum != null && Number.isFinite(latNum) ? latNum : null
     const lng = lngNum != null && Number.isFinite(lngNum) ? lngNum : null
+    const addressRu = locDraftValue(siteLocDraft.address, "ru").trim() || null
+    if (!addressRu) {
+      setError(addressRequiredForCoordsMsg)
+      return
+    }
 
     setBusy(true)
     setError(null)
@@ -1735,6 +1746,7 @@ const [editOpen, setEditOpen] = useState(false)
           editLocale: siteCardLocale,
           name,
           address: locDraftValue(siteLocDraft.address, siteCardLocale).trim() || null,
+          address_ru: addressRu,
           radius,
           lat,
           lng,
@@ -1752,6 +1764,35 @@ const [editOpen, setEditOpen] = useState(false)
       setBusy(false)
     }
   }
+
+  async function repairCoordinatesForSites() {
+    setRepairingCoords(true)
+    setError(null)
+    try {
+      const res = await authFetchJson<{ repaired?: string[]; failed?: Array<{ id: string; reason: string }> }>(
+        '/api/admin/sites/repair-coordinates',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            siteIds: sites
+              .filter((s) => (s.lat == null || s.lng == null) && String(s.address || '').trim())
+              .map((s) => s.id),
+          }),
+        },
+      )
+      const repaired = Array.isArray(res?.repaired) ? res.repaired.length : 0
+      const failed = Array.isArray(res?.failed) ? res.failed.length : 0
+      setNotice(t('admin.main.repairCoordsDone', { repaired, failed }))
+      await refreshCore()
+    } catch (e: unknown) {
+      setError(mapAdminErr(e, t))
+    } finally {
+      setRepairingCoords(false)
+    }
+  }
+
+  const addressRequiredForCoordsMsg = t('admin.api.SITE_ADDRESS_REQUIRED_FOR_COORDINATES')
 
   async function fillSiteCardI18nEmpty() {
     if (!siteCardId) return
@@ -3034,6 +3075,13 @@ const [editOpen, setEditOpen] = useState(false)
                               className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
                             >
                               {t('admin.main.addSite')}
+                            </button>
+                            <button
+                              onClick={() => void repairCoordinatesForSites()}
+                              disabled={busy || refreshing || repairingCoords}
+                              className="rounded-2xl border border-sky-300/45 bg-sky-500/10 px-4 py-2 text-xs font-semibold text-sky-100 transition hover:border-sky-200/70 hover:bg-sky-500/15 disabled:opacity-60"
+                            >
+                              {repairingCoords ? t('admin.main.processing') : t('admin.main.repairCoords')}
                             </button>
                           </div>
 

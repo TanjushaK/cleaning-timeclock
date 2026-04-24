@@ -1458,6 +1458,8 @@ const loadAll = useCallback(async () => {
                     const planned = effStatus === "planned";
                     const inProg = effStatus === "in_progress";
                     const done = effStatus === "done";
+                    const hasSiteCoords = j.site_lat != null && j.site_lng != null && Number(j.site_radius || 0) > 0;
+                    const blockedByMissingCoords = planned && !Boolean(j.can_accept) && !hasSiteCoords;
 
                     const baseStart = (localStartMs as any)[j.id] ?? (j.started_at ? new Date(j.started_at).getTime() : null);
                     const elapsedMs = inProg && baseStart ? Math.max(0, nowMs - baseStart) : null;
@@ -1533,7 +1535,7 @@ const loadAll = useCallback(async () => {
                                 {pending && pending.kind === "stop" ? tr("jobs.stopQueued") : tr("jobs.stop")}
                               </button>
                             )}
-                            {planned && !Boolean(j.can_accept) && !Boolean(j.started_at && !j.stopped_at) && (
+                            {planned && !Boolean(j.can_accept) && !Boolean(j.started_at && !j.stopped_at) && !blockedByMissingCoords && (
                               <button className={btnStartSolid} onClick={() => doStart(j.id)} disabled={busy}>
                                 {pending && pending.kind === "start" ? tr("jobs.startQueued") : tr("jobs.start")}
                               </button>
@@ -1557,6 +1559,9 @@ const loadAll = useCallback(async () => {
                           <div className="mt-2 text-xs opacity-70">
                             {gpsMetricsLabel(j.distance_m, j.accuracy_m)}
                           </div>
+                        ) : null}
+                        {blockedByMissingCoords ? (
+                          <div className="mt-2 text-xs text-amber-200">У объекта не заданы координаты.</div>
                         ) : null}
                       </div>
                     );

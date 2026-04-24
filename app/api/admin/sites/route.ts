@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import { AdminApiErrorCode } from "@/lib/api-error-codes";
 import { shapeSiteForAdmin } from "@/lib/admin-sites-shape.server";
 import { fillMissingLocalesFromRu } from "@/lib/deepl-fill.server";
+import {
+  geocodeAddressViaNominatim,
+  normalizeRadius,
+  siteCoordinatesMissingErrorMessage,
+  siteHasCoordinates,
+} from "@/lib/server/admin-geocode";
 import type { I18nJson } from "@/lib/localized-records";
 import { requestLocale } from "@/lib/request-lang";
 import { ApiError, requireAdmin, toErrorResponse } from "@/lib/route-db";
@@ -26,51 +32,6 @@ function toCategoryOrNull(v: unknown): number | null {
   return i;
 }
 
-type NominatimItem = { lat: string; lon: string; display_name?: string };
-
-async function geocodeAddress(address: string): Promise<{ lat: number; lng: number } | null> {
-  const q = address.trim();
-  if (!q) return null;
-
-  const url =
-    "https://nominatim.openstreetmap.org/search?" +
-    new URLSearchParams({
-      q,
-      format: "json",
-      limit: "1",
-    }).toString();
-
-  const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), 8000);
-
-  try {
-    const res = await fetch(url, {
-      method: "GET",
-      headers: {
-        "User-Agent": "CleaningTimeclock/1.0 (admin sites geocoder)",
-        Accept: "application/json",
-      },
-      signal: ac.signal,
-      cache: "no-store",
-    });
-
-    if (!res.ok) return null;
-    const arr = (await res.json()) as NominatimItem[];
-    const item = arr?.[0];
-    if (!item?.lat || !item?.lon) return null;
-
-    const lat = Number(item.lat);
-    const lng = Number(item.lon);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-
-    return { lat, lng };
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(t);
-  }
-}
-
 export async function POST(req: Request) {
   try {
     const { db } = await requireAdmin(req.headers);
@@ -88,14 +49,22 @@ export async function POST(req: Request) {
     const notes = body?.notes == null ? null : String(body.notes);
 
     if (!name) throw new ApiError(400, "Site name required", AdminApiErrorCode.SITE_NAME_REQUIRED);
-    const safeRadius = radius != null ? radius : 150;
+    const safeRadius = normalizeRadius(radius);
 
     if (address && (lat == null || lng == null)) {
-      const geo = await geocodeAddress(address);
+      const geo = await geocodeAddressViaNominatim(address);
       if (geo) {
         lat = geo.lat;
         lng = geo.lng;
       }
+    }
+
+    if (!siteHasCoordinates(lat, lng, safeRadius)) {
+      throw new ApiError(
+        400,
+        siteCoordinatesMissingErrorMessage(),
+        AdminApiErrorCode.SITE_COORDINATES_REQUIRED,
+      );
     }
 
     let nameI18n: I18nJson = { ru: name };
