@@ -109,10 +109,13 @@ function formatHMS(ms: number) {
 
 function statusPillClasses(s: string | null | undefined) {
   const v = String(s || "").toLowerCase()
-  if (v === "in_progress") return "appStatusPill appStatusPillInProgress border-emerald-400/40 bg-emerald-500/20 text-emerald-100"
-  if (v === "planned") return "appStatusPill appStatusPillPlanned border-amber-400/40 bg-amber-500/20 text-[#3b2414]"
-  if (v === "done") return "appStatusPill appStatusPillDone border-sky-400/40 bg-sky-500/20 text-sky-100"
-  return "border-yellow-400/20 bg-yellow-400/10 text-yellow-100/85"
+  if (v === "in_progress")
+    return "appStatusPill appStatusPillInProgress border-emerald-400/40 bg-emerald-500/20 text-emerald-100 dark:border-emerald-300/55 dark:bg-emerald-500/42 dark:text-emerald-50"
+  if (v === "planned")
+    return "appStatusPill appStatusPillPlanned border-amber-400/40 bg-amber-500/20 text-[#3b2414] dark:border-amber-300/55 dark:bg-amber-500/42 dark:text-amber-50"
+  if (v === "done")
+    return "appStatusPill appStatusPillDone border-sky-400/40 bg-sky-500/20 text-sky-100 dark:border-sky-300/55 dark:bg-sky-500/42 dark:text-sky-50"
+  return "border-yellow-400/20 bg-yellow-400/10 text-yellow-100/85 dark:border-amber-300/50 dark:bg-amber-500/38 dark:text-amber-50"
 }
 
 

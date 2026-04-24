@@ -259,11 +259,15 @@ function cn(...xs: Array<string | false | null | undefined>) {
 
 
 function statusPillClasses(s: string) {
-  if (s === 'in_progress') return 'adminStatusPill adminStatusPillInProgress border-emerald-400/30 bg-emerald-500/15 text-[#3b2414]'
-  if (s === 'planned') return 'adminStatusPill adminStatusPillPlanned border-rose-400/30 bg-rose-500/15 text-[#3b2414]'
-  if (s === 'done') return 'adminStatusPill adminStatusPillDone border-sky-400/30 bg-sky-500/15 text-[#3b2414]'
-  if (s === 'cancelled') return 'border-zinc-400/20 bg-zinc-500/10 text-zinc-300'
-  return 'border-yellow-400/20 bg-yellow-400/10 text-yellow-100/85'
+  if (s === 'in_progress')
+    return 'adminStatusPill adminStatusPillInProgress border-emerald-400/30 bg-emerald-500/15 text-[#3b2414] dark:border-emerald-300/55 dark:bg-emerald-500/42 dark:text-emerald-50'
+  if (s === 'planned')
+    return 'adminStatusPill adminStatusPillPlanned border-rose-400/30 bg-rose-500/15 text-[#3b2414] dark:border-rose-300/55 dark:bg-rose-500/42 dark:text-rose-50'
+  if (s === 'done')
+    return 'adminStatusPill adminStatusPillDone border-sky-400/30 bg-sky-500/15 text-[#3b2414] dark:border-sky-300/55 dark:bg-sky-500/42 dark:text-sky-50'
+  if (s === 'cancelled')
+    return 'border-zinc-400/20 bg-zinc-500/10 text-zinc-300 dark:border-zinc-400/45 dark:bg-zinc-500/30 dark:text-zinc-100'
+  return 'border-yellow-400/20 bg-yellow-400/10 text-yellow-100/85 dark:border-amber-300/50 dark:bg-amber-500/38 dark:text-amber-50'
 }
 
 function fmtHMS(ms: number) {
