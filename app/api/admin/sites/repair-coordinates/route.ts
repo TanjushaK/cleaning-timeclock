@@ -18,7 +18,11 @@ export async function POST(req: Request) {
   try {
     const { db } = await requireAdmin(req.headers);
     const body = await req.json().catch(() => ({} as Record<string, unknown>));
-    const ids = Array.isArray(body?.siteIds) ? body.siteIds.map((x) => String(x || "").trim()).filter(Boolean) : [];
+    const ids = Array.isArray(body?.siteIds)
+      ? body.siteIds
+          .map((x: unknown) => String(x ?? "").trim())
+          .filter((id: string): boolean => id.length > 0)
+      : [];
     const limitRaw = Number(body?.limit ?? 50);
     const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 200) : 50;
 
