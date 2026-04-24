@@ -6,6 +6,7 @@ import {
   biometricHardwareAvailable,
   clearBiometricStoredCredentials,
   enableBiometricUnlock,
+  hasStoredBiometricCredentials,
   hasBiometricUnlockFlag,
   isNativeCapacitorApp,
   unlockSessionWithBiometrics,
@@ -14,7 +15,7 @@ import { authFetchJson, clearAuthTokens, getAccessToken, getRefreshToken, setAut
 import { clientWorkerErrorMessage } from "@/lib/app-api-message";
 import { FetchApiError } from "@/lib/fetch-api-error";
 import { formatDateShort, formatDateTimeShort, formatWallTime } from "@/lib/locale-format";
-import AppWorkerShell from "@/app/_components/AppWorkerShell";
+import AppFooter from "@/app/_components/AppFooter";
 import { useI18n } from "@/components/I18nProvider";
 import { OutboxEvent, outboxAdd, outboxCount as outboxCountDb, outboxList, outboxRemove, outboxUpdate } from "@/lib/offline/outbox";
 
@@ -100,10 +101,10 @@ function formatHMS(ms: number) {
 
 function statusPillClasses(s: string | null | undefined) {
   const v = String(s || "").toLowerCase()
-  if (v === "in_progress") return "border-emerald-400/30 bg-emerald-500/15 text-emerald-200"
-  if (v === "planned") return "border-rose-400/30 bg-rose-500/15 text-rose-200"
-  if (v === "done") return "border-sky-400/30 bg-sky-500/15 text-sky-200"
-  return "border-yellow-400/20 bg-yellow-400/10 text-yellow-100/85"
+  if (v === "in_progress") return "border-emerald-400/30 bg-emerald-500/15 text-emerald-900 dark:text-emerald-200"
+  if (v === "planned") return "border-rose-400/30 bg-rose-500/15 text-rose-900 dark:text-rose-200"
+  if (v === "done") return "border-sky-400/30 bg-sky-500/15 text-sky-900 dark:text-sky-200"
+  return "border-yellow-400/20 bg-yellow-400/10 text-amber-900 dark:text-yellow-100/85"
 }
 
 
@@ -266,6 +267,40 @@ export default function AppPage() {
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [localStartMs, setLocalStartMs] = useState<Record<string, number>>({});
 
+  const GEO_CONSENT_KEY = "ct_geo_consent_v1";
+  const [geoModalOpen, setGeoModalOpen] = useState(false);
+  const geoConsentResolver = useRef<(() => void) | null>(null);
+
+  const ensureGeoConsent = useCallback(() => {
+    return new Promise<void>((resolve) => {
+      try {
+        if (typeof sessionStorage !== "undefined" && sessionStorage.getItem(GEO_CONSENT_KEY)) {
+          resolve();
+          return;
+        }
+      } catch {
+        resolve();
+        return;
+      }
+      geoConsentResolver.current = () => {
+        try {
+          sessionStorage.setItem(GEO_CONSENT_KEY, "1");
+        } catch {
+          // ignore
+        }
+        resolve();
+      };
+      setGeoModalOpen(true);
+    });
+  }, []);
+
+  const onGeoModalContinue = useCallback(() => {
+    setGeoModalOpen(false);
+    const fn = geoConsentResolver.current;
+    geoConsentResolver.current = null;
+    fn?.();
+  }, []);
+
   // onboarding + photos
   const [fullName, setFullName] = useState("");
   const [profileEmail, setProfileEmail] = useState("");
@@ -286,7 +321,11 @@ export default function AppPage() {
         return;
       }
       const hw = await biometricHardwareAvailable();
-      const saved = hasBiometricUnlockFlag();
+      let saved = hasBiometricUnlockFlag();
+      // If localStorage flag was lost, restore visibility from native secure storage.
+      if (hw && !saved) {
+        saved = await hasStoredBiometricCredentials();
+      }
       if (!cancelled) {
         setBioHardware(hw);
         setBioSaved(saved);
@@ -980,6 +1019,7 @@ const loadAll = useCallback(async () => {
       let gps: { lat: number; lng: number; accuracy: number } | null = null;
 
       try {
+        await ensureGeoConsent();
         gps = await getGpsOnce(gpsErrorMessages);
         const res = await authFetchJson<any>("/api/me/jobs/start", {
           method: "POST",
@@ -1001,6 +1041,7 @@ const loadAll = useCallback(async () => {
       } catch (e: any) {
         if (isOfflineishError(e)) {
           try {
+            await ensureGeoConsent();
             if (!gps) gps = await getGpsOnce(gpsErrorMessages);
             await outboxAdd({
               event_id,
@@ -1026,7 +1067,7 @@ const loadAll = useCallback(async () => {
         setBusy(false);
       }
     },
-    [gpsErrorMessages, loadAll, outboxN, refreshOutbox, syncOutbox, tr]
+    [ensureGeoConsent, gpsErrorMessages, loadAll, outboxN, refreshOutbox, syncOutbox, tr]
   );
 
   const doStop = useCallback(
@@ -1053,6 +1094,7 @@ const loadAll = useCallback(async () => {
       let gps: { lat: number; lng: number; accuracy: number } | null = null;
 
       try {
+        await ensureGeoConsent();
         gps = await getGpsOnce(gpsErrorMessages);
         const res = await authFetchJson<any>("/api/me/jobs/stop", {
           method: "POST",
@@ -1065,6 +1107,7 @@ const loadAll = useCallback(async () => {
       } catch (e: any) {
         if (isOfflineishError(e)) {
           try {
+            await ensureGeoConsent();
             if (!gps) gps = await getGpsOnce(gpsErrorMessages);
             await outboxAdd({
               event_id,
@@ -1090,7 +1133,7 @@ const loadAll = useCallback(async () => {
         setBusy(false);
       }
     },
-    [gpsErrorMessages, loadAll, outboxN, refreshOutbox, syncOutbox, tr]
+    [ensureGeoConsent, gpsErrorMessages, loadAll, outboxN, refreshOutbox, syncOutbox, tr]
   );
 
 
@@ -1160,19 +1203,20 @@ const loadAll = useCallback(async () => {
 
   if (loading) {
     return (
-      <AppWorkerShell>
+      <div className="appTheme min-h-screen flex flex-col">
         <main className="flex-1 bg-black text-zinc-100 flex items-center justify-center p-6">
           <div className={clsx(card, "p-6 w-full max-w-md")}>
             <div className="text-lg font-semibold">{tr("home.loadingTitle")}</div>
             <div className="mt-2 text-sm opacity-70">{tr("home.loadingSubtitle")}</div>
           </div>
         </main>
-      </AppWorkerShell>
+        <AppFooter />
+      </div>
     );
   }
 
   return (
-    <AppWorkerShell>
+    <div className="appTheme min-h-screen flex flex-col">
       <main className="flex-1 bg-black text-zinc-100 p-6">
         <div className="max-w-6xl mx-auto">
         <header className="flex items-center justify-between gap-3">
@@ -1183,17 +1227,22 @@ const loadAll = useCallback(async () => {
 
           <div className="flex flex-wrap items-center justify-end gap-2">
             {authed && bioHardware && (
-              <>
-                {bioSaved ? (
-                  <button type="button" className={clsx(btn, "text-xs")} onClick={doDisableBiometric} disabled={busy}>
-                    {tr("auth.biometricDisable")}
-                  </button>
-                ) : (
-                  <button type="button" className={clsx(btn, "text-xs")} onClick={doEnableBiometric} disabled={busy}>
-                    {tr("auth.biometricEnable")}
-                  </button>
-                )}
-              </>
+              <div className="flex flex-col items-end gap-1 max-w-[min(100%,22rem)]">
+                {!bioSaved ? (
+                  <div className="text-[11px] leading-snug opacity-70 text-right">{tr("permissions.biometricExplain")}</div>
+                ) : null}
+                <div className="flex flex-wrap justify-end gap-2">
+                  {bioSaved ? (
+                    <button type="button" className={clsx(btn, "text-xs")} onClick={doDisableBiometric} disabled={busy}>
+                      {tr("auth.biometricDisable")}
+                    </button>
+                  ) : (
+                    <button type="button" className={clsx(btn, "text-xs")} onClick={doEnableBiometric} disabled={busy}>
+                      {tr("auth.biometricEnable")}
+                    </button>
+                  )}
+                </div>
+              </div>
             )}
             {authed && (
               <>
@@ -1627,6 +1676,20 @@ const loadAll = useCallback(async () => {
 
         </div>
       </main>
-    </AppWorkerShell>
+
+      {geoModalOpen ? (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/75 p-4" role="dialog" aria-modal="true">
+          <div className={clsx(card, "max-w-md p-5")}>
+            <div className="text-lg font-semibold text-amber-100">{tr("permissions.geoModalTitle")}</div>
+            <div className="mt-3 text-sm leading-relaxed opacity-90">{tr("permissions.geoModalBody")}</div>
+            <button type="button" className={clsx(btnSolid, "mt-5 w-full")} onClick={onGeoModalContinue}>
+              {tr("permissions.geoContinue")}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      <AppFooter />
+    </div>
   );
 }
