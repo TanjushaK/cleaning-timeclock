@@ -3083,7 +3083,7 @@ const [editOpen, setEditOpen] = useState(false)
                             <button
                               onClick={() => void repairCoordinatesForSites()}
                               disabled={busy || refreshing || repairingCoords}
-                              className="rounded-2xl border border-sky-300/45 bg-sky-500/10 px-4 py-2 text-xs font-semibold text-sky-100 transition hover:border-sky-200/70 hover:bg-sky-500/15 disabled:opacity-60"
+                              className="inline-flex items-center justify-center rounded-full border border-sky-300/45 bg-sky-500/10 px-4 py-2 text-xs font-semibold text-sky-100 transition hover:border-sky-200/70 hover:bg-sky-500/15 disabled:opacity-60 [html[data-theme=light]_&]:border-sky-400/30 [html[data-theme=light]_&]:bg-sky-500/15 [html[data-theme=light]_&]:text-[#3b2414] [html[data-theme=light]_&]:hover:border-sky-500/50 [html[data-theme=light]_&]:hover:bg-sky-500/25"
                             >
                               {repairingCoords ? t('admin.main.processing') : t('admin.main.repairCoords')}
                             </button>
@@ -3262,7 +3262,7 @@ const [editOpen, setEditOpen] = useState(false)
                                         <button
                                           onClick={() => deleteObjectSite(s.id)}
                                           disabled={busy}
-                                          className="w-full sm:w-auto rounded-2xl border border-red-500/25 bg-red-500/15 px-4 py-2 text-xs font-semibold text-red-100/85 transition hover:border-red-400/45 disabled:opacity-60"
+                                          className="w-full sm:w-auto inline-flex items-center justify-center rounded-full border border-red-500/25 bg-red-500/15 px-4 py-2 text-xs font-semibold text-red-100/85 transition hover:border-red-400/45 disabled:opacity-60 [html[data-theme=light]_&]:border-rose-400/30 [html[data-theme=light]_&]:bg-rose-500/15 [html[data-theme=light]_&]:text-[#3b2414] [html[data-theme=light]_&]:hover:border-rose-500/50 [html[data-theme=light]_&]:hover:bg-rose-500/25"
                                         >
                                           {t('admin.main.delete')}
                                         </button>
@@ -3540,7 +3540,7 @@ const [editOpen, setEditOpen] = useState(false)
                                   <button
                                     onClick={() => deleteObjectSite(siteCardId)}
                                     disabled={busy}
-                                    className="w-full sm:w-auto rounded-2xl border border-red-500/25 bg-red-500/15 px-5 py-3 text-sm font-semibold text-red-100/85 transition hover:border-red-400/45 disabled:opacity-60"
+                                    className="w-full sm:w-auto inline-flex items-center justify-center rounded-full border border-red-500/25 bg-red-500/15 px-5 py-3 text-sm font-semibold text-red-100/85 transition hover:border-red-400/45 disabled:opacity-60 [html[data-theme=light]_&]:border-rose-400/30 [html[data-theme=light]_&]:bg-rose-500/15 [html[data-theme=light]_&]:text-[#3b2414] [html[data-theme=light]_&]:hover:border-rose-500/50 [html[data-theme=light]_&]:hover:bg-rose-500/25"
                                   >
                                     {t('admin.main.deleteSiteBtn')}
                                   </button>
@@ -3867,7 +3867,7 @@ const [editOpen, setEditOpen] = useState(false)
                               <button
                                 onClick={() => deleteWorker(w.id)}
                                 disabled={busy}
-                                className="w-full sm:w-auto rounded-2xl border border-red-400/20 bg-red-500/10 px-4 py-2 text-xs font-semibold text-red-100 transition hover:border-red-300/40 hover:bg-red-500/15 disabled:opacity-60"
+                                className="w-full sm:w-auto inline-flex items-center justify-center rounded-full border border-red-400/20 bg-red-500/10 px-4 py-2 text-xs font-semibold text-red-100 transition hover:border-red-300/40 hover:bg-red-500/15 disabled:opacity-60 [html[data-theme=light]_&]:border-rose-400/30 [html[data-theme=light]_&]:bg-rose-500/15 [html[data-theme=light]_&]:text-[#3b2414] [html[data-theme=light]_&]:hover:border-rose-500/50 [html[data-theme=light]_&]:hover:bg-rose-500/25"
                               >
                                 {t('admin.main.delete')}
                               </button>
