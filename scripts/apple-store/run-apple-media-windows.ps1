@@ -73,3 +73,4 @@ finally {
 Start-Process "explorer.exe" -ArgumentList (Join-Path $repoRoot "marketing\apple-store\screenshots")
 Start-Process "explorer.exe" -ArgumentList (Join-Path $repoRoot "marketing\apple-store\video")
 
+
