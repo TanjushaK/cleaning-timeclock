@@ -3976,65 +3976,73 @@ const [editOpen, setEditOpen] = useState(false)
                 <div className="text-sm font-semibold text-yellow-100">{t('admin.main.jobsCreateTitle')}</div>
                 <div className="mt-1 text-xs text-zinc-300">{t('admin.main.jobsCreateHint')}</div>
 
-                <div className="mt-4 grid gap-3 lg:grid-cols-2 2xl:grid-cols-[1.3fr_1.7fr_0.8fr_0.7fr_0.7fr_auto]">
-                  
-<div className="grid gap-1">
-  <SearchableSelect
-    label={t('admin.main.labelSite')}
-    value={newSiteId}
-    onChange={(v) => {
-      setNewSiteId(v)
-      setNewWorkers([])
-    }}
-    items={activeSites.map((s) => siteToSelectItem(s, t))}
-    placeholder={t('admin.main.pickSitePh')}
-    disabled={busy}
-    inputClassName="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
-  />
-</div>
+                <div className="mt-4 w-full max-w-5xl space-y-4">
+                  <div className="grid gap-4 xl:grid-cols-[minmax(260px,340px)_minmax(360px,520px)]">
+                    <div className="grid max-w-[340px] gap-1">
+                      <SearchableSelect
+                        label={t('admin.main.labelSite')}
+                        value={newSiteId}
+                        onChange={(v) => {
+                          setNewSiteId(v)
+                          setNewWorkers([])
+                        }}
+                        items={activeSites.map((s) => siteToSelectItem(s, t))}
+                        placeholder={t('admin.main.pickSitePh')}
+                        disabled={busy}
+                        inputClassName="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2.5 text-sm outline-none transition focus:border-yellow-300/60"
+                      />
+                    </div>
 
-                  <label className="grid gap-1">
-                    <span className="text-[11px] text-zinc-300">{t('admin.main.labelWorkersMulti')}</span>
-                    <MultiWorkerPicker workers={workersForPicker} value={newWorkers} onChange={setNewWorkers} disabled={!newSiteId} />
-                  </label>
+                    <label className="grid max-w-[520px] gap-1">
+                      <span className="text-[11px] text-zinc-300">{t('admin.main.labelWorkersMulti')}</span>
+                      <MultiWorkerPicker workers={workersForPicker} value={newWorkers} onChange={setNewWorkers} disabled={!newSiteId} />
+                    </label>
+                  </div>
 
-                  <label className="grid gap-1">
-                    <span className="text-[11px] text-zinc-300">{t('admin.main.labelDate')}</span>
-                    <input
-                      type="date"
-                      onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
-                      value={newDate}
-                      onChange={(e) => setNewDate(e.target.value)}
-                      className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
-                    />
-                  </label>
+                  <div className="grid gap-4 lg:grid-cols-[minmax(180px,220px)_minmax(300px,360px)]">
+                    <label className="grid max-w-[220px] gap-1">
+                      <span className="text-[11px] text-zinc-300">{t('admin.main.labelDate')}</span>
+                      <input
+                        type="date"
+                        onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
+                        value={newDate}
+                        onChange={(e) => setNewDate(e.target.value)}
+                        className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2.5 text-sm outline-none transition focus:border-yellow-300/60"
+                      />
+                    </label>
 
-                  <label className="grid gap-1">
-                    <span className="text-[11px] text-zinc-300">{t('admin.main.labelTime')}</span>
-                    <input
-                      type="time"
-                      value={newTime}
-                      onChange={(e) => setNewTime(e.target.value)}
-                      className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
-                    />
-                  </label>
+                    <div className="grid gap-1">
+                      <span className="text-[11px] text-zinc-300">{t('admin.main.labelTime')}</span>
+                      <div className="flex flex-wrap gap-3">
+                        <label className="grid w-[150px] gap-1">
+                          <span className="text-[11px] text-zinc-400">{t('admin.main.labelTime')}</span>
+                          <input
+                            type="time"
+                            value={newTime}
+                            onChange={(e) => setNewTime(e.target.value)}
+                            className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2.5 text-sm outline-none transition focus:border-yellow-300/60"
+                          />
+                        </label>
+                        <label className="grid w-[150px] gap-1">
+                          <span className="text-[11px] text-zinc-400">{t('admin.main.labelEnd')}</span>
+                          <input
+                            type="time"
+                            onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
+                            value={newTimeTo}
+                            onChange={(e) => setNewTimeTo(e.target.value)}
+                            className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2.5 text-sm outline-none transition focus:border-yellow-300/60"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
 
-                  <label className="grid gap-1">
-                    <span className="text-[11px] text-zinc-300">{t('admin.main.labelEnd')}</span>
-                    <input
-                      type="time"
-                      onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
-                      value={newTimeTo}
-                      onChange={(e) => setNewTimeTo(e.target.value)}
-                      className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
-                    />
-                  </label>
-
-
+                <div className="mt-4 flex flex-wrap items-center gap-2">
                   <button
                     onClick={createJobs}
                     disabled={busy || !newSiteId || newWorkers.length === 0}
-                    className="w-full rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-center text-sm font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:cursor-not-allowed disabled:opacity-60 lg:mt-5 lg:w-auto"
+                    className="w-auto max-w-[260px] rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2.5 text-center text-sm font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {busy
                       ? t('admin.main.creating')
@@ -4044,29 +4052,29 @@ const [editOpen, setEditOpen] = useState(false)
                           ? t('admin.main.pickWorkersFirst')
                           : t('admin.main.createShift')}
                   </button>
-                </div>
 
-                <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
-                  <button
-                    onClick={() => setJobsView('table')}
-                    className={cn(
-                      'rounded-2xl border px-4 py-2 text-xs font-semibold transition flex-1 text-center sm:flex-none',
-                      jobsView === 'table' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
-                    )}
-                  >
-                    {t('admin.main.viewTable')}
-                  </button>
-                  <button
-                    onClick={() => setJobsView('board')}
-                    className={cn(
-                      'rounded-2xl border px-4 py-2 text-xs font-semibold transition flex-1 text-center sm:flex-none',
-                      jobsView === 'board' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
-                    )}
-                  >
-                    {t('admin.main.viewBoard')}
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => setJobsView('table')}
+                      className={cn(
+                        'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
+                        jobsView === 'table' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
+                      )}
+                    >
+                      {t('admin.main.viewTable')}
+                    </button>
+                    <button
+                      onClick={() => setJobsView('board')}
+                      className={cn(
+                        'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
+                        jobsView === 'board' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
+                      )}
+                    >
+                      {t('admin.main.viewBoard')}
+                    </button>
+                  </div>
 
-                  <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+                  <div className="ml-auto flex flex-wrap items-center gap-2">
                     <button
                       onClick={() => {
                         setAnchorDate(toISODate(new Date()))
