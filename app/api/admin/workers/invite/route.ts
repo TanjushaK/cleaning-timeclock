@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { AdminApiErrorCode } from '@/lib/api-error-codes'
+import { sendWorkerInviteEmailViaResend } from '@/lib/email/resend'
+import { resendOutboundReady } from '@/lib/server/env'
 import { ApiError, requireAdmin, toErrorResponse } from '@/lib/route-db'
 import crypto from 'crypto'
 
@@ -173,19 +175,55 @@ export async function POST(req: Request) {
 
     const login = email ?? phone ?? rawIdentifier
 
-    return NextResponse.json(
-      {
-        ok: true,
-        existed,
+    const base = {
+      ok: true,
+      existed,
+      user_id,
+      role,
+      active,
+      login,
+      password,
+      temp_password: true,
+    }
+
+    if (!email) {
+      return NextResponse.json(
+        { ...base, delivery: 'skipped' as const, emailSkipReason: 'not_email' },
+        { status: 200 }
+      )
+    }
+
+    if (!resendOutboundReady()) {
+      console.warn('[api/admin/workers/invite] email not sent: resend outbound not ready')
+      return NextResponse.json(
+        {
+          ...base,
+          delivery: 'failed' as const,
+          emailError: 'Email outbound not configured (EMAIL_SEND_ENABLED, RESEND_API_KEY, MAIL_FROM)',
+        },
+        { status: 200 }
+      )
+    }
+
+    try {
+      await sendWorkerInviteEmailViaResend(email, login, password)
+      return NextResponse.json({ ...base, delivery: 'sent' as const }, { status: 200 })
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      const safe = msg.slice(0, 500)
+      console.error('[api/admin/workers/invite] email delivery failed', {
         user_id,
-        role,
-        active,
-        login,
-        password,
-        temp_password: true,
-      },
-      { status: 200 }
-    )
+        err: safe.slice(0, 300),
+      })
+      return NextResponse.json(
+        {
+          ...base,
+          delivery: 'failed' as const,
+          emailError: safe,
+        },
+        { status: 200 }
+      )
+    }
   } catch (e) {
     return toErrorResponse(e)
   }
