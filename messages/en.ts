@@ -226,9 +226,9 @@ export const en: Messages = {
     },
     privacy: {
       title: "Privacy Policy",
-      p1: "We process information needed to operate time tracking for your organization, including work sessions, locations where required for your duties, and profile or contact details provided by you or your employer.",
-      p2: "Your organization determines the purposes and retention of workforce data. For access, correction, or deletion requests, contact your employer or use the Support page for app-related questions.",
-      p3: "We apply appropriate technical and organizational measures to protect data in line with deployment configuration managed by your organization.",
+      p1: "We process workforce data required for app functionality: assigned jobs, shift start/stop records, profile/contact details, and precise location only while using the app to verify start/stop at the job site.",
+      p2: "Workforce data is managed by your organization or employer. The app is not used for advertising and does not track you across other companies' apps or websites.",
+      p3: "For access, correction, or deletion of employee data, contact your employer/admin or use the Support page so requests can be routed correctly.",
     },
     deleteAccount: {
       title: "Account deletion",
