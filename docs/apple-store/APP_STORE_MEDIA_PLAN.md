@@ -37,9 +37,20 @@ Subfolders with matching `README.txt` files are created by `scripts/apple-store/
 - **Final recording**: done on a Mac (iOS Simulator screen recording) or on a real iPhone (Control Center screen recording), then trimmed to App Store spec.
 - **On Windows**: prepare the scenario only — see [APP_PREVIEW_SCRIPT.md](./APP_PREVIEW_SCRIPT.md).
 
-## Browser / responsive screenshots (no Playwright in this repo)
+## Windows automatic capture
 
-Playwright is not added as a dependency here. **Browser screenshots can be captured manually in Chrome DevTools using responsive sizes** (or another browser’s device toolbar): set the viewport to the target width/height in the table above, capture full-page or visible viewport as needed, and export at 1x scale to match the pixel sizes.
+Playwright tooling can generate real draft screenshots and a draft App Preview video on Windows.
+
+Commands:
+
+- `npm run apple:media` - full flow on Windows (install, browser auth capture, screenshots, draft video)
+- `npm run apple:auth` - save auth state after manual login in headed Chromium
+- `npm run apple:screenshots` - capture Apple-sized PNG screenshots
+- `npm run apple:video` - record draft App Preview WebM (and MP4 if ffmpeg exists)
+
+Auth state is stored locally at `marketing/apple-store/.auth/storage-state.json` and is git-ignored.
+
+Even with automatic Windows draft media, final App Preview quality and App Store readiness should still be validated on Mac or iPhone before submission.
 
 ## Upload bundle on a Mac
 

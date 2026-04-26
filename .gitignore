@@ -61,3 +61,5 @@ CURSOR_TASK.md
 *.dump
 *.tgz
 var/imports/*.dump
+marketing/apple-store/.auth/
+marketing/apple-store/video/raw/

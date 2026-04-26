@@ -16,7 +16,11 @@
     "cap:add-android": "npx cap add android",
     "cap:add-ios": "npx cap add ios",
     "cap:open:android": "npx cap open android",
-    "cap:open:ios": "npx cap open ios"
+    "cap:open:ios": "npx cap open ios",
+    "apple:auth": "node scripts/apple-store/save-apple-auth-state.mjs",
+    "apple:screenshots": "node scripts/apple-store/capture-apple-screenshots.mjs",
+    "apple:video": "node scripts/apple-store/record-apple-preview.mjs",
+    "apple:media": "powershell -ExecutionPolicy Bypass -File scripts/apple-store/run-apple-media-windows.ps1"
   },
   "dependencies": {
     "@capacitor/app": "^6.0.3",
@@ -37,6 +41,7 @@
     "@capacitor/android": "^6.2.1",
     "@capacitor/cli": "^6.2.1",
     "@capacitor/ios": "^6.2.1",
+    "@playwright/test": "^1.59.1",
     "@tailwindcss/postcss": "^4",
     "@types/mime-types": "^2.1.4",
     "@types/node": "^20",
