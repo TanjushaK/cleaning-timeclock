@@ -423,6 +423,8 @@ function Modal(props: {
   onClose: () => void
   children: React.ReactNode
   scopeClassName?: string
+  /** Overrides default max width (default: max-w-2xl). */
+  panelClassName?: string
 }) {
   const { t } = useI18n()
   const boxRef = useRef<HTMLDivElement | null>(null)
@@ -458,7 +460,10 @@ function Modal(props: {
       <div
         ref={boxRef}
         tabIndex={-1}
-        className="relative flex w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-yellow-400/20 bg-zinc-950/90 p-5 shadow-[0_25px_90px_rgba(0,0,0,0.75)] max-h-[calc(100vh-3rem)] outline-none"
+        className={cn(
+          'relative flex w-full flex-col overflow-hidden rounded-3xl border border-yellow-400/20 bg-zinc-950/90 p-5 shadow-[0_25px_90px_rgba(0,0,0,0.75)] max-h-[calc(100vh-3rem)] outline-none',
+          props.panelClassName || 'max-w-2xl',
+        )}
       >
         <div className="flex items-center justify-between gap-3">
           <div className="text-sm font-semibold text-yellow-100">{props.title}</div>
@@ -1315,6 +1320,19 @@ const [editOpen, setEditOpen] = useState(false)
   const [cancelOpen, setCancelOpen] = useState(false)
   const [cancelJobId, setCancelJobId] = useState<string>('')
 
+  const [quickShiftOpen, setQuickShiftOpen] = useState(false)
+  const [quickShiftDate, setQuickShiftDate] = useState('')
+  const [quickShiftMode, setQuickShiftMode] = useState<PlanMode>('workers')
+  const [quickShiftContextName, setQuickShiftContextName] = useState('')
+  /** Row worker (workers plan mode). */
+  const [quickShiftWorkerId, setQuickShiftWorkerId] = useState('')
+  /** Row site (sites plan mode) or picked site (workers mode). */
+  const [quickShiftSiteId, setQuickShiftSiteId] = useState('')
+  /** Picked worker (sites plan mode). */
+  const [quickShiftPickWorkerId, setQuickShiftPickWorkerId] = useState('')
+  const [quickShiftTime, setQuickShiftTime] = useState('09:00')
+  const [quickShiftTimeTo, setQuickShiftTimeTo] = useState('')
+
   const sitesById = useMemo(() => new Map(sites.map((s) => [s.id, s])), [sites])
   const workersById = useMemo(() => new Map(workers.map((w) => [w.id, w])), [workers])
 
@@ -1329,6 +1347,15 @@ const [editOpen, setEditOpen] = useState(false)
 
   const workersForPicker = useMemo(
     () => workersForSelect.map((w) => ({ id: w.id, name: w.full_name || t('admin.main.fallbackWorker') })),
+    [workersForSelect, t],
+  )
+
+  const workerSelectItems = useMemo(
+    () =>
+      workersForSelect.map((w) => ({
+        id: w.id,
+        label: w.full_name || t('admin.main.fallbackWorker'),
+      })),
     [workersForSelect, t],
   )
 
@@ -2378,6 +2405,40 @@ const [editOpen, setEditOpen] = useState(false)
     }
   }
 
+  async function submitQuickShiftFromPlan() {
+    const siteId = quickShiftSiteId
+    const workerIds =
+      quickShiftMode === 'workers'
+        ? quickShiftWorkerId
+          ? [quickShiftWorkerId]
+          : []
+        : quickShiftPickWorkerId
+          ? [quickShiftPickWorkerId]
+          : []
+    if (!siteId || workerIds.length === 0 || !quickShiftDate || !quickShiftTime) return
+    setBusy(true)
+    setError(null)
+    try {
+      await authFetchJson('/api/admin/jobs/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          site_id: siteId,
+          worker_ids: workerIds,
+          job_date: quickShiftDate,
+          scheduled_time: quickShiftTime,
+          scheduled_end_time: quickShiftTimeTo || null,
+        }),
+      })
+      setQuickShiftOpen(false)
+      await refreshSchedule()
+    } catch (e: unknown) {
+      setError(mapAdminErr(e, t))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   function dragSet(e: React.DragEvent, payload: DragPayload) {
     try {
       e.dataTransfer.setData('application/json', JSON.stringify(payload))
@@ -2699,6 +2760,14 @@ const [editOpen, setEditOpen] = useState(false)
           ? 'Dienst'
           : 'Shift'
 
+  function quickShiftTitle(lang0: string): string {
+    const l = String(lang0 || 'en')
+    if (l === 'ru') return 'Назначить смену'
+    if (l === 'uk') return 'Призначити зміну'
+    if (l === 'nl') return 'Dienst toewijzen'
+    return 'Assign shift'
+  }
+
   function handlePlanWeekCellDrop(e: React.DragEvent, d: { iso: string }, ent: { id: string; name: string }) {
     e.preventDefault()
     const p = dragGet(e)
@@ -2711,17 +2780,22 @@ const [editOpen, setEditOpen] = useState(false)
     void moveJob(p.job_id, patch)
   }
 
-  function prepareShiftFromPlanCell(ent: { id: string; name: string }, d: { iso: string }) {
-    setTab('jobs')
-    setJobsView('table')
-    setNewDate(d.iso)
+  function openQuickShiftFromPlanCell(ent: { id: string; name: string }, d: { iso: string }) {
+    setQuickShiftContextName(ent.name)
+    setQuickShiftDate(d.iso)
+    setQuickShiftMode(planMode)
+    setQuickShiftTime('09:00')
+    setQuickShiftTimeTo('')
     if (planMode === 'workers') {
-      setNewSiteId('')
-      setNewWorkers([ent.id])
+      setQuickShiftWorkerId(ent.id)
+      setQuickShiftSiteId('')
+      setQuickShiftPickWorkerId('')
     } else {
-      setNewSiteId(ent.id)
-      setNewWorkers([])
+      setQuickShiftSiteId(ent.id)
+      setQuickShiftWorkerId('')
+      setQuickShiftPickWorkerId('')
     }
+    setQuickShiftOpen(true)
   }
 
   function renderPlanWeekGrid() {
@@ -2805,7 +2879,7 @@ const [editOpen, setEditOpen] = useState(false)
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation()
-                          prepareShiftFromPlanCell(ent, d)
+                          openQuickShiftFromPlanCell(ent, d)
                         }}
                         onDragOver={(e) => e.preventDefault()}
                         onDrop={(e) => handlePlanWeekCellDrop(e, d, ent)}
@@ -5006,6 +5080,99 @@ const [editOpen, setEditOpen] = useState(false)
           >
             {t('admin.main.moveDayBtn')}
           </button>
+        </div>
+      </Modal>
+
+      {/* Modal: quick create shift from schedule (week grid) */}
+      <Modal
+        open={quickShiftOpen}
+        title={quickShiftTitle(lang)}
+        onClose={() => setQuickShiftOpen(false)}
+        panelClassName="max-w-[520px]"
+      >
+        <div className="grid gap-4">
+          <div className="rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-sm text-zinc-200">
+            {quickShiftContextName} · {fmtD(quickShiftDate)}
+          </div>
+
+          {quickShiftMode === 'workers' ? (
+            <div className="grid gap-1 [&_.ctSearchableSelect>div:first-child]:sr-only">
+              <SearchableSelect
+                label={t('admin.main.labelSite')}
+                value={quickShiftSiteId}
+                onChange={setQuickShiftSiteId}
+                items={activeSites.map((s) => siteToSelectItem(s, t))}
+                placeholder={t('admin.main.pickSitePh')}
+                disabled={busy}
+                inputClassName="w-full rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2.5 text-sm outline-none transition focus:border-yellow-300/60"
+              />
+            </div>
+          ) : (
+            <div className="grid gap-1 [&_.ctSearchableSelect>div:first-child]:sr-only">
+              <SearchableSelect
+                label={t('admin.main.workerField')}
+                value={quickShiftPickWorkerId}
+                onChange={setQuickShiftPickWorkerId}
+                items={workerSelectItems}
+                placeholder={t('admin.main.pickWorkerPh')}
+                disabled={busy}
+                inputClassName="w-full rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2.5 text-sm outline-none transition focus:border-yellow-300/60"
+              />
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-3">
+            <div className="grid min-w-[140px] flex-1 gap-1">
+              <span className="text-[11px] text-zinc-400">{t('admin.main.startTime')}</span>
+              <input
+                type="time"
+                aria-label={t('admin.main.startTime')}
+                value={quickShiftTime}
+                onChange={(e) => setQuickShiftTime(e.target.value)}
+                className="w-full rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2.5 text-sm outline-none transition focus:border-yellow-300/60"
+              />
+            </div>
+            <div className="grid min-w-[140px] flex-1 gap-1">
+              <span className="text-[11px] text-zinc-400">{t('admin.main.labelEnd')}</span>
+              <input
+                type="time"
+                aria-label={t('admin.main.labelEnd')}
+                onPointerDown={(e) => {
+                  try {
+                    ;(e.currentTarget as any).showPicker?.()
+                  } catch {}
+                }}
+                value={quickShiftTimeTo}
+                onChange={(e) => setQuickShiftTimeTo(e.target.value)}
+                className="w-full rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2.5 text-sm outline-none transition focus:border-yellow-300/60"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <button
+              type="button"
+              onClick={() => void submitQuickShiftFromPlan()}
+              disabled={
+                busy ||
+                !quickShiftSiteId ||
+                !quickShiftDate ||
+                !quickShiftTime ||
+                (quickShiftMode === 'workers' ? !quickShiftWorkerId : !quickShiftPickWorkerId)
+              }
+              className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-2.5 text-sm font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {busy ? t('admin.main.creating') : t('admin.main.createShift')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setQuickShiftOpen(false)}
+              disabled={busy}
+              className="rounded-2xl border border-yellow-400/15 bg-black/30 px-5 py-2.5 text-sm font-semibold text-zinc-200 transition hover:border-yellow-300/40 disabled:opacity-60"
+            >
+              {t('common.close')}
+            </button>
+          </div>
         </div>
       </Modal>
 
