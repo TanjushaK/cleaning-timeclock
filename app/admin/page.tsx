@@ -1225,9 +1225,14 @@ export default function AdminPage() {
   const [newWorkers, setNewWorkers] = useState<string[]>([])
   const [newDate, setNewDate] = useState<string>(toISODate(new Date()))
   const [newTime, setNewTime] = useState<string>('09:00')
-
-    const [newTimeTo, setNewTimeTo] = useState<string>('')
-const [editOpen, setEditOpen] = useState(false)
+  const [newTimeTo, setNewTimeTo] = useState<string>('')
+  const [quickCreateOpen, setQuickCreateOpen] = useState(false)
+  const [quickCreateFromPlanMode, setQuickCreateFromPlanMode] = useState<PlanMode | null>(null)
+  const [quickCreateContextLabel, setQuickCreateContextLabel] = useState<string>('')
+  const [quickCreateDate, setQuickCreateDate] = useState<string>(toISODate(new Date()))
+  const [quickCreateSiteId, setQuickCreateSiteId] = useState<string>('')
+  const [quickCreateWorkerIds, setQuickCreateWorkerIds] = useState<string[]>([])
+  const [editOpen, setEditOpen] = useState(false)
   const [editJobId, setEditJobId] = useState<string | null>(null)
   const [editSiteId, setEditSiteId] = useState<string>('')
   const [editWorkerId, setEditWorkerId] = useState<string>('')
@@ -2358,24 +2363,53 @@ const [editOpen, setEditOpen] = useState(false)
     }
   }
 
-  async function createJobs() {
-    if (!newSiteId || newWorkers.length === 0 || !newDate || !newTime) return
+  async function submitNewShift(p: { mode: 'main' | 'quick' }) {
+    const siteId = p.mode === 'main' ? newSiteId : quickCreateSiteId
+    const workerIds = p.mode === 'main' ? newWorkers : quickCreateWorkerIds
+    const jobDate = p.mode === 'main' ? newDate : quickCreateDate
+    if (!siteId || workerIds.length === 0 || !jobDate || !newTime) return
     setBusy(true)
     setError(null)
     try {
       await authFetchJson('/api/admin/jobs/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ site_id: newSiteId, worker_ids: newWorkers, job_date: newDate, scheduled_time: newTime, scheduled_end_time: newTimeTo || null }),
+        body: JSON.stringify({ site_id: siteId, worker_ids: workerIds, job_date: jobDate, scheduled_time: newTime, scheduled_end_time: newTimeTo || null }),
       })
-      setNewWorkers([])
-      setJobsView('table')
+      if (p.mode === 'main') {
+        setNewWorkers([])
+        setJobsView('table')
+      } else {
+        setQuickCreateOpen(false)
+        setQuickCreateFromPlanMode(null)
+        setQuickCreateContextLabel('')
+      }
       await refreshSchedule()
     } catch (e: unknown) {
       setError(mapAdminErr(e, t))
     } finally {
       setBusy(false)
     }
+  }
+
+  async function createJobs() {
+    await submitNewShift({ mode: 'main' })
+  }
+
+  async function createQuickShift() {
+    setError(null)
+    if (!newTime) return
+    const l = String(lang)
+    if (!quickCreateSiteId) {
+      setError(l === 'ru' ? 'Нет объекта' : l === 'uk' ? 'Немає об’єкта' : l === 'nl' ? 'Geen object' : 'No site')
+      return
+    }
+    if (quickCreateWorkerIds.length === 0) {
+      setError(l === 'ru' ? 'Нет работника' : l === 'uk' ? 'Немає працівника' : l === 'nl' ? 'Geen medewerker' : 'No worker')
+      return
+    }
+    if (!quickCreateDate) return
+    await submitNewShift({ mode: 'quick' })
   }
 
   function dragSet(e: React.DragEvent, payload: DragPayload) {
@@ -2712,16 +2746,98 @@ const [editOpen, setEditOpen] = useState(false)
   }
 
   function prepareShiftFromPlanCell(ent: { id: string; name: string }, d: { iso: string }) {
-    setTab('jobs')
-    setJobsView('table')
-    setNewDate(d.iso)
+    setQuickCreateOpen(true)
+    setError(null)
+    setQuickCreateFromPlanMode(planMode)
+    setQuickCreateContextLabel(ent.name)
+    setQuickCreateDate(d.iso)
     if (planMode === 'workers') {
-      setNewSiteId('')
-      setNewWorkers([ent.id])
+      setQuickCreateWorkerIds([ent.id])
+      const sites = workerSites.get(ent.id) || []
+      const bySite = new Map(sites.map((s) => [s.id, s] as const))
+      const list = Array.from(bySite.values()).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+      setQuickCreateSiteId(list[0]?.id || '')
     } else {
-      setNewSiteId(ent.id)
-      setNewWorkers([])
+      setQuickCreateSiteId(ent.id)
+      const raw = siteWorkers.get(ent.id) || []
+      const byW = new Map<string, Worker>()
+      for (const w of raw) {
+        if ((w.role || '') === 'admin') continue
+        if (w.active === false) continue
+        if (!byW.has(w.id)) byW.set(w.id, w)
+      }
+      const list = Array.from(byW.values()).sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''))
+      setQuickCreateWorkerIds(list[0] ? [list[0].id] : [])
     }
+    if (!newTime) setNewTime('09:00')
+  }
+
+  function closeQuickCreatePanel() {
+    setQuickCreateOpen(false)
+    setQuickCreateFromPlanMode(null)
+    setQuickCreateContextLabel('')
+  }
+
+  function renderPlanQuickCreatePanel() {
+    if (!quickCreateOpen) return null
+    const l = String(lang)
+    const title = l === 'ru' ? 'Назначить смену' : l === 'uk' ? 'Призначити зміну' : l === 'nl' ? 'Dienst toewijzen' : 'Assign shift'
+    const closeLbl = l === 'ru' ? 'Закрыть' : l === 'uk' ? 'Закрити' : l === 'nl' ? 'Sluiten' : 'Close'
+    const createLbl =
+      l === 'ru' ? 'Создать' : l === 'uk' ? 'Створити' : l === 'nl' ? 'Aanmaken' : 'Create'
+    const dateDot =
+      (() => {
+        const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(quickCreateDate)
+        if (m) return `${m[3]}.${m[2]}.${m[1]}`
+        return fmtD(quickCreateDate)
+      })()
+    const contextLine = [quickCreateContextLabel, dateDot].filter(Boolean).join(' · ')
+    return (
+      <div className="mt-2 w-full max-w-[min(100%,44rem)] rounded-2xl border border-yellow-400/15 bg-black/25 p-2.5 [html[data-theme=light]_&]:border-amber-500/25 [html[data-theme=light]_&]:bg-amber-50/40">
+        <div className="text-xs font-semibold text-yellow-100 [html[data-theme=light]_&]:text-amber-950">{title}</div>
+        <div className="mt-1.5 flex w-full min-w-0 flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-2 sm:gap-y-1.5">
+          <span
+            className="min-w-0 text-xs text-zinc-300 [html[data-theme=light]_&]:text-amber-900/90 sm:min-w-0 sm:max-w-[min(18rem,40vw)] sm:truncate"
+            title={contextLine}
+          >
+            {contextLine}
+          </span>
+          <div className="hidden min-h-[1px] w-px bg-yellow-400/15 sm:block" aria-hidden />
+          <input
+            type="time"
+            aria-label="Начало"
+            value={newTime}
+            onChange={(e) => setNewTime(e.target.value)}
+            className="h-8 w-full min-w-0 sm:w-[5.5rem] sm:shrink-0 rounded-xl border border-yellow-400/20 bg-black/40 px-2 text-sm outline-none transition focus:border-yellow-300/60 [html[data-theme=light]_&]:border-amber-500/35 [html[data-theme=light]_&]:bg-white/80 [html[data-theme=light]_&]:text-amber-950"
+          />
+          <input
+            type="time"
+            aria-label="Конец"
+            onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
+            value={newTimeTo}
+            onChange={(e) => setNewTimeTo(e.target.value)}
+            className="h-8 w-full min-w-0 sm:w-[5.5rem] sm:shrink-0 rounded-xl border border-yellow-400/20 bg-black/40 px-2 text-sm outline-none transition focus:border-yellow-300/60 [html[data-theme=light]_&]:border-amber-500/35 [html[data-theme=light]_&]:bg-white/80 [html[data-theme=light]_&]:text-amber-950"
+          />
+          <div className="flex w-full min-w-0 flex-col gap-1.5 min-[400px]:flex-row min-[400px]:justify-stretch min-[500px]:ml-auto min-[500px]:w-auto min-[500px]:justify-end min-[500px]:gap-2 sm:flex-1 sm:justify-end">
+            <button
+              type="button"
+              onClick={() => void createQuickShift()}
+              disabled={busy || !newTime}
+              className="h-8 w-full min-w-0 rounded-xl border border-yellow-300/45 bg-yellow-400/10 px-2.5 text-center text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:cursor-not-allowed disabled:opacity-60 [html[data-theme=light]_&]:border-amber-600/40 [html[data-theme=light]_&]:bg-amber-100/60 [html[data-theme=light]_&]:text-amber-950 min-[400px]:min-w-0 min-[500px]:w-auto min-[500px]:shrink-0"
+            >
+              {busy ? t('admin.main.creating') : createLbl}
+            </button>
+            <button
+              type="button"
+              onClick={closeQuickCreatePanel}
+              className="h-8 w-full min-w-0 rounded-xl border border-yellow-400/15 bg-black/30 px-2.5 text-center text-xs font-semibold text-zinc-200 transition hover:border-yellow-300/40 [html[data-theme=light]_&]:border-amber-500/30 [html[data-theme=light]_&]:bg-white/50 [html[data-theme=light]_&]:text-amber-900 min-[400px]:min-w-0 min-[500px]:w-auto min-[500px]:shrink-0"
+            >
+              {closeLbl}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   function renderPlanWeekGrid() {
@@ -4412,6 +4528,8 @@ const [editOpen, setEditOpen] = useState(false)
           {tab === 'plan' ? (
             <div className="mt-6">
               {renderPlanToolbar()}
+
+              {renderPlanQuickCreatePanel()}
 
               {planView === 'week' ? renderPlanWeekGrid() : null}
               {planView === 'day' ? renderPlanDayGrid() : null}
