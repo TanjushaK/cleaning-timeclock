@@ -10,6 +10,7 @@ Use this as a checklist when creating or editing the iOS app record. Values are 
 | **Category** | Business |
 | **Subtitle** | Time tracking for cleaning teams |
 | **Support URL** | https://timeclock.tanjusha.nl |
+| **Support email** | TODO_ADD_REAL_SUPPORT_EMAIL_IN_APP_STORE_CONNECT |
 | **Privacy Policy URL** | https://timeclock.tanjusha.nl/privacy |
 
 ## App Review Information — notes (suggested)
