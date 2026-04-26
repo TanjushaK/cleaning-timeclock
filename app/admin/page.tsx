@@ -2633,7 +2633,7 @@ const [editOpen, setEditOpen] = useState(false)
 
   async function deleteJobPermanently() {
     if (!editJobId) return
-    const ok = window.confirm('Удалить смену навсегда? Это действие нельзя отменить.')
+    const ok = window.confirm(t('admin.main.deleteShiftConfirm'))
     if (!ok) return
     setJobDeleteBusy(true)
     setError(null)

@@ -1411,6 +1411,12 @@ const T = {
     uk: "Видалити зміну назавжди",
     nl: "Dienst definitief verwijderen",
   },
+  deleteShiftConfirm: {
+    ru: "Удалить смену навсегда? Это действие нельзя отменить.",
+    en: "Delete this shift permanently? This action cannot be undone.",
+    uk: "Видалити зміну назавжди? Цю дію не можна скасувати.",
+    nl: "Deze dienst definitief verwijderen? Deze actie kan niet ongedaan worden gemaakt.",
+  },
   deleting: {
     ru: "Удаление…",
     en: "Deleting…",
