@@ -10,6 +10,14 @@ Use these exact answers in App Store Connect privacy questionnaire for the curre
 - Data sold: No
 - Third-party advertising: No
 
+## Photos or Videos / User Content
+
+- Data type: Photos or Videos / User Content
+- Includes: profile photos, job-site photos
+- Purpose: App Functionality
+- Linked to user: Yes
+- Tracking: No
+
 Notes:
 - Location is used only while using the app to verify start/stop shift at the job site.
 - Workforce data is managed by the employee's organization/employer.
