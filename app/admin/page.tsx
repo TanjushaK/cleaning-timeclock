@@ -668,6 +668,7 @@ function MultiWorkerPicker(props: {
   value: string[]
   onChange: (v: string[]) => void
   disabled?: boolean
+  ariaLabel?: string
 }) {
   const { t } = useI18n()
   const [open, setOpen] = useState(false)
@@ -707,6 +708,7 @@ function MultiWorkerPicker(props: {
       <button
         type="button"
         disabled={props.disabled}
+        aria-label={props.ariaLabel}
         onClick={() => setOpen((x) => !x)}
         className={cn(
           'w-full rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-left text-sm outline-none transition focus:border-yellow-300/60',
@@ -2526,7 +2528,7 @@ const [editOpen, setEditOpen] = useState(false)
                   <img src={thumb} alt="" className="h-5 w-5 rounded-full border border-yellow-400/15 object-cover" loading="lazy" />
                 )
               })()}
-              <div className="flex min-w-0 items-center gap-2">
+              <div className="flex min-w-0 items-center gap-2 w-full overflow-hidden">
               {planMode === 'sites' && !compact && j.worker_id && workerPhotoMeta[j.worker_id]?.thumb ? (
                  
                 <img
@@ -2536,7 +2538,7 @@ const [editOpen, setEditOpen] = useState(false)
                   loading="lazy"
                 />
               ) : null}
-              <div className="truncate font-semibold text-yellow-100">{left}</div>
+              <div className="min-w-0 truncate font-semibold text-yellow-100">{left}</div>
             </div>
             </div>
             <div className="mt-0.5 flex flex-wrap items-center gap-2 text-zinc-300">
@@ -2688,21 +2690,57 @@ const [editOpen, setEditOpen] = useState(false)
     )
   }
 
+  const addShiftPillWord =
+    (lang as string) === 'ru'
+      ? 'Смена'
+      : (lang as string) === 'uk'
+        ? 'Зміна'
+        : (lang as string) === 'nl'
+          ? 'Dienst'
+          : 'Shift'
+
+  function handlePlanWeekCellDrop(e: React.DragEvent, d: { iso: string }, ent: { id: string; name: string }) {
+    e.preventDefault()
+    const p = dragGet(e)
+    if (!p) return
+    const job = schedule.find((x) => x.id === p.job_id)
+    if (!job) return
+    const patch: any = { job_date: d.iso }
+    if (planMode === 'workers') patch.worker_id = ent.id
+    else patch.site_id = ent.id
+    void moveJob(p.job_id, patch)
+  }
+
+  function prepareShiftFromPlanCell(ent: { id: string; name: string }, d: { iso: string }) {
+    setTab('jobs')
+    setJobsView('table')
+    setNewDate(d.iso)
+    if (planMode === 'workers') {
+      setNewSiteId('')
+      setNewWorkers([ent.id])
+    } else {
+      setNewSiteId(ent.id)
+      setNewWorkers([])
+    }
+  }
+
   function renderPlanWeekGrid() {
     return (
-      <div className="mt-4 overflow-auto rounded-3xl border border-transparent bg-transparent dark:border-yellow-400/15 dark:bg-black/15">
-        <div className="w-full overflow-x-auto">
-        <div className="w-full">
+      <div className="mt-4 rounded-3xl border border-transparent bg-transparent dark:border-yellow-400/15 dark:bg-black/15">
+        <div className="w-full overflow-x-auto lg:overflow-x-visible">
+        <div className="min-w-[900px] lg:min-w-0 lg:w-full">
           <div className="grid w-full" style={{ gridTemplateColumns: `170px repeat(${planDates.length}, minmax(0, 1fr))` }}>
-            <div className="sticky top-0 z-10 border-b border-yellow-400/10 bg-zinc-950/90 px-4 py-3 text-xs font-semibold text-zinc-200">
+            <div className="sticky top-0 z-10 border-b border-yellow-400/10 bg-zinc-950/90 px-2 py-2 text-[10px] font-semibold leading-tight text-zinc-200 sm:px-4 sm:py-3 sm:text-xs">
               {planMode === 'workers' ? t('admin.main.colWorker') : t('admin.main.colSite')}
             </div>
 
             {planDates.map((d) => (
-              <div key={d.iso} className="sticky top-0 z-10 border-b border-yellow-400/10 bg-zinc-950/90 px-4 py-3 text-xs font-semibold text-zinc-200">
-                <span>
-                  {d.dow} • {d.label}
-                </span>
+              <div
+                key={d.iso}
+                className="sticky top-0 z-10 border-b border-yellow-400/10 bg-zinc-950/90 px-2 py-2 text-[10px] font-semibold leading-tight text-zinc-200 sm:px-4 sm:py-3 sm:text-xs"
+              >
+                <span className="block truncate">{d.dow}</span>
+                <span className="block truncate text-[10px] font-medium text-zinc-400 sm:text-[11px]">{d.label}</span>
               </div>
             ))}
 
@@ -2754,28 +2792,33 @@ const [editOpen, setEditOpen] = useState(false)
                   <div
                     key={ent.id + '|' + d.iso}
                     onDragOver={(e) => e.preventDefault()}
-                    onDrop={(e) => {
-                      e.preventDefault()
-                      const p = dragGet(e)
-                      if (!p) return
-                      const job = schedule.find((x) => x.id === p.job_id)
-                      if (!job) return
-                      const patch: any = { job_date: d.iso }
-                      if (planMode === 'workers') patch.worker_id = ent.id
-                      else patch.site_id = ent.id
-                      void moveJob(p.job_id, patch)
-                    }}
-                    className="border-b border-yellow-400/10 bg-black/5 px-2 py-2"
+                    onDrop={(e) => handlePlanWeekCellDrop(e, d, ent)}
+                    className="border-b border-yellow-400/10 bg-black/5 px-1.5 py-1.5 sm:px-2 sm:py-2"
                   >
-                    <div className="grid gap-1">
+                    <div className="grid w-full min-w-0 gap-1">
                       {jobsInCell({ entityId: ent.id, dateISO: d.iso }).map((j) => (
                         <div key={j.id} className="w-full min-w-0 overflow-hidden [&_*]:min-w-0">
                           {jobCard(j, true)}
                         </div>
                       ))}
-                      <div className="h-auto min-h-[34px] rounded-2xl border border-dashed border-yellow-400/10 bg-black/10 px-2 py-1 text-[10px] text-zinc-500">
-                        {t('admin.main.dropHere')}
-                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          prepareShiftFromPlanCell(ent, d)
+                        }}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => handlePlanWeekCellDrop(e, d, ent)}
+                        title={`${t('admin.main.createShift')}: ${fmtD(d.iso)}`}
+                        aria-label={`${t('admin.main.createShift')}, ${fmtD(d.iso)}`}
+                        className={cn(
+                          'h-auto min-h-[32px] w-full min-w-0 max-w-full shrink-0 rounded-xl border border-dashed px-1.5 py-1 text-center text-[10px] font-semibold leading-tight transition',
+                          '[html[data-theme=light]_&]:border-amber-500/40 [html[data-theme=light]_&]:bg-amber-50/80 [html[data-theme=light]_&]:text-amber-900 [html[data-theme=light]_&]:hover:border-amber-500/60',
+                          'border-yellow-400/25 bg-black/15 text-yellow-200/90 hover:border-yellow-300/50 hover:bg-black/25',
+                        )}
+                      >
+                        <span className="inline-block truncate">+ {addShiftPillWord}</span>
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -3974,11 +4017,10 @@ const [editOpen, setEditOpen] = useState(false)
             <div className="mt-6 grid gap-4">
               <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
                 <div className="text-sm font-semibold text-yellow-100">{t('admin.main.jobsCreateTitle')}</div>
-                <div className="mt-1 text-xs text-zinc-300">{t('admin.main.jobsCreateHint')}</div>
 
-                <div className="mt-4 w-full max-w-5xl space-y-4">
+                <div className="mt-3 w-full max-w-5xl space-y-3">
                   <div className="grid gap-4 xl:grid-cols-[minmax(260px,340px)_minmax(360px,520px)]">
-                    <div className="grid max-w-[340px] gap-1">
+                    <div className="grid max-w-[340px] gap-1 [&_.ctSearchableSelect>div:first-child]:sr-only">
                       <SearchableSelect
                         label={t('admin.main.labelSite')}
                         value={newSiteId}
@@ -3993,46 +4035,50 @@ const [editOpen, setEditOpen] = useState(false)
                       />
                     </div>
 
-                    <label className="grid max-w-[520px] gap-1">
-                      <span className="text-[11px] text-zinc-300">{t('admin.main.labelWorkersMulti')}</span>
-                      <MultiWorkerPicker workers={workersForPicker} value={newWorkers} onChange={setNewWorkers} disabled={!newSiteId} />
-                    </label>
+                    <div className="grid max-w-[520px] gap-1">
+                      <MultiWorkerPicker
+                        workers={workersForPicker}
+                        value={newWorkers}
+                        onChange={setNewWorkers}
+                        disabled={!newSiteId}
+                        ariaLabel="Работники"
+                      />
+                    </div>
                   </div>
 
                   <div className="grid gap-4 lg:grid-cols-[minmax(180px,220px)_minmax(300px,360px)]">
-                    <label className="grid max-w-[220px] gap-1">
-                      <span className="text-[11px] text-zinc-300">{t('admin.main.labelDate')}</span>
+                    <div className="grid max-w-[220px] gap-1">
                       <input
                         type="date"
+                        aria-label="Дата"
                         onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
                         value={newDate}
                         onChange={(e) => setNewDate(e.target.value)}
                         className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2.5 text-sm outline-none transition focus:border-yellow-300/60"
                       />
-                    </label>
+                    </div>
 
                     <div className="grid gap-1">
-                      <span className="text-[11px] text-zinc-300">{t('admin.main.labelTime')}</span>
                       <div className="flex flex-wrap gap-3">
-                        <label className="grid w-[150px] gap-1">
-                          <span className="text-[11px] text-zinc-400">{t('admin.main.labelTime')}</span>
+                        <div className="grid w-[150px] gap-1">
                           <input
                             type="time"
+                            aria-label="Начало"
                             value={newTime}
                             onChange={(e) => setNewTime(e.target.value)}
                             className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2.5 text-sm outline-none transition focus:border-yellow-300/60"
                           />
-                        </label>
-                        <label className="grid w-[150px] gap-1">
-                          <span className="text-[11px] text-zinc-400">{t('admin.main.labelEnd')}</span>
+                        </div>
+                        <div className="grid w-[150px] gap-1">
                           <input
                             type="time"
+                            aria-label="Конец"
                             onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
                             value={newTimeTo}
                             onChange={(e) => setNewTimeTo(e.target.value)}
                             className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2.5 text-sm outline-none transition focus:border-yellow-300/60"
                           />
-                        </label>
+                        </div>
                       </div>
                     </div>
                   </div>
