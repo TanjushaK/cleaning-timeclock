@@ -148,3 +148,8 @@ export function smsOutboundMissingKeys(): string[] {
 export function geocodePublicEnabled(): boolean {
   return envBool('GEOCODE_PUBLIC', false)
 }
+
+/** Feature gate for SMS worker invites from admin panel. Default: off. */
+export function workerInviteSmsEnabled(): boolean {
+  return env('WORKER_INVITE_SMS_ENABLED', '') === '1'
+}
