@@ -226,9 +226,9 @@ export const nl: Messages = {
     },
     privacy: {
       title: "Privacybeleid",
-      p1: "We verwerken gegevens die nodig zijn voor tijdregistratie binnen uw organisatie, waaronder diensten, locaties indien vereist voor uw werk, en profiel- of contactgegevens van u of uw werkgever.",
-      p2: "Uw organisatie bepaalt doeleinden en bewaartermijnen. Voor inzage, correctie of verwijdering kunt u uw werkgever raadplegen of de ondersteuningspagina gebruiken voor app-gerelateerde vragen.",
-      p3: "We passen passende technische en organisatorische maatregelen toe in lijn met de configuratie van uw organisatie.",
+      p1: "Wij verwerken personeelsgegevens alleen voor app-functionaliteit: toegewezen taken, start/stop-registraties van diensten en profiel-/contactgegevens. Nauwkeurige locatie wordt alleen gebruikt terwijl de app actief in gebruik is voor verificatie van start/stop op de werklocatie.",
+      p2: "Personeelsgegevens worden beheerd door uw organisatie/werkgever. De app gebruikt geen advertenties en volgt u niet over andere apps of websites heen.",
+      p3: "Voor inzage, correctie of verwijdering van gegevens neemt u contact op met uw werkgever, beheerder of de ondersteuningspagina voor juiste afhandeling.",
     },
     deleteAccount: {
       title: "Account verwijderen",

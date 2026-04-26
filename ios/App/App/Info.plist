@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+﻿<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -49,5 +49,10 @@
 	<string>Location is used to verify you are at the job site when starting or ending a shift.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Use Face ID to unlock your saved sign-in on this device. Your account password is not stored.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Camera access is used to capture profile or job-site photos when requested by the user.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Photo library access is used to upload profile or job-site photos when selected by the user.</string>
 </dict>
 </plist>
+
