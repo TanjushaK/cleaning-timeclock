@@ -1391,7 +1391,6 @@ const [editOpen, setEditOpen] = useState(false)
   const [workerProfileLoading, setWorkerProfileLoading] = useState(false)
   const [workerProfileSaving, setWorkerProfileSaving] = useState(false)
 
-  const [workerCardLocale, setWorkerCardLocale] = useState<Lang>('ru')
   const [workerLocDraft, setWorkerLocDraft] = useState<LocDraft>(() => emptyLocDraft())
   const [workerCardEmail, setWorkerCardEmail] = useState('')
   const [workerCardPhone, setWorkerCardPhone] = useState('')
@@ -2311,18 +2310,18 @@ const [editOpen, setEditOpen] = useState(false)
   }
 
   async function saveWorkerProfile(workerId: string) {
-    const fn = locDraftValue(workerLocDraft.name, workerCardLocale).trim()
-    if (workerCardLocale === 'ru' && !fn) return
+    const fn = locDraftValueRaw(workerLocDraft.name, lang).trim()
+    if (lang === 'ru' && !fn) return
 
     setWorkerProfileSaving(true)
     setError(null)
     try {
       const payload = {
-        editLocale: workerCardLocale,
+        editLocale: lang,
         full_name: fn || null,
         email: workerCardEmail.trim() || null,
         phone: workerCardPhone.trim() || null,
-        notes: locDraftValue(workerLocDraft.notes, workerCardLocale) || null,
+        notes: locDraftValueRaw(workerLocDraft.notes, lang) || null,
         avatar_path: workerCardAvatarPath || null,
       }
       const res = await authFetchJson<{ worker: WorkerProfile }>(`/api/admin/workers/${encodeURIComponent(workerId)}/profile`, {
@@ -2438,7 +2437,6 @@ const [editOpen, setEditOpen] = useState(false)
 
     const core = workersById.get(workerId)
     const cached = workerProfileById?.[workerId]
-    setWorkerCardLocale('ru')
     setWorkerLocDraft(
       cached
         ? workerToLocDraft(cached)
@@ -4740,7 +4738,7 @@ const [editOpen, setEditOpen] = useState(false)
       {/* Modal: worker card */}
       <Modal
         open={workerCardOpen}
-        title={t('admin.main.workerCardTitle')}
+        title={locDraftValueDisplay(workerLocDraft.name, lang) || t('admin.main.workerCardTitle')}
         onClose={() => setWorkerCardOpen(false)}
         scopeClassName="workerCardModalTheme"
       >
@@ -4754,7 +4752,9 @@ const [editOpen, setEditOpen] = useState(false)
               <div className="grid gap-4">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <div className="text-sm font-semibold text-yellow-100">{w?.full_name || t('admin.main.fallbackWorker')}</div>
+                    <div className="text-sm font-semibold text-yellow-100">
+                      {locDraftValueDisplay(workerLocDraft.name, lang) || w?.full_name || t('admin.main.fallbackWorker')}
+                    </div>
                     <div className="mt-1 text-xs text-zinc-300">
                       {role}
                       {archived ? t('admin.main.archivedMark') : t('admin.main.activeMark')}
@@ -4793,7 +4793,7 @@ const [editOpen, setEditOpen] = useState(false)
                         disabled={
                           workerProfileSaving ||
                           !workerCardId ||
-                          (workerCardLocale === 'ru' && !locDraftValue(workerLocDraft.name, workerCardLocale).trim())
+                          (lang === 'ru' && !locDraftValueRaw(workerLocDraft.name, lang).trim())
                         }
                         className={cn(
                           'rounded-xl border border-yellow-300/35 bg-yellow-400/10 px-3 py-2 text-xs font-semibold text-yellow-100 hover:border-yellow-200/70',
@@ -4830,28 +4830,7 @@ const [editOpen, setEditOpen] = useState(false)
                     </div>
                   ) : (
                     <div className="grid gap-2 rounded-3xl border border-yellow-400/10 bg-black/20 p-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        {(['ru', 'uk', 'en', 'nl'] as const).map((L) => (
-                          <button
-                            key={L}
-                            type="button"
-                            onClick={() => setWorkerCardLocale(L)}
-                            className={cn(
-                              'rounded-xl border px-3 py-1.5 text-xs font-semibold transition',
-                              workerCardLocale === L
-                                ? 'border-yellow-300/50 bg-yellow-400/15 text-[#3b2414] disabled:text-[#3b2414] disabled:opacity-100 dark:text-yellow-50 dark:disabled:text-yellow-50'
-                                : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/35',
-                            )}
-                          >
-                            {L === 'ru'
-                              ? t('languages.ru')
-                              : L === 'uk'
-                                ? t('languages.uk')
-                                : L === 'en'
-                                  ? t('languages.en')
-                                  : t('languages.nl')}
-                          </button>
-                        ))}
+                      <div className="flex flex-wrap items-center justify-end gap-2">
                         <button
                           type="button"
                           onClick={() => {
@@ -4869,11 +4848,11 @@ const [editOpen, setEditOpen] = useState(false)
                         <div className="grid gap-1">
                           <div className="text-[11px] text-zinc-400">{t('admin.main.fio')}</div>
                           <input
-                            value={locDraftValue(workerLocDraft.name, workerCardLocale)}
+                            value={locDraftValueRaw(workerLocDraft.name, lang)}
                             onChange={(e) =>
                               setWorkerLocDraft((prev) => ({
                                 ...prev,
-                                name: { ...prev.name, [workerCardLocale]: e.target.value },
+                                name: { ...prev.name, [lang]: e.target.value },
                               }))
                             }
                             placeholder={t('admin.main.workerNamePh')}
@@ -4904,11 +4883,11 @@ const [editOpen, setEditOpen] = useState(false)
                       <div className="grid gap-1">
                         <div className="text-[11px] text-zinc-400">{t('admin.main.notes')}</div>
                         <textarea
-                          value={locDraftValue(workerLocDraft.notes, workerCardLocale)}
+                          value={locDraftValueRaw(workerLocDraft.notes, lang)}
                           onChange={(e) =>
                             setWorkerLocDraft((prev) => ({
                               ...prev,
-                              notes: { ...prev.notes, [workerCardLocale]: e.target.value },
+                              notes: { ...prev.notes, [lang]: e.target.value },
                             }))
                           }
                           placeholder={t('admin.main.notesPh')}
