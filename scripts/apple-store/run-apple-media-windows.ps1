@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 
 function Assert-RepoRoot {
     param([string]$StartPath)
@@ -51,7 +51,7 @@ $devOut = Join-Path $logDir "apple-media-dev.out.log"
 $devErr = Join-Path $logDir "apple-media-dev.err.log"
 
 Write-Host "Starting local dev server..."
-$devProc = Start-Process -FilePath "npm" -ArgumentList "run", "dev" -WorkingDirectory $repoRoot -PassThru -RedirectStandardOutput $devOut -RedirectStandardError $devErr
+$devProc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "npm run dev" -WorkingDirectory $repoRoot -PassThru -RedirectStandardOutput $devOut -RedirectStandardError $devErr
 
 try {
     Write-Host "Waiting for http://127.0.0.1:3000 ..."
@@ -72,3 +72,4 @@ finally {
 
 Start-Process "explorer.exe" -ArgumentList (Join-Path $repoRoot "marketing\apple-store\screenshots")
 Start-Process "explorer.exe" -ArgumentList (Join-Path $repoRoot "marketing\apple-store\video")
+
