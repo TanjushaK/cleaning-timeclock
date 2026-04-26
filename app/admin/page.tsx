@@ -317,6 +317,32 @@ function formatShiftDurationI18n(totalMinutes: number, lang0: string): string {
   return `${h} h ${r} min`
 }
 
+/**
+ * Tight, no-space duration for plan job cards (tooltip still uses {@link formatShiftDurationI18n}).
+ * RU "3ч 00м" · EN "3h 00m" · UK "3г 00хв" · NL "3u 00m"
+ */
+function formatShiftDurationI18nCardCompact(totalMinutes: number, lang0: string) {
+  const tmin = Math.max(0, Math.floor(totalMinutes))
+  if (tmin <= 0) return ''
+  const h = Math.floor(tmin / 60)
+  const r = tmin % 60
+  const l = String(lang0 || 'en')
+  if (l === 'ru') {
+    if (h === 0) return `${r}м`
+    return `${h}ч${pad2(r)}м`
+  }
+  if (l === 'uk') {
+    if (h === 0) return `${r}хв`
+    return `${h}г${pad2(r)}хв`
+  }
+  if (l === 'nl') {
+    if (h === 0) return `${r}m`
+    return `${h}u${pad2(r)}m`
+  }
+  if (h === 0) return `${r}m`
+  return `${h}h${pad2(r)}m`
+}
+
 function shiftDurationMinutesFromSchedule(from?: string | null, to?: string | null) {
   if (from == null && to == null) return null
   const toR = to == null || String(to).trim() === '' ? null : to
@@ -358,6 +384,14 @@ function shiftDurationPillClass(compact: boolean) {
     'rounded-md border border-yellow-400/15 bg-black/35 px-1.5',
     'text-zinc-300 [html[data-theme=light]_&]:border-amber-500/35 [html[data-theme=light]_&]:bg-amber-50/90 [html[data-theme=light]_&]:text-amber-950/90',
     compact ? 'text-[9px] leading-tight' : 'text-[10px] leading-tight',
+  )
+}
+
+/** Plan job cards: one-line duration, never shrink-wrap inside the pill. */
+function shiftDurationPillClassCard(compact: boolean) {
+  return cn(
+    shiftDurationPillClass(compact),
+    'inline-flex min-w-max max-w-none shrink-0 items-center justify-center whitespace-nowrap leading-none',
   )
 }
 
@@ -2641,7 +2675,8 @@ const [editOpen, setEditOpen] = useState(false)
     const st = String(j.status || '')
     const timeText = timeRangeHHMM(j.scheduled_time, j.scheduled_end_time)
     const durM = shiftDurationMinutesFromSchedule(j.scheduled_time, j.scheduled_end_time)
-    const durText = durM != null ? formatShiftDurationI18n(durM, lang) : null
+    const durTextFull = durM != null ? formatShiftDurationI18n(durM, lang) : null
+    const durTextCard = durM != null ? formatShiftDurationI18nCardCompact(durM, lang) : null
     return (
       <div
         key={j.id}
@@ -2698,18 +2733,20 @@ const [editOpen, setEditOpen] = useState(false)
               <div className="min-w-0 truncate font-semibold text-yellow-100">{left}</div>
             </div>
             </div>
-            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-zinc-300">
-              <span className="min-w-0 break-all">
-                {timeText}
-                {durText ? (
-                  <span>
-                    <span className="mx-1.5 text-zinc-500">·</span>
-                    <span className={shiftDurationPillClass(compact)} title={durText}>
-                      {durText}
+            <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-zinc-300">
+              <div className="flex min-w-0 max-w-full min-h-[1.1em] flex-nowrap items-center gap-x-1.5">
+                <span className="shrink-0 whitespace-nowrap text-zinc-300">{timeText}</span>
+                {durTextCard && durTextFull ? (
+                  <>
+                    <span className="shrink-0 whitespace-nowrap text-zinc-500" aria-hidden>
+                      ·
                     </span>
-                  </span>
+                    <span className={shiftDurationPillClassCard(compact)} title={durTextFull}>
+                      {durTextCard}
+                    </span>
+                  </>
                 ) : null}
-              </span>
+              </div>
               <StatusTag status={st} />
               {st === 'in_progress' && j.started_at ? (
                 <ElapsedSince startedAt={j.started_at} />
