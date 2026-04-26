@@ -92,6 +92,25 @@ function workerPrefix(workerId: string): string {
   return joinPath(root, workerId)
 }
 
+function toPublicUrl(path: string): string {
+  return `/api/storage/public/${encodeURIComponent(BUCKET)}/${path
+    .split('/')
+    .filter(Boolean)
+    .map((part) => encodeURIComponent(part))
+    .join('/')}`
+}
+
+function normalizeSignedUrl(url: string): string {
+  const raw = String(url || '').trim()
+  if (!raw) return raw
+  try {
+    const parsed = new URL(raw)
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`
+  } catch {
+    return raw
+  }
+}
+
 function fileExt(file: IncomingFile) {
   const ext = (file.name.split('.').pop() || '').toLowerCase()
   return ext || 'jpg'
@@ -240,12 +259,12 @@ async function listPhotos(sb: any, bucketClient: StorageBucketClient, workerId: 
     for (const s of signed as any[]) {
       const p = s?.path ? String(s.path) : ''
       const u = s?.signedUrl ? String(s.signedUrl) : ''
-      if (p && u) urlByPath.set(p, u)
+      if (p && u) urlByPath.set(p, normalizeSignedUrl(u))
     }
   } else {
     for (const p of paths) {
       const { data: one } = await bucketClient.createSignedUrl(p, ttl)
-      if (one?.signedUrl) urlByPath.set(p, String(one.signedUrl))
+      if (one?.signedUrl) urlByPath.set(p, normalizeSignedUrl(String(one.signedUrl)))
     }
   }
 
@@ -254,7 +273,7 @@ async function listPhotos(sb: any, bucketClient: StorageBucketClient, workerId: 
     const path = `${pref}/${it.name}`
     out.push({
       path,
-      url: urlByPath.get(path),
+      url: urlByPath.get(path) || toPublicUrl(path),
       created_at: (it as any)?.created_at ?? null,
     })
   }

@@ -36,6 +36,22 @@ type WorkerPhoto = { path: string; url?: string; created_at?: string | null }
 
 type WorkerPhotoMeta = { count: number; thumb?: string }
 
+function workerPhotoFallbackUrl(path: string): string {
+  const clean = String(path || '').replace(/^\/+/, '')
+  if (!clean) return ''
+  return `/api/storage/public/site-photos/${clean
+    .split('/')
+    .filter(Boolean)
+    .map((part) => encodeURIComponent(part))
+    .join('/')}`
+}
+
+function workerPhotoUrl(photo: WorkerPhoto): string {
+  const url = String(photo?.url || '').trim()
+  if (url) return url
+  return workerPhotoFallbackUrl(photo?.path || '')
+}
+
 type WorkerProfile = {
   id: string
   full_name?: string | null
@@ -1223,6 +1239,8 @@ const [editOpen, setEditOpen] = useState(false)
   const [workerCardItems, setWorkerCardItems] = useState<ScheduleItem[]>([])
 
   const [workerCardPhotos, setWorkerCardPhotos] = useState<WorkerPhoto[]>([])
+  const [workerPhotoUiError, setWorkerPhotoUiError] = useState<string | null>(null)
+  const [workerPhotoBroken, setWorkerPhotoBroken] = useState<Record<string, boolean>>({})
   const [workerPhotoMeta, setWorkerPhotoMeta] = useState<Record<string, WorkerPhotoMeta>>({})
 
   const [workerProfileById, setWorkerProfileById] = useState<Record<string, WorkerProfile>>({})
@@ -2081,7 +2099,9 @@ const [editOpen, setEditOpen] = useState(false)
 
       // 2) photos
       const res = await authFetchJson<{ photos: WorkerPhoto[] }>(`/api/admin/workers/${encodeURIComponent(workerId)}/photos`)
-      const photos = Array.isArray(res?.photos) ? res.photos : []
+      const photos = Array.isArray(res?.photos)
+        ? res.photos.map((p) => ({ ...p, url: workerPhotoUrl(p) }))
+        : []
       const thumb = avatarPath ? photos.find((p) => p.path === avatarPath)?.url || photos[0]?.url : photos[0]?.url
       setWorkerPhotoMeta((prev) => ({ ...prev, [workerId]: { count: Math.min(photos.length, 5), thumb } }))
     } catch {
@@ -2089,13 +2109,23 @@ const [editOpen, setEditOpen] = useState(false)
     }
   }
 
+  function applyWorkerPhotosState(workerId: string, photos: WorkerPhoto[]) {
+    const normalized = (Array.isArray(photos) ? photos : []).map((p) => ({ ...p, url: workerPhotoUrl(p) }))
+    setWorkerCardPhotos(normalized)
+    const avatarPath = workerProfileById?.[workerId]?.avatar_path ?? workerCardAvatarPath ?? null
+    const thumb = avatarPath ? normalized.find((p) => p.path === avatarPath)?.url || normalized[0]?.url : normalized[0]?.url
+    setWorkerPhotoMeta((prev) => ({ ...prev, [workerId]: { count: Math.min(normalized.length, 5), thumb } }))
+    return normalized
+  }
+
   async function loadWorkerPhotos(workerId: string) {
     const res = await authFetchJson<{ photos: WorkerPhoto[] }>(`/api/admin/workers/${encodeURIComponent(workerId)}/photos`)
-    const photos = Array.isArray(res?.photos) ? res.photos : []
-    setWorkerCardPhotos(photos)
-    const avatarPath = workerProfileById?.[workerId]?.avatar_path ?? null
-    const thumb = avatarPath ? photos.find((p) => p.path === avatarPath)?.url || photos[0]?.url : photos[0]?.url
-    setWorkerPhotoMeta((prev) => ({ ...prev, [workerId]: { count: Math.min(photos.length, 5), thumb } }))
+    const photos = applyWorkerPhotosState(workerId, Array.isArray(res?.photos) ? res.photos : [])
+    setWorkerPhotoUiError(null)
+    setWorkerPhotoBroken({})
+    if (photos.length > 0 && photos.every((p) => !p.url)) {
+      setWorkerPhotoUiError('Фото получены, но ссылки на файлы недоступны. Проверьте storage URL.')
+    }
   }
 
   async function loadWorkerProfile(workerId: string) {
@@ -2174,11 +2204,17 @@ const [editOpen, setEditOpen] = useState(false)
 
     setWorkerPhotoBusy(true)
     setError(null)
+    setWorkerPhotoUiError(null)
 
     try {
       const current = workerCardPhotos.length || 0
       const left = Math.max(0, 5 - current)
       const toUpload = Array.from(files).slice(0, left)
+
+      if (left <= 0) {
+        setWorkerPhotoUiError(t('admin.main.photoLimit'))
+        return
+      }
 
       for (const f of toUpload) {
         const fd = new FormData()
@@ -2187,9 +2223,14 @@ const [editOpen, setEditOpen] = useState(false)
           method: 'POST',
           body: fd,
         })
-        setWorkerCardPhotos(Array.isArray(res?.photos) ? res.photos : [])
+        const updated = applyWorkerPhotosState(workerId, Array.isArray(res?.photos) ? res.photos : [])
+        setWorkerPhotoBroken({})
+        if (updated.length === 0) {
+          setWorkerPhotoUiError('Фото загружено, но не удалось прочитать список фотографий.')
+        }
       }
     } catch (e: unknown) {
+      setWorkerPhotoUiError(mapAdminErr(e, t))
       setError(mapAdminErr(e, t))
     } finally {
       setWorkerPhotoBusy(false)
@@ -2199,14 +2240,22 @@ const [editOpen, setEditOpen] = useState(false)
   async function removeWorkerPhoto(workerId: string, path: string) {
     setWorkerPhotoBusy(true)
     setError(null)
+    setWorkerPhotoUiError(null)
     try {
       const res = await authFetchJson<{ photos: WorkerPhoto[] }>(`/api/admin/workers/${encodeURIComponent(workerId)}/photos`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path }),
       })
-      setWorkerCardPhotos(Array.isArray(res?.photos) ? res.photos : [])
+      const updated = applyWorkerPhotosState(workerId, Array.isArray(res?.photos) ? res.photos : [])
+      setWorkerPhotoBroken((prev) => {
+        const next = { ...prev }
+        delete next[path]
+        return next
+      })
+      setWorkerCardAvatarPath((prev) => (prev === path ? (updated[0]?.path ?? null) : prev))
     } catch (e: unknown) {
+      setWorkerPhotoUiError(mapAdminErr(e, t))
       setError(mapAdminErr(e, t))
     } finally {
       setWorkerPhotoBusy(false)
@@ -2218,6 +2267,8 @@ const [editOpen, setEditOpen] = useState(false)
     setWorkerCardOpen(true)
     setWorkerCardItems([])
     setWorkerCardPhotos([])
+    setWorkerPhotoUiError(null)
+    setWorkerPhotoBroken({})
     setError(null)
 
     const core = workersById.get(workerId)
@@ -2639,42 +2690,55 @@ const [editOpen, setEditOpen] = useState(false)
 
   function renderPlanWeekGrid() {
     return (
-      <div className="mt-4 overflow-auto rounded-3xl border border-yellow-400/15 bg-black/15">
+      <div className="mt-4 overflow-auto rounded-3xl border border-transparent bg-transparent dark:border-yellow-400/15 dark:bg-black/15">
         <div className="w-full overflow-x-auto">
-        <div className="min-w-[760px]">
-          <div className="grid" style={{ gridTemplateColumns: `200px repeat(${planDates.length}, minmax(130px, 1fr))` }}>
+        <div className="w-full">
+          <div className="grid w-full" style={{ gridTemplateColumns: `170px repeat(${planDates.length}, minmax(0, 1fr))` }}>
             <div className="sticky top-0 z-10 border-b border-yellow-400/10 bg-zinc-950/90 px-4 py-3 text-xs font-semibold text-zinc-200">
               {planMode === 'workers' ? t('admin.main.colWorker') : t('admin.main.colSite')}
             </div>
 
             {planDates.map((d) => (
               <div key={d.iso} className="sticky top-0 z-10 border-b border-yellow-400/10 bg-zinc-950/90 px-4 py-3 text-xs font-semibold text-zinc-200">
-                <div className="flex items-center justify-between">
-                  <span>
-                    {d.dow} • {d.label}
-                  </span>
-                  <span className="text-[11px] text-zinc-400">{fmtD(d.iso)}</span>
-                </div>
+                <span>
+                  {d.dow} • {d.label}
+                </span>
               </div>
             ))}
 
             {planEntities.map((ent) => (
               <div key={ent.id} className="contents">
                 <div className="border-b border-yellow-400/10 bg-black/10 px-4 py-4">
-                  <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
                     <div className="min-w-0">
-                      <div className="flex min-w-0 items-center gap-2">
-                      {planMode === 'workers' && workerPhotoMeta[ent.id]?.thumb ? (
-                         
-                        <img
-                          src={workerPhotoMeta[ent.id]?.thumb || ''}
-                          alt=""
-                          className="h-6 w-6 flex-none rounded-full border border-yellow-400/20 object-cover"
-                          loading="lazy"
-                        />
-                      ) : null}
-                      <div className="truncate text-sm font-semibold text-yellow-100">{ent.name}</div>
-                    </div>
+                      {planMode === 'workers' ? (
+                        <button
+                          onClick={() => openWorkerCard(ent.id)}
+                          className="flex min-w-0 items-center gap-2 rounded-lg text-left hover:text-yellow-50"
+                        >
+                          {workerPhotoMeta[ent.id]?.thumb ? (
+                            <img
+                              src={workerPhotoMeta[ent.id]?.thumb || ''}
+                              alt=""
+                              className="h-6 w-6 flex-none rounded-full border border-yellow-400/20 object-cover"
+                              loading="lazy"
+                            />
+                          ) : null}
+                          <span className="truncate text-sm font-semibold text-yellow-100">{ent.name}</span>
+                        </button>
+                      ) : (
+                        <div className="flex min-w-0 items-center gap-2">
+                          {workerPhotoMeta[ent.id]?.thumb ? (
+                            <img
+                              src={workerPhotoMeta[ent.id]?.thumb || ''}
+                              alt=""
+                              className="h-6 w-6 flex-none rounded-full border border-yellow-400/20 object-cover"
+                              loading="lazy"
+                            />
+                          ) : null}
+                          <div className="truncate text-sm font-semibold text-yellow-100">{ent.name}</div>
+                        </div>
+                      )}
                       <div className="mt-1 text-[11px] text-zinc-400">
                         {planMode === 'workers'
                           ? t('admin.main.workerSitesCount', { n: (workerSites.get(ent.id) || []).length })
@@ -2683,15 +2747,6 @@ const [editOpen, setEditOpen] = useState(false)
                             })}
                       </div>
                     </div>
-
-                    {planMode === 'workers' ? (
-                      <button
-                        onClick={() => openWorkerCard(ent.id)}
-                        className="rounded-2xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-[11px] text-zinc-200 hover:border-yellow-300/40"
-                      >
-                        {t('admin.main.cardShort')}
-                      </button>
-                    ) : null}
                   </div>
                 </div>
 
@@ -2710,11 +2765,15 @@ const [editOpen, setEditOpen] = useState(false)
                       else patch.site_id = ent.id
                       void moveJob(p.job_id, patch)
                     }}
-                    className="border-b border-yellow-400/10 bg-black/5 px-3 py-3"
+                    className="border-b border-yellow-400/10 bg-black/5 px-2 py-2"
                   >
-                    <div className="grid gap-2">
-                      {jobsInCell({ entityId: ent.id, dateISO: d.iso }).map((j) => jobCard(j, true))}
-                      <div className="rounded-2xl border border-dashed border-yellow-400/10 bg-black/10 px-3 py-2 text-[11px] text-zinc-500">
+                    <div className="grid gap-1">
+                      {jobsInCell({ entityId: ent.id, dateISO: d.iso }).map((j) => (
+                        <div key={j.id} className="w-full min-w-0 overflow-hidden [&_*]:min-w-0">
+                          {jobCard(j, true)}
+                        </div>
+                      ))}
+                      <div className="h-auto min-h-[34px] rounded-2xl border border-dashed border-yellow-400/10 bg-black/10 px-2 py-1 text-[10px] text-zinc-500">
                         {t('admin.main.dropHere')}
                       </div>
                     </div>
@@ -3917,65 +3976,73 @@ const [editOpen, setEditOpen] = useState(false)
                 <div className="text-sm font-semibold text-yellow-100">{t('admin.main.jobsCreateTitle')}</div>
                 <div className="mt-1 text-xs text-zinc-300">{t('admin.main.jobsCreateHint')}</div>
 
-                <div className="mt-4 grid gap-3 lg:grid-cols-2 2xl:grid-cols-[1.3fr_1.7fr_0.8fr_0.7fr_0.7fr_auto]">
-                  
-<div className="grid gap-1">
-  <SearchableSelect
-    label={t('admin.main.labelSite')}
-    value={newSiteId}
-    onChange={(v) => {
-      setNewSiteId(v)
-      setNewWorkers([])
-    }}
-    items={activeSites.map((s) => siteToSelectItem(s, t))}
-    placeholder={t('admin.main.pickSitePh')}
-    disabled={busy}
-    inputClassName="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
-  />
-</div>
+                <div className="mt-4 w-full max-w-5xl space-y-4">
+                  <div className="grid gap-4 xl:grid-cols-[minmax(260px,340px)_minmax(360px,520px)]">
+                    <div className="grid max-w-[340px] gap-1">
+                      <SearchableSelect
+                        label={t('admin.main.labelSite')}
+                        value={newSiteId}
+                        onChange={(v) => {
+                          setNewSiteId(v)
+                          setNewWorkers([])
+                        }}
+                        items={activeSites.map((s) => siteToSelectItem(s, t))}
+                        placeholder={t('admin.main.pickSitePh')}
+                        disabled={busy}
+                        inputClassName="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2.5 text-sm outline-none transition focus:border-yellow-300/60"
+                      />
+                    </div>
 
-                  <label className="grid gap-1">
-                    <span className="text-[11px] text-zinc-300">{t('admin.main.labelWorkersMulti')}</span>
-                    <MultiWorkerPicker workers={workersForPicker} value={newWorkers} onChange={setNewWorkers} disabled={!newSiteId} />
-                  </label>
+                    <label className="grid max-w-[520px] gap-1">
+                      <span className="text-[11px] text-zinc-300">{t('admin.main.labelWorkersMulti')}</span>
+                      <MultiWorkerPicker workers={workersForPicker} value={newWorkers} onChange={setNewWorkers} disabled={!newSiteId} />
+                    </label>
+                  </div>
 
-                  <label className="grid gap-1">
-                    <span className="text-[11px] text-zinc-300">{t('admin.main.labelDate')}</span>
-                    <input
-                      type="date"
-                      onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
-                      value={newDate}
-                      onChange={(e) => setNewDate(e.target.value)}
-                      className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
-                    />
-                  </label>
+                  <div className="grid gap-4 lg:grid-cols-[minmax(180px,220px)_minmax(300px,360px)]">
+                    <label className="grid max-w-[220px] gap-1">
+                      <span className="text-[11px] text-zinc-300">{t('admin.main.labelDate')}</span>
+                      <input
+                        type="date"
+                        onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
+                        value={newDate}
+                        onChange={(e) => setNewDate(e.target.value)}
+                        className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2.5 text-sm outline-none transition focus:border-yellow-300/60"
+                      />
+                    </label>
 
-                  <label className="grid gap-1">
-                    <span className="text-[11px] text-zinc-300">{t('admin.main.labelTime')}</span>
-                    <input
-                      type="time"
-                      value={newTime}
-                      onChange={(e) => setNewTime(e.target.value)}
-                      className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
-                    />
-                  </label>
+                    <div className="grid gap-1">
+                      <span className="text-[11px] text-zinc-300">{t('admin.main.labelTime')}</span>
+                      <div className="flex flex-wrap gap-3">
+                        <label className="grid w-[150px] gap-1">
+                          <span className="text-[11px] text-zinc-400">{t('admin.main.labelTime')}</span>
+                          <input
+                            type="time"
+                            value={newTime}
+                            onChange={(e) => setNewTime(e.target.value)}
+                            className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2.5 text-sm outline-none transition focus:border-yellow-300/60"
+                          />
+                        </label>
+                        <label className="grid w-[150px] gap-1">
+                          <span className="text-[11px] text-zinc-400">{t('admin.main.labelEnd')}</span>
+                          <input
+                            type="time"
+                            onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
+                            value={newTimeTo}
+                            onChange={(e) => setNewTimeTo(e.target.value)}
+                            className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2.5 text-sm outline-none transition focus:border-yellow-300/60"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
 
-                  <label className="grid gap-1">
-                    <span className="text-[11px] text-zinc-300">{t('admin.main.labelEnd')}</span>
-                    <input
-                      type="time"
-                      onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
-                      value={newTimeTo}
-                      onChange={(e) => setNewTimeTo(e.target.value)}
-                      className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
-                    />
-                  </label>
-
-
+                <div className="mt-4 flex flex-wrap items-center gap-2">
                   <button
                     onClick={createJobs}
                     disabled={busy || !newSiteId || newWorkers.length === 0}
-                    className="w-full rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-center text-sm font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:cursor-not-allowed disabled:opacity-60 lg:mt-5 lg:w-auto"
+                    className="w-auto max-w-[260px] rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2.5 text-center text-sm font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {busy
                       ? t('admin.main.creating')
@@ -3985,29 +4052,29 @@ const [editOpen, setEditOpen] = useState(false)
                           ? t('admin.main.pickWorkersFirst')
                           : t('admin.main.createShift')}
                   </button>
-                </div>
 
-                <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
-                  <button
-                    onClick={() => setJobsView('table')}
-                    className={cn(
-                      'rounded-2xl border px-4 py-2 text-xs font-semibold transition flex-1 text-center sm:flex-none',
-                      jobsView === 'table' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
-                    )}
-                  >
-                    {t('admin.main.viewTable')}
-                  </button>
-                  <button
-                    onClick={() => setJobsView('board')}
-                    className={cn(
-                      'rounded-2xl border px-4 py-2 text-xs font-semibold transition flex-1 text-center sm:flex-none',
-                      jobsView === 'board' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
-                    )}
-                  >
-                    {t('admin.main.viewBoard')}
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => setJobsView('table')}
+                      className={cn(
+                        'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
+                        jobsView === 'table' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
+                      )}
+                    >
+                      {t('admin.main.viewTable')}
+                    </button>
+                    <button
+                      onClick={() => setJobsView('board')}
+                      className={cn(
+                        'rounded-2xl border px-4 py-2 text-xs font-semibold transition',
+                        jobsView === 'board' ? 'border-yellow-300/70 bg-yellow-400/10 text-yellow-100' : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/40'
+                      )}
+                    >
+                      {t('admin.main.viewBoard')}
+                    </button>
+                  </div>
 
-                  <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+                  <div className="ml-auto flex flex-wrap items-center gap-2">
                     <button
                       onClick={() => {
                         setAnchorDate(toISODate(new Date()))
@@ -4454,10 +4521,7 @@ const [editOpen, setEditOpen] = useState(false)
                             void resetWorkerPassword(workerCardId)
                           }}
                           disabled={workerResetBusy || !workerCardId}
-                          className={cn(
-                            'rounded-xl border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-100 hover:border-red-300/55',
-                            workerResetBusy ? 'opacity-70' : '',
-                          )}
+                          className="rounded-xl border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs font-semibold text-[#3b2414] disabled:text-[#3b2414] disabled:opacity-100 hover:border-red-300/55 dark:text-red-100 dark:disabled:text-red-100"
                         >
                           {workerResetBusy ? 'Сбрасываю…' : 'Сбросить пароль'}
                         </button>
@@ -4517,7 +4581,7 @@ const [editOpen, setEditOpen] = useState(false)
                             className={cn(
                               'rounded-xl border px-3 py-1.5 text-xs font-semibold transition',
                               workerCardLocale === L
-                                ? 'border-yellow-300/50 bg-yellow-400/15 text-yellow-50'
+                                ? 'border-yellow-300/50 bg-yellow-400/15 text-[#3b2414] disabled:text-[#3b2414] disabled:opacity-100 dark:text-yellow-50 dark:disabled:text-yellow-50'
                                 : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/35',
                             )}
                           >
@@ -4659,19 +4723,22 @@ const [editOpen, setEditOpen] = useState(false)
                     <div className="grid grid-cols-2 gap-2">
                       {workerCardPhotos.map((p) => (
                         <div key={p.path} className="relative overflow-hidden rounded-2xl border border-yellow-400/10 bg-black/20">
-                          { }
-                          <img
-                            src={p.url || ''}
-                            alt={t('admin.main.roleWorker')}
-                            className="h-36 w-full object-cover"
-                            loading="lazy"
-                            onError={(e) => {
-                              try {
-                                ;(e.currentTarget as HTMLImageElement).style.display = 'none'
-                                ;(e.currentTarget as HTMLImageElement).removeAttribute('src')
-                              } catch {}
-                            }}
-                          />
+                          {workerPhotoBroken[p.path] ? (
+                            <div className="grid h-36 w-full place-items-center px-2 text-center text-[11px] text-red-200/85">
+                              Фото не загрузилось
+                            </div>
+                          ) : (
+                            <img
+                              src={p.url || workerPhotoUrl(p)}
+                              alt={t('admin.main.roleWorker')}
+                              className="h-36 w-full object-cover"
+                              loading="lazy"
+                              onError={() => {
+                                setWorkerPhotoBroken((prev) => ({ ...prev, [p.path]: true }))
+                                setWorkerPhotoUiError('Часть фото не загрузилась (ошибка доступа или повреждённый файл).')
+                              }}
+                            />
+                          )}
 
                           <div className="absolute right-2 top-2">
                             <button
@@ -4711,6 +4778,10 @@ const [editOpen, setEditOpen] = useState(false)
                       ))}
                     </div>
                   )}
+
+                  {workerPhotoUiError ? (
+                    <div className="rounded-2xl border border-red-500/30 bg-red-950/30 px-3 py-2 text-xs text-red-100">{workerPhotoUiError}</div>
+                  ) : null}
 
                   {workerPhotoBusy ? <div className="text-xs text-yellow-100/45">{t('admin.main.processing')}</div> : null}
                 </div>
