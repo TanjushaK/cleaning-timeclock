@@ -261,6 +261,85 @@ function timeRangeHHMM(from?: string | null, to?: string | null) {
   return a
 }
 
+/** Parses `HH:MM` from a time input / schedule slice. Returns minutes from midnight, or null. */
+function parseHHMMToMinutes(value: string | null | undefined): number | null {
+  if (value == null) return null
+  const s = String(value).trim()
+  if (!s) return null
+  const m = /^(\d{1,2}):(\d{2})$/.exec(s)
+  if (!m) return null
+  const h = Number(m[1])
+  const min = Number(m[2])
+  if (!Number.isFinite(h) || !Number.isFinite(min)) return null
+  if (h < 0 || h > 23 || min < 0 || min > 59) return null
+  return h * 60 + min
+}
+
+/**
+ * Duration in whole minutes. If `end` is not after `start` on the same day, counts as next calendar day
+ * (cross-midnight). Same start/end → null. Invalid / empty → null.
+ */
+function shiftDurationMinutes(start: string, end: string): number | null {
+  const a = parseHHMMToMinutes(start)
+  const b0 = parseHHMMToMinutes(end)
+  if (a == null || b0 == null) return null
+  if (a === b0) return null
+  let b = b0
+  if (b <= a) b += 24 * 60
+  const d = b - a
+  if (d <= 0) return null
+  return d
+}
+
+function formatShiftDurationI18n(totalMinutes: number, lang0: string): string {
+  const tmin = Math.max(0, Math.floor(totalMinutes))
+  if (tmin <= 0) return ''
+  const h = Math.floor(tmin / 60)
+  const r = tmin % 60
+  const l = String(lang0 || 'en')
+  if (l === 'ru') {
+    if (h === 0) return `${r} мин`
+    if (r === 0) return `${h} ч 00 мин`
+    return `${h} ч ${r} мин`
+  }
+  if (l === 'uk') {
+    if (h === 0) return `${r} хв`
+    if (r === 0) return `${h} год 00 хв`
+    return `${h} год ${r} хв`
+  }
+  if (l === 'nl') {
+    if (h === 0) return `${r} min`
+    if (r === 0) return `${h} u 00 min`
+    return `${h} u ${r} min`
+  }
+  if (h === 0) return `${r} min`
+  if (r === 0) return `${h} h 00 min`
+  return `${h} h ${r} min`
+}
+
+function shiftDurationMinutesFromSchedule(from?: string | null, to?: string | null) {
+  if (from == null && to == null) return null
+  const toR = to == null || String(to).trim() === '' ? null : to
+  if (toR == null) return null
+  const a = timeHHMM(from)
+  if (a === '—') return null
+  const b = timeHHMM(toR)
+  if (b === '—') return null
+  return shiftDurationMinutes(a, b)
+}
+
+function shiftDurationPrefixedLine(start: string, end: string, lang0: string) {
+  const a = start?.trim() || ''
+  const b = end?.trim() || ''
+  if (!a || !b) return null
+  const dm = shiftDurationMinutes(a, b)
+  if (dm == null) return null
+  const body = formatShiftDurationI18n(dm, lang0)
+  if (!body) return null
+  const l = String(lang0 || 'en')
+  const p = l === 'ru' ? 'Длительность: ' : l === 'uk' ? 'Тривалість: ' : l === 'nl' ? 'Duur: ' : 'Duration: '
+  return `${p}${body}`
+}
 
 function fmtMinutesHM(totalMinutes: number) {
   const mins = Math.max(0, Math.floor(totalMinutes || 0))
@@ -273,6 +352,21 @@ function cn(...xs: Array<string | false | null | undefined>) {
   return xs.filter(Boolean).join(' ')
 }
 
+function shiftDurationPillClass(compact: boolean) {
+  return cn(
+    'shrink-0 font-medium',
+    'rounded-md border border-yellow-400/15 bg-black/35 px-1.5',
+    'text-zinc-300 [html[data-theme=light]_&]:border-amber-500/35 [html[data-theme=light]_&]:bg-amber-50/90 [html[data-theme=light]_&]:text-amber-950/90',
+    compact ? 'text-[9px] leading-tight' : 'text-[10px] leading-tight',
+  )
+}
+
+function shiftDurationFormHintClass() {
+  return cn(
+    'rounded-xl border border-yellow-400/12 bg-black/25 px-2.5 py-1.5',
+    'text-xs text-zinc-300 [html[data-theme=light]_&]:border-amber-500/30 [html[data-theme=light]_&]:bg-amber-50/85 [html[data-theme=light]_&]:text-amber-950/90',
+  )
+}
 
 function statusPillClasses(s: string) {
   if (s === 'in_progress')
@@ -2546,6 +2640,8 @@ const [editOpen, setEditOpen] = useState(false)
     const left = planMode === 'workers' ? (j.site_name || t('admin.main.fallbackSite')) : (j.worker_name || t('admin.main.fallbackWorker'))
     const st = String(j.status || '')
     const timeText = timeRangeHHMM(j.scheduled_time, j.scheduled_end_time)
+    const durM = shiftDurationMinutesFromSchedule(j.scheduled_time, j.scheduled_end_time)
+    const durText = durM != null ? formatShiftDurationI18n(durM, lang) : null
     return (
       <div
         key={j.id}
@@ -2602,8 +2698,18 @@ const [editOpen, setEditOpen] = useState(false)
               <div className="min-w-0 truncate font-semibold text-yellow-100">{left}</div>
             </div>
             </div>
-            <div className="mt-0.5 flex flex-wrap items-center gap-2 text-zinc-300">
-              <span>{timeText}</span>
+            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-zinc-300">
+              <span className="min-w-0 break-all">
+                {timeText}
+                {durText ? (
+                  <span>
+                    <span className="mx-1.5 text-zinc-500">·</span>
+                    <span className={shiftDurationPillClass(compact)} title={durText}>
+                      {durText}
+                    </span>
+                  </span>
+                ) : null}
+              </span>
               <StatusTag status={st} />
               {st === 'in_progress' && j.started_at ? (
                 <ElapsedSince startedAt={j.started_at} />
@@ -4154,6 +4260,10 @@ const [editOpen, setEditOpen] = useState(false)
                           />
                         </div>
                       </div>
+                      {(() => {
+                        const d = shiftDurationPrefixedLine(newTime, newTimeTo, lang)
+                        return d ? <div className={shiftDurationFormHintClass()}>{d}</div> : null
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -4561,6 +4671,11 @@ const [editOpen, setEditOpen] = useState(false)
               />
             </label>
           </div>
+
+          {(() => {
+            const d = shiftDurationPrefixedLine(editTime, editTimeTo, lang)
+            return d ? <div className={shiftDurationFormHintClass()}>{d}</div> : null
+          })()}
 
           <div className="grid gap-1">
             <span className="text-[11px] text-zinc-300">{t('admin.main.status')}</span>
@@ -5148,6 +5263,11 @@ const [editOpen, setEditOpen] = useState(false)
               />
             </div>
           </div>
+
+          {(() => {
+            const d = shiftDurationPrefixedLine(quickShiftTime, quickShiftTimeTo, lang)
+            return d ? <div className={shiftDurationFormHintClass()}>{d}</div> : null
+          })()}
 
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
             <button
