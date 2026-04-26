@@ -1,12 +1,22 @@
 import { NextResponse } from 'next/server'
 import { AdminApiErrorCode } from '@/lib/api-error-codes'
 import { sendWorkerInviteEmailViaResend } from '@/lib/email/resend'
-import { resendOutboundReady } from '@/lib/server/env'
+import { sendWorkerInviteSms } from '@/lib/sms/send'
+import { resendOutboundReady, smsOutboundReady, workerInviteSmsEnabled } from '@/lib/server/env'
 import { ApiError, requireAdmin, toErrorResponse } from '@/lib/route-db'
 import crypto from 'crypto'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+
+const INVITE_SMS_LIMIT_PHONE_15M = 1
+const INVITE_SMS_LIMIT_PHONE_24H = 3
+const INVITE_SMS_LIMIT_GLOBAL_24H = 30
+const WINDOW_15M_MS = 15 * 60 * 1000
+const WINDOW_24H_MS = 24 * 60 * 60 * 1000
+
+const inviteSmsByPhone = new Map<string, number[]>()
+const inviteSmsGlobal: number[] = []
 
 function isEmail(s: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s)
@@ -21,6 +31,42 @@ function normalizePhone(raw: string): string {
 
 function isE164(s: string): boolean {
   return /^\+\d{8,15}$/.test(s)
+}
+
+function isNlPhone(s: string): boolean {
+  return /^\+31\d{8,12}$/.test(s)
+}
+
+function maskPhone(s: string): string {
+  const v = String(s || '').trim()
+  if (v.length < 7) return '***'
+  return `${v.slice(0, 4)}…${v.slice(-3)}`
+}
+
+function pruneWindow(samples: number[], now: number, windowMs: number): number[] {
+  return samples.filter((ts) => now - ts < windowMs)
+}
+
+function checkInviteSmsRateLimit(phone: string): boolean {
+  const now = Date.now()
+  const phoneSamples = pruneWindow(inviteSmsByPhone.get(phone) ?? [], now, WINDOW_24H_MS)
+  const globalSamples = pruneWindow(inviteSmsGlobal, now, WINDOW_24H_MS)
+
+  inviteSmsGlobal.length = 0
+  inviteSmsGlobal.push(...globalSamples)
+
+  const phoneIn15m = phoneSamples.filter((ts) => now - ts < WINDOW_15M_MS).length
+  const phoneIn24h = phoneSamples.length
+  const totalIn24h = globalSamples.length
+
+  if (phoneIn15m >= INVITE_SMS_LIMIT_PHONE_15M) return false
+  if (phoneIn24h >= INVITE_SMS_LIMIT_PHONE_24H) return false
+  if (totalIn24h >= INVITE_SMS_LIMIT_GLOBAL_24H) return false
+
+  const withNew = [...phoneSamples, now]
+  inviteSmsByPhone.set(phone, withNew)
+  inviteSmsGlobal.push(now)
+  return true
 }
 
 function genTempPassword(): string {
@@ -187,10 +233,104 @@ export async function POST(req: Request) {
     }
 
     if (!email) {
-      return NextResponse.json(
-        { ...base, delivery: 'skipped' as const, emailSkipReason: 'not_email' },
-        { status: 200 }
-      )
+      if (!workerInviteSmsEnabled()) {
+        console.info('[api/admin/workers/invite] sms invite disabled', {
+          worker_id: user_id,
+          phoneMasked: phone ? maskPhone(phone) : '***',
+          smsDelivery: 'disabled',
+        })
+        return NextResponse.json(
+          { ...base, delivery: 'skipped' as const, emailSkipReason: 'not_email', smsDelivery: 'disabled' as const },
+          { status: 200 }
+        )
+      }
+
+      if (!phone || !isNlPhone(phone)) {
+        console.info('[api/admin/workers/invite] sms invite blocked', {
+          worker_id: user_id,
+          phoneMasked: phone ? maskPhone(phone) : '***',
+          smsDelivery: 'blocked',
+          smsBlockReason: 'unsupported_country',
+        })
+        return NextResponse.json(
+          {
+            ...base,
+            delivery: 'skipped' as const,
+            emailSkipReason: 'not_email',
+            smsDelivery: 'blocked' as const,
+            smsBlockReason: 'unsupported_country' as const,
+          },
+          { status: 200 }
+        )
+      }
+
+      if (!checkInviteSmsRateLimit(phone)) {
+        console.info('[api/admin/workers/invite] sms invite blocked', {
+          worker_id: user_id,
+          phoneMasked: maskPhone(phone),
+          smsDelivery: 'blocked',
+          smsBlockReason: 'rate_limited',
+        })
+        return NextResponse.json(
+          {
+            ...base,
+            delivery: 'skipped' as const,
+            emailSkipReason: 'not_email',
+            smsDelivery: 'blocked' as const,
+            smsBlockReason: 'rate_limited' as const,
+          },
+          { status: 200 }
+        )
+      }
+
+      if (!smsOutboundReady()) {
+        console.warn('[api/admin/workers/invite] sms invite failed: outbound not ready', {
+          worker_id: user_id,
+          phoneMasked: maskPhone(phone),
+          smsDelivery: 'failed',
+        })
+        return NextResponse.json(
+          {
+            ...base,
+            delivery: 'skipped' as const,
+            emailSkipReason: 'not_email',
+            smsDelivery: 'failed' as const,
+            smsError: 'SMS outbound not configured (SMS_SEND_ENABLED, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER)',
+          },
+          { status: 200 }
+        )
+      }
+
+      try {
+        await sendWorkerInviteSms(phone, login, password)
+        console.info('[api/admin/workers/invite] sms invite sent', {
+          worker_id: user_id,
+          phoneMasked: maskPhone(phone),
+          smsDelivery: 'sent',
+        })
+        return NextResponse.json(
+          { ...base, delivery: 'skipped' as const, emailSkipReason: 'not_email', smsDelivery: 'sent' as const },
+          { status: 200 }
+        )
+      } catch (e: unknown) {
+        const msg = (e instanceof Error ? e.message : String(e)).slice(0, 300)
+        console.error('[api/admin/workers/invite] sms invite failed', {
+          worker_id: user_id,
+          phoneMasked: maskPhone(phone),
+          smsDelivery: 'failed',
+        })
+        return NextResponse.json(
+          {
+            ...base,
+            delivery: 'skipped' as const,
+            emailSkipReason: 'not_email',
+            smsDelivery: 'failed' as const,
+            smsError: msg,
+          },
+          { status: 200 }
+        )
+      }
+
     }
 
     if (!resendOutboundReady()) {
