@@ -1405,6 +1405,18 @@ const T = {
     uk: "Скасувати зміну",
     nl: "Dienst annuleren",
   },
+  deleteShiftPermanently: {
+    ru: "Удалить смену навсегда",
+    en: "Delete shift permanently",
+    uk: "Видалити зміну назавжди",
+    nl: "Dienst definitief verwijderen",
+  },
+  deleting: {
+    ru: "Удаление…",
+    en: "Deleting…",
+    uk: "Видалення…",
+    nl: "Verwijderen…",
+  },
   workerCardTitle: {
     ru: "Карточка работника",
     en: "Worker card",

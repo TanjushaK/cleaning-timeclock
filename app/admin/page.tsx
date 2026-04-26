@@ -1377,6 +1377,7 @@ const [editOpen, setEditOpen] = useState(false)
   const [editTime, setEditTime] = useState<string>('09:00')
   const [editTimeTo, setEditTimeTo] = useState<string>('')
   const [editStatus, setEditStatus] = useState<JobStatus>('planned')
+  const [jobDeleteBusy, setJobDeleteBusy] = useState(false)
 
   const [workerCardOpen, setWorkerCardOpen] = useState(false)
   const [workerCardId, setWorkerCardId] = useState<string>('')
@@ -2627,6 +2628,29 @@ const [editOpen, setEditOpen] = useState(false)
       setError(mapAdminErr(e, t))
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function deleteJobPermanently() {
+    if (!editJobId) return
+    const ok = window.confirm('Удалить смену навсегда? Это действие нельзя отменить.')
+    if (!ok) return
+    setJobDeleteBusy(true)
+    setError(null)
+    try {
+      await authFetchJson('/api/admin/jobs/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ job_id: editJobId }),
+      })
+      setEditOpen(false)
+      setEditJobId(null)
+      await refreshSchedule()
+      await refreshCore()
+    } catch (e: unknown) {
+      setError(mapAdminErr(e, t))
+    } finally {
+      setJobDeleteBusy(false)
     }
   }
 
@@ -4631,7 +4655,14 @@ const [editOpen, setEditOpen] = useState(false)
       </div>
 
       {/* Modal: edit shift */}
-      <Modal open={editOpen} title={t('admin.main.editJobTitle')} onClose={() => setEditOpen(false)}>
+      <Modal
+        open={editOpen}
+        title={t('admin.main.editJobTitle')}
+        onClose={() => {
+          if (jobDeleteBusy) return
+          setEditOpen(false)
+        }}
+      >
         <div className="grid gap-3">
           
 <div className="grid gap-1">
@@ -4712,22 +4743,36 @@ const [editOpen, setEditOpen] = useState(false)
             </select>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <button
-              onClick={() => {
-                if (!editJobId) return
-                setCancelJobId(editJobId)
-                setCancelOpen(true)
-              }}
-              className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/40"
-            >
-              {t('admin.main.cancelShiftBtn')}
-            </button>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!editJobId) return
+                  setCancelJobId(editJobId)
+                  setCancelOpen(true)
+                }}
+                disabled={busy || jobDeleteBusy || !editJobId}
+                className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-2 text-xs font-semibold text-zinc-200 transition hover:border-yellow-300/40 disabled:opacity-60"
+              >
+                {t('admin.main.cancelShiftBtn')}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => void deleteJobPermanently()}
+                disabled={busy || jobDeleteBusy || !editJobId}
+                className="rounded-2xl border border-rose-500/40 bg-rose-500/15 px-4 py-2 text-xs font-semibold text-rose-100 transition hover:border-rose-400/60 hover:bg-rose-500/25 disabled:opacity-60 [html[data-theme=light]_&]:border-rose-400/50 [html[data-theme=light]_&]:bg-rose-500/20 [html[data-theme=light]_&]:text-rose-950/90 [html[data-theme=light]_&]:hover:border-rose-500/60"
+              >
+                {jobDeleteBusy ? t('admin.main.deleting') : t('admin.main.deleteShiftPermanently')}
+              </button>
+            </div>
 
             <button
+              type="button"
               onClick={saveEdit}
-              disabled={busy || !editJobId}
-              className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-2 text-xs font-semibold text-yellow-100 hover:border-yellow-200/70 disabled:opacity-60"
+              disabled={busy || jobDeleteBusy || !editJobId}
+              className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 disabled:opacity-60"
             >
               {t('common.save')}
             </button>
