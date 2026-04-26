@@ -128,6 +128,16 @@ function locDraftValue(d: Partial<Record<Lang, string>>, locale: Lang): string {
   return d[locale] ?? d.ru ?? ''
 }
 
+/** i18n value for the locale only — use in controlled inputs (no RU fallback). */
+function locDraftValueRaw(d: Partial<Record<Lang, string>>, locale: Lang): string {
+  return d[locale] ?? ''
+}
+
+/** Read-only display: current locale, else RU (e.g. modal title if this locale is empty). */
+function locDraftValueDisplay(d: Partial<Record<Lang, string>>, locale: Lang): string {
+  return d[locale] ?? d.ru ?? ''
+}
+
 function siteToLocDraft(s: Site): LocDraft {
   const name = { ...(s.name_i18n || {}) } as Partial<Record<Lang, string>>
   const address = { ...(s.address_i18n || {}) } as Partial<Record<Lang, string>>
@@ -1325,7 +1335,6 @@ export default function AdminPage() {
 
   const [siteCardOpen, setSiteCardOpen] = useState(false)
   const [siteCardId, setSiteCardId] = useState<string | null>(null)
-  const [siteCardLocale, setSiteCardLocale] = useState<Lang>('ru')
   const [siteLocDraft, setSiteLocDraft] = useState<LocDraft>(() => emptyLocDraft())
   const [siteCardRadius, setSiteCardRadius] = useState('150')
   const [siteCardCategory, setSiteCardCategory] = useState<number | null>(null)
@@ -1824,7 +1833,6 @@ const [editOpen, setEditOpen] = useState(false)
 
   function fillSiteCardFromSite(s: Site) {
     setSiteCardId(s.id)
-    setSiteCardLocale('ru')
     setSiteLocDraft(siteToLocDraft(s))
     setSiteCardRadius(String(s.radius ?? 150))
     setSiteCardCategory(s.category ?? null)
@@ -1898,8 +1906,8 @@ const [editOpen, setEditOpen] = useState(false)
 
   async function saveSiteCard() {
     if (!siteCardId) return
-    const name = locDraftValue(siteLocDraft.name, siteCardLocale).trim()
-    if (siteCardLocale === 'ru' && !name) return
+    const name = locDraftValueRaw(siteLocDraft.name, lang).trim()
+    if (lang === 'ru' && !name) return
 
     const radiusNum = Number(siteCardRadius)
     const radius = Number.isFinite(radiusNum) ? radiusNum : 150
@@ -1909,7 +1917,7 @@ const [editOpen, setEditOpen] = useState(false)
 
     const lat = latNum != null && Number.isFinite(latNum) ? latNum : null
     const lng = lngNum != null && Number.isFinite(lngNum) ? lngNum : null
-    const addressRu = locDraftValue(siteLocDraft.address, "ru").trim() || null
+    const addressRu = locDraftValueRaw(siteLocDraft.address, 'ru').trim() || null
     if (!addressRu) {
       setError(addressRequiredForCoordsMsg)
       return
@@ -1922,15 +1930,15 @@ const [editOpen, setEditOpen] = useState(false)
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          editLocale: siteCardLocale,
+          editLocale: lang,
           name,
-          address: locDraftValue(siteLocDraft.address, siteCardLocale).trim() || null,
+          address: locDraftValueRaw(siteLocDraft.address, lang).trim() || null,
           address_ru: addressRu,
           radius,
           lat,
           lng,
           category: siteCardCategory,
-          notes: locDraftValue(siteLocDraft.notes, siteCardLocale) || null,
+          notes: locDraftValueRaw(siteLocDraft.notes, lang) || null,
         }),
       })
 
@@ -3729,35 +3737,14 @@ const [editOpen, setEditOpen] = useState(false)
 
                         <Modal
                           open={siteCardOpen}
-                          title={locDraftValue(siteLocDraft.name, lang) || t('admin.main.siteCardModalTitle')}
+                          title={locDraftValueDisplay(siteLocDraft.name, lang) || t('admin.main.siteCardModalTitle')}
                           onClose={() => setSiteCardOpen(false)}
                         >
                           {!siteCardId ? (
                             <div className="text-sm text-zinc-300">{t('admin.main.noSite')}</div>
                           ) : (
                             <div className="grid gap-4">
-                              <div className="flex flex-wrap items-center gap-2">
-                                {(['ru', 'uk', 'en', 'nl'] as const).map((L) => (
-                                  <button
-                                    key={L}
-                                    type="button"
-                                    onClick={() => setSiteCardLocale(L)}
-                                    className={cn(
-                                      'rounded-xl border px-3 py-1.5 text-xs font-semibold transition',
-                                      siteCardLocale === L
-                                        ? 'border-yellow-300/50 bg-yellow-400/15 text-yellow-50'
-                                        : 'border-yellow-400/15 bg-black/30 text-zinc-200 hover:border-yellow-300/35',
-                                    )}
-                                  >
-                                    {L === 'ru'
-                                      ? t('languages.ru')
-                                      : L === 'uk'
-                                        ? t('languages.uk')
-                                        : L === 'en'
-                                          ? t('languages.en')
-                                          : t('languages.nl')}
-                                  </button>
-                                ))}
+                              <div className="flex flex-wrap items-center justify-end gap-2">
                                 <button
                                   type="button"
                                   onClick={() => void fillSiteCardI18nEmpty()}
@@ -3772,11 +3759,11 @@ const [editOpen, setEditOpen] = useState(false)
                                 <label className="grid gap-1 sm:col-span-2">
                                   <span className="text-[11px] text-zinc-300">{t('admin.main.fieldName')}</span>
                                   <input
-                                    value={locDraftValue(siteLocDraft.name, siteCardLocale)}
+                                    value={locDraftValueRaw(siteLocDraft.name, lang)}
                                     onChange={(e) =>
                                       setSiteLocDraft((prev) => ({
                                         ...prev,
-                                        name: { ...prev.name, [siteCardLocale]: e.target.value },
+                                        name: { ...prev.name, [lang]: e.target.value },
                                       }))
                                     }
                                     className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
@@ -3786,11 +3773,11 @@ const [editOpen, setEditOpen] = useState(false)
                                 <label className="grid gap-1 sm:col-span-2">
                                   <span className="text-[11px] text-zinc-300">{t('admin.main.fieldAddress')}</span>
                                   <input
-                                    value={locDraftValue(siteLocDraft.address, siteCardLocale)}
+                                    value={locDraftValueRaw(siteLocDraft.address, lang)}
                                     onChange={(e) =>
                                       setSiteLocDraft((prev) => ({
                                         ...prev,
-                                        address: { ...prev.address, [siteCardLocale]: e.target.value },
+                                        address: { ...prev.address, [lang]: e.target.value },
                                       }))
                                     }
                                     className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
@@ -3834,11 +3821,11 @@ const [editOpen, setEditOpen] = useState(false)
                                 <label className="grid gap-1 sm:col-span-2">
                                   <span className="text-[11px] text-zinc-300">{t('admin.main.notes')}</span>
                                   <textarea
-                                    value={locDraftValue(siteLocDraft.notes, siteCardLocale)}
+                                    value={locDraftValueRaw(siteLocDraft.notes, lang)}
                                     onChange={(e) =>
                                       setSiteLocDraft((prev) => ({
                                         ...prev,
-                                        notes: { ...prev.notes, [siteCardLocale]: e.target.value },
+                                        notes: { ...prev.notes, [lang]: e.target.value },
                                       }))
                                     }
                                     className="min-h-[120px] rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
@@ -3849,8 +3836,7 @@ const [editOpen, setEditOpen] = useState(false)
                                   <button
                                     onClick={saveSiteCard}
                                     disabled={
-                                      busy ||
-                                      (siteCardLocale === 'ru' && !locDraftValue(siteLocDraft.name, siteCardLocale).trim())
+                                      busy || (lang === 'ru' && !locDraftValueRaw(siteLocDraft.name, lang).trim())
                                     }
                                     className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-yellow-100 transition hover:border-yellow-200/70 disabled:opacity-60"
                                   >
