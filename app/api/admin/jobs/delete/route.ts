@@ -5,6 +5,14 @@ import { ApiError, requireAdmin, toErrorResponse } from '@/lib/route-db'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
+function isIgnorableMissingTableMsg(msg: string) {
+  return (
+    /does not exist/i.test(msg) ||
+    /not found/i.test(msg) ||
+    /schema cache/i.test(msg)
+  )
+}
+
 export async function POST(req: Request) {
   try {
     const guard = await requireAdmin(req)
@@ -14,23 +22,33 @@ export async function POST(req: Request) {
     const jobId = String(body?.job_id || body?.jobId || '').trim()
     if (!jobId) throw new ApiError(400, 'job_id is required', AdminApiErrorCode.JOB_ID_REQUIRED)
 
-    // 1) Ensure job exists
     const { data: job, error: jobErr } = await sb.from('jobs').select('id, status').eq('id', jobId).maybeSingle()
     if (jobErr) throw new ApiError(400, jobErr.message, AdminApiErrorCode.DB_ERROR)
     if (!job) throw new ApiError(404, 'Shift not found', AdminApiErrorCode.JOB_NOT_FOUND)
 
-    // 2) Delete dependent rows first (FK-safe)
-    const del = async (table: string, filterCol: string) => {
-      const { error } = await sb.from(table).delete().eq(filterCol, jobId)
-      if (error) throw new ApiError(400, `${table}: ${error.message}`, AdminApiErrorCode.DB_ERROR)
+    const bestEffortDelete = async (table: string) => {
+      try {
+        const { error } = await sb.from(table).delete().eq('job_id', jobId)
+        if (error) {
+          const msg = String(error.message || '')
+          if (isIgnorableMissingTableMsg(msg)) return
+          throw new ApiError(400, `${table}: ${error.message}`, AdminApiErrorCode.DB_ERROR)
+        }
+      } catch (e: unknown) {
+        if (e instanceof ApiError) throw e
+        const msg = String((e as { message?: string })?.message || '')
+        if (isIgnorableMissingTableMsg(msg)) return
+        throw new ApiError(400, msg || `${table}: delete failed`, AdminApiErrorCode.DB_ERROR)
+      }
     }
 
-    // Known tables in this project
-    await del('time_logs', 'job_id')
-    await del('job_events', 'job_id')
-    await del('job_workers', 'job_id')
+    await bestEffortDelete('job_workers')
+    await bestEffortDelete('job_events')
+    await bestEffortDelete('client_events')
 
-    // 3) Delete the job itself
+    const { error: tlErr } = await sb.from('time_logs').delete().eq('job_id', jobId)
+    if (tlErr) throw new ApiError(400, `time_logs: ${tlErr.message}`, AdminApiErrorCode.DB_ERROR)
+
     const { error: jobDelErr } = await sb.from('jobs').delete().eq('id', jobId)
     if (jobDelErr) throw new ApiError(400, jobDelErr.message, AdminApiErrorCode.DB_ERROR)
 
