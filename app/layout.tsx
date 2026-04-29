@@ -52,9 +52,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <SWRegister />
         <ThemeProvider>
           <I18nProvider>
-            <LanguageSwitch />
-            <ThemeToggle />
-            {children}
+            <div className="flex min-h-dvh flex-col">
+              <header className="app-chrome-header sticky top-0 z-40 flex flex-wrap items-start justify-between gap-x-3 gap-y-2 border-b border-amber-500/20 px-3 pb-2 pt-[max(0.5rem,calc(env(safe-area-inset-top,0px)+0.5rem))] pl-[max(0.75rem,env(safe-area-inset-left,0px))] pr-[max(0.75rem,env(safe-area-inset-right,0px))] backdrop-blur-md">
+                <ThemeToggle />
+                <LanguageSwitch />
+              </header>
+              <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+            </div>
           </I18nProvider>
         </ThemeProvider>
       </body>

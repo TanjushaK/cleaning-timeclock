@@ -37,13 +37,21 @@ html[data-theme="light"] body {
   --ct-safe-left: env(safe-area-inset-left, 0px);
 }
 
+/* Top safe area is handled by .app-chrome-header in layout; keep side/bottom for home indicator */
 @media (display-mode: standalone) {
   body {
-    padding-top: var(--ct-safe-top);
     padding-right: var(--ct-safe-right);
     padding-bottom: var(--ct-safe-bottom);
     padding-left: var(--ct-safe-left);
   }
+}
+
+.app-chrome-header {
+  background: rgba(10, 6, 4, 0.82);
+}
+
+html[data-theme="light"] .app-chrome-header {
+  background: rgba(255, 247, 237, 0.92);
 }
 
 /* Mobile ergonomics */

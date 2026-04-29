@@ -20,7 +20,7 @@ export default function LanguageSwitch() {
 
   return (
     <div
-      className={`fixed top-[max(0.5rem,calc(env(safe-area-inset-top)-0.5rem))] right-[calc(env(safe-area-inset-right)+0.75rem)] z-50 flex items-center gap-1 rounded-full border px-2 py-[2px] text-[12px] backdrop-blur ${
+      className={`relative ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-1 rounded-full border px-2 py-[2px] text-[12px] ${
         isLight ? "border-amber-500/35 bg-white/85 text-zinc-800" : "border-amber-400/40 bg-black/40 text-zinc-100"
       }`}
     >

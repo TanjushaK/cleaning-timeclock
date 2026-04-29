@@ -8,6 +8,7 @@ export const ru: Messages = {
   },
   common: {
     language: "Язык",
+    back: "← Назад",
     themeToggle: "Переключить тему",
     themeLight: "Светлая",
     themeDark: "Тёмная",
