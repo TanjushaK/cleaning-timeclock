@@ -12,7 +12,7 @@ export default function ThemeToggle() {
     <button
       type="button"
       onClick={toggleTheme}
-      className={`fixed top-[max(0.5rem,calc(env(safe-area-inset-top)-0.5rem))] left-[calc(env(safe-area-inset-left)+0.75rem)] z-50 flex items-center gap-2 rounded-full border px-3 py-[4px] text-[12px] backdrop-blur ${
+      className={`relative shrink-0 flex items-center gap-2 rounded-full border px-3 py-[4px] text-[12px] ${
         isLight
           ? "border-amber-500/35 bg-white/85 text-zinc-800 hover:border-amber-600/55"
           : "border-amber-400/40 bg-black/40 text-zinc-100 hover:border-amber-300/60"

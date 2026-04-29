@@ -8,6 +8,7 @@ export const uk: Messages = {
   },
   common: {
     language: "Мова",
+    back: "← Назад",
     themeToggle: "Перемкнути тему",
     themeLight: "Світла",
     themeDark: "Темна",

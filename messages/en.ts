@@ -8,6 +8,7 @@ export const en: Messages = {
   },
   common: {
     language: "Language",
+    back: "← Back",
     themeToggle: "Toggle theme",
     themeLight: "Light",
     themeDark: "Dark",

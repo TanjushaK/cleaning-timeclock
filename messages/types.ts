@@ -4,6 +4,7 @@ export type Messages = {
   };
   common: {
     language: string;
+    back: string;
     themeToggle: string;
     themeLight: string;
     themeDark: string;

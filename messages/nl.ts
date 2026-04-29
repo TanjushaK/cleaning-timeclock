@@ -8,6 +8,7 @@ export const nl: Messages = {
   },
   common: {
     language: "Taal",
+    back: "← Terug",
     themeToggle: "Thema wisselen",
     themeLight: "Licht",
     themeDark: "Donker",
