@@ -47,6 +47,7 @@ type MeJobsResponse = {
     id: string;
     job_date: string | null;
     scheduled_time: string | null;
+    scheduled_end_time?: string | null;
     status: "planned" | "in_progress" | "done" | string;
     site_id: string | null;
     site_name?: string | null;
@@ -115,10 +116,20 @@ function appLocaleToBCP47(lang: string): string {
 }
 
 function parseJobDateSafe(input: string | null | undefined): Date | null {
-  if (!input) return null;
-  const d = new Date(`${input}T00:00:00`);
-  if (!Number.isFinite(d.getTime())) return null;
-  return d;
+  const raw = String(input || "").trim();
+  if (!raw) return null;
+
+  const datePart = raw.slice(0, 10);
+  const m = datePart.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) {
+    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    if (!Number.isFinite(d.getTime())) return null;
+    return d;
+  }
+
+  const parsed = new Date(raw);
+  if (!Number.isFinite(parsed.getTime())) return null;
+  return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
 }
 
 function toDateKeyLocal(d: Date): string {
@@ -146,25 +157,38 @@ function startOfWeekMonday(d: Date): Date {
   return x;
 }
 
-function parseScheduledTimeWindow(scheduledTime: string | null | undefined): { startMin: number | null; endMin: number | null } {
+function parseClockMinutes(input: string | null | undefined): number | null {
+  const raw = String(input || "").trim();
+  if (!raw) return null;
+
+  const m = raw.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (!m) return null;
+
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+
+  if (!Number.isFinite(h) || !Number.isFinite(min) || h < 0 || h > 23 || min < 0 || min > 59) {
+    return null;
+  }
+
+  return h * 60 + min;
+}
+
+function parseScheduledTimeWindow(
+  scheduledTime: string | null | undefined,
+  scheduledEndTime?: string | null
+): { startMin: number | null; endMin: number | null } {
   const raw = String(scheduledTime || "").trim();
   if (!raw) return { startMin: null, endMin: null };
-  const normalized = raw.replace(/[–—]/g, "-");
-  const m = normalized.match(/^\s*(\d{1,2}):(\d{2})(?:\s*-\s*(\d{1,2}):(\d{2}))?\s*$/);
-  if (!m) return { startMin: null, endMin: null };
-  const sh = Number(m[1]);
-  const sm = Number(m[2]);
-  if (!Number.isFinite(sh) || !Number.isFinite(sm) || sh < 0 || sh > 23 || sm < 0 || sm > 59) {
-    return { startMin: null, endMin: null };
-  }
-  const startMin = sh * 60 + sm;
-  if (m[3] == null || m[4] == null) return { startMin, endMin: null };
-  const eh = Number(m[3]);
-  const em = Number(m[4]);
-  if (!Number.isFinite(eh) || !Number.isFinite(em) || eh < 0 || eh > 23 || em < 0 || em > 59) {
-    return { startMin, endMin: null };
-  }
-  return { startMin, endMin: eh * 60 + em };
+
+  const normalized = raw.replace(/[\u2013\u2014]/g, "-");
+  const range = normalized.match(/^\s*(\d{1,2}:\d{2}(?::\d{2})?)(?:\s*-\s*(\d{1,2}:\d{2}(?::\d{2})?))?\s*$/);
+  if (!range) return { startMin: null, endMin: null };
+
+  const startMin = parseClockMinutes(range[1]);
+  const endMin = parseClockMinutes(range[2] || scheduledEndTime);
+
+  return { startMin, endMin };
 }
 
 function calcDurationMin(startMin: number | null, endMin: number | null): number | null {
@@ -1253,7 +1277,7 @@ const loadAll = useCallback(async () => {
       jobsSorted.map((j) => {
         const day = parseJobDateSafe(j.job_date);
         const dateKey = day ? toDateKeyLocal(day) : "";
-        const tm = parseScheduledTimeWindow(j.scheduled_time);
+        const tm = parseScheduledTimeWindow(j.scheduled_time, j.scheduled_end_time);
         const durationMin = calcDurationMin(tm.startMin, tm.endMin);
         return { j, day, dateKey, durationMin };
       }),
