@@ -171,6 +171,7 @@ export const nl: Messages = {
     stoppedAt: "Stop",
     timer: "Timer",
     gpsMetrics: "GPS: afstand {distance} m • nauwkeurigheid {accuracy} m",
+    siteCoordsMissing: "Locatiecoördinaten zijn niet ingesteld.",
   },
   profile: {
     title: "Profiel",

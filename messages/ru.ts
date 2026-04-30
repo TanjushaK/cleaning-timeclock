@@ -171,6 +171,7 @@ export const ru: Messages = {
     stoppedAt: "Стоп",
     timer: "Секундомер",
     gpsMetrics: "GPS: расстояние {distance} м • точность {accuracy} м",
+    siteCoordsMissing: "У объекта не заданы координаты.",
   },
   profile: {
     title: "Профиль",

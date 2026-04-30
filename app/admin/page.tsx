@@ -1365,6 +1365,11 @@ const [editOpen, setEditOpen] = useState(false)
   const [workerCardPhotos, setWorkerCardPhotos] = useState<WorkerPhoto[]>([])
   const [workerPhotoUiError, setWorkerPhotoUiError] = useState<string | null>(null)
   const [workerPhotoBroken, setWorkerPhotoBroken] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    setError(null)
+    setNotice(null)
+  }, [lang])
   const [workerPhotoMeta, setWorkerPhotoMeta] = useState<Record<string, WorkerPhotoMeta>>({})
 
   const [workerProfileById, setWorkerProfileById] = useState<Record<string, WorkerProfile>>({})
@@ -2269,7 +2274,7 @@ const [editOpen, setEditOpen] = useState(false)
     setWorkerPhotoUiError(null)
     setWorkerPhotoBroken({})
     if (photos.length > 0 && photos.every((p) => !p.url)) {
-      setWorkerPhotoUiError('Фото получены, но ссылки на файлы недоступны. Проверьте storage URL.')
+      setWorkerPhotoUiError(t('admin.main.workerPhotoLinksMissing'))
     }
   }
 
@@ -2371,7 +2376,7 @@ const [editOpen, setEditOpen] = useState(false)
         const updated = applyWorkerPhotosState(workerId, Array.isArray(res?.photos) ? res.photos : [])
         setWorkerPhotoBroken({})
         if (updated.length === 0) {
-          setWorkerPhotoUiError('Фото загружено, но не удалось прочитать список фотографий.')
+          setWorkerPhotoUiError(t('admin.main.workerPhotoListUnreadable'))
         }
       }
     } catch (e: unknown) {
@@ -2466,7 +2471,7 @@ const [editOpen, setEditOpen] = useState(false)
     setError(null)
     setNotice(null)
     try {
-      const confirmed = window.confirm('Сбросить пароль для этого работника? Будет показан новый временный пароль.')
+      const confirmed = window.confirm(t('admin.main.resetPasswordConfirm'))
       if (!confirmed) return
       const res = await authFetchJson<{ login?: string | null; temp_password?: string }>(`/api/admin/workers/reset-password`, {
         method: 'POST',
@@ -2479,7 +2484,7 @@ const [editOpen, setEditOpen] = useState(false)
         login: res?.login ? String(res.login) : null,
         temp_password: temp,
       })
-      setNotice('Пароль работника сброшен. Скопируйте новый временный пароль.')
+      setNotice(t('admin.main.workerPasswordResetDone'))
     } catch (e: unknown) {
       setError(mapAdminErr(e, t))
     } finally {
@@ -2494,9 +2499,9 @@ const [editOpen, setEditOpen] = useState(false)
       } else {
         throw new Error('clipboard_unavailable')
       }
-      setNotice('Временный пароль скопирован.')
+      setNotice(t('admin.main.tempPasswordCopied'))
     } catch {
-      setError('Не удалось скопировать пароль. Скопируйте вручную.')
+      setError(t('admin.main.tempPasswordCopyFailed'))
     }
   }
 
@@ -4246,7 +4251,7 @@ const [editOpen, setEditOpen] = useState(false)
                         value={newWorkers}
                         onChange={setNewWorkers}
                         disabled={!newSiteId}
-                        ariaLabel="Работники"
+                        ariaLabel={t('admin.main.tabWorkers')}
                       />
                     </div>
                   </div>
@@ -4255,7 +4260,7 @@ const [editOpen, setEditOpen] = useState(false)
                     <div className="grid max-w-[220px] gap-1">
                       <input
                         type="date"
-                        aria-label="Дата"
+                        aria-label={t('admin.main.labelDate')}
                         onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
                         value={newDate}
                         onChange={(e) => setNewDate(e.target.value)}
@@ -4268,7 +4273,7 @@ const [editOpen, setEditOpen] = useState(false)
                         <div className="grid w-[150px] gap-1">
                           <input
                             type="time"
-                            aria-label="Начало"
+                            aria-label={t('admin.main.startTime')}
                             value={newTime}
                             onChange={(e) => setNewTime(e.target.value)}
                             className="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2.5 text-sm outline-none transition focus:border-yellow-300/60"
@@ -4277,7 +4282,7 @@ const [editOpen, setEditOpen] = useState(false)
                         <div className="grid w-[150px] gap-1">
                           <input
                             type="time"
-                            aria-label="Конец"
+                            aria-label={t('admin.main.endTime')}
                             onPointerDown={(e) => { try { (e.currentTarget as any).showPicker?.() } catch {} }}
                             value={newTimeTo}
                             onChange={(e) => setNewTimeTo(e.target.value)}
@@ -4806,7 +4811,7 @@ const [editOpen, setEditOpen] = useState(false)
                           disabled={workerResetBusy || !workerCardId}
                           className="rounded-xl border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs font-semibold text-[#3b2414] disabled:text-[#3b2414] disabled:opacity-100 hover:border-red-300/55 dark:text-red-100 dark:disabled:text-red-100"
                         >
-                          {workerResetBusy ? 'Сбрасываю…' : 'Сбросить пароль'}
+                          {workerResetBusy ? t('admin.main.resettingPassword') : t('admin.main.resetPasswordBtn')}
                         </button>
                       ) : null}
 
@@ -4832,9 +4837,9 @@ const [editOpen, setEditOpen] = useState(false)
 
                   {workerResetResult ? (
                     <div className="rounded-2xl border border-emerald-400/25 bg-emerald-500/10 p-3 text-xs text-emerald-100/90">
-                      <div className="font-semibold">Новый временный пароль (показан один раз):</div>
+                      <div className="font-semibold">{t('admin.main.tempPasswordOneTimeTitle')}</div>
                       <div className="mt-1 break-all">
-                        Логин: <span className="font-mono">{workerResetResult.login || '—'}</span>
+                        {t('admin.main.loginLabel')}: <span className="font-mono">{workerResetResult.login || '—'}</span>
                       </div>
                       <div className="mt-1 flex flex-wrap items-center gap-2">
                         <span className="font-mono text-sm">{workerResetResult.temp_password}</span>
@@ -4843,7 +4848,7 @@ const [editOpen, setEditOpen] = useState(false)
                           onClick={() => void copyWorkerTempPassword(workerResetResult.temp_password)}
                           className="rounded-lg border border-emerald-300/40 bg-emerald-500/15 px-2 py-1 text-[11px] font-semibold text-emerald-50 hover:border-emerald-200/60"
                         >
-                          Скопировать
+                          {t('admin.main.copy')}
                         </button>
                       </div>
                     </div>
@@ -4987,7 +4992,7 @@ const [editOpen, setEditOpen] = useState(false)
                         <div key={p.path} className="relative overflow-hidden rounded-2xl border border-yellow-400/10 bg-black/20">
                           {workerPhotoBroken[p.path] ? (
                             <div className="grid h-36 w-full place-items-center px-2 text-center text-[11px] text-red-200/85">
-                              Фото не загрузилось
+                              {t('admin.main.photoLoadFailed')}
                             </div>
                           ) : (
                             <img
@@ -4997,7 +5002,7 @@ const [editOpen, setEditOpen] = useState(false)
                               loading="lazy"
                               onError={() => {
                                 setWorkerPhotoBroken((prev) => ({ ...prev, [p.path]: true }))
-                                setWorkerPhotoUiError('Часть фото не загрузилась (ошибка доступа или повреждённый файл).')
+                                setWorkerPhotoUiError(t('admin.main.photosPartiallyFailed'))
                               }}
                             />
                           )}

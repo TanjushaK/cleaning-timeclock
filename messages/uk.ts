@@ -171,6 +171,7 @@ export const uk: Messages = {
     stoppedAt: "Стоп",
     timer: "Секундомір",
     gpsMetrics: "GPS: відстань {distance} м • точність {accuracy} м",
+    siteCoordsMissing: "Для об'єкта не задано координати.",
   },
   profile: {
     title: "Профіль",

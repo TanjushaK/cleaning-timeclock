@@ -153,6 +153,7 @@ export type Messages = {
     stoppedAt: string;
     timer: string;
     gpsMetrics: string;
+    siteCoordsMissing: string;
   };
   profile: {
     title: string;
