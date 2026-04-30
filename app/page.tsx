@@ -330,7 +330,7 @@ function makeWorkerEmailFromPhone(phoneE164: string) {
 }
 
 type Tab = "login" | "sms" | "email";
-type PlannedPeriod = "day" | "week" | "month" | "all";
+type PlannedPeriod = "day" | "week" | "month" | "custom" | "all";
 
 export default function AppPage() {
   const { t: tr, lang } = useI18n();
@@ -400,6 +400,8 @@ export default function AppPage() {
   const [localStartMs, setLocalStartMs] = useState<Record<string, number>>({});
   const [selectedDateKey, setSelectedDateKey] = useState<string>("");
   const [plannedPeriod, setPlannedPeriod] = useState<PlannedPeriod>("week");
+  const [customPeriodFrom, setCustomPeriodFrom] = useState<string>("");
+  const [customPeriodTo, setCustomPeriodTo] = useState<string>("");
 
   // onboarding + photos
   const [fullName, setFullName] = useState("");
@@ -1387,6 +1389,23 @@ const loadAll = useCallback(async () => {
     [scheduleRows, selectedDate]
   );
 
+  const customPeriodRows = useMemo(() => {
+    const from = parseJobDateSafe(customPeriodFrom);
+    const to = parseJobDateSafe(customPeriodTo);
+    if (!from || !to) return selectedDayRows;
+
+    const fromMs = startOfLocalDay(from).getTime();
+    const toMs = startOfLocalDay(to).getTime();
+    const minMs = Math.min(fromMs, toMs);
+    const maxMs = Math.max(fromMs, toMs);
+
+    return scheduleRows.filter((row) => {
+      if (!row.day) return false;
+      const rowMs = startOfLocalDay(row.day).getTime();
+      return rowMs >= minMs && rowMs <= maxMs;
+    });
+  }, [customPeriodFrom, customPeriodTo, scheduleRows, selectedDayRows]);
+
   const plannedDayMinutes = useMemo(
     () => selectedDayRows.reduce((acc, row) => acc + (row.durationMin || 0), 0),
     [selectedDayRows]
@@ -1402,6 +1421,11 @@ const loadAll = useCallback(async () => {
     [monthRows]
   );
 
+  const plannedCustomMinutes = useMemo(
+    () => customPeriodRows.reduce((acc, row) => acc + (row.durationMin || 0), 0),
+    [customPeriodRows]
+  );
+
   const plannedLoadedMinutes = useMemo(
     () => scheduleRows.reduce((acc, row) => acc + (row.durationMin || 0), 0),
     [scheduleRows]
@@ -1411,8 +1435,9 @@ const loadAll = useCallback(async () => {
     if (plannedPeriod === "day") return plannedDayMinutes;
     if (plannedPeriod === "week") return plannedWeekMinutes;
     if (plannedPeriod === "month") return plannedMonthMinutes;
+    if (plannedPeriod === "custom") return plannedCustomMinutes;
     return plannedLoadedMinutes;
-  }, [plannedDayMinutes, plannedLoadedMinutes, plannedMonthMinutes, plannedPeriod, plannedWeekMinutes]);
+  }, [plannedCustomMinutes, plannedDayMinutes, plannedLoadedMinutes, plannedMonthMinutes, plannedPeriod, plannedWeekMinutes]);
 
   const workedDayMinutes = useMemo(
     () => selectedDayRows.reduce((acc, row) => acc + (row.workedMin || 0), 0),
@@ -1429,6 +1454,11 @@ const loadAll = useCallback(async () => {
     [monthRows]
   );
 
+  const workedCustomMinutes = useMemo(
+    () => customPeriodRows.reduce((acc, row) => acc + (row.workedMin || 0), 0),
+    [customPeriodRows]
+  );
+
   const workedLoadedMinutes = useMemo(
     () => scheduleRows.reduce((acc, row) => acc + (row.workedMin || 0), 0),
     [scheduleRows]
@@ -1438,8 +1468,9 @@ const loadAll = useCallback(async () => {
     if (plannedPeriod === "day") return workedDayMinutes;
     if (plannedPeriod === "week") return workedWeekMinutes;
     if (plannedPeriod === "month") return workedMonthMinutes;
+    if (plannedPeriod === "custom") return workedCustomMinutes;
     return workedLoadedMinutes;
-  }, [plannedPeriod, workedDayMinutes, workedLoadedMinutes, workedMonthMinutes, workedWeekMinutes]);
+  }, [plannedPeriod, workedCustomMinutes, workedDayMinutes, workedLoadedMinutes, workedMonthMinutes, workedWeekMinutes]);
 
   const gold = "text-amber-200";
   const border = "border border-amber-500/25";
@@ -1834,12 +1865,20 @@ const loadAll = useCallback(async () => {
                               ["day", tr("jobs.periodDay")],
                               ["week", tr("jobs.periodWeek")],
                               ["month", tr("jobs.periodMonth")],
+                              ["custom", tr("jobs.periodCustom")],
                               ["all", tr("jobs.periodAll")],
                             ] as Array<[PlannedPeriod, string]>).map(([value, label]) => (
                               <button
                                 key={value}
                                 type="button"
-                                onClick={() => setPlannedPeriod(value)}
+                                onClick={() => {
+                                  if (value === "custom") {
+                                    const key = selectedDateKey || toDateKeyLocal(selectedDate);
+                                    setCustomPeriodFrom((current) => current || key);
+                                    setCustomPeriodTo((current) => current || key);
+                                  }
+                                  setPlannedPeriod(value);
+                                }}
                                 className={clsx(
                                   "rounded-full border px-2.5 py-1 text-[11px] font-semibold transition",
                                   plannedPeriod === value
@@ -1851,6 +1890,28 @@ const loadAll = useCallback(async () => {
                               </button>
                             ))}
                           </div>
+                          {plannedPeriod === "custom" ? (
+                            <div className="mt-2 grid grid-cols-2 gap-2">
+                              <label className="text-xs opacity-80">
+                                <span className="mb-1 block">{tr("jobs.periodFrom")}</span>
+                                <input
+                                  type="date"
+                                  value={customPeriodFrom}
+                                  onChange={(e) => setCustomPeriodFrom(e.target.value)}
+                                  className="w-full rounded-xl border border-amber-500/25 bg-zinc-950/70 px-2 py-2 text-xs text-amber-50 outline-none"
+                                />
+                              </label>
+                              <label className="text-xs opacity-80">
+                                <span className="mb-1 block">{tr("jobs.periodTo")}</span>
+                                <input
+                                  type="date"
+                                  value={customPeriodTo}
+                                  onChange={(e) => setCustomPeriodTo(e.target.value)}
+                                  className="w-full rounded-xl border border-amber-500/25 bg-zinc-950/70 px-2 py-2 text-xs text-amber-50 outline-none"
+                                />
+                              </label>
+                            </div>
+                          ) : null}
                         </div>
                       </div>
                     </div>

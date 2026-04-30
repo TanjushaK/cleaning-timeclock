@@ -148,6 +148,9 @@ export type Messages = {
     periodDay: string;
     periodWeek: string;
     periodMonth: string;
+    periodCustom: string;
+    periodFrom: string;
+    periodTo: string;
     periodAll: string;
     plannedWeek: string;
     plannedTotal: string;
