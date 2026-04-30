@@ -1248,8 +1248,6 @@ const loadAll = useCallback(async () => {
     return xs;
   }, [jobs]);
 
-  const jobDateKeys = useMemo(() => new Set(jobsSorted.map((j) => String(j.job_date || "")).filter(Boolean)), [jobsSorted]);
-
   const scheduleRows = useMemo(
     () =>
       jobsSorted.map((j) => {
@@ -1278,10 +1276,10 @@ const loadAll = useCallback(async () => {
   }, [scheduleRows]);
 
   useEffect(() => {
-    if (!selectedDateKey || !jobDateKeys.has(selectedDateKey)) {
+    if (!selectedDateKey) {
       setSelectedDateKey(toDateKeyLocal(weekAnchorDate));
     }
-  }, [jobDateKeys, selectedDateKey, weekAnchorDate]);
+  }, [selectedDateKey, weekAnchorDate]);
 
   const selectedDate = useMemo(() => parseJobDateSafe(selectedDateKey) || weekAnchorDate, [selectedDateKey, weekAnchorDate]);
   const weekStart = useMemo(() => startOfWeekMonday(selectedDate), [selectedDate]);
@@ -1316,6 +1314,14 @@ const loadAll = useCallback(async () => {
   }, [weekRows]);
 
   const selectedDayRows = useMemo(() => weekRowsByDate.get(selectedDateKey) || [], [selectedDateKey, weekRowsByDate]);
+  const selectedDayMonthTitle = useMemo(() => {
+    const locale = appLocaleToBCP47(lang);
+    return new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }).format(selectedDate);
+  }, [lang, selectedDate]);
+  const selectedDayShortTitle = useMemo(() => {
+    const locale = appLocaleToBCP47(lang);
+    return new Intl.DateTimeFormat(locale, { weekday: "short" }).format(selectedDate);
+  }, [lang, selectedDate]);
 
   const plannedWeekMinutes = useMemo(
     () => weekRows.reduce((acc, row) => acc + (row.durationMin || 0), 0),
@@ -1706,23 +1712,14 @@ const loadAll = useCallback(async () => {
                       </div>
                     </div>
 
-                    {selectedDayRows.length === 0 ? (
-                      <div className="text-sm opacity-70">{tr("jobs.noShiftsForDay")}</div>
-                    ) : null}
-
-                    {weekDays.map((dayItem) => {
-                      const rows = weekRowsByDate.get(dayItem.key) || [];
-                      if (rows.length === 0) return null;
-                      const locale = appLocaleToBCP47(lang);
-                      const monthTitle = new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }).format(dayItem.date);
-                      const dayShort = new Intl.DateTimeFormat(locale, { weekday: "short" }).format(dayItem.date);
-                      const isSelected = dayItem.key === selectedDateKey;
-                      return (
-                        <div key={dayItem.key} className="space-y-2">
-                          <div className={clsx("text-xs font-semibold uppercase tracking-wide opacity-70", isSelected ? "text-amber-200" : "")}>
-                            {monthTitle}
-                          </div>
-                          {rows.map(({ j, durationMin }) => {
+                    <div className="space-y-2">
+                      <div className={clsx("text-xs font-semibold uppercase tracking-wide text-amber-200/90")}>
+                        {selectedDayMonthTitle}
+                      </div>
+                      {selectedDayRows.length === 0 ? (
+                        <div className="text-sm opacity-70">{tr("jobs.noShiftsForDay")}</div>
+                      ) : (
+                        selectedDayRows.map(({ j, durationMin }) => {
                     const pending = pendingByJob[j.id];
                     const rawStatus = String(j.status || "").toLowerCase();
                     const hasOpenStartLog = Boolean(j.started_at && !j.stopped_at);
@@ -1741,11 +1738,11 @@ const loadAll = useCallback(async () => {
                     const elapsedStr = elapsedMs != null ? formatHMS(elapsedMs) : null;
 
                     return (
-                      <div key={j.id} className={clsx("rounded-2xl p-4", border, isSelected ? "bg-zinc-900/70" : "bg-zinc-950/60")}>
+                      <div key={j.id} className={clsx("rounded-2xl p-4", border, "bg-zinc-900/70")}>
                         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                          <div className={clsx("w-14 shrink-0 rounded-xl border border-amber-500/25 p-2 text-center", isSelected ? "bg-amber-400/15" : "bg-zinc-900/40")}>
-                            <div className="text-xl font-semibold leading-5">{dayItem.date.getDate()}</div>
-                            <div className="mt-1 text-[10px] uppercase opacity-70">{dayShort}</div>
+                          <div className={clsx("w-14 shrink-0 rounded-xl border border-amber-500/25 p-2 text-center", "bg-amber-400/15")}>
+                            <div className="text-xl font-semibold leading-5">{selectedDate.getDate()}</div>
+                            <div className="mt-1 text-[10px] uppercase opacity-70">{selectedDayShortTitle}</div>
                           </div>
                           <div className="flex items-start gap-3">
                             <button
@@ -1851,10 +1848,9 @@ const loadAll = useCallback(async () => {
                         ) : null}
                       </div>
                     );
-                          })}
-                        </div>
-                      );
-                    })}
+                        })
+                      )}
+                    </div>
                   </>
                 )}
               </div>
