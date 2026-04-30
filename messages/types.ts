@@ -138,6 +138,16 @@ export type Messages = {
   };
   jobs: {
     title: string;
+    scheduleTitle: string;
+    thisWeek: string;
+    plannedWeek: string;
+    plannedTotal: string;
+    noShiftsForDay: string;
+    previousWeek: string;
+    nextWeek: string;
+    team: string;
+    estimated: string;
+    hoursShort: string;
     activationPendingTitle: string;
     activationPendingText: string;
     empty: string;

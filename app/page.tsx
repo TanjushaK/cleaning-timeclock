@@ -13,7 +13,7 @@ import {
 import { authFetch, authFetchJson, clearClientAuthState, getAccessToken, getRefreshToken, setAuthTokens } from "@/lib/auth-fetch";
 import { clientWorkerErrorMessage } from "@/lib/app-api-message";
 import { FetchApiError } from "@/lib/fetch-api-error";
-import { formatDateShort, formatDateTimeShort, formatWallTime } from "@/lib/locale-format";
+import { formatDateTimeShort, formatWallTime } from "@/lib/locale-format";
 import AppWorkerShell from "@/app/_components/AppWorkerShell";
 import { useI18n } from "@/components/I18nProvider";
 import { OutboxEvent, outboxAdd, outboxCount as outboxCountDb, outboxList, outboxRemove, outboxUpdate } from "@/lib/offline/outbox";
@@ -104,6 +104,82 @@ function formatHMS(ms: number) {
   const mm = String(m).padStart(2, '0');
   const ss = String(sec).padStart(2, '0');
   return `${hh}:${mm}:${ss}`;
+}
+
+function appLocaleToBCP47(lang: string): string {
+  const v = String(lang || "en").toLowerCase();
+  if (v === "ru") return "ru-RU";
+  if (v === "uk") return "uk-UA";
+  if (v === "nl") return "nl-NL";
+  return "en-US";
+}
+
+function parseJobDateSafe(input: string | null | undefined): Date | null {
+  if (!input) return null;
+  const d = new Date(`${input}T00:00:00`);
+  if (!Number.isFinite(d.getTime())) return null;
+  return d;
+}
+
+function toDateKeyLocal(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function startOfLocalDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function addDaysLocal(d: Date, days: number): Date {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  x.setDate(x.getDate() + days);
+  return x;
+}
+
+function startOfWeekMonday(d: Date): Date {
+  const x = startOfLocalDay(d);
+  const jsDay = x.getDay();
+  const shift = (jsDay + 6) % 7;
+  x.setDate(x.getDate() - shift);
+  return x;
+}
+
+function parseScheduledTimeWindow(scheduledTime: string | null | undefined): { startMin: number | null; endMin: number | null } {
+  const raw = String(scheduledTime || "").trim();
+  if (!raw) return { startMin: null, endMin: null };
+  const normalized = raw.replace(/[–—]/g, "-");
+  const m = normalized.match(/^\s*(\d{1,2}):(\d{2})(?:\s*-\s*(\d{1,2}):(\d{2}))?\s*$/);
+  if (!m) return { startMin: null, endMin: null };
+  const sh = Number(m[1]);
+  const sm = Number(m[2]);
+  if (!Number.isFinite(sh) || !Number.isFinite(sm) || sh < 0 || sh > 23 || sm < 0 || sm > 59) {
+    return { startMin: null, endMin: null };
+  }
+  const startMin = sh * 60 + sm;
+  if (m[3] == null || m[4] == null) return { startMin, endMin: null };
+  const eh = Number(m[3]);
+  const em = Number(m[4]);
+  if (!Number.isFinite(eh) || !Number.isFinite(em) || eh < 0 || eh > 23 || em < 0 || em > 59) {
+    return { startMin, endMin: null };
+  }
+  return { startMin, endMin: eh * 60 + em };
+}
+
+function calcDurationMin(startMin: number | null, endMin: number | null): number | null {
+  if (startMin == null || endMin == null) return null;
+  const diff = endMin - startMin;
+  return diff >= 0 ? diff : 24 * 60 + diff;
+}
+
+function formatDurationHoursLabel(lang: string, durationMin: number, tr: (key: any) => string): string {
+  const hours = durationMin / 60;
+  const asText = Number(hours.toFixed(2)).toString();
+  if (lang === "ru" || lang === "uk") {
+    return `${asText.replace(".", ",")}${tr("jobs.hoursShort")}`;
+  }
+  return `${asText}${tr("jobs.hoursShort")}`;
 }
 
 
@@ -269,6 +345,7 @@ export default function AppPage() {
 
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [localStartMs, setLocalStartMs] = useState<Record<string, number>>({});
+  const [selectedDateKey, setSelectedDateKey] = useState<string>("");
 
   // onboarding + photos
   const [fullName, setFullName] = useState("");
@@ -1171,6 +1248,84 @@ const loadAll = useCallback(async () => {
     return xs;
   }, [jobs]);
 
+  const jobDateKeys = useMemo(() => new Set(jobsSorted.map((j) => String(j.job_date || "")).filter(Boolean)), [jobsSorted]);
+
+  const scheduleRows = useMemo(
+    () =>
+      jobsSorted.map((j) => {
+        const day = parseJobDateSafe(j.job_date);
+        const dateKey = day ? toDateKeyLocal(day) : "";
+        const tm = parseScheduledTimeWindow(j.scheduled_time);
+        const durationMin = calcDurationMin(tm.startMin, tm.endMin);
+        return { j, day, dateKey, durationMin };
+      }),
+    [jobsSorted]
+  );
+
+  const weekAnchorDate = useMemo(() => {
+    const today = startOfLocalDay(new Date());
+    const upcoming = scheduleRows
+      .map((x) => x.day)
+      .filter((d): d is Date => Boolean(d))
+      .filter((d) => d.getTime() >= today.getTime())
+      .sort((a, b) => a.getTime() - b.getTime())[0];
+    if (upcoming) return upcoming;
+    const earliest = scheduleRows
+      .map((x) => x.day)
+      .filter((d): d is Date => Boolean(d))
+      .sort((a, b) => a.getTime() - b.getTime())[0];
+    return earliest || today;
+  }, [scheduleRows]);
+
+  useEffect(() => {
+    if (!selectedDateKey || !jobDateKeys.has(selectedDateKey)) {
+      setSelectedDateKey(toDateKeyLocal(weekAnchorDate));
+    }
+  }, [jobDateKeys, selectedDateKey, weekAnchorDate]);
+
+  const selectedDate = useMemo(() => parseJobDateSafe(selectedDateKey) || weekAnchorDate, [selectedDateKey, weekAnchorDate]);
+  const weekStart = useMemo(() => startOfWeekMonday(selectedDate), [selectedDate]);
+  const weekDays = useMemo(
+    () =>
+      Array.from({ length: 7 }, (_, i) => {
+        const d = addDaysLocal(weekStart, i);
+        return { date: d, key: toDateKeyLocal(d) };
+      }),
+    [weekStart]
+  );
+  const weekEnd = useMemo(() => addDaysLocal(weekStart, 6), [weekStart]);
+
+  const weekRows = useMemo(
+    () =>
+      scheduleRows.filter((row) => {
+        if (!row.day) return false;
+        const t = row.day.getTime();
+        return t >= weekStart.getTime() && t <= weekEnd.getTime();
+      }),
+    [scheduleRows, weekEnd, weekStart]
+  );
+
+  const weekRowsByDate = useMemo(() => {
+    const m = new Map<string, typeof weekRows>();
+    for (const row of weekRows) {
+      const key = row.dateKey;
+      if (!m.has(key)) m.set(key, []);
+      m.get(key)!.push(row);
+    }
+    return m;
+  }, [weekRows]);
+
+  const selectedDayRows = useMemo(() => weekRowsByDate.get(selectedDateKey) || [], [selectedDateKey, weekRowsByDate]);
+
+  const plannedWeekMinutes = useMemo(
+    () => weekRows.reduce((acc, row) => acc + (row.durationMin || 0), 0),
+    [weekRows]
+  );
+  const plannedTotalMinutes = useMemo(
+    () => scheduleRows.reduce((acc, row) => acc + (row.durationMin || 0), 0),
+    [scheduleRows]
+  );
+
   const gold = "text-amber-200";
   const border = "border border-amber-500/25";
   const card = clsx("rounded-2xl bg-zinc-950/80", border, "shadow-[0_0_0_1px_rgba(245,158,11,0.08),0_20px_60px_rgba(0,0,0,0.45)]");
@@ -1465,7 +1620,7 @@ const loadAll = useCallback(async () => {
           <section className="mt-6 grid grid-cols-1 xl:grid-cols-3 gap-6">
             <div className={clsx(card, "p-6 xl:col-span-2")}>
               <div className="flex items-center justify-between">
-                <div className="text-lg font-semibold">{tr("jobs.title")}</div>
+                <div className="text-lg font-semibold">{tr("jobs.scheduleTitle")}</div>
                 <button className={btn} onClick={() => loadAll().catch((e) => setError(clientWorkerErrorMessage(tr, e)))} disabled={busy}>
                   {tr("common.refresh")}
                 </button>
@@ -1480,11 +1635,94 @@ const loadAll = useCallback(async () => {
                 </div>
               )}
 
-              <div className="mt-4 space-y-3">
+              <div className="mt-4 space-y-4 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
                 {jobsSorted.length === 0 ? (
                   <div className="text-sm opacity-70">{tr("jobs.empty")}</div>
                 ) : (
-                  jobsSorted.map((j) => {
+                  <>
+                    <div className={clsx("rounded-2xl p-3", border, "bg-zinc-950/50")}>
+                      <div className="flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          className={clsx(btn, "px-3 py-1.5 text-xs")}
+                          onClick={() => setSelectedDateKey(toDateKeyLocal(addDaysLocal(selectedDate, -7)))}
+                        >
+                          {tr("jobs.previousWeek")}
+                        </button>
+                        <div className="text-xs font-semibold opacity-80">{tr("jobs.thisWeek")}</div>
+                        <button
+                          type="button"
+                          className={clsx(btn, "px-3 py-1.5 text-xs")}
+                          onClick={() => setSelectedDateKey(toDateKeyLocal(addDaysLocal(selectedDate, 7)))}
+                        >
+                          {tr("jobs.nextWeek")}
+                        </button>
+                      </div>
+                      <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+                        {weekDays.map((d) => {
+                          const active = d.key === selectedDateKey;
+                          const hasShifts = weekRowsByDate.has(d.key);
+                          const locale = appLocaleToBCP47(lang);
+                          const dayLabel = new Intl.DateTimeFormat(locale, { weekday: "short" }).format(d.date);
+                          const numLabel = d.date.getDate();
+                          return (
+                            <button
+                              key={d.key}
+                              type="button"
+                              onClick={() => setSelectedDateKey(d.key)}
+                              className={clsx(
+                                "min-w-[3.3rem] rounded-2xl px-2 py-2 text-center transition",
+                                border,
+                                active ? "bg-amber-400 text-zinc-950" : "bg-zinc-900/35 hover:bg-zinc-900/55"
+                              )}
+                            >
+                              <div className={clsx("text-[10px] uppercase", active ? "opacity-90" : "opacity-70")}>{dayLabel}</div>
+                              <div className="text-sm font-semibold leading-5">{numLabel}</div>
+                              <div className="mt-1 h-1.5">
+                                {hasShifts ? (
+                                  <span className={clsx("inline-block h-1.5 w-1.5 rounded-full", active ? "bg-zinc-900" : "bg-amber-300")} />
+                                ) : null}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className={clsx("rounded-2xl p-3", border, "bg-zinc-950/50")}>
+                      <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+                        <div>
+                          <div className="text-xs opacity-70">{tr("jobs.plannedWeek")}</div>
+                          <div className="font-semibold">
+                            {formatDurationHoursLabel(lang, plannedWeekMinutes, tr)}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs opacity-70">{tr("jobs.plannedTotal")}</div>
+                          <div className="font-semibold">
+                            {formatDurationHoursLabel(lang, plannedTotalMinutes, tr)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {selectedDayRows.length === 0 ? (
+                      <div className="text-sm opacity-70">{tr("jobs.noShiftsForDay")}</div>
+                    ) : null}
+
+                    {weekDays.map((dayItem) => {
+                      const rows = weekRowsByDate.get(dayItem.key) || [];
+                      if (rows.length === 0) return null;
+                      const locale = appLocaleToBCP47(lang);
+                      const monthTitle = new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }).format(dayItem.date);
+                      const dayShort = new Intl.DateTimeFormat(locale, { weekday: "short" }).format(dayItem.date);
+                      const isSelected = dayItem.key === selectedDateKey;
+                      return (
+                        <div key={dayItem.key} className="space-y-2">
+                          <div className={clsx("text-xs font-semibold uppercase tracking-wide opacity-70", isSelected ? "text-amber-200" : "")}>
+                            {monthTitle}
+                          </div>
+                          {rows.map(({ j, durationMin }) => {
                     const pending = pendingByJob[j.id];
                     const rawStatus = String(j.status || "").toLowerCase();
                     const hasOpenStartLog = Boolean(j.started_at && !j.stopped_at);
@@ -1503,8 +1741,12 @@ const loadAll = useCallback(async () => {
                     const elapsedStr = elapsedMs != null ? formatHMS(elapsedMs) : null;
 
                     return (
-                      <div key={j.id} className={clsx("rounded-2xl p-4", border, "bg-zinc-950/60")}>
+                      <div key={j.id} className={clsx("rounded-2xl p-4", border, isSelected ? "bg-zinc-900/70" : "bg-zinc-950/60")}>
                         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                          <div className={clsx("w-14 shrink-0 rounded-xl border border-amber-500/25 p-2 text-center", isSelected ? "bg-amber-400/15" : "bg-zinc-900/40")}>
+                            <div className="text-xl font-semibold leading-5">{dayItem.date.getDate()}</div>
+                            <div className="mt-1 text-[10px] uppercase opacity-70">{dayShort}</div>
+                          </div>
                           <div className="flex items-start gap-3">
                             <button
                               type="button"
@@ -1534,10 +1776,16 @@ const loadAll = useCallback(async () => {
 
                             <div>
                               <div className="text-sm font-semibold">
-                                {formatDateShort(lang, j.job_date)} • {formatWallTime(lang, j.scheduled_time)} • <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClasses(effStatus)}`}>{statusLabel(effStatus)}</span>
+                                {j.site_name || tr("jobs.siteFallback")} • <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusPillClasses(effStatus)}`}>{statusLabel(effStatus)}</span>
                               </div>
                               <div className="text-xs opacity-70 mt-1">
-                                {j.site_name || tr("jobs.siteFallback")} — {j.site_address || tr("status.unknown")}
+                                {j.site_address || tr("status.unknown")}
+                              </div>
+                              <div className="text-xs opacity-80 mt-1">
+                                {formatWallTime(lang, j.scheduled_time)}
+                                {durationMin != null ? (
+                                  <span> • {tr("jobs.estimated")} ({formatDurationHoursLabel(lang, durationMin, tr)})</span>
+                                ) : null}
                               </div>
                               {(() => {
                                 const xs = teamByJob?.[j.id] || [];
@@ -1546,7 +1794,7 @@ const loadAll = useCallback(async () => {
                                 const line = others.map((x) => x.name).filter(Boolean).join(", ");
                                 return line ? (
                                   <div className="text-xs opacity-70 mt-1">
-                                    {tr("jobs.teamWith")}: <span className="text-amber-100">{line}</span>
+                                    {tr("jobs.team")}: <span className="text-amber-100">{line}</span>
                                   </div>
                                 ) : null;
                               })()}
@@ -1603,7 +1851,11 @@ const loadAll = useCallback(async () => {
                         ) : null}
                       </div>
                     );
-                  })
+                          })}
+                        </div>
+                      );
+                    })}
+                  </>
                 )}
               </div>
             </div>
