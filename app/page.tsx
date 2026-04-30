@@ -1218,7 +1218,7 @@ const loadAll = useCallback(async () => {
 
   return (
     <AppWorkerShell>
-      <main className="flex-1 bg-black text-zinc-100 p-6">
+      <main className="flex-1 bg-black px-6 pb-[calc(env(safe-area-inset-bottom,0px)+1rem)] pt-6 text-zinc-100">
         <div className="max-w-6xl mx-auto">
         <header className="flex items-center justify-between gap-3">
           <div>

@@ -20,11 +20,14 @@ export default function LanguageSwitch() {
 
   return (
     <div
-      className={`relative ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-1 rounded-full border px-2 py-[2px] text-[12px] ${
+      className={`relative ml-auto flex min-w-0 max-w-full flex-nowrap items-center justify-end gap-1 whitespace-nowrap rounded-full border px-1.5 py-[2px] text-[11px] sm:px-2 sm:text-[12px] ${
         isLight ? "border-amber-500/35 bg-white/85 text-zinc-800" : "border-amber-400/40 bg-black/40 text-zinc-100"
       }`}
     >
-      <span className={`pr-1 ${isLight ? "text-zinc-600" : "text-zinc-400"}`}>{languageLabel}</span>
+      <span className={`pr-1 ${isLight ? "text-zinc-600" : "text-zinc-400"}`}>
+        <span className="sm:hidden">Lang</span>
+        <span className="hidden sm:inline">{languageLabel}</span>
+      </span>
 
       {ITEMS.map((item, idx) => {
         const itemLabel = t(`languages.${item.value}`);
