@@ -98,6 +98,9 @@ export const uk: Messages = {
   },
   auth: {
     logout: "Вийти",
+    openAdminPanel: "Відкрити адмінку",
+    signOutAndSignInAsWorker: "Вийти та увійти як працівник",
+    signedInAsAdministrator: "Ви увійшли як адміністратор",
     loginTab: "Вхід",
     smsTab: "По SMS",
     emailTab: "По Email",
@@ -304,3 +307,4 @@ export const uk: Messages = {
   },
   admin: ADMIN_UK,
 };
+

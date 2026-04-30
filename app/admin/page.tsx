@@ -1,12 +1,14 @@
 'use client'
 
 import Image from 'next/image'
+import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { getAccessToken, setAuthTokens, clearAuthTokens } from '@/lib/auth-fetch'
+import { getAccessToken, setAuthTokens, clearClientAuthState } from '@/lib/auth-fetch'
 import { SearchableSelect } from '@/app/_components/SearchableSelect'
 import { useI18n } from '@/components/I18nProvider'
 import type { Lang } from '@/lib/i18n-config'
+import { buildNavigationUrl, openNavigation } from '@/lib/open-navigation'
 
 function mapAdminErr(e: unknown, t: (key: string, vars?: Record<string, string | number>) => string) {
   const m = String((e as { message?: string })?.message ?? '')
@@ -535,7 +537,7 @@ async function authFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
     const payload = await res.json().catch(() => ({} as any))
 
     if (res.status === 401) {
-      clearAuthTokens()
+      clearClientAuthState()
       throw new Error('admin.main.errSessionExpired')
     }
     if (!res.ok) {
@@ -664,33 +666,9 @@ function siteToSelectItem(s: Site, t: (k: string, v?: Record<string, string | nu
 }
 
 
-function googleNavUrl(lat: number, lng: number) {
-  const dest = `${lat},${lng}`
-  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}`
-}
-
-function googleNavUrlAddress(address: string) {
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
-}
-
 function openNavForSite(site: { lat?: number | null; lng?: number | null; address?: string | null }) {
   if (typeof window === 'undefined') return
-  const lat = site?.lat
-  const lng = site?.lng
-  const addr = site?.address
-  if (lat != null && lng != null) {
-    window.open(googleNavUrl(lat, lng), '_blank', 'noopener,noreferrer')
-    return
-  }
-  if (addr) {
-    window.open(googleNavUrlAddress(String(addr)), '_blank', 'noopener,noreferrer')
-    return
-  }
-}
-
-function appleNavUrl(lat: number, lng: number) {
-  const dest = `${lat},${lng}`
-  return `https://maps.apple.com/?daddr=${encodeURIComponent(dest)}`
+  openNavigation({ lat: site?.lat, lng: site?.lng, address: site?.address })
 }
 
 function osmEmbedUrl(lat: number, lng: number, delta = 0.006) {
@@ -797,7 +775,7 @@ function MapLarge(props: { lat: number; lng: number }) {
     <div className="relative h-[180px] overflow-hidden rounded-2xl border border-yellow-400/20 bg-black/20">
       <iframe src={osmEmbedUrl(lat, lng, 0.01)} className="h-full w-full" loading="lazy" />
       <button
-        onClick={() => window.open(googleNavUrl(lat, lng), '_blank', 'noopener,noreferrer')}
+        onClick={() => openNavigation({ lat, lng })}
         className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/0 to-black/0"
         title={t('admin.main.navOpen')}
       />
@@ -1286,6 +1264,7 @@ function ReportsPanel() {
 }
 
 export default function AdminPage() {
+  const router = useRouter()
   const { t, lang } = useI18n()
   const [tab, setTab] = useState<TabKey>('jobs')
 
@@ -1670,7 +1649,7 @@ const [editOpen, setEditOpen] = useState(false)
     setMeId(null)
   } catch (e: unknown) {
     setError(mapAdminErr(e, t))
-    clearAuthTokens()
+    clearClientAuthState()
     setSessionToken(null)
     setMeId(null)
   } finally {
@@ -1743,13 +1722,14 @@ const [editOpen, setEditOpen] = useState(false)
     setBusy(true)
     setError(null)
     try {
-      clearAuthTokens()
+      clearClientAuthState()
       setSessionToken(null)
       setMeId(null)
       setSites([])
       setWorkers([])
       setAssignments([])
       setSchedule([])
+      router.push('/')
     } finally {
       setBusy(false)
     }
@@ -3534,7 +3514,7 @@ const [editOpen, setEditOpen] = useState(false)
                                           lng={s.lng ?? null}
                                           onClick={() => {
                                             if (s.lat == null || s.lng == null) return
-                                            window.open(googleNavUrl(s.lat, s.lng), '_blank', 'noopener,noreferrer')
+                                            openNavigation({ lat: s.lat, lng: s.lng })
                                           }}
                                         />
                                       )}
@@ -3878,18 +3858,18 @@ const [editOpen, setEditOpen] = useState(false)
                                 const lat = siteCardLat.trim() === '' ? null : Number(siteCardLat)
                                 const lng = siteCardLng.trim() === '' ? null : Number(siteCardLng)
                                 if (lat == null || lng == null || Number.isNaN(lat) || Number.isNaN(lng)) return null
+                                const navHref = buildNavigationUrl({ lat, lng })
                                 return (
                                   <div className="grid gap-2">
                                     <div className="text-sm font-semibold text-yellow-100">{t('admin.main.mapTitle')}</div>
                                     <MapLarge lat={lat} lng={lng} />
-                                    <div className="flex flex-wrap items-center gap-3 text-xs text-yellow-100/70">
-                                      <a className="underline decoration-yellow-400/20 hover:decoration-yellow-300/50" href={googleNavUrl(lat, lng)} target="_blank" rel="noreferrer">
-                                        {t('admin.main.googleNav')}
-                                      </a>
-                                      <a className="underline decoration-yellow-400/20 hover:decoration-yellow-300/50" href={appleNavUrl(lat, lng)} target="_blank" rel="noreferrer">
-                                        {t('admin.main.appleNav')}
-                                      </a>
-                                    </div>
+                                    {navHref ? (
+                                      <div className="flex flex-wrap items-center gap-3 text-xs text-yellow-100/70">
+                                        <a className="underline decoration-yellow-400/20 hover:decoration-yellow-300/50" href={navHref} target="_blank" rel="noreferrer">
+                                          {t('admin.main.navOpen')}
+                                        </a>
+                                      </div>
+                                    ) : null}
                                   </div>
                                 )
                               })()}

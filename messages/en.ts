@@ -98,6 +98,9 @@ export const en: Messages = {
   },
   auth: {
     logout: "Log out",
+    openAdminPanel: "Open admin panel",
+    signOutAndSignInAsWorker: "Sign out and sign in as worker",
+    signedInAsAdministrator: "You are signed in as administrator",
     loginTab: "Login",
     smsTab: "By SMS",
     emailTab: "By Email",
@@ -304,3 +307,4 @@ export const en: Messages = {
   },
   admin: ADMIN_EN,
 };
+

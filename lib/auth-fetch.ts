@@ -42,6 +42,15 @@ export function clearAuthTokens() {
   } catch {}
 }
 
+export function clearClientAuthState() {
+  if (typeof window === 'undefined') return;
+  clearAuthTokens();
+  try {
+    window.sessionStorage.removeItem(LS_ACCESS);
+    window.sessionStorage.removeItem(LS_REFRESH);
+  } catch {}
+}
+
 function buildAuthHeaders(existing?: HeadersInit, accessOverride?: string | null): HeadersInit {
   const token = accessOverride ?? getAccessToken();
   const headers: Record<string, string> = {};
