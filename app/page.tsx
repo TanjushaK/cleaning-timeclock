@@ -10,13 +10,14 @@ import {
   isNativeCapacitorApp,
   unlockSessionWithBiometrics,
 } from "@/lib/biometric-unlock";
-import { authFetch, authFetchJson, clearAuthTokens, getAccessToken, getRefreshToken, setAuthTokens } from "@/lib/auth-fetch";
+import { authFetch, authFetchJson, clearClientAuthState, getAccessToken, getRefreshToken, setAuthTokens } from "@/lib/auth-fetch";
 import { clientWorkerErrorMessage } from "@/lib/app-api-message";
 import { FetchApiError } from "@/lib/fetch-api-error";
 import { formatDateShort, formatDateTimeShort, formatWallTime } from "@/lib/locale-format";
 import AppWorkerShell from "@/app/_components/AppWorkerShell";
 import { useI18n } from "@/components/I18nProvider";
 import { OutboxEvent, outboxAdd, outboxCount as outboxCountDb, outboxList, outboxRemove, outboxUpdate } from "@/lib/offline/outbox";
+import { openNavigation } from "@/lib/open-navigation";
 
 type Profile = {
   id: string;
@@ -123,16 +124,7 @@ function statusPillClasses(s: string | null | undefined) {
 function openNavToSite(lat: number | null | undefined, lng: number | null | undefined, address: string | null | undefined) {
   if (typeof window === "undefined") return;
   try {
-    if (lat != null && lng != null) {
-      const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(String(lat))},${encodeURIComponent(String(lng))}`;
-      window.open(url, "_blank", "noopener,noreferrer");
-      return;
-    }
-    const q = String(address || "").trim();
-    if (q) {
-      const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
-      window.open(url, "_blank", "noopener,noreferrer");
-    }
+    openNavigation({ lat, lng, address });
   } catch {
     // ignore
   }
@@ -488,7 +480,7 @@ const loadAll = useCallback(async () => {
           fe?.status === 401 ||
           /401|session|expired|unauthorized|login again|auth/i.test(msg)
         ) {
-          clearAuthTokens();
+          clearClientAuthState();
           setToken(null);
           setMe(null);
           setJobs([]);
@@ -561,7 +553,7 @@ const loadAll = useCallback(async () => {
     try {
       await clearBiometricStoredCredentials();
       setBioSaved(false);
-      clearAuthTokens();
+      clearClientAuthState();
       setToken(null);
       setMe(null);
       setJobs([]);
@@ -575,6 +567,11 @@ const loadAll = useCallback(async () => {
       setBusy(false);
     }
   }, [tr]);
+
+  const doSwitchToWorker = useCallback(async () => {
+    await doLogout();
+    setTab("login");
+  }, [doLogout]);
 
   const bioPrompt = useCallback(
     () => ({
@@ -1273,6 +1270,22 @@ const loadAll = useCallback(async () => {
               </div>
             )}
           </div>
+        )}
+
+        {authed && isAdmin && (
+          <section className="mt-4">
+            <div className={clsx(card, "p-4")}>
+              <div className="text-sm font-semibold text-amber-100">{tr("auth.signedInAsAdministrator")}</div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <a className={btn} href="/admin">
+                  {tr("auth.openAdminPanel")}
+                </a>
+                <button className={btn} onClick={doSwitchToWorker} disabled={busy}>
+                  {tr("auth.signOutAndSignInAsWorker")}
+                </button>
+              </div>
+            </div>
+          </section>
         )}
 
         {!authed ? (

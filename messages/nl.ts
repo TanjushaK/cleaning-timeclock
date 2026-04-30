@@ -98,6 +98,9 @@ export const nl: Messages = {
   },
   auth: {
     logout: "Uitloggen",
+    openAdminPanel: "Adminpaneel openen",
+    signOutAndSignInAsWorker: "Uitloggen en inloggen als medewerker",
+    signedInAsAdministrator: "Je bent ingelogd als beheerder",
     loginTab: "Inloggen",
     smsTab: "Via SMS",
     emailTab: "Via e-mail",
@@ -304,3 +307,4 @@ export const nl: Messages = {
   },
   admin: ADMIN_NL,
 };
+

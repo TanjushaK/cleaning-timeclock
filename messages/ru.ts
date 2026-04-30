@@ -98,6 +98,9 @@ export const ru: Messages = {
   },
   auth: {
     logout: "Выйти",
+    openAdminPanel: "Открыть админку",
+    signOutAndSignInAsWorker: "Выйти и войти как работник",
+    signedInAsAdministrator: "Вы вошли как администратор",
     loginTab: "Вход",
     smsTab: "По SMS",
     emailTab: "По Email",
@@ -304,3 +307,4 @@ export const ru: Messages = {
   },
   admin: ADMIN_RU,
 };
+

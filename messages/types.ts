@@ -80,6 +80,9 @@ export type Messages = {
   };
   auth: {
     logout: string;
+    openAdminPanel: string;
+    signOutAndSignInAsWorker: string;
+    signedInAsAdministrator: string;
     loginTab: string;
     smsTab: string;
     emailTab: string;
