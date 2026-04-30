@@ -140,6 +140,15 @@ export type Messages = {
     title: string;
     scheduleTitle: string;
     thisWeek: string;
+    plannedDay: string;
+    plannedPeriod: string;
+    workedDay: string;
+    workedPeriod: string;
+    worked: string;
+    periodDay: string;
+    periodWeek: string;
+    periodMonth: string;
+    periodAll: string;
     plannedWeek: string;
     plannedTotal: string;
     noShiftsForDay: string;

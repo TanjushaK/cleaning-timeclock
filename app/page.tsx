@@ -206,7 +206,35 @@ function formatDurationHoursLabel(lang: string, durationMin: number, tr: (key: a
   return `${asText}${tr("jobs.hoursShort")}`;
 }
 
+function formatScheduleRangeLabel(
+  lang: Parameters<typeof formatWallTime>[0],
+  scheduledTime: string | null | undefined,
+  scheduledEndTime: string | null | undefined
+): string {
+  const start = formatWallTime(lang, scheduledTime);
+  const hasEnd = String(scheduledEndTime || "").trim().length > 0;
+  if (!hasEnd) return start;
 
+  const end = formatWallTime(lang, scheduledEndTime);
+  if (!end || end === "\u2014") return start;
+
+  return `${start} \u2013 ${end}`;
+}
+
+
+
+function calcWorkedDurationMin(job: MeJobsResponse["jobs"][number], nowMs: number): number {
+  const startedMs = Date.parse(String(job.started_at || ""));
+  if (!Number.isFinite(startedMs)) return 0;
+
+  const stoppedMs = Date.parse(String(job.stopped_at || ""));
+  const status = String(job.status || "").toLowerCase();
+  const endMs = Number.isFinite(stoppedMs) ? stoppedMs : status === "in_progress" ? nowMs : NaN;
+
+  if (!Number.isFinite(endMs) || endMs <= startedMs) return 0;
+
+  return Math.max(0, Math.floor((endMs - startedMs) / 60000));
+}
 
 function statusPillClasses(s: string | null | undefined) {
   const v = String(s || "").toLowerCase()
@@ -302,6 +330,7 @@ function makeWorkerEmailFromPhone(phoneE164: string) {
 }
 
 type Tab = "login" | "sms" | "email";
+type PlannedPeriod = "day" | "week" | "month" | "all";
 
 export default function AppPage() {
   const { t: tr, lang } = useI18n();
@@ -370,6 +399,7 @@ export default function AppPage() {
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [localStartMs, setLocalStartMs] = useState<Record<string, number>>({});
   const [selectedDateKey, setSelectedDateKey] = useState<string>("");
+  const [plannedPeriod, setPlannedPeriod] = useState<PlannedPeriod>("week");
 
   // onboarding + photos
   const [fullName, setFullName] = useState("");
@@ -1279,9 +1309,10 @@ const loadAll = useCallback(async () => {
         const dateKey = day ? toDateKeyLocal(day) : "";
         const tm = parseScheduledTimeWindow(j.scheduled_time, j.scheduled_end_time);
         const durationMin = calcDurationMin(tm.startMin, tm.endMin);
-        return { j, day, dateKey, durationMin };
+        const workedMin = calcWorkedDurationMin(j, nowMs);
+        return { j, day, dateKey, durationMin, workedMin };
       }),
-    [jobsSorted]
+    [jobsSorted, nowMs]
   );
 
   const weekAnchorDate = useMemo(() => {
@@ -1347,14 +1378,68 @@ const loadAll = useCallback(async () => {
     return new Intl.DateTimeFormat(locale, { weekday: "short" }).format(selectedDate);
   }, [lang, selectedDate]);
 
+  const monthRows = useMemo(
+    () =>
+      scheduleRows.filter((row) => {
+        if (!row.day) return false;
+        return row.day.getFullYear() === selectedDate.getFullYear() && row.day.getMonth() === selectedDate.getMonth();
+      }),
+    [scheduleRows, selectedDate]
+  );
+
+  const plannedDayMinutes = useMemo(
+    () => selectedDayRows.reduce((acc, row) => acc + (row.durationMin || 0), 0),
+    [selectedDayRows]
+  );
+
   const plannedWeekMinutes = useMemo(
     () => weekRows.reduce((acc, row) => acc + (row.durationMin || 0), 0),
     [weekRows]
   );
-  const plannedTotalMinutes = useMemo(
+
+  const plannedMonthMinutes = useMemo(
+    () => monthRows.reduce((acc, row) => acc + (row.durationMin || 0), 0),
+    [monthRows]
+  );
+
+  const plannedLoadedMinutes = useMemo(
     () => scheduleRows.reduce((acc, row) => acc + (row.durationMin || 0), 0),
     [scheduleRows]
   );
+
+  const plannedPeriodMinutes = useMemo(() => {
+    if (plannedPeriod === "day") return plannedDayMinutes;
+    if (plannedPeriod === "week") return plannedWeekMinutes;
+    if (plannedPeriod === "month") return plannedMonthMinutes;
+    return plannedLoadedMinutes;
+  }, [plannedDayMinutes, plannedLoadedMinutes, plannedMonthMinutes, plannedPeriod, plannedWeekMinutes]);
+
+  const workedDayMinutes = useMemo(
+    () => selectedDayRows.reduce((acc, row) => acc + (row.workedMin || 0), 0),
+    [selectedDayRows]
+  );
+
+  const workedWeekMinutes = useMemo(
+    () => weekRows.reduce((acc, row) => acc + (row.workedMin || 0), 0),
+    [weekRows]
+  );
+
+  const workedMonthMinutes = useMemo(
+    () => monthRows.reduce((acc, row) => acc + (row.workedMin || 0), 0),
+    [monthRows]
+  );
+
+  const workedLoadedMinutes = useMemo(
+    () => scheduleRows.reduce((acc, row) => acc + (row.workedMin || 0), 0),
+    [scheduleRows]
+  );
+
+  const workedPeriodMinutes = useMemo(() => {
+    if (plannedPeriod === "day") return workedDayMinutes;
+    if (plannedPeriod === "week") return workedWeekMinutes;
+    if (plannedPeriod === "month") return workedMonthMinutes;
+    return workedLoadedMinutes;
+  }, [plannedPeriod, workedDayMinutes, workedLoadedMinutes, workedMonthMinutes, workedWeekMinutes]);
 
   const gold = "text-amber-200";
   const border = "border border-amber-500/25";
@@ -1720,17 +1805,51 @@ const loadAll = useCallback(async () => {
                     </div>
 
                     <div className={clsx("rounded-2xl p-3", border, "bg-zinc-950/50")}>
-                      <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+                      <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
                         <div>
-                          <div className="text-xs opacity-70">{tr("jobs.plannedWeek")}</div>
+                          <div className="text-xs opacity-70">{tr("jobs.plannedDay")}</div>
                           <div className="font-semibold">
-                            {formatDurationHoursLabel(lang, plannedWeekMinutes, tr)}
+                            {formatDurationHoursLabel(lang, plannedDayMinutes, tr)}
+                          </div>
+                          <div className="mt-2 text-xs opacity-70">{tr("jobs.workedDay")}</div>
+                          <div className="font-semibold">
+                            {formatDurationHoursLabel(lang, workedDayMinutes, tr)}
                           </div>
                         </div>
                         <div>
-                          <div className="text-xs opacity-70">{tr("jobs.plannedTotal")}</div>
-                          <div className="font-semibold">
-                            {formatDurationHoursLabel(lang, plannedTotalMinutes, tr)}
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-xs opacity-70">{tr("jobs.plannedPeriod")}</div>
+                            <div className="font-semibold">
+                              {formatDurationHoursLabel(lang, plannedPeriodMinutes, tr)}
+                            </div>
+                          </div>
+                          <div className="mt-1 flex items-center justify-between gap-2">
+                            <div className="text-xs opacity-70">{tr("jobs.workedPeriod")}</div>
+                            <div className="font-semibold">
+                              {formatDurationHoursLabel(lang, workedPeriodMinutes, tr)}
+                            </div>
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {([
+                              ["day", tr("jobs.periodDay")],
+                              ["week", tr("jobs.periodWeek")],
+                              ["month", tr("jobs.periodMonth")],
+                              ["all", tr("jobs.periodAll")],
+                            ] as Array<[PlannedPeriod, string]>).map(([value, label]) => (
+                              <button
+                                key={value}
+                                type="button"
+                                onClick={() => setPlannedPeriod(value)}
+                                className={clsx(
+                                  "rounded-full border px-2.5 py-1 text-[11px] font-semibold transition",
+                                  plannedPeriod === value
+                                    ? "border-amber-300 bg-amber-400 text-zinc-950"
+                                    : "border-amber-500/25 bg-zinc-900/35 text-amber-100 hover:bg-zinc-900/55"
+                                )}
+                              >
+                                {label}
+                              </button>
+                            ))}
                           </div>
                         </div>
                       </div>
@@ -1743,7 +1862,7 @@ const loadAll = useCallback(async () => {
                       {selectedDayRows.length === 0 ? (
                         <div className="text-sm opacity-70">{tr("jobs.noShiftsForDay")}</div>
                       ) : (
-                        selectedDayRows.map(({ j, durationMin }) => {
+                        selectedDayRows.map(({ j, durationMin, workedMin }) => {
                     const pending = pendingByJob[j.id];
                     const rawStatus = String(j.status || "").toLowerCase();
                     const hasOpenStartLog = Boolean(j.started_at && !j.stopped_at);
@@ -1803,9 +1922,12 @@ const loadAll = useCallback(async () => {
                                 {j.site_address || tr("status.unknown")}
                               </div>
                               <div className="text-xs opacity-80 mt-1">
-                                {formatWallTime(lang, j.scheduled_time)}
+                                {formatScheduleRangeLabel(lang, j.scheduled_time, j.scheduled_end_time)}
                                 {durationMin != null ? (
                                   <span> • {tr("jobs.estimated")} ({formatDurationHoursLabel(lang, durationMin, tr)})</span>
+                                ) : null}
+                                {workedMin > 0 ? (
+                                  <span> • {tr("jobs.worked")} ({formatDurationHoursLabel(lang, workedMin, tr)})</span>
                                 ) : null}
                               </div>
                               {(() => {
