@@ -307,6 +307,12 @@ export default function AppPage() {
     return () => clearInterval(t);
   }, [authed]);
 
+  useEffect(() => {
+    // Drop stale translated messages when language changes.
+    setError(null);
+    setNotice(null);
+  }, [lang]);
+
   const bearerHeaders = useCallback((): Record<string, string> => {
     const t = getAccessToken();
     const h: Record<string, string> = {};
@@ -998,7 +1004,7 @@ const loadAll = useCallback(async () => {
       const hasSiteCoords = hasValidSiteStartCoords(currentJob);
       if (!hasSiteCoords) {
         setNotice(null);
-        setError("У объекта не заданы координаты.");
+        setError(tr("jobs.siteCoordsMissing"));
         return;
       }
       if (pending?.kind === "start" || currentStatus === "in_progress" || hasOpenStartLog) return;
@@ -1593,7 +1599,7 @@ const loadAll = useCallback(async () => {
                           </div>
                         ) : null}
                         {blockedByMissingCoords ? (
-                          <div className="mt-2 text-xs text-amber-200">У объекта не заданы координаты.</div>
+                          <div className="mt-2 text-xs text-amber-200">{tr("jobs.siteCoordsMissing")}</div>
                         ) : null}
                       </div>
                     );

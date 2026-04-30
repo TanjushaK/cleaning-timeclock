@@ -171,6 +171,7 @@ export const en: Messages = {
     stoppedAt: "Stop",
     timer: "Timer",
     gpsMetrics: "GPS: distance {distance} m • accuracy {accuracy} m",
+    siteCoordsMissing: "Site coordinates are not set.",
   },
   profile: {
     title: "Profile",
