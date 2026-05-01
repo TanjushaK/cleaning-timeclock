@@ -65,6 +65,8 @@ type MeJobsResponse = {
     distance_m?: number | null;
     accuracy_m?: number | null;
     worker_note?: string | null;
+    coworkers?: Array<{ id: string; name: string; active?: boolean | null }>;
+    participant_worker_ids?: string[];
   }>;
 };
 
@@ -77,6 +79,56 @@ type TeamResponse = {
     }>
   >;
 };
+
+/** Visible label before coworker names on worker shift cards (matches worker-mobile tone). */
+function coworkersWithYouPrefix(lang: string): string {
+  const v = String(lang || "en").toLowerCase();
+  if (v === "ru") return "С вами:";
+  if (v === "uk") return "З вами:";
+  if (v === "nl") return "Met jou:";
+  return "With you:";
+}
+
+function dedupeCoworkerDisplayNames(
+  members: Array<{ id: string; name: string }>,
+  currentWorkerId: string | null | undefined
+): string[] {
+  const myId = String(currentWorkerId ?? "").trim();
+  const seenIds = new Set<string>();
+  const seenNames = new Set<string>();
+  const names: string[] = [];
+  for (const m of members) {
+    if (!m?.id) continue;
+    if (seenIds.has(m.id)) continue;
+    if (myId && m.id === myId) continue;
+    const n = String(m.name || "").trim();
+    if (!n) continue;
+    const nameKey = n.toLowerCase();
+    if (seenNames.has(nameKey)) continue;
+    seenIds.add(m.id);
+    seenNames.add(nameKey);
+    names.push(n);
+  }
+  return names;
+}
+
+/** Prefer GET /api/me/jobs job.coworkers; fallback GET /api/me/jobs/team roster. */
+function workerShiftCoworkerDisplayNames(
+  job: MeJobsResponse["jobs"][number],
+  teamByJob: TeamResponse["teams"],
+  currentWorkerId: string | null | undefined
+): string[] {
+  const list = job.coworkers;
+  if (Array.isArray(list) && list.length > 0) {
+    const fromJob = dedupeCoworkerDisplayNames(
+      list.map((c) => ({ id: c.id, name: c.name })),
+      currentWorkerId
+    );
+    if (fromJob.length > 0) return fromJob;
+  }
+  const fb = teamByJob[job.id] || [];
+  return dedupeCoworkerDisplayNames(fb.map((x) => ({ id: x.id, name: x.name })), currentWorkerId);
+}
 
 type MyPhotosResponse = {
   photos: Array<{ path: string; url?: string | null }>;
@@ -1992,13 +2044,13 @@ const loadAll = useCallback(async () => {
                                 ) : null}
                               </div>
                               {(() => {
-                                const xs = teamByJob?.[j.id] || [];
-                                const myId = me?.user?.id || "";
-                                const others = xs.filter((x) => x && x.id && x.id !== myId);
-                                const line = others.map((x) => x.name).filter(Boolean).join(", ");
+                                const myId = me?.profile?.id || me?.user?.id || null;
+                                const names = workerShiftCoworkerDisplayNames(j, teamByJob, myId);
+                                const line = names.join(", ");
                                 return line ? (
                                   <div className="text-xs opacity-70 mt-1">
-                                    {tr("jobs.team")}: <span className="text-amber-100">{line}</span>
+                                    <span className="opacity-80">{coworkersWithYouPrefix(lang)}</span>{" "}
+                                    <span className="text-amber-100">{line}</span>
                                   </div>
                                 ) : null;
                               })()}
