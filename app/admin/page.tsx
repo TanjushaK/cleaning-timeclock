@@ -116,6 +116,14 @@ type ScheduleItem = {
   stopped_at: string | null
 }
 
+type CoworkerRow = {
+  id: string
+  name: string
+  email: string | null
+  role: string | null
+  active: boolean | null
+}
+
 type LocDraft = {
   name: Partial<Record<Lang, string>>
   address: Partial<Record<Lang, string>>
@@ -1357,6 +1365,9 @@ const [editOpen, setEditOpen] = useState(false)
   const [editTimeTo, setEditTimeTo] = useState<string>('')
   const [editStatus, setEditStatus] = useState<JobStatus>('planned')
   const [jobDeleteBusy, setJobDeleteBusy] = useState(false)
+  const [editCoworkers, setEditCoworkers] = useState<CoworkerRow[]>([])
+  const [editCoworkerPick, setEditCoworkerPick] = useState('')
+  const [coworkersBusy, setCoworkersBusy] = useState(false)
 
   const [workerCardOpen, setWorkerCardOpen] = useState(false)
   const [workerCardId, setWorkerCardId] = useState<string>('')
@@ -1465,6 +1476,12 @@ const [editOpen, setEditOpen] = useState(false)
       .filter((w) => w.active !== false)
       .sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''))
   }, [workers])
+
+  const coworkerPickOptions = useMemo(() => {
+    const primary = String(editWorkerId || '').trim()
+    const taken = new Set(editCoworkers.map((c) => c.id))
+    return workersForSelect.filter((w) => w.id !== primary && !taken.has(w.id))
+  }, [workersForSelect, editWorkerId, editCoworkers])
 
   const workersForPicker = useMemo(
     () => workersForSelect.map((w) => ({ id: w.id, name: w.full_name || t('admin.main.fallbackWorker') })),
@@ -2227,6 +2244,81 @@ const [editOpen, setEditOpen] = useState(false)
       setBusy(false)
     }
   }
+
+  const loadEditCoworkers = useCallback(async () => {
+    if (!editJobId) return
+    setCoworkersBusy(true)
+    setError(null)
+    try {
+      const res = await authFetchJson<{ coworkers: CoworkerRow[] }>(
+        `/api/admin/jobs/${encodeURIComponent(editJobId)}/coworkers`
+      )
+      setEditCoworkers(Array.isArray(res?.coworkers) ? res.coworkers : [])
+    } catch (e: unknown) {
+      setError(mapAdminErr(e, t))
+      setEditCoworkers([])
+    } finally {
+      setCoworkersBusy(false)
+    }
+  }, [editJobId, t])
+
+  async function addCoworkerToShift() {
+    if (!editJobId || !editCoworkerPick) return
+    setCoworkersBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const res = await authFetchJson<{ coworkers: CoworkerRow[] }>(
+        `/api/admin/jobs/${encodeURIComponent(editJobId)}/coworkers`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ worker_id: editCoworkerPick }),
+        }
+      )
+      setEditCoworkers(Array.isArray(res?.coworkers) ? res.coworkers : [])
+      setEditCoworkerPick('')
+      setNotice(t('admin.main.coworkerAdded'))
+      await refreshSchedule()
+    } catch (e: unknown) {
+      setError(mapAdminErr(e, t) || t('admin.main.coworkerAddFailed'))
+    } finally {
+      setCoworkersBusy(false)
+    }
+  }
+
+  async function removeCoworkerFromShift(workerId: string) {
+    if (!editJobId) return
+    setCoworkersBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const res = await authFetchJson<{ coworkers: CoworkerRow[] }>(
+        `/api/admin/jobs/${encodeURIComponent(editJobId)}/coworkers`,
+        {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ worker_id: workerId }),
+        }
+      )
+      setEditCoworkers(Array.isArray(res?.coworkers) ? res.coworkers : [])
+      setNotice(t('admin.main.coworkerRemoved'))
+      await refreshSchedule()
+    } catch (e: unknown) {
+      setError(mapAdminErr(e, t) || t('admin.main.coworkerRemoveFailed'))
+    } finally {
+      setCoworkersBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!editOpen || !editJobId) {
+      setEditCoworkers([])
+      setEditCoworkerPick('')
+      return
+    }
+    void loadEditCoworkers()
+  }, [editOpen, editJobId, editWorkerId, loadEditCoworkers])
 
   async function loadWorkerCard(workerId: string) {
     const url = `/api/admin/schedule?date_from=${encodeURIComponent(dateFrom)}&date_to=${encodeURIComponent(dateTo)}&worker_id=${encodeURIComponent(workerId)}`
@@ -4646,6 +4738,8 @@ const [editOpen, setEditOpen] = useState(false)
         onClose={() => {
           if (jobDeleteBusy) return
           setEditOpen(false)
+          setEditCoworkers([])
+          setEditCoworkerPick('')
         }}
       >
         <div className="grid gap-3">
@@ -4676,6 +4770,56 @@ const [editOpen, setEditOpen] = useState(false)
               ))}
             </select>
           </div>
+
+          {editJobId ? (
+            <div className="grid gap-2 rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2">
+              <span className="text-[11px] text-zinc-300">{t('admin.main.coworkersInShift')}</span>
+              <div className="flex flex-wrap items-stretch gap-2">
+                <select
+                  aria-label={t('admin.main.selectCoworker')}
+                  value={editCoworkerPick}
+                  onChange={(e) => setEditCoworkerPick(e.target.value)}
+                  disabled={coworkersBusy || jobDeleteBusy}
+                  className="min-w-0 flex-1 rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-xs outline-none transition focus:border-yellow-300/60 disabled:opacity-60"
+                >
+                  <option value="">{t('admin.main.selectCoworker')}</option>
+                  {coworkerPickOptions.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.full_name || t('admin.main.fallbackWorker')}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => void addCoworkerToShift()}
+                  disabled={coworkersBusy || jobDeleteBusy || !editCoworkerPick}
+                  className="shrink-0 rounded-2xl border border-yellow-400/20 bg-black/35 px-3 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-300/45 disabled:opacity-60"
+                >
+                  {t('admin.main.addCoworker')}
+                </button>
+              </div>
+              {editCoworkers.length > 0 ? (
+                <ul className="grid max-h-28 gap-1 overflow-y-auto pr-0.5">
+                  {editCoworkers.map((c) => (
+                    <li
+                      key={c.id}
+                      className="flex items-center justify-between gap-2 rounded-xl border border-yellow-400/10 bg-black/30 px-2 py-1.5 text-xs text-zinc-200"
+                    >
+                      <span className="min-w-0 truncate">{c.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => void removeCoworkerFromShift(c.id)}
+                        disabled={coworkersBusy || jobDeleteBusy}
+                        className="shrink-0 rounded-lg border border-yellow-400/15 px-2 py-0.5 text-[11px] font-semibold text-zinc-200 transition hover:border-rose-400/40 hover:text-rose-100 disabled:opacity-60"
+                      >
+                        {t('admin.main.removeCoworker')}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className="grid gap-3 sm:grid-cols-3">
             <label className="grid gap-1">
