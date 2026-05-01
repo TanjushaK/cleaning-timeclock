@@ -1582,6 +1582,17 @@ const [editOpen, setEditOpen] = useState(false)
         seen.add(wid)
         extra.push({ id: wid, name: j.worker_name || t('admin.main.fallbackWorker') })
       }
+      for (const j of schedule) {
+        for (const c of coworkersByJob[j.id] || []) {
+          const cid = String(c.id || '').trim()
+          if (!cid || seen.has(cid)) continue
+          seen.add(cid)
+          extra.push({
+            id: cid,
+            name: c.name || workersById.get(cid)?.full_name || t('admin.main.fallbackWorker'),
+          })
+        }
+      }
       extra.sort((a, b) => a.name.localeCompare(b.name))
       return [...base, ...extra]
     }
@@ -1596,7 +1607,7 @@ const [editOpen, setEditOpen] = useState(false)
     }
     extra.sort((a, b) => a.name.localeCompare(b.name))
     return [...base, ...extra]
-  }, [planMode, workersForSelect, activeSites, schedule, t])
+  }, [planMode, workersForSelect, activeSites, schedule, coworkersByJob, workersById, t])
 
   const hours = useMemo(() => Array.from({ length: 24 }, (_, i) => pad2(i) + ':00'), [])
 
@@ -1655,6 +1666,8 @@ const [editOpen, setEditOpen] = useState(false)
         }
       }
       setCoworkersByJob(merged)
+      const photoIds = Array.from(new Set(Object.values(merged).flatMap((rows) => rows.map((r) => r.id))))
+      if (photoIds.length) enqueueWorkerPhotoMeta(photoIds)
     } catch {
       setCoworkersByJob({})
     }
@@ -2318,6 +2331,7 @@ const [editOpen, setEditOpen] = useState(false)
       setEditCoworkerPick('')
       setNotice(t('admin.main.coworkerAdded'))
       await refreshSchedule()
+      await loadEditCoworkers()
     } catch (e: unknown) {
       setError(mapAdminErr(e, t) || t('admin.main.coworkerAddFailed'))
     } finally {
@@ -2342,6 +2356,7 @@ const [editOpen, setEditOpen] = useState(false)
       setEditCoworkers(Array.isArray(res?.coworkers) ? res.coworkers : [])
       setNotice(t('admin.main.coworkerRemoved'))
       await refreshSchedule()
+      await loadEditCoworkers()
     } catch (e: unknown) {
       setError(mapAdminErr(e, t) || t('admin.main.coworkerRemoveFailed'))
     } finally {
@@ -2803,6 +2818,30 @@ const [editOpen, setEditOpen] = useState(false)
     return t('admin.main.coworkersLine', { names: names.join(', ') })
   }
 
+  function jobParticipants(job: ScheduleItem): string[] {
+    const primary = String(job.worker_id ?? '').trim()
+    const out: string[] = []
+    const seen = new Set<string>()
+    if (primary) {
+      seen.add(primary)
+      out.push(primary)
+    }
+    for (const c of coworkersByJob[job.id] || []) {
+      const id = String(c.id || '').trim()
+      if (!id || seen.has(id)) continue
+      seen.add(id)
+      out.push(id)
+    }
+    return out
+  }
+
+  function isCoworkerOnJob(job: ScheduleItem, workerId: string): boolean {
+    const w = String(workerId || '').trim()
+    const primary = String(job.worker_id ?? '').trim()
+    if (!w || w === primary) return false
+    return jobParticipants(job).includes(w)
+  }
+
   function jobsInCell(args: { entityId: string; dateISO: string; hour?: string }) {
     const { entityId, dateISO, hour } = args
     const ent = String(entityId).trim()
@@ -2810,7 +2849,10 @@ const [editOpen, setEditOpen] = useState(false)
       .filter((j) => {
         if (jobDateKey(j.job_date) !== dateISO) return false
         if (planMode === 'workers') {
-          if (String(j.worker_id ?? '').trim() !== ent) return false
+          const wid = String(j.worker_id ?? '').trim()
+          if (wid === ent) return true
+          if (isCoworkerOnJob(j, ent)) return true
+          return false
         } else {
           if (String(j.site_id ?? '').trim() !== ent) return false
         }
@@ -2824,7 +2866,12 @@ const [editOpen, setEditOpen] = useState(false)
       .sort((a, b) => timeHHMM(a.scheduled_time).localeCompare(timeHHMM(b.scheduled_time)))
   }
 
-  function jobCard(j: ScheduleItem, compact: boolean) {
+  function jobCard(j: ScheduleItem, compact: boolean, opts?: { scheduleRowWorkerId?: string }) {
+    const rowWid = String(opts?.scheduleRowWorkerId ?? '').trim()
+    const primaryWid = String(j.worker_id ?? '').trim()
+    const showCoworkerBadge =
+      planMode === 'workers' && !!rowWid && rowWid !== primaryWid && isCoworkerOnJob(j, rowWid)
+
     const left = planMode === 'workers' ? (j.site_name || t('admin.main.fallbackSite')) : (j.worker_name || t('admin.main.fallbackWorker'))
     const st = String(j.status || '')
     const timeText = timeRangeHHMM(j.scheduled_time, j.scheduled_end_time)
@@ -2884,6 +2931,18 @@ const [editOpen, setEditOpen] = useState(false)
                   loading="lazy"
                 />
               ) : null}
+              {showCoworkerBadge ? (
+                <span
+                  className={cn(
+                    'shrink-0 rounded-md border border-amber-400/45 bg-amber-400/18 font-medium leading-none text-amber-50',
+                    '[html[data-theme=light]_&]:border-amber-600/40 [html[data-theme=light]_&]:bg-amber-100/90 [html[data-theme=light]_&]:text-amber-950',
+                    compact ? 'px-1 py-0.5 text-[9px]' : 'px-1.5 py-0.5 text-[10px]'
+                  )}
+                  title={t('admin.main.coworkerBadge')}
+                >
+                  {t('admin.main.coworkerBadge')}
+                </span>
+              ) : null}
               <div className="min-w-0 truncate font-semibold text-yellow-100">{left}</div>
             </div>
             </div>
@@ -2912,8 +2971,8 @@ const [editOpen, setEditOpen] = useState(false)
               return (
                 <div
                   className={cn(
-                    'mt-0.5 max-w-full truncate text-zinc-400',
-                    compact ? 'text-[8px] leading-tight' : 'text-[10px] leading-snug'
+                    'mt-0.5 max-w-full truncate font-medium text-amber-100/90 [html[data-theme=light]_&]:text-amber-950/85',
+                    compact ? 'text-[10px] leading-tight' : 'text-[11px] leading-snug'
                   )}
                   title={line}
                 >
@@ -3183,8 +3242,8 @@ const [editOpen, setEditOpen] = useState(false)
                   >
                     <div className="grid w-full min-w-0 gap-1">
                       {jobsInCell({ entityId: ent.id, dateISO: d.iso }).map((j) => (
-                        <div key={j.id} className="w-full min-w-0 overflow-hidden [&_*]:min-w-0">
-                          {jobCard(j, true)}
+                        <div key={`${j.id}:${ent.id}`} className="w-full min-w-0 overflow-hidden [&_*]:min-w-0">
+                          {jobCard(j, true, { scheduleRowWorkerId: ent.id })}
                         </div>
                       ))}
                       <button
@@ -3283,7 +3342,11 @@ const [editOpen, setEditOpen] = useState(false)
                     className="border-b border-yellow-400/10 bg-black/5 px-2 py-2"
                   >
                     <div className="grid gap-2">
-                      {jobsInCell({ entityId: ent.id, dateISO: dayISO, hour: h }).map((j) => jobCard(j, true))}
+                      {jobsInCell({ entityId: ent.id, dateISO: dayISO, hour: h }).map((j) => (
+                        <div key={`${j.id}:${ent.id}:${h}`}>
+                          {jobCard(j, true, { scheduleRowWorkerId: ent.id })}
+                        </div>
+                      ))}
                       <div className="rounded-2xl border border-dashed border-yellow-400/10 bg-black/10 px-3 py-2 text-[11px] text-zinc-500">
                         {t('admin.main.dropHere')}
                       </div>
@@ -4632,7 +4695,10 @@ const [editOpen, setEditOpen] = useState(false)
                               const line = shiftCoworkersLine(j)
                               if (!line) return null
                               return (
-                                <div className="truncate text-[11px] text-zinc-400" title={line}>
+                                <div
+                                  className="truncate text-xs font-medium leading-snug text-amber-100/95 [html[data-theme=light]_&]:text-amber-950/90"
+                                  title={line}
+                                >
                                   {line}
                                 </div>
                               )
@@ -4724,38 +4790,43 @@ const [editOpen, setEditOpen] = useState(false)
                                 </div>
                               </td>
                               <td className="px-4 py-3">
-                                {j.worker_id ? (
-                                  <button
-                                    onClick={() => openWorkerCard(j.worker_id!)}
-                                    className="flex items-center gap-2 text-yellow-100 hover:text-yellow-50"
-                                  >
-                                    {workerPhotoMeta[j.worker_id!]?.thumb ? (
+                                <div className="grid max-w-[min(320px,100%)] gap-1">
+                                  {j.worker_id ? (
+                                    <button
+                                      onClick={() => openWorkerCard(j.worker_id!)}
+                                      className="flex items-center gap-2 text-left font-medium text-yellow-100 hover:text-yellow-50"
+                                    >
+                                      {workerPhotoMeta[j.worker_id!]?.thumb ? (
                                        
-                                      <img
-                                        src={workerPhotoMeta[j.worker_id!]?.thumb || ''}
-                                        alt=""
-                                        className="h-6 w-6 rounded-full border border-yellow-400/20 object-cover"
-                                        loading="lazy"
-                                      />
-                                    ) : (
-                                      <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-yellow-400/15 bg-black/30 text-[10px] font-semibold text-yellow-100/80">
-                                        {initials(j.worker_name)}
-                                      </span>
-                                    )}
-                                    <span className="truncate">{j.worker_name || '—'}</span>
-                                  </button>
-                                ) : (
-                                  '—'
-                                )}
-                                {(() => {
-                                  const line = shiftCoworkersLine(j)
-                                  if (!line) return null
-                                  return (
-                                    <div className="mt-1 max-w-[220px] truncate text-[11px] text-zinc-400" title={line}>
-                                      {line}
-                                    </div>
-                                  )
-                                })()}
+                                        <img
+                                          src={workerPhotoMeta[j.worker_id!]?.thumb || ''}
+                                          alt=""
+                                          className="h-6 w-6 rounded-full border border-yellow-400/20 object-cover"
+                                          loading="lazy"
+                                        />
+                                      ) : (
+                                        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-yellow-400/15 bg-black/30 text-[10px] font-semibold text-yellow-100/80">
+                                          {initials(j.worker_name)}
+                                        </span>
+                                      )}
+                                      <span className="truncate">{j.worker_name || '—'}</span>
+                                    </button>
+                                  ) : (
+                                    <span className="text-zinc-400">—</span>
+                                  )}
+                                  {(() => {
+                                    const line = shiftCoworkersLine(j)
+                                    if (!line) return null
+                                    return (
+                                      <div
+                                        className="truncate text-xs font-medium leading-snug text-amber-100/95 [html[data-theme=light]_&]:text-amber-950/90"
+                                        title={line}
+                                      >
+                                        {line}
+                                      </div>
+                                    )
+                                  })()}
+                                </div>
                               </td>
                               <td className="px-4 py-3">
                                 <div className="grid gap-1">
