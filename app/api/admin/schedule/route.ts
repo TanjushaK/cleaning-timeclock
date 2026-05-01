@@ -112,7 +112,7 @@ export async function GET(req: NextRequest) {
         )
       }
 
-      let extraJobs: any[] = []
+      const extraJobs: any[] = []
       if (linkJobIds.length) {
         for (const part of chunk(linkJobIds, 200)) {
           let qExtra = admin
