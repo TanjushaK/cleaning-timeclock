@@ -1374,6 +1374,8 @@ const [editOpen, setEditOpen] = useState(false)
   const [editTime, setEditTime] = useState<string>('09:00')
   const [editTimeTo, setEditTimeTo] = useState<string>('')
   const [editStatus, setEditStatus] = useState<JobStatus>('planned')
+  /** YYYY-MM-DD from the shift when edit opened — save fallback if date input is cleared. */
+  const [editBaselineJobDate, setEditBaselineJobDate] = useState<string>('')
   const [jobDeleteBusy, setJobDeleteBusy] = useState(false)
   const [editCoworkers, setEditCoworkers] = useState<CoworkerRow[]>([])
   const [editCoworkerPick, setEditCoworkerPick] = useState('')
@@ -1410,6 +1412,8 @@ const [editOpen, setEditOpen] = useState(false)
   const photoMetaInFlightRef = useRef<Set<string>>(new Set())
   const photoMetaRunningRef = useRef(0)
   const PHOTO_META_CONCURRENCY = 6
+  /** Invalidates in-flight GET /coworkers so a slow response cannot overwrite POST/DELETE results. */
+  const coworkersFetchGenerationRef = useRef(0)
 
   function enqueueWorkerPhotoMeta(ids: string[]) {
     const known = workerPhotoMeta
@@ -2270,7 +2274,9 @@ const [editOpen, setEditOpen] = useState(false)
     setEditJobId(j.id)
     setEditSiteId(j.site_id || '')
     setEditWorkerId(j.worker_id || '')
-    setEditDate(j.job_date || toISODate(new Date()))
+    const dateKey = jobDateKey(j.job_date)
+    setEditBaselineJobDate(dateKey)
+    setEditDate(dateKey || toISODate(new Date()))
 
     const tFrom = timeHHMM(j.scheduled_time)
     setEditTime(tFrom === '—' ? '' : tFrom)
@@ -2284,7 +2290,12 @@ const [editOpen, setEditOpen] = useState(false)
 
   async function saveEdit() {
     if (!editJobId) return
-    if (!editDate || !editTime) return
+    const isoDateRe = /^\d{4}-\d{2}-\d{2}$/
+    const trimmedDate = (editDate || '').trim()
+    const fromSchedule = jobDateKey(schedule.find((s) => s.id === editJobId)?.job_date ?? null)
+    const baseline = (editBaselineJobDate || '').trim() || fromSchedule
+    const effectiveJobDate = isoDateRe.test(trimmedDate) ? trimmedDate : baseline
+    if (!effectiveJobDate || !editTime) return
     setBusy(true)
     setError(null)
     try {
@@ -2293,7 +2304,7 @@ const [editOpen, setEditOpen] = useState(false)
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           job_id: editJobId,
-          job_date: editDate,
+          job_date: effectiveJobDate,
           scheduled_time: editTime,
           scheduled_end_time: editTimeTo || null,
           worker_id: editWorkerId || null,
@@ -2312,18 +2323,21 @@ const [editOpen, setEditOpen] = useState(false)
 
   const loadEditCoworkers = useCallback(async () => {
     if (!editJobId) return
+    const seq = ++coworkersFetchGenerationRef.current
     setCoworkersBusy(true)
     setError(null)
     try {
       const res = await authFetchJson<{ coworkers: CoworkerRow[] }>(
         `/api/admin/jobs/${encodeURIComponent(editJobId)}/coworkers`
       )
+      if (seq !== coworkersFetchGenerationRef.current) return
       setEditCoworkers(Array.isArray(res?.coworkers) ? res.coworkers : [])
     } catch (e: unknown) {
+      if (seq !== coworkersFetchGenerationRef.current) return
       setError(mapAdminErr(e, t))
       setEditCoworkers([])
     } finally {
-      setCoworkersBusy(false)
+      if (seq === coworkersFetchGenerationRef.current) setCoworkersBusy(false)
     }
   }, [editJobId, t])
 
@@ -2333,7 +2347,7 @@ const [editOpen, setEditOpen] = useState(false)
     setError(null)
     setNotice(null)
     try {
-      const res = await authFetchJson<{ coworkers: CoworkerRow[] }>(
+      const res = await authFetchJson<{ ok?: boolean; coworkers?: CoworkerRow[] }>(
         `/api/admin/jobs/${encodeURIComponent(editJobId)}/coworkers`,
         {
           method: 'POST',
@@ -2341,11 +2355,22 @@ const [editOpen, setEditOpen] = useState(false)
           body: JSON.stringify({ worker_id: editCoworkerPick }),
         }
       )
-      setEditCoworkers(Array.isArray(res?.coworkers) ? res.coworkers : [])
+      coworkersFetchGenerationRef.current += 1
+      const list = Array.isArray(res?.coworkers) ? res.coworkers : []
+      setEditCoworkers(list)
       setEditCoworkerPick('')
+      setCoworkersByJob((prev) => ({
+        ...prev,
+        [editJobId]: list.map((c) => ({
+          id: c.id,
+          name: c.name,
+          email: c.email ?? null,
+          active: c.active ?? null,
+          role: c.role ?? null,
+        })),
+      }))
       setNotice(t('admin.main.coworkerAdded'))
       await refreshSchedule()
-      await loadEditCoworkers()
     } catch (e: unknown) {
       setError(mapAdminErr(e, t) || t('admin.main.coworkerAddFailed'))
     } finally {
@@ -2359,7 +2384,7 @@ const [editOpen, setEditOpen] = useState(false)
     setError(null)
     setNotice(null)
     try {
-      const res = await authFetchJson<{ coworkers: CoworkerRow[] }>(
+      const res = await authFetchJson<{ ok?: boolean; coworkers?: CoworkerRow[] }>(
         `/api/admin/jobs/${encodeURIComponent(editJobId)}/coworkers`,
         {
           method: 'DELETE',
@@ -2367,10 +2392,21 @@ const [editOpen, setEditOpen] = useState(false)
           body: JSON.stringify({ worker_id: workerId }),
         }
       )
-      setEditCoworkers(Array.isArray(res?.coworkers) ? res.coworkers : [])
+      coworkersFetchGenerationRef.current += 1
+      const list = Array.isArray(res?.coworkers) ? res.coworkers : []
+      setEditCoworkers(list)
+      setCoworkersByJob((prev) => ({
+        ...prev,
+        [editJobId]: list.map((c) => ({
+          id: c.id,
+          name: c.name,
+          email: c.email ?? null,
+          active: c.active ?? null,
+          role: c.role ?? null,
+        })),
+      }))
       setNotice(t('admin.main.coworkerRemoved'))
       await refreshSchedule()
-      await loadEditCoworkers()
     } catch (e: unknown) {
       setError(mapAdminErr(e, t) || t('admin.main.coworkerRemoveFailed'))
     } finally {
@@ -2386,6 +2422,10 @@ const [editOpen, setEditOpen] = useState(false)
     }
     void loadEditCoworkers()
   }, [editOpen, editJobId, editWorkerId, loadEditCoworkers])
+
+  useEffect(() => {
+    if (!editOpen) setEditBaselineJobDate('')
+  }, [editOpen])
 
   async function loadWorkerCard(workerId: string) {
     const url = `/api/admin/schedule?date_from=${encodeURIComponent(dateFrom)}&date_to=${encodeURIComponent(dateTo)}&worker_id=${encodeURIComponent(workerId)}`
