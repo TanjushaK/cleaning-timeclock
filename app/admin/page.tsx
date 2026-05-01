@@ -124,6 +124,14 @@ type CoworkerRow = {
   active: boolean | null
 }
 
+/** Bulk map from POST /api/admin/jobs/coworkers (display only). */
+type CoworkerBulk = {
+  id: string
+  name: string
+  email: string | null
+  active: boolean | null
+}
+
 type LocDraft = {
   name: Partial<Record<Lang, string>>
   address: Partial<Record<Lang, string>>
@@ -1368,6 +1376,7 @@ const [editOpen, setEditOpen] = useState(false)
   const [editCoworkers, setEditCoworkers] = useState<CoworkerRow[]>([])
   const [editCoworkerPick, setEditCoworkerPick] = useState('')
   const [coworkersBusy, setCoworkersBusy] = useState(false)
+  const [coworkersByJob, setCoworkersByJob] = useState<Record<string, CoworkerBulk[]>>({})
 
   const [workerCardOpen, setWorkerCardOpen] = useState(false)
   const [workerCardId, setWorkerCardId] = useState<string>('')
@@ -1624,6 +1633,33 @@ const [editOpen, setEditOpen] = useState(false)
     setAssignments(Array.isArray(a?.assignments) ? a.assignments : [])
   }
 
+  async function refreshCoworkersMapForJobIds(jobIds: string[]) {
+    const uniq = Array.from(new Set(jobIds.filter(Boolean)))
+    if (!uniq.length) {
+      setCoworkersByJob({})
+      return
+    }
+    const MAX = 500
+    const merged: Record<string, CoworkerBulk[]> = {}
+    try {
+      for (let i = 0; i < uniq.length; i += MAX) {
+        const chunk = uniq.slice(i, i + MAX)
+        const res = await authFetchJson<{ coworkersByJob: Record<string, CoworkerBulk[]> }>('/api/admin/jobs/coworkers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ job_ids: chunk }),
+        })
+        const m = res?.coworkersByJob && typeof res.coworkersByJob === 'object' ? res.coworkersByJob : {}
+        for (const id of chunk) {
+          merged[id] = Array.isArray(m[id]) ? m[id] : []
+        }
+      }
+      setCoworkersByJob(merged)
+    } catch {
+      setCoworkersByJob({})
+    }
+  }
+
   async function refreshSchedule() {
     const url =
       `/api/admin/schedule?date_from=${encodeURIComponent(dateFrom)}` +
@@ -1639,6 +1675,7 @@ const [editOpen, setEditOpen] = useState(false)
     if (ids.length) enqueueWorkerPhotoMeta(ids)
 
     setSchedule(items)
+    await refreshCoworkersMapForJobIds(items.map((x) => x.id))
   }
 
   async function refreshAll() {
@@ -1710,7 +1747,7 @@ const [editOpen, setEditOpen] = useState(false)
 
   useEffect(() => {
     if (!sessionToken) return
-    if (tab !== 'plan') return
+    if (tab !== 'plan' && tab !== 'jobs') return
     void refreshSchedule()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, sessionToken])
@@ -1751,6 +1788,7 @@ const [editOpen, setEditOpen] = useState(false)
       setWorkers([])
       setAssignments([])
       setSchedule([])
+      setCoworkersByJob({})
       router.push('/')
     } finally {
       setBusy(false)
@@ -2756,6 +2794,15 @@ const [editOpen, setEditOpen] = useState(false)
     }
   }
 
+  function shiftCoworkersLine(j: ScheduleItem): string | null {
+    const primary = String(j.worker_id || '').trim()
+    const names = (coworkersByJob[j.id] || [])
+      .filter((c) => c.id !== primary)
+      .map((c) => c.name)
+    if (!names.length) return null
+    return t('admin.main.coworkersLine', { names: names.join(', ') })
+  }
+
   function jobsInCell(args: { entityId: string; dateISO: string; hour?: string }) {
     const { entityId, dateISO, hour } = args
     const ent = String(entityId).trim()
@@ -2859,6 +2906,21 @@ const [editOpen, setEditOpen] = useState(false)
                 <ElapsedSince startedAt={j.started_at} />
               ) : null}
             </div>
+            {(() => {
+              const line = shiftCoworkersLine(j)
+              if (!line) return null
+              return (
+                <div
+                  className={cn(
+                    'mt-0.5 max-w-full truncate text-zinc-400',
+                    compact ? 'text-[8px] leading-tight' : 'text-[10px] leading-snug'
+                  )}
+                  title={line}
+                >
+                  {line}
+                </div>
+              )
+            })()}
           </div>
 
           {compact ? null : (
@@ -4566,6 +4628,15 @@ const [editOpen, setEditOpen] = useState(false)
                               <span className="text-zinc-400">{t('admin.main.labelWorkerColon')}</span>
                               <span className="truncate">{j.worker_name || '—'}</span>
                             </div>
+                            {(() => {
+                              const line = shiftCoworkersLine(j)
+                              if (!line) return null
+                              return (
+                                <div className="truncate text-[11px] text-zinc-400" title={line}>
+                                  {line}
+                                </div>
+                              )
+                            })()}
                             <div className="flex gap-2">
                               <span className="text-zinc-400">{t('admin.main.startedColon')}</span>
                               <span>{fmtDT(j.started_at)}</span>
@@ -4676,6 +4747,15 @@ const [editOpen, setEditOpen] = useState(false)
                                 ) : (
                                   '—'
                                 )}
+                                {(() => {
+                                  const line = shiftCoworkersLine(j)
+                                  if (!line) return null
+                                  return (
+                                    <div className="mt-1 max-w-[220px] truncate text-[11px] text-zinc-400" title={line}>
+                                      {line}
+                                    </div>
+                                  )
+                                })()}
                               </td>
                               <td className="px-4 py-3">
                                 <div className="grid gap-1">
