@@ -114,6 +114,8 @@ type ScheduleItem = {
   worker_name: string | null
   started_at: string | null
   stopped_at: string | null
+  coworkers?: Array<{ id: string; name: string; active: boolean | null }>
+  participant_worker_ids?: string[]
 }
 
 type CoworkerRow = {
@@ -1530,13 +1532,39 @@ const [editOpen, setEditOpen] = useState(false)
     return m
   }, [assignments, sitesById])
 
+  function coworkersForJob(job: ScheduleItem): Array<{ id: string; name: string; active: boolean | null }> {
+    if (Array.isArray(job.coworkers)) return job.coworkers
+    const fb = coworkersByJob[job.id] || []
+    return fb.map((c) => ({ id: c.id, name: c.name, active: c.active ?? null }))
+  }
+
+  function participantWorkerIds(job: ScheduleItem): string[] {
+    if (Array.isArray(job.participant_worker_ids) && job.participant_worker_ids.length > 0) {
+      return Array.from(new Set(job.participant_worker_ids.map((id) => String(id).trim()).filter(Boolean)))
+    }
+    const primary = String(job.worker_id ?? '').trim()
+    const out: string[] = []
+    const seen = new Set<string>()
+    if (primary) {
+      seen.add(primary)
+      out.push(primary)
+    }
+    for (const c of coworkersForJob(job)) {
+      const id = String(c.id || '').trim()
+      if (!id || seen.has(id)) continue
+      seen.add(id)
+      out.push(id)
+    }
+    return out
+  }
+
   const scheduleFiltered = useMemo(() => {
     return schedule.filter((x) => {
       if (filterSite && x.site_id !== filterSite) return false
-      if (filterWorker && x.worker_id !== filterWorker) return false
+      if (filterWorker && !participantWorkerIds(x).includes(filterWorker)) return false
       return true
     })
-  }, [schedule, filterSite, filterWorker])
+  }, [schedule, filterSite, filterWorker, coworkersByJob])
 
   const planned = useMemo(() => scheduleFiltered.filter((x) => x.status === 'planned'), [scheduleFiltered])
   const inProgress = useMemo(() => scheduleFiltered.filter((x) => x.status === 'in_progress'), [scheduleFiltered])
@@ -1577,20 +1605,18 @@ const [editOpen, setEditOpen] = useState(false)
       const seen = new Set(base.map((r) => r.id))
       const extra: Array<{ id: string; name: string }> = []
       for (const j of schedule) {
-        const wid = j.worker_id != null ? String(j.worker_id).trim() : ''
-        if (!wid || seen.has(wid)) continue
-        seen.add(wid)
-        extra.push({ id: wid, name: j.worker_name || t('admin.main.fallbackWorker') })
-      }
-      for (const j of schedule) {
-        for (const c of coworkersByJob[j.id] || []) {
-          const cid = String(c.id || '').trim()
-          if (!cid || seen.has(cid)) continue
-          seen.add(cid)
-          extra.push({
-            id: cid,
-            name: c.name || workersById.get(cid)?.full_name || t('admin.main.fallbackWorker'),
-          })
+        for (const pid of participantWorkerIds(j)) {
+          const id = String(pid || '').trim()
+          if (!id || seen.has(id)) continue
+          seen.add(id)
+          const primaryId = String(j.worker_id ?? '').trim()
+          const name =
+            id === primaryId
+              ? j.worker_name || workersById.get(id)?.full_name || t('admin.main.fallbackWorker')
+              : coworkersForJob(j).find((c) => c.id === id)?.name ||
+                workersById.get(id)?.full_name ||
+                t('admin.main.fallbackWorker')
+          extra.push({ id, name })
         }
       }
       extra.sort((a, b) => a.name.localeCompare(b.name))
@@ -1644,35 +1670,6 @@ const [editOpen, setEditOpen] = useState(false)
     setAssignments(Array.isArray(a?.assignments) ? a.assignments : [])
   }
 
-  async function refreshCoworkersMapForJobIds(jobIds: string[]) {
-    const uniq = Array.from(new Set(jobIds.filter(Boolean)))
-    if (!uniq.length) {
-      setCoworkersByJob({})
-      return
-    }
-    const MAX = 500
-    const merged: Record<string, CoworkerBulk[]> = {}
-    try {
-      for (let i = 0; i < uniq.length; i += MAX) {
-        const chunk = uniq.slice(i, i + MAX)
-        const res = await authFetchJson<{ coworkersByJob: Record<string, CoworkerBulk[]> }>('/api/admin/jobs/coworkers', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ job_ids: chunk }),
-        })
-        const m = res?.coworkersByJob && typeof res.coworkersByJob === 'object' ? res.coworkersByJob : {}
-        for (const id of chunk) {
-          merged[id] = Array.isArray(m[id]) ? m[id] : []
-        }
-      }
-      setCoworkersByJob(merged)
-      const photoIds = Array.from(new Set(Object.values(merged).flatMap((rows) => rows.map((r) => r.id))))
-      if (photoIds.length) enqueueWorkerPhotoMeta(photoIds)
-    } catch {
-      setCoworkersByJob({})
-    }
-  }
-
   async function refreshSchedule() {
     const url =
       `/api/admin/schedule?date_from=${encodeURIComponent(dateFrom)}` +
@@ -1683,12 +1680,29 @@ const [editOpen, setEditOpen] = useState(false)
     const sch = await authFetchJson<{ items: ScheduleItem[] }>(url)
     const items = Array.isArray(sch?.items) ? sch.items : []
 
-    // Load mini-avatars for workers that appear in schedule/table.
-    const ids = Array.from(new Set(items.map((x) => x.worker_id).filter(Boolean))) as string[]
-    if (ids.length) enqueueWorkerPhotoMeta(ids)
+    const photoIds = new Set<string>()
+    for (const x of items) {
+      for (const id of participantWorkerIds(x)) {
+        if (id) photoIds.add(String(id))
+      }
+    }
+    if (photoIds.size) enqueueWorkerPhotoMeta(Array.from(photoIds))
 
     setSchedule(items)
-    await refreshCoworkersMapForJobIds(items.map((x) => x.id))
+    setCoworkersByJob(
+      Object.fromEntries(
+        items.map((i) => [
+          i.id,
+          (i.coworkers || []).map((c) => ({
+            id: c.id,
+            name: c.name,
+            email: null as string | null,
+            active: c.active ?? null,
+            role: null as string | null,
+          })),
+        ]),
+      ),
+    )
   }
 
   async function refreshAll() {
@@ -2811,35 +2825,18 @@ const [editOpen, setEditOpen] = useState(false)
 
   function shiftCoworkersLine(j: ScheduleItem): string | null {
     const primary = String(j.worker_id || '').trim()
-    const names = (coworkersByJob[j.id] || [])
+    const names = coworkersForJob(j)
       .filter((c) => c.id !== primary)
       .map((c) => c.name)
     if (!names.length) return null
     return t('admin.main.coworkersLine', { names: names.join(', ') })
   }
 
-  function jobParticipants(job: ScheduleItem): string[] {
-    const primary = String(job.worker_id ?? '').trim()
-    const out: string[] = []
-    const seen = new Set<string>()
-    if (primary) {
-      seen.add(primary)
-      out.push(primary)
-    }
-    for (const c of coworkersByJob[job.id] || []) {
-      const id = String(c.id || '').trim()
-      if (!id || seen.has(id)) continue
-      seen.add(id)
-      out.push(id)
-    }
-    return out
-  }
-
   function isCoworkerOnJob(job: ScheduleItem, workerId: string): boolean {
     const w = String(workerId || '').trim()
     const primary = String(job.worker_id ?? '').trim()
     if (!w || w === primary) return false
-    return jobParticipants(job).includes(w)
+    return participantWorkerIds(job).includes(w)
   }
 
   function jobsInCell(args: { entityId: string; dateISO: string; hour?: string }) {
@@ -2849,10 +2846,7 @@ const [editOpen, setEditOpen] = useState(false)
       .filter((j) => {
         if (jobDateKey(j.job_date) !== dateISO) return false
         if (planMode === 'workers') {
-          const wid = String(j.worker_id ?? '').trim()
-          if (wid === ent) return true
-          if (isCoworkerOnJob(j, ent)) return true
-          return false
+          return participantWorkerIds(j).includes(ent)
         } else {
           if (String(j.site_id ?? '').trim() !== ent) return false
         }
