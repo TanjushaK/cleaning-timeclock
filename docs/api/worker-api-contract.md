@@ -111,6 +111,10 @@ Future RN clients should treat unknown fields as optional.
 - **Auth:** Bearer worker.
 - **Success 200:** `{ "teams": { "<job_id>": [ { "id", "name" }, ... ] } }`  
   Names from `profiles` / email fallback.
+- **Team composition rules:** for each visible worker job id, teammates are collected from:
+  1. direct assignment on the same `job_id` (`jobs.worker_id` and `job_workers`),
+  2. sibling jobs with the same shift identity (`job_date`, `site_id`, `scheduled_time`, `scheduled_end_time`), excluding cancelled statuses.
+- This allows coworker display when admin scheduling stores workers as separate `jobs` rows for the same site/date/time shift.
 
 ### `POST /api/me/jobs/accept`
 
