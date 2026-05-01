@@ -130,6 +130,69 @@ async function getJobWorkerJobIds(db: any, workerId: string): Promise<string[]> 
   }
 }
 
+type ProfileLite = { id: string; full_name: string | null; active: boolean | null }
+
+function chunk<T>(xs: T[], n: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < xs.length; i += n) out.push(xs.slice(i, i + n))
+  return out
+}
+
+function displayNameFromProfile(p: ProfileLite | undefined, id: string) {
+  const n = String(p?.full_name || '').trim()
+  if (n) return n
+  return id.slice(0, 8)
+}
+
+/** job_id -> worker ids linked via job_workers (additive; empty map if table missing). */
+async function fetchJobWorkerLinksByJob(db: any, jobIds: string[]): Promise<Map<string, Set<string>>> {
+  const linksByJob = new Map<string, Set<string>>()
+  if (!jobIds.length) return linksByJob
+  try {
+    for (const part of chunk(jobIds, 200)) {
+      const lwRes = await db.from('job_workers').select('job_id,worker_id').in('job_id', part)
+      if (lwRes.error) {
+        const msg = String(lwRes.error.message || '')
+        if (/does not exist|relation|schema cache/i.test(msg)) {
+          return new Map()
+        }
+        return new Map()
+      }
+      for (const row of (lwRes.data || []) as Array<{ job_id?: string | null; worker_id?: string | null }>) {
+        const jid = row.job_id ? String(row.job_id) : ''
+        const wid = row.worker_id ? String(row.worker_id) : ''
+        if (!jid || !wid) continue
+        if (!linksByJob.has(jid)) linksByJob.set(jid, new Set())
+        linksByJob.get(jid)!.add(wid)
+      }
+    }
+  } catch {
+    return new Map()
+  }
+  return linksByJob
+}
+
+async function fetchProfilesMap(db: any, ids: string[]): Promise<Map<string, ProfileLite>> {
+  const profileById = new Map<string, ProfileLite>()
+  if (!ids.length) return profileById
+  try {
+    for (const part of chunk(ids, 200)) {
+      const r = await db.from('profiles').select('id,full_name,active').in('id', part)
+      if (r.error) continue
+      for (const p of (r.data || []) as any[]) {
+        profileById.set(String(p.id), {
+          id: String(p.id),
+          full_name: p.full_name ?? null,
+          active: typeof p.active === 'boolean' ? p.active : null,
+        })
+      }
+    }
+  } catch {
+    // partial map is ok — names fall back to short id
+  }
+  return profileById
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { db, userId } = await requireActiveWorker(req)
@@ -246,7 +309,21 @@ export async function GET(req: NextRequest) {
     const jobIds = jobs.map((j) => String(j.id))
     const siteIds2 = Array.from(new Set(jobs.map((j: any) => j.site_id).filter(Boolean)))
 
-    const [sitesRes0, logsRes] = await Promise.all([
+    const linksByJob = await fetchJobWorkerLinksByJob(db, jobIds)
+
+    const profileIds = new Set<string>()
+    for (const j of jobs) {
+      const pw = j.worker_id ? String(j.worker_id) : ''
+      if (pw) profileIds.add(pw)
+      const linked = linksByJob.get(String(j.id))
+      if (linked) {
+        for (const wid of linked) {
+          if (wid) profileIds.add(wid)
+        }
+      }
+    }
+
+    const [sitesRes0, logsRes, profileById] = await Promise.all([
       siteIds2.length
         ? db.from('sites').select('id,name,address,lat,lng,radius,photos').in('id', siteIds2)
         : Promise.resolve({ data: [], error: null } as any),
@@ -256,6 +333,7 @@ export async function GET(req: NextRequest) {
             .select('job_id,started_at,stopped_at,start_lat,start_lng,start_accuracy')
             .in('job_id', jobIds)
         : Promise.resolve({ data: [], error: null } as any),
+      fetchProfilesMap(db, Array.from(profileIds)),
     ])
 
     let sitesRes = sitesRes0
@@ -384,6 +462,28 @@ export async function GET(req: NextRequest) {
         j.worker_id == null &&
         (assignedViaSite || linkedViaJobWorkers)
 
+      const jid = String(j.id)
+      const primaryWid = j.worker_id ? String(j.worker_id) : ''
+      const linkedAll = linksByJob.get(jid) ? Array.from(linksByJob.get(jid)!) : []
+      const coworkerIdsFromLinks = linkedAll.filter((id) => id && id !== primaryWid)
+
+      const participant_worker_ids: string[] = []
+      if (primaryWid) participant_worker_ids.push(primaryWid)
+      for (const cid of coworkerIdsFromLinks) {
+        if (cid && !participant_worker_ids.includes(cid)) participant_worker_ids.push(cid)
+      }
+
+      const coworkers = participant_worker_ids
+        .filter((pid) => pid !== userId)
+        .map((pid) => {
+          const prof = profileById.get(pid)
+          return {
+            id: pid,
+            name: displayNameFromProfile(prof, pid),
+            active: typeof prof?.active === 'boolean' ? prof.active : null,
+          }
+        })
+
       return {
         id: String(j.id),
         status: j.status,
@@ -407,6 +507,8 @@ export async function GET(req: NextRequest) {
         worker_note: null,
 
         worker_id: j.worker_id,
+        participant_worker_ids,
+        coworkers,
         actual_minutes: agg.actual_minutes || 0,
         can_accept,
       }
