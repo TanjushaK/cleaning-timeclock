@@ -1346,6 +1346,8 @@ export default function AdminPage() {
   const [assignments, setAssignments] = useState<Assignment[]>([])
 
   const [schedule, setSchedule] = useState<ScheduleItem[]>([])
+  /** Shift chat unread counts for current admin (worker-authored messages), keyed by job id. */
+  const [jobChatUnreadByJob, setJobChatUnreadByJob] = useState<Record<string, number>>({})
 
   const [jobsView, setJobsView] = useState<JobsView>('table')
 
@@ -1675,6 +1677,24 @@ const [editOpen, setEditOpen] = useState(false)
     setAssignments(Array.isArray(a?.assignments) ? a.assignments : [])
   }
 
+  const refreshJobChatUnreadCounts = useCallback(async (jobIds: string[]) => {
+    const unique = Array.from(new Set(jobIds.map((x) => String(x || '').trim()).filter(Boolean)))
+    if (!unique.length) {
+      setJobChatUnreadByJob({})
+      return
+    }
+    try {
+      const res = await authFetchJson<{ counts: Record<string, number> }>('/api/admin/jobs/messages/unread-counts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobIds: unique }),
+      })
+      setJobChatUnreadByJob(res?.counts && typeof res.counts === 'object' ? res.counts : {})
+    } catch {
+      // keep previous badges on transient errors
+    }
+  }, [])
+
   async function refreshSchedule() {
     const url =
       `/api/admin/schedule?date_from=${encodeURIComponent(dateFrom)}` +
@@ -1708,6 +1728,8 @@ const [editOpen, setEditOpen] = useState(false)
         ]),
       ),
     )
+
+    await refreshJobChatUnreadCounts(items.map((i) => i.id))
   }
 
   async function refreshAll() {
@@ -2920,11 +2942,19 @@ const [editOpen, setEditOpen] = useState(false)
         onDragStart={(e) => dragSet(e, { job_id: j.id })}
         onClick={() => openEditForJob(j)}
         className={cn(
-          'group cursor-pointer select-none rounded-2xl border bg-black/35 shadow-[0_10px_35px_rgba(0,0,0,0.55)]',
+          'group relative cursor-pointer select-none rounded-2xl border bg-black/35 shadow-[0_10px_35px_rgba(0,0,0,0.55)]',
           'border-yellow-400/15 hover:border-yellow-300/40',
           compact ? 'text-[9px] px-2 py-1 leading-tight' : 'text-xs px-3 py-2'
         )}
       >
+        {(jobChatUnreadByJob[j.id] ?? 0) > 0 ? (
+          <span
+            className="pointer-events-none absolute right-1 top-1 z-[1] rounded-full bg-rose-600/95 px-1 py-0.5 text-[8px] font-bold leading-none text-white shadow-sm"
+            aria-hidden
+          >
+            💬{(jobChatUnreadByJob[j.id] ?? 0) > 9 ? '9+' : jobChatUnreadByJob[j.id]}
+          </span>
+        ) : null}
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <div className="flex items-center gap-2 min-w-0">
@@ -4751,9 +4781,14 @@ const [editOpen, setEditOpen] = useState(false)
                           <div className="mt-3 flex flex-wrap items-center gap-2">
                             <button
                               onClick={() => openEditForJob(j)}
-                              className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/40"
+                              className="inline-flex items-center gap-1.5 rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-2 text-xs font-semibold text-zinc-200 hover:border-yellow-300/40"
                             >
                               {t('admin.main.edit')}
+                              {(jobChatUnreadByJob[j.id] ?? 0) > 0 ? (
+                                <span className="rounded-full bg-rose-600/95 px-1.5 py-0.5 text-[9px] font-bold leading-none text-white">
+                                  💬{(jobChatUnreadByJob[j.id] ?? 0) > 9 ? '9+' : jobChatUnreadByJob[j.id]}
+                                </span>
+                              ) : null}
                             </button>
                           </div>
                         </div>
@@ -4876,9 +4911,14 @@ const [editOpen, setEditOpen] = useState(false)
                               <td className="px-4 py-3">
                                 <button
                                   onClick={() => openEditForJob(j)}
-                                  className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40"
+                                  className="inline-flex items-center gap-1.5 rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40"
                                 >
                                   {t('admin.main.edit')}
+                                  {(jobChatUnreadByJob[j.id] ?? 0) > 0 ? (
+                                    <span className="rounded-full bg-rose-600/95 px-1.5 py-0.5 text-[9px] font-bold leading-none text-white">
+                                      💬{(jobChatUnreadByJob[j.id] ?? 0) > 9 ? '9+' : jobChatUnreadByJob[j.id]}
+                                    </span>
+                                  ) : null}
                                 </button>
                               </td>
                             </tr>
@@ -5007,7 +5047,13 @@ const [editOpen, setEditOpen] = useState(false)
             </div>
           ) : null}
 
-          {editJobId ? <ShiftJobChatPanel jobId={editJobId} t={t} /> : null}
+          {editJobId ? (
+            <ShiftJobChatPanel
+              jobId={editJobId}
+              t={t}
+              onMarkedRead={() => void refreshJobChatUnreadCounts(schedule.map((s) => s.id))}
+            />
+          ) : null}
 
           <div className="grid gap-3 sm:grid-cols-3">
             <label className="grid gap-1">
@@ -5448,9 +5494,14 @@ const [editOpen, setEditOpen] = useState(false)
                       <button
                         onClick={() => openEditForJob(j)}
                         disabled={busy}
-                        className="rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40 disabled:opacity-60"
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-yellow-400/15 bg-black/30 px-3 py-1 text-xs text-zinc-200 hover:border-yellow-300/40 disabled:opacity-60"
                       >
                         {t('admin.main.edit')}
+                        {(jobChatUnreadByJob[j.id] ?? 0) > 0 ? (
+                          <span className="rounded-full bg-rose-600/95 px-1.5 py-0.5 text-[9px] font-bold leading-none text-white">
+                            💬{(jobChatUnreadByJob[j.id] ?? 0) > 9 ? '9+' : jobChatUnreadByJob[j.id]}
+                          </span>
+                        ) : null}
                       </button>
                     </div>
                   ))}
