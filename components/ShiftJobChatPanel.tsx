@@ -2,56 +2,16 @@
 
 import { useCallback, useEffect, useState } from 'react'
 
-import { clearClientAuthState, getAccessToken } from '@/lib/auth-fetch'
+import { authFetchJson } from '@/lib/auth-fetch'
 
-function getAccessTokenOrNull(): string | null {
-  if (typeof window === 'undefined') return null
-  try {
-    return getAccessToken()
-  } catch {
-    return null
-  }
-}
-
-async function authFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const token = getAccessTokenOrNull()
-  if (!token) throw new Error('admin.main.errNoToken')
-
-  const ctrl = new AbortController()
-  const ms = 15000
-  const t = setTimeout(() => ctrl.abort(), ms)
-
-  try {
-    const res = await fetch(url, {
-      ...init,
-      headers: {
-        ...(init?.headers || {}),
-        Authorization: `Bearer ${token}`,
-      },
-      cache: 'no-store',
-      signal: ctrl.signal,
-    })
-
-    const payload = await res.json().catch(() => ({} as Record<string, unknown>))
-
-    if (res.status === 401) {
-      clearClientAuthState()
-      throw new Error('admin.main.errSessionExpired')
-    }
-    if (!res.ok) {
-      const code = payload?.errorCode
-      if (code) throw new Error(`admin.api.${code}`)
-      throw new Error(String(payload?.error || `HTTP ${res.status}`))
-    }
-    return payload as T
-  } catch (e: unknown) {
-    if ((e as { name?: string }).name === 'AbortError') {
-      throw new Error('admin.main.errRequestTimeout')
-    }
-    throw e
-  } finally {
-    clearTimeout(t)
-  }
+function mapChatErr(
+  e: unknown,
+  t: (key: string, vars?: Record<string, string | number>) => string
+): string {
+  if ((e as { name?: string })?.name === 'AbortError') return t('admin.main.errRequestTimeout')
+  const m = String((e as Error)?.message || '')
+  if (/^(admin\.|common\.)/.test(m)) return t(m)
+  return m || t('admin.main.shiftNotesErrLoad')
 }
 
 type ChatAttachment = {
@@ -102,16 +62,21 @@ export function ShiftJobChatPanel(props: {
     setLoading(true)
     setErr(null)
     try {
-      const res = await authFetchJson<{ messages: ChatMessage[] }>(`${baseUrl}/messages`)
+      const res = await authFetchJson<{ messages: ChatMessage[] }>(`${baseUrl}/messages`, {
+        cache: 'no-store',
+      })
       setMessages(Array.isArray(res?.messages) ? res.messages : [])
       try {
-        await authFetchJson<{ ok?: boolean }>(`${baseUrl}/messages/read`, { method: 'POST' })
+        await authFetchJson<{ ok?: boolean }>(`${baseUrl}/messages/read`, {
+          method: 'POST',
+          cache: 'no-store',
+        })
         void Promise.resolve(onChatMutated?.())
       } catch {
         // messages are still shown if mark-read fails
       }
     } catch (e: unknown) {
-      setErr(String((e as Error)?.message || t('admin.main.shiftNotesErrLoad')))
+      setErr(mapChatErr(e, t))
       setMessages([])
     } finally {
       setLoading(false)
@@ -136,6 +101,7 @@ export function ShiftJobChatPanel(props: {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ body: text.length ? text : null }),
+        cache: 'no-store',
       })
       const messageId = msgRes?.message?.id
       if (!messageId) throw new Error(t('admin.main.shiftNotesErrSend'))
@@ -162,6 +128,7 @@ export function ShiftJobChatPanel(props: {
         await authFetchJson(`${baseUrl}/messages/${encodeURIComponent(messageId)}/attachments`, {
           method: 'POST',
           body: fd,
+          cache: 'no-store',
         })
       }
 
@@ -169,7 +136,7 @@ export function ShiftJobChatPanel(props: {
       setPickFiles([])
       await load()
     } catch (e: unknown) {
-      setErr(String((e as Error)?.message || t('admin.main.shiftNotesErrSend')))
+      setErr(mapChatErr(e, t))
     } finally {
       setBusy(false)
     }
@@ -189,11 +156,11 @@ export function ShiftJobChatPanel(props: {
     try {
       await authFetchJson<{ ok?: boolean }>(
         `${baseUrl}/messages/${encodeURIComponent(messageId)}`,
-        { method: 'DELETE' }
+        { method: 'DELETE', cache: 'no-store' }
       )
       await load()
     } catch (e: unknown) {
-      setErr(String((e as Error)?.message || t('admin.main.shiftNotesErrDelete')))
+      setErr(mapChatErr(e, t))
     } finally {
       setChatActionBusy(false)
     }
@@ -206,10 +173,13 @@ export function ShiftJobChatPanel(props: {
     setChatActionBusy(true)
     setErr(null)
     try {
-      await authFetchJson<{ ok?: boolean }>(`${baseUrl}/messages`, { method: 'DELETE' })
+      await authFetchJson<{ ok?: boolean }>(`${baseUrl}/messages`, {
+        method: 'DELETE',
+        cache: 'no-store',
+      })
       await load()
     } catch (e: unknown) {
-      setErr(String((e as Error)?.message || t('admin.main.shiftNotesErrClear')))
+      setErr(mapChatErr(e, t))
     } finally {
       setChatActionBusy(false)
     }

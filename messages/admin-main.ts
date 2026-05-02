@@ -2,7 +2,7 @@
 import type { Messages } from "./types";
 
 export const ADMIN_MAIN_RU: Messages["admin"]["main"] = {
-  "errNoToken": "Нет токена (Authorization: Bearer …)",
+  "errNoToken": "Сессия истекла. Выйдите и войдите снова.",
   "errSessionExpired": "Сессия истекла. Войдите снова.",
   "errRequestTimeout": "Таймаут запроса (15с). Нажми «Обновить данные» ещё раз.",
   "errUnknown": "Ошибка",
@@ -334,7 +334,7 @@ export const ADMIN_MAIN_RU: Messages["admin"]["main"] = {
 };
 
 export const ADMIN_MAIN_EN: Messages["admin"]["main"] = {
-  "errNoToken": "No token (Authorization: Bearer …)",
+  "errNoToken": "Session expired. Please sign out and sign in again.",
   "errSessionExpired": "Session expired. Sign in again.",
   "errRequestTimeout": "Request timed out (15s). Tap “Refresh data” again.",
   "errUnknown": "Error",
@@ -666,7 +666,7 @@ export const ADMIN_MAIN_EN: Messages["admin"]["main"] = {
 };
 
 export const ADMIN_MAIN_UK: Messages["admin"]["main"] = {
-  "errNoToken": "Немає токена (Authorization: Bearer …)",
+  "errNoToken": "Сесія закінчилась. Вийдіть і увійдіть знову.",
   "errSessionExpired": "Сесію завершено. Увійдіть знову.",
   "errRequestTimeout": "Тайм-аут запиту (15 с). Натисни «Оновити дані» ще раз.",
   "errUnknown": "Помилка",
@@ -998,7 +998,7 @@ export const ADMIN_MAIN_UK: Messages["admin"]["main"] = {
 };
 
 export const ADMIN_MAIN_NL: Messages["admin"]["main"] = {
-  "errNoToken": "Geen token (Authorization: Bearer …)",
+  "errNoToken": "Sessie verlopen. Log uit en log opnieuw in.",
   "errSessionExpired": "Sessie verlopen. Log opnieuw in.",
   "errRequestTimeout": "Time-out van het verzoek (15s). Tik nogmaals op “Gegevens vernieuwen”.",
   "errUnknown": "Fout",
