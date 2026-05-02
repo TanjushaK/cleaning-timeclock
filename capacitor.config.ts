@@ -5,7 +5,7 @@ const serverUrl =
   process.env.CAP_SERVER_URL?.replace(/\/$/, '') || 'https://timeclock.tanjusha.nl'
 
 const config: CapacitorConfig = {
-  appId: 'nl.tanjusha.timeclock',
+  appId: 'nl.tanjusha.cleaningtimeclock',
   appName: 'Cleaning Timeclock',
   webDir: 'mobile-www',
   server: {

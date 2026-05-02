@@ -1,6 +1,6 @@
 # Android App Links (timeclock.tanjusha.nl)
 
-Domain verification for `https://timeclock.tanjusha.nl` and package `nl.tanjusha.timeclock`.
+Domain verification for `https://timeclock.tanjusha.nl` and package `nl.tanjusha.cleaningtimeclock`.
 
 ## SHA-256 fingerprint (Google Play App Signing)
 
