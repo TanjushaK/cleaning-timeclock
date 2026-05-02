@@ -1,6 +1,9 @@
 import type { CompatClient } from '@/lib/server/compat/client'
 import { ApiError } from '@/lib/route-db'
+import { dbQuery } from '@/lib/server/pool'
 import { localPhotoBucket } from '@/lib/server/local-photo-storage'
+
+export type JobMessageReaderRole = 'admin' | 'worker'
 
 export const ALLOWED_IMAGE_MIMES = new Set([
   'image/jpeg',
@@ -197,6 +200,79 @@ export async function listMessagesPayload(db: CompatClient, jobId: string) {
   })
 
   return { messages: out }
+}
+
+export async function markJobMessagesRead(
+  _db: CompatClient,
+  params: { jobId: string; userId: string; readerRole: JobMessageReaderRole }
+) {
+  const { jobId, userId, readerRole } = params
+  await dbQuery(
+    `insert into job_message_reads (job_id, user_id, reader_role, last_read_at, updated_at)
+     values ($1::uuid, $2::uuid, $3::text, now(), now())
+     on conflict (job_id, user_id) do update set
+       reader_role = excluded.reader_role,
+       last_read_at = now(),
+       updated_at = now()`,
+    [jobId, userId, readerRole],
+  )
+}
+
+export async function getUnreadCountForJob(
+  _db: CompatClient,
+  params: { jobId: string; userId: string; readerRole: JobMessageReaderRole }
+): Promise<number> {
+  const { jobId, userId } = params
+  const result = await dbQuery<{ n: string }>(
+    `select count(*)::text as n
+       from job_messages m
+      where m.job_id = $1::uuid
+        and m.deleted_at is null
+        and m.author_id::text <> $2::text
+        and (
+          not exists (
+            select 1 from job_message_reads r
+             where r.job_id = m.job_id
+               and r.user_id = $2::uuid
+          )
+          or m.created_at > (
+            select r2.last_read_at from job_message_reads r2
+             where r2.job_id = $1::uuid and r2.user_id = $2::uuid
+             limit 1
+          )
+        )`,
+    [jobId, userId],
+  )
+  const row = result.rows[0]
+  return row?.n ? parseInt(String(row.n), 10) || 0 : 0
+}
+
+export async function listUnreadCountsForJobs(
+  _db: CompatClient,
+  params: { jobIds: string[]; userId: string; readerRole: JobMessageReaderRole }
+): Promise<Record<string, number>> {
+  const { jobIds, userId } = params
+  const ids = Array.from(new Set(jobIds.map((x) => String(x).trim()).filter(Boolean)))
+  const out: Record<string, number> = {}
+  for (const id of ids) out[id] = 0
+  if (!ids.length) return out
+
+  const result = await dbQuery<{ job_id: string; n: string }>(
+    `select m.job_id::text as job_id, count(*)::text as n
+       from job_messages m
+       left join job_message_reads r
+         on r.job_id = m.job_id and r.user_id = $2::uuid
+      where m.job_id = any($1::uuid[])
+        and m.deleted_at is null
+        and m.author_id::text <> $2::text
+        and (r.last_read_at is null or m.created_at > r.last_read_at)
+      group by m.job_id`,
+    [ids, userId],
+  )
+  for (const row of result.rows) {
+    out[String(row.job_id)] = row?.n ? parseInt(String(row.n), 10) || 0 : 0
+  }
+  return out
 }
 
 export async function insertJobMessage(

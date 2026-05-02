@@ -84,8 +84,10 @@ const ALLOWED_VID = new Set(['video/mp4', 'video/quicktime', 'video/webm'])
 export function ShiftJobChatPanel(props: {
   jobId: string | null
   t: (key: string, vars?: Record<string, string | number>) => string
+  /** Called after messages load and POST /messages/read succeeds (refresh parent unread badges). */
+  onMarkedRead?: () => void
 }) {
-  const { jobId, t } = props
+  const { jobId, t, onMarkedRead } = props
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -101,13 +103,19 @@ export function ShiftJobChatPanel(props: {
     try {
       const res = await authFetchJson<{ messages: ChatMessage[] }>(`${baseUrl}/messages`)
       setMessages(Array.isArray(res?.messages) ? res.messages : [])
+      try {
+        await authFetchJson<{ ok?: boolean }>(`${baseUrl}/messages/read`, { method: 'POST' })
+        onMarkedRead?.()
+      } catch {
+        // messages are still shown if mark-read fails
+      }
     } catch (e: unknown) {
       setErr(String((e as Error)?.message || t('admin.main.shiftNotesErrLoad')))
       setMessages([])
     } finally {
       setLoading(false)
     }
-  }, [jobId, t])
+  }, [jobId, t, onMarkedRead])
 
   useEffect(() => {
     void load()

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { AppApiErrorCodes } from '@/lib/app-error-codes'
-import { insertJobMessage, listMessagesPayload } from '@/lib/server/job-shift-chat'
+import { getUnreadCountForJob, insertJobMessage, listMessagesPayload } from '@/lib/server/job-shift-chat'
 import { workerCanAccessJob } from '@/lib/server/worker-job-access'
 import { ApiError, requireActiveWorker, toErrorResponse } from '@/lib/route-db'
 import { routeDynamicId } from '@/lib/server/route-dynamic-id'
@@ -20,7 +20,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ jobId: stri
     if (!ok) return workerApiErrorResponse(403, AppApiErrorCodes.JOB_NOT_FOUND, 'Forbidden')
 
     const payload = await listMessagesPayload(db, jobId)
-    return NextResponse.json(payload)
+    const unread_count = await getUnreadCountForJob(db, {
+      jobId,
+      userId,
+      readerRole: 'worker',
+    })
+    return NextResponse.json({ ...payload, unread_count })
   } catch (e: unknown) {
     return toErrorResponse(e)
   }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { AdminApiErrorCode } from '@/lib/api-error-codes'
-import { insertJobMessage, listMessagesPayload } from '@/lib/server/job-shift-chat'
+import { getUnreadCountForJob, insertJobMessage, listMessagesPayload } from '@/lib/server/job-shift-chat'
 import { ApiError, requireAdmin, toErrorResponse } from '@/lib/route-db'
 import { routeDynamicId } from '@/lib/server/route-dynamic-id'
 
@@ -16,13 +16,18 @@ async function assertJobExists(db: Parameters<typeof listMessagesPayload>[0], jo
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
-    const { db } = await requireAdmin(req)
+    const { db, userId } = await requireAdmin(req)
     const jobId = await routeDynamicId(req, ctx, 'id')
     if (!jobId) throw new ApiError(400, 'job id required')
 
     await assertJobExists(db, jobId)
     const payload = await listMessagesPayload(db, jobId)
-    return NextResponse.json(payload)
+    const unread_count = await getUnreadCountForJob(db, {
+      jobId,
+      userId,
+      readerRole: 'admin',
+    })
+    return NextResponse.json({ ...payload, unread_count })
   } catch (e: unknown) {
     return toErrorResponse(e)
   }
