@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { AdminApiErrorCode } from '@/lib/api-error-codes'
-import { getUnreadCountForJob, insertJobMessage, listMessagesPayload } from '@/lib/server/job-shift-chat'
+import {
+  clearJobChatAsAdmin,
+  getUnreadCountForJob,
+  insertJobMessage,
+  listMessagesPayload,
+} from '@/lib/server/job-shift-chat'
 import { ApiError, requireAdmin, toErrorResponse } from '@/lib/route-db'
 import { routeDynamicId } from '@/lib/server/route-dynamic-id'
 
@@ -57,6 +62,20 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       body: bodyPayload,
     })
 
+    return NextResponse.json(out)
+  } catch (e: unknown) {
+    return toErrorResponse(e)
+  }
+}
+
+export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  try {
+    const { db } = await requireAdmin(req)
+    const jobId = await routeDynamicId(req, ctx, 'id')
+    if (!jobId) throw new ApiError(400, 'job id required')
+
+    await assertJobExists(db, jobId)
+    const out = await clearJobChatAsAdmin(db, { jobId })
     return NextResponse.json(out)
   } catch (e: unknown) {
     return toErrorResponse(e)

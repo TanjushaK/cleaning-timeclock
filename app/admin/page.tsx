@@ -5051,7 +5051,7 @@ const [editOpen, setEditOpen] = useState(false)
             <ShiftJobChatPanel
               jobId={editJobId}
               t={t}
-              onMarkedRead={() => void refreshJobChatUnreadCounts(schedule.map((s) => s.id))}
+              onChatMutated={() => void refreshJobChatUnreadCounts(schedule.map((s) => s.id))}
             />
           ) : null}
 

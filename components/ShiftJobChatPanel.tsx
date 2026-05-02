@@ -84,13 +84,14 @@ const ALLOWED_VID = new Set(['video/mp4', 'video/quicktime', 'video/webm'])
 export function ShiftJobChatPanel(props: {
   jobId: string | null
   t: (key: string, vars?: Record<string, string | number>) => string
-  /** Called after messages load and POST /messages/read succeeds (refresh parent unread badges). */
-  onMarkedRead?: () => void
+  /** After send, successful mark-read, delete, or clear — refresh parent unread badges. */
+  onChatMutated?: () => void | Promise<void>
 }) {
-  const { jobId, t, onMarkedRead } = props
+  const { jobId, t, onChatMutated } = props
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [chatActionBusy, setChatActionBusy] = useState(false)
   const [draft, setDraft] = useState('')
   const [pickFiles, setPickFiles] = useState<File[]>([])
   const [err, setErr] = useState<string | null>(null)
@@ -105,7 +106,7 @@ export function ShiftJobChatPanel(props: {
       setMessages(Array.isArray(res?.messages) ? res.messages : [])
       try {
         await authFetchJson<{ ok?: boolean }>(`${baseUrl}/messages/read`, { method: 'POST' })
-        onMarkedRead?.()
+        void Promise.resolve(onChatMutated?.())
       } catch {
         // messages are still shown if mark-read fails
       }
@@ -115,7 +116,7 @@ export function ShiftJobChatPanel(props: {
     } finally {
       setLoading(false)
     }
-  }, [jobId, t, onMarkedRead])
+  }, [jobId, t, onChatMutated])
 
   useEffect(() => {
     void load()
@@ -179,20 +180,67 @@ export function ShiftJobChatPanel(props: {
     setPickFiles(Array.from(next))
   }
 
+  async function deleteOneMessage(messageId: string) {
+    if (!jobId || busy || chatActionBusy) return
+    if (typeof window !== 'undefined' && !window.confirm(t('admin.main.shiftNotesDeleteConfirm'))) return
+    const baseUrl = `/api/admin/jobs/${encodeURIComponent(jobId)}`
+    setChatActionBusy(true)
+    setErr(null)
+    try {
+      await authFetchJson<{ ok?: boolean }>(
+        `${baseUrl}/messages/${encodeURIComponent(messageId)}`,
+        { method: 'DELETE' }
+      )
+      await load()
+    } catch (e: unknown) {
+      setErr(String((e as Error)?.message || t('admin.main.shiftNotesErrDelete')))
+    } finally {
+      setChatActionBusy(false)
+    }
+  }
+
+  async function clearAllMessages() {
+    if (!jobId || busy || chatActionBusy) return
+    if (typeof window !== 'undefined' && !window.confirm(t('admin.main.shiftNotesClearConfirm'))) return
+    const baseUrl = `/api/admin/jobs/${encodeURIComponent(jobId)}`
+    setChatActionBusy(true)
+    setErr(null)
+    try {
+      await authFetchJson<{ ok?: boolean }>(`${baseUrl}/messages`, { method: 'DELETE' })
+      await load()
+    } catch (e: unknown) {
+      setErr(String((e as Error)?.message || t('admin.main.shiftNotesErrClear')))
+    } finally {
+      setChatActionBusy(false)
+    }
+  }
+
   if (!jobId) return null
+
+  const uiLocked = loading || busy || chatActionBusy
 
   return (
     <div className="grid gap-2 rounded-2xl border border-yellow-400/15 bg-black/30 px-3 py-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-[11px] font-semibold text-yellow-100/90">{t('admin.main.shiftNotesTitle')}</span>
-        <button
-          type="button"
-          className="rounded-lg border border-yellow-400/25 px-2 py-1 text-[11px] font-semibold text-zinc-200 transition hover:border-yellow-300/45 disabled:opacity-50"
-          onClick={() => void load()}
-          disabled={loading || busy}
-        >
-          {t('admin.main.shiftNotesRefresh')}
-        </button>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            className="rounded-lg border border-zinc-500/35 px-2 py-0.5 text-[10px] font-semibold text-zinc-400 transition hover:border-rose-400/45 hover:text-rose-200 disabled:opacity-50"
+            onClick={() => void clearAllMessages()}
+            disabled={uiLocked || messages.length === 0}
+          >
+            {t('admin.main.shiftNotesClear')}
+          </button>
+          <button
+            type="button"
+            className="rounded-lg border border-yellow-400/25 px-2 py-1 text-[11px] font-semibold text-zinc-200 transition hover:border-yellow-300/45 disabled:opacity-50"
+            onClick={() => void load()}
+            disabled={uiLocked}
+          >
+            {t('admin.main.shiftNotesRefresh')}
+          </button>
+        </div>
       </div>
 
       <p className="text-[10px] leading-snug text-zinc-500">{t('admin.main.shiftNotesAttachHint')}</p>
@@ -208,32 +256,54 @@ export function ShiftJobChatPanel(props: {
           <ul className="grid gap-2">
             {messages.map((m) => (
               <li key={m.id} className="rounded-lg border border-yellow-400/10 bg-black/35 px-2 py-1.5 text-[11px]">
-                <div className="flex flex-wrap items-baseline justify-between gap-1">
-                  <span className="font-semibold text-yellow-100/90">{m.author_name}</span>
-                  <span className="text-zinc-500">{new Date(m.created_at).toLocaleString()}</span>
-                </div>
-                {m.body ? <p className="mt-1 whitespace-pre-wrap text-zinc-200">{m.body}</p> : null}
-                {m.attachments?.length ? (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {m.attachments.map((a) =>
-                      a.kind === 'image' && a.url ? (
-                        <img key={a.id} src={a.url} alt="" className="max-h-24 max-w-[140px] rounded-md border border-yellow-400/15 object-cover" />
-                      ) : a.kind === 'video' && a.url ? (
-                        <video key={a.id} src={a.url} controls className="max-h-36 max-w-[220px] rounded-md border border-yellow-400/15" />
-                      ) : (
-                        <a
-                          key={a.id}
-                          href={a.url || '#'}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-[10px] text-yellow-200 underline"
-                        >
-                          {a.file_name || a.mime_type}
-                        </a>
-                      )
-                    )}
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-baseline justify-between gap-1">
+                      <span className="font-semibold text-yellow-100/90">{m.author_name}</span>
+                      <span className="text-zinc-500">{new Date(m.created_at).toLocaleString()}</span>
+                    </div>
+                    {m.body ? <p className="mt-1 whitespace-pre-wrap text-zinc-200">{m.body}</p> : null}
+                    {m.attachments?.length ? (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {m.attachments.map((a) =>
+                          a.kind === 'image' && a.url ? (
+                            <img
+                              key={a.id}
+                              src={a.url}
+                              alt=""
+                              className="max-h-24 max-w-[140px] rounded-md border border-yellow-400/15 object-cover"
+                            />
+                          ) : a.kind === 'video' && a.url ? (
+                            <video
+                              key={a.id}
+                              src={a.url}
+                              controls
+                              className="max-h-36 max-w-[220px] rounded-md border border-yellow-400/15"
+                            />
+                          ) : (
+                            <a
+                              key={a.id}
+                              href={a.url || '#'}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[10px] text-yellow-200 underline"
+                            >
+                              {a.file_name || a.mime_type}
+                            </a>
+                          )
+                        )}
+                      </div>
+                    ) : null}
                   </div>
-                ) : null}
+                  <button
+                    type="button"
+                    className="shrink-0 rounded border border-zinc-500/30 px-1.5 py-0.5 text-[10px] font-medium text-zinc-400 transition hover:border-rose-400/40 hover:text-rose-200 disabled:opacity-50"
+                    onClick={() => void deleteOneMessage(m.id)}
+                    disabled={uiLocked}
+                  >
+                    {t('admin.main.shiftNotesDelete')}
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
@@ -245,7 +315,7 @@ export function ShiftJobChatPanel(props: {
         onChange={(e) => setDraft(e.target.value)}
         placeholder={t('admin.main.shiftNotesPlaceholder')}
         rows={2}
-        disabled={busy}
+        disabled={uiLocked}
         className="w-full resize-y rounded-xl border border-yellow-400/20 bg-black/45 px-3 py-2 text-xs text-zinc-100 outline-none transition focus:border-yellow-300/55 disabled:opacity-60"
       />
 
@@ -254,7 +324,7 @@ export function ShiftJobChatPanel(props: {
         multiple
         accept="image/jpeg,image/png,image/webp,image/heic,image/heif,video/mp4,video/quicktime,video/webm"
         className="block w-full text-[11px] text-zinc-400 file:mr-2 file:rounded-lg file:border file:border-yellow-400/25 file:bg-black/40 file:px-2 file:py-1 file:text-[11px]"
-        disabled={busy}
+        disabled={uiLocked}
         onChange={(e) => {
           onPickFiles(e.target.files)
           e.target.value = ''
@@ -269,7 +339,7 @@ export function ShiftJobChatPanel(props: {
       <button
         type="button"
         onClick={() => void send()}
-        disabled={busy || (!draft.trim() && pickFiles.length === 0)}
+        disabled={uiLocked || (!draft.trim() && pickFiles.length === 0)}
         className="rounded-2xl border border-yellow-300/35 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/55 disabled:opacity-50"
       >
         {busy ? t('admin.main.shiftNotesSending') : t('admin.main.shiftNotesSend')}
