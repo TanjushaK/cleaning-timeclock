@@ -313,3 +313,105 @@ export async function insertChatAttachment(params: {
     },
   }
 }
+
+async function removeChatFilesFromStorage(storagePaths: string[]) {
+  const uniq = Array.from(new Set(storagePaths.map((p) => String(p || '').trim()).filter(Boolean)))
+  if (!uniq.length) return
+  const bucket = getChatBucketClient()
+  for (const part of chunk(uniq, 80)) {
+    try {
+      await bucket.remove(part)
+    } catch {
+      // best-effort: missing files or partial failures must not block DB cleanup
+    }
+  }
+}
+
+export async function deleteJobMessageAsAdmin(
+  db: CompatClient,
+  params: { jobId: string; messageId: string }
+): Promise<{ ok: true }> {
+  const { jobId, messageId } = params
+
+  const { data: msg, error: msgErr } = await db
+    .from('job_messages')
+    .select('id,job_id,deleted_at')
+    .eq('id', messageId)
+    .maybeSingle()
+
+  if (msgErr) throw new ApiError(400, msgErr.message)
+  const row = msg as { job_id?: string; deleted_at?: string | null } | null
+  if (!row || String(row.job_id) !== jobId) throw new ApiError(404, 'Message not found')
+  if (row.deleted_at != null) throw new ApiError(404, 'Message not found')
+
+  const { data: atts, error: attErr } = await db
+    .from('job_message_attachments')
+    .select('storage_path')
+    .eq('message_id', messageId)
+
+  if (attErr) throw new ApiError(400, attErr.message)
+
+  const paths = ((atts || []) as { storage_path: string }[]).map((a) => a.storage_path).filter(Boolean)
+  await removeChatFilesFromStorage(paths)
+
+  const { error: delAttErr } = await db.from('job_message_attachments').delete().eq('message_id', messageId)
+  if (delAttErr) throw new ApiError(400, delAttErr.message)
+
+  const now = new Date().toISOString()
+  const { error: updErr } = await db
+    .from('job_messages')
+    .update({ deleted_at: now, updated_at: now })
+    .eq('id', messageId)
+    .eq('job_id', jobId)
+
+  if (updErr) throw new ApiError(400, updErr.message)
+
+  return { ok: true }
+}
+
+export async function clearJobChatAsAdmin(
+  db: CompatClient,
+  params: { jobId: string }
+): Promise<{ ok: true; deleted_messages: number; deleted_attachments: number }> {
+  const { jobId } = params
+
+  const { data: msgs, error: mErr } = await db
+    .from('job_messages')
+    .select('id')
+    .eq('job_id', jobId)
+    .is('deleted_at', null)
+
+  if (mErr) throw new ApiError(400, mErr.message)
+  const messageRows = (msgs || []) as { id: string }[]
+  const deleted_messages = messageRows.length
+
+  const { data: attRows, error: aErr } = await db
+    .from('job_message_attachments')
+    .select('storage_path')
+    .eq('job_id', jobId)
+
+  if (aErr) throw new ApiError(400, aErr.message)
+
+  const attachments = (attRows || []) as { storage_path: string }[]
+  const deleted_attachments = attachments.length
+
+  const paths = attachments.map((a) => a.storage_path).filter(Boolean)
+  await removeChatFilesFromStorage(paths)
+
+  const { error: delAttErr } = await db.from('job_message_attachments').delete().eq('job_id', jobId)
+  if (delAttErr) throw new ApiError(400, delAttErr.message)
+
+  const now = new Date().toISOString()
+  const { error: updErr } = await db
+    .from('job_messages')
+    .update({ deleted_at: now, updated_at: now })
+    .eq('job_id', jobId)
+    .is('deleted_at', null)
+
+  if (updErr) throw new ApiError(400, updErr.message)
+
+  const { error: readsErr } = await db.from('job_message_reads').delete().eq('job_id', jobId)
+  if (readsErr) throw new ApiError(400, readsErr.message)
+
+  return { ok: true, deleted_messages, deleted_attachments }
+}
