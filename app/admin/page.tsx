@@ -7,6 +7,7 @@ import { createPortal } from 'react-dom'
 import { getAccessToken, setAuthTokens, clearClientAuthState } from '@/lib/auth-fetch'
 import { SearchableSelect } from '@/app/_components/SearchableSelect'
 import { useI18n } from '@/components/I18nProvider'
+import { ShiftJobChatPanel } from '@/components/ShiftJobChatPanel'
 import type { Lang } from '@/lib/i18n-config'
 import { buildNavigationUrl, openNavigation } from '@/lib/open-navigation'
 
@@ -5005,6 +5006,8 @@ const [editOpen, setEditOpen] = useState(false)
               ) : null}
             </div>
           ) : null}
+
+          {editJobId ? <ShiftJobChatPanel jobId={editJobId} t={t} /> : null}
 
           <div className="grid gap-3 sm:grid-cols-3">
             <label className="grid gap-1">
