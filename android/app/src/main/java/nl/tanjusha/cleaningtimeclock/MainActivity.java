@@ -1,4 +1,4 @@
-package nl.tanjusha.timeclock;
+package nl.tanjusha.cleaningtimeclock;
 
 import com.getcapacitor.BridgeActivity;
 
