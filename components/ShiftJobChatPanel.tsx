@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { authFetchJson } from '@/lib/auth-fetch'
 
@@ -48,6 +48,12 @@ export function ShiftJobChatPanel(props: {
   onChatMutated?: () => void | Promise<void>
 }) {
   const { jobId, t, onChatMutated } = props
+  const onChatMutatedRef = useRef<typeof onChatMutated>(onChatMutated)
+
+  useEffect(() => {
+    onChatMutatedRef.current = onChatMutated
+  }, [onChatMutated])
+
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -71,7 +77,7 @@ export function ShiftJobChatPanel(props: {
           method: 'POST',
           cache: 'no-store',
         })
-        void Promise.resolve(onChatMutated?.())
+        void Promise.resolve(onChatMutatedRef.current?.())
       } catch {
         // messages are still shown if mark-read fails
       }
@@ -81,7 +87,7 @@ export function ShiftJobChatPanel(props: {
     } finally {
       setLoading(false)
     }
-  }, [jobId, t, onChatMutated])
+  }, [jobId, t])
 
   useEffect(() => {
     void load()
