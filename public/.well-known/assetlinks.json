@@ -1,14 +1,11 @@
 ﻿[
   {
-    "relation": [
-      "delegate_permission/common.handle_all_urls"
-    ],
+    "relation": ["delegate_permission/common.handle_all_urls"],
     "target": {
       "namespace": "android_app",
-      "package_name": "nl.tanjusha.timeclock",
-      "sha256_cert_fingerprints": [
-        "REPLACE_WITH_GOOGLE_PLAY_APP_SIGNING_SHA256"
-      ]
+      "package_name": "nl.tanjusha.cleaningtimeclock",
+      "sha256_cert_fingerprints":
+        ["F7:E7:6D:93:40:AF:F2:BB:7A:27:4D:61:50:35:A1:EA:51:C0:85:F4:F6:13:23:A7:F3:E3:9E:EA:F3:E5:00:D0"]
     }
   }
 ]
