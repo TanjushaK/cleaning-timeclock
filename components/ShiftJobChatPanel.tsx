@@ -84,8 +84,8 @@ const ALLOWED_VID = new Set(['video/mp4', 'video/quicktime', 'video/webm'])
 export function ShiftJobChatPanel(props: {
   jobId: string | null
   t: (key: string, vars?: Record<string, string | number>) => string
-  /** Optional: e.g. refresh parent unread badges after chat changes. */
-  onChatMutated?: () => void
+  /** After send, successful mark-read, delete, or clear — refresh parent unread badges. */
+  onChatMutated?: () => void | Promise<void>
 }) {
   const { jobId, t, onChatMutated } = props
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -104,13 +104,19 @@ export function ShiftJobChatPanel(props: {
     try {
       const res = await authFetchJson<{ messages: ChatMessage[] }>(`${baseUrl}/messages`)
       setMessages(Array.isArray(res?.messages) ? res.messages : [])
+      try {
+        await authFetchJson<{ ok?: boolean }>(`${baseUrl}/messages/read`, { method: 'POST' })
+        void Promise.resolve(onChatMutated?.())
+      } catch {
+        // messages are still shown if mark-read fails
+      }
     } catch (e: unknown) {
       setErr(String((e as Error)?.message || t('admin.main.shiftNotesErrLoad')))
       setMessages([])
     } finally {
       setLoading(false)
     }
-  }, [jobId, t])
+  }, [jobId, t, onChatMutated])
 
   useEffect(() => {
     void load()
@@ -162,7 +168,6 @@ export function ShiftJobChatPanel(props: {
       setDraft('')
       setPickFiles([])
       await load()
-      onChatMutated?.()
     } catch (e: unknown) {
       setErr(String((e as Error)?.message || t('admin.main.shiftNotesErrSend')))
     } finally {
@@ -187,7 +192,6 @@ export function ShiftJobChatPanel(props: {
         { method: 'DELETE' }
       )
       await load()
-      onChatMutated?.()
     } catch (e: unknown) {
       setErr(String((e as Error)?.message || t('admin.main.shiftNotesErrDelete')))
     } finally {
@@ -204,7 +208,6 @@ export function ShiftJobChatPanel(props: {
     try {
       await authFetchJson<{ ok?: boolean }>(`${baseUrl}/messages`, { method: 'DELETE' })
       await load()
-      onChatMutated?.()
     } catch (e: unknown) {
       setErr(String((e as Error)?.message || t('admin.main.shiftNotesErrClear')))
     } finally {
