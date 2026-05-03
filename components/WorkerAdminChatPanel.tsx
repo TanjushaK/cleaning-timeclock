@@ -39,6 +39,50 @@ type WorkerAdminMessage = {
 
 const MAX_PHOTOS = 5
 
+const ALLOWED_CHAT_IMAGE_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+])
+
+function isAllowedChatImageFile(file: File): boolean {
+  const type = String(file.type || '').toLowerCase()
+  return ALLOWED_CHAT_IMAGE_TYPES.has(type)
+}
+
+function safeImageUrl(raw: string | null | undefined): string | null {
+  if (!raw) return null
+  const value = String(raw).trim()
+  if (!value) return null
+
+  // Allow local blob previews created by URL.createObjectURL only.
+  if (value.startsWith('blob:')) return value
+
+  // Allow same-origin relative app/storage URLs only.
+  if (value.startsWith('/api/storage/') || value.startsWith('/_next/image')) return value
+
+  if (typeof window === 'undefined') return null
+
+  try {
+    const parsed = new URL(value, window.location.origin)
+
+    // Allow only http/https.
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
+
+    // Allow only same origin.
+    if (parsed.origin !== window.location.origin) return null
+
+    // Allow only storage/public API paths.
+    if (!parsed.pathname.startsWith('/api/storage/')) return null
+
+    return parsed.toString()
+  } catch {
+    return null
+  }
+}
+
 function pad2(n: number) {
   return String(n).padStart(2, '0')
 }
@@ -141,7 +185,8 @@ export function WorkerAdminChatPanel() {
 
   function onPickFiles(list: FileList | null) {
     if (!list?.length) return
-    const next = [...pickFiles, ...Array.from(list)]
+    const incoming = Array.from(list).filter(isAllowedChatImageFile)
+    const next = [...pickFiles, ...incoming]
     setPickFiles(next.slice(0, MAX_PHOTOS))
   }
 
@@ -338,30 +383,34 @@ export function WorkerAdminChatPanel() {
                             ) : null}
                             {m.attachments?.length ? (
                               <div className="mt-2 flex flex-wrap gap-2">
-                                {m.attachments.map((a) =>
-                                  a.url ? (
+                                {m.attachments.map((a) => {
+                                  const safeUrl = safeImageUrl(a.url)
+                                  if (!safeUrl) {
+                                    return (
+                                      <div
+                                        key={a.id}
+                                        className="flex h-20 w-[120px] items-center justify-center rounded-lg border border-dashed border-zinc-600/50 bg-black/40 text-[10px] text-zinc-500"
+                                      >
+                                        Фото недоступно
+                                      </div>
+                                    )
+                                  }
+                                  return (
                                     <a
                                       key={a.id}
-                                      href={a.url}
+                                      href={safeUrl}
                                       target="_blank"
                                       rel="noreferrer"
                                       className="block"
                                     >
                                       <img
-                                        src={a.url}
+                                        src={safeUrl}
                                         alt="Фото"
                                         className="max-h-28 max-w-[160px] rounded-lg border border-yellow-400/15 object-cover"
                                       />
                                     </a>
-                                  ) : (
-                                    <div
-                                      key={a.id}
-                                      className="flex h-20 w-[120px] items-center justify-center rounded-lg border border-dashed border-zinc-600/50 bg-black/40 text-[10px] text-zinc-500"
-                                    >
-                                      Фото недоступно
-                                    </div>
-                                  ),
-                                )}
+                                  )
+                                })}
                               </div>
                             ) : null}
                           </div>
@@ -410,24 +459,29 @@ export function WorkerAdminChatPanel() {
 
                 {pickFiles.length > 0 ? (
                   <div className="mb-3 flex flex-wrap gap-2">
-                    {pickFiles.map((f, i) => (
-                      <div key={`${f.name}-${i}`} className="relative">
-                        <img
-                          src={previewUrls[i]}
-                          alt=""
-                          className="h-16 w-16 rounded-lg border border-yellow-400/20 object-cover"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => removePhotoAt(i)}
-                          disabled={sendBusy}
-                          className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border border-rose-400/50 bg-rose-950 text-[10px] text-rose-100 hover:bg-rose-900 disabled:opacity-50"
-                          aria-label="Удалить"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))}
+                    {pickFiles.map((f, i) => {
+                      const previewUrl = safeImageUrl(previewUrls[i])
+                      return (
+                        <div key={`${f.name}-${i}`} className="relative">
+                          {previewUrl ? (
+                            <img
+                              src={previewUrl}
+                              alt=""
+                              className="h-16 w-16 rounded-lg border border-yellow-400/20 object-cover"
+                            />
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() => removePhotoAt(i)}
+                            disabled={sendBusy}
+                            className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border border-rose-400/50 bg-rose-950 text-[10px] text-rose-100 hover:bg-rose-900 disabled:opacity-50"
+                            aria-label="Удалить"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      )
+                    })}
                   </div>
                 ) : null}
 
