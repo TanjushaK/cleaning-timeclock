@@ -52,13 +52,15 @@ function isAllowedChatImageFile(file: File): boolean {
   return ALLOWED_CHAT_IMAGE_TYPES.has(type)
 }
 
+function safeFileName(name: string | null | undefined): string {
+  const value = String(name || '').replace(/[<>]/g, '').trim()
+  return value || 'image'
+}
+
 function safeImageUrl(raw: string | null | undefined): string | null {
   if (!raw) return null
   const value = String(raw).trim()
   if (!value) return null
-
-  // Allow local blob previews created by URL.createObjectURL only.
-  if (value.startsWith('blob:')) return value
 
   // Allow same-origin relative app/storage URLs only.
   if (value.startsWith('/api/storage/') || value.startsWith('/_next/image')) return value
@@ -174,14 +176,6 @@ export function WorkerAdminChatPanel() {
     }
     void loadMessages(selectedId)
   }, [selectedId, loadMessages])
-
-  const previewUrls = useMemo(() => pickFiles.map((f) => URL.createObjectURL(f)), [pickFiles])
-
-  useEffect(() => {
-    return () => {
-      for (const u of previewUrls) URL.revokeObjectURL(u)
-    }
-  }, [previewUrls])
 
   function onPickFiles(list: FileList | null) {
     if (!list?.length) return
@@ -458,30 +452,26 @@ export function WorkerAdminChatPanel() {
                 </div>
 
                 {pickFiles.length > 0 ? (
-                  <div className="mb-3 flex flex-wrap gap-2">
-                    {pickFiles.map((f, i) => {
-                      const previewUrl = safeImageUrl(previewUrls[i])
-                      return (
-                        <div key={`${f.name}-${i}`} className="relative">
-                          {previewUrl ? (
-                            <img
-                              src={previewUrl}
-                              alt=""
-                              className="h-16 w-16 rounded-lg border border-yellow-400/20 object-cover"
-                            />
-                          ) : null}
-                          <button
-                            type="button"
-                            onClick={() => removePhotoAt(i)}
-                            disabled={sendBusy}
-                            className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border border-rose-400/50 bg-rose-950 text-[10px] text-rose-100 hover:bg-rose-900 disabled:opacity-50"
-                            aria-label="Удалить"
-                          >
-                            ×
-                          </button>
+                  <div className="mb-3 flex flex-col gap-2">
+                    {pickFiles.map((f, i) => (
+                      <div
+                        key={`${f.name}-${i}`}
+                        className="flex items-center justify-between gap-2 rounded-xl border border-yellow-400/15 bg-black/35 px-3 py-2"
+                      >
+                        <div className="min-w-0 flex-1 truncate text-[11px] text-zinc-200">
+                          Фото {i + 1}: {safeFileName(f.name)}
                         </div>
-                      )
-                    })}
+                        <button
+                          type="button"
+                          onClick={() => removePhotoAt(i)}
+                          disabled={sendBusy}
+                          className="shrink-0 flex h-7 w-7 items-center justify-center rounded-full border border-rose-400/50 bg-rose-950 text-sm leading-none text-rose-100 transition hover:bg-rose-900 disabled:opacity-50"
+                          aria-label="Убрать"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 ) : null}
 
