@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import {
+  collectMultipartImages,
+  createWorkerAdminMessageWithPhotos,
   getWorkerAdminUnreadCount,
   insertWorkerAdminMessage,
   listWorkerAdminMessages,
+  parseOptionalWorkerAdminBodyField,
   parseWorkerAdminBody,
 } from '@/lib/server/worker-admin-chat'
 import { requireActiveWorker, toErrorResponse } from '@/lib/route-db'
@@ -31,6 +34,22 @@ export async function POST(req: NextRequest) {
   try {
     const { db, userId } = await requireActiveWorker(req)
     const workerId = userId
+    const contentType = req.headers.get('content-type') || ''
+
+    if (contentType.includes('multipart/form-data')) {
+      const form = await req.formData()
+      const bodyText = parseOptionalWorkerAdminBodyField(form.get('body'))
+      const files = collectMultipartImages(form)
+      const message = await createWorkerAdminMessageWithPhotos(db, {
+        workerId,
+        authorId: userId,
+        authorRole: 'worker',
+        body: bodyText,
+        files,
+      })
+      return NextResponse.json({ message })
+    }
+
     const raw = await req.json().catch(() => ({}))
     const bodyText = parseWorkerAdminBody(raw)
 
