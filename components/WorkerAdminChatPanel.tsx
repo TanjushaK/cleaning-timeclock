@@ -94,21 +94,29 @@ function WorkerChatAttachmentImage({ safeUrl }: { safeUrl: string }) {
 
   useEffect(() => {
     let cancelled = false
-    let objectUrl: string | null = null
+    setBlobSrc(null)
+    setFailed(false)
     void (async () => {
       try {
         const res = await authFetch(safeUrl, { cache: 'no-store' })
         if (!res.ok) throw new Error('load failed')
         const blob = await res.blob()
-        objectUrl = URL.createObjectURL(blob)
-        if (!cancelled) setBlobSrc(objectUrl)
+        const objectUrl = URL.createObjectURL(blob)
+        if (cancelled) {
+          URL.revokeObjectURL(objectUrl)
+          return
+        }
+        setBlobSrc(objectUrl)
       } catch {
         if (!cancelled) setFailed(true)
       }
     })()
     return () => {
       cancelled = true
-      if (objectUrl) URL.revokeObjectURL(objectUrl)
+      setBlobSrc((prev) => {
+        if (prev) URL.revokeObjectURL(prev)
+        return null
+      })
     }
   }, [safeUrl])
 
