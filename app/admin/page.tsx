@@ -8,6 +8,7 @@ import { getAccessToken, setAuthTokens, clearClientAuthState } from '@/lib/auth-
 import { SearchableSelect } from '@/app/_components/SearchableSelect'
 import { useI18n } from '@/components/I18nProvider'
 import { ShiftJobChatPanel } from '@/components/ShiftJobChatPanel'
+import { WorkerAdminChatPanel } from '@/components/WorkerAdminChatPanel'
 import type { Lang } from '@/lib/i18n-config'
 import { buildNavigationUrl, openNavigation } from '@/lib/open-navigation'
 
@@ -28,7 +29,7 @@ function getAccessTokenOrNull(): string | null {
   }
 }
 
-type TabKey = 'sites' | 'workers' | 'jobs' | 'plan' | 'reports'
+type TabKey = 'sites' | 'workers' | 'jobs' | 'plan' | 'reports' | 'chats'
 type JobsView = 'board' | 'table'
 type PlanView = 'day' | 'week' | 'month'
 type PlanMode = 'workers' | 'sites'
@@ -3622,7 +3623,7 @@ const [editOpen, setEditOpen] = useState(false)
         <div className="rounded-3xl border border-yellow-400/20 bg-zinc-950/50 p-6 shadow-[0_12px_40px_rgba(0,0,0,0.55)] backdrop-blur">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="adminTabRow flex flex-wrap items-center gap-2">
-              {(['sites', 'workers', 'jobs', 'plan', 'reports'] as TabKey[]).map((k) => (
+              {(['sites', 'workers', 'jobs', 'plan', 'reports', 'chats'] as TabKey[]).map((k) => (
                 <button
                   key={k}
                   onClick={() => setTab(k)}
@@ -3639,7 +3640,9 @@ const [editOpen, setEditOpen] = useState(false)
                         ? t('admin.main.tabJobs')
                         : k === 'plan'
                           ? t('admin.main.tabPlan')
-                          : t('admin.main.tabReports')}
+                          : k === 'reports'
+                            ? t('admin.main.tabReports')
+                            : 'Чаты сотрудников'}
                 </button>
               ))}
             </div>
@@ -3677,7 +3680,12 @@ const [editOpen, setEditOpen] = useState(false)
             <ReportsPanel />
           ) : null}
 
-
+          {/* Worker ↔ admin chat */}
+          {tab === 'chats' ? (
+            <div className="mt-6">
+              <WorkerAdminChatPanel />
+            </div>
+          ) : null}
 
           {/* Sites */}
                     {tab === 'sites' ? (
