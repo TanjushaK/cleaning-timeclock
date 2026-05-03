@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { AdminApiErrorCode } from '@/lib/api-error-codes'
 import {
+  collectMultipartImages,
+  createWorkerAdminMessageWithPhotos,
   getWorkerAdminUnreadCount,
   insertWorkerAdminMessage,
   listWorkerAdminMessages,
+  parseOptionalWorkerAdminBodyField,
   parseWorkerAdminBody,
 } from '@/lib/server/worker-admin-chat'
 import { ApiError, requireAdmin, toErrorResponse } from '@/lib/route-db'
@@ -51,6 +54,22 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ workerId: 
     if (!workerId) throw new ApiError(400, 'worker id required', AdminApiErrorCode.WORKER_ID_REQUIRED)
 
     await assertTargetWorker(db, workerId)
+    const contentType = req.headers.get('content-type') || ''
+
+    if (contentType.includes('multipart/form-data')) {
+      const form = await req.formData()
+      const bodyText = parseOptionalWorkerAdminBodyField(form.get('body'))
+      const files = collectMultipartImages(form)
+      const message = await createWorkerAdminMessageWithPhotos(db, {
+        workerId,
+        authorId: userId,
+        authorRole: 'admin',
+        body: bodyText,
+        files,
+      })
+      return NextResponse.json({ message })
+    }
+
     const rawBody = await req.json().catch(() => ({}))
     const bodyText = parseWorkerAdminBody(rawBody)
 
