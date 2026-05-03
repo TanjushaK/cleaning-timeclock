@@ -13,6 +13,16 @@ export { collectMultipartImages } from '@/lib/server/worker-admin-chat-media'
 
 export const WORKER_ADMIN_CHAT_MAX_BODY = 10_000
 
+/** Signed Supabase-style URLs for mobile; same-origin proxy paths for admin web UI. */
+export type WorkerAdminAttachmentUrlMode = 'signed' | 'admin-proxy'
+
+export const WORKER_ADMIN_CHAT_ATTACHMENT_PROXY_PREFIX = '/api/admin/worker-chat/attachments/'
+
+export function workerAdminChatAttachmentProxyUrl(attachmentId: string): string {
+  const id = String(attachmentId || '').trim()
+  return `${WORKER_ADMIN_CHAT_ATTACHMENT_PROXY_PREFIX}${id}`
+}
+
 export type WorkerAdminReaderRole = 'worker' | 'admin'
 
 export type WorkerAdminAttachmentRow = {
@@ -112,7 +122,11 @@ function mapMessageRow(
   }
 }
 
-async function loadAttachmentsForMessageIds(db: CompatClient, messageIds: string[]): Promise<Map<string, WorkerAdminAttachmentRow[]>> {
+async function loadAttachmentsForMessageIds(
+  db: CompatClient,
+  messageIds: string[],
+  attachmentUrlMode: WorkerAdminAttachmentUrlMode = 'signed',
+): Promise<Map<string, WorkerAdminAttachmentRow[]>> {
   const map = new Map<string, WorkerAdminAttachmentRow[]>()
   if (messageIds.length === 0) return map
 
@@ -126,17 +140,19 @@ async function loadAttachmentsForMessageIds(db: CompatClient, messageIds: string
   if (error) throw new ApiError(400, error.message)
 
   const rows = (data || []) as Array<Record<string, unknown>>
-  const bucketClient = adminChatPhotoBucket()
-  const ttl = getWorkerPhotosSignedUrlTtl()
-  const paths = [...new Set(rows.map((r) => String(r.path || '')).filter(Boolean))]
   const urlByPath = new Map<string, string>()
-  if (paths.length > 0) {
-    const { data: signed, error: signErr } = await bucketClient.createSignedUrls(paths, ttl)
-    if (!signErr && Array.isArray(signed)) {
-      for (const s of signed as { path?: string; signedUrl?: string }[]) {
-        const pp = s?.path ? String(s.path) : ''
-        const uu = s?.signedUrl ? String(s.signedUrl) : ''
-        if (pp && uu) urlByPath.set(pp, uu)
+  if (attachmentUrlMode === 'signed') {
+    const bucketClient = adminChatPhotoBucket()
+    const ttl = getWorkerPhotosSignedUrlTtl()
+    const paths = [...new Set(rows.map((r) => String(r.path || '')).filter(Boolean))]
+    if (paths.length > 0) {
+      const { data: signed, error: signErr } = await bucketClient.createSignedUrls(paths, ttl)
+      if (!signErr && Array.isArray(signed)) {
+        for (const s of signed as { path?: string; signedUrl?: string }[]) {
+          const pp = s?.path ? String(s.path) : ''
+          const uu = s?.signedUrl ? String(s.signedUrl) : ''
+          if (pp && uu) urlByPath.set(pp, uu)
+        }
       }
     }
   }
@@ -145,10 +161,14 @@ async function loadAttachmentsForMessageIds(db: CompatClient, messageIds: string
     const mid = String(r.message_id || '')
     if (!mid) continue
     const path = String(r.path || '')
+    const id = String(r.id || '')
     const att: WorkerAdminAttachmentRow = {
-      id: String(r.id),
+      id,
       path,
-      url: urlByPath.get(path) ?? null,
+      url:
+        attachmentUrlMode === 'admin-proxy'
+          ? workerAdminChatAttachmentProxyUrl(id)
+          : urlByPath.get(path) ?? null,
       mime_type: r.mime_type != null ? String(r.mime_type) : null,
       size_bytes: r.size_bytes != null ? Number(r.size_bytes) : null,
       created_at:
@@ -162,7 +182,13 @@ async function loadAttachmentsForMessageIds(db: CompatClient, messageIds: string
   return map
 }
 
-export async function listWorkerAdminMessages(db: CompatClient, workerId: string): Promise<WorkerAdminMessageRow[]> {
+export async function listWorkerAdminMessages(
+  db: CompatClient,
+  workerId: string,
+  opts?: { attachmentUrlMode?: WorkerAdminAttachmentUrlMode },
+): Promise<WorkerAdminMessageRow[]> {
+  const attachmentUrlMode: WorkerAdminAttachmentUrlMode = opts?.attachmentUrlMode ?? 'signed'
+
   const { data, error } = await db
     .from('worker_admin_messages')
     .select('id,worker_id,author_role,author_name,body,created_at')
@@ -181,7 +207,7 @@ export async function listWorkerAdminMessages(db: CompatClient, workerId: string
   }))
 
   const ids = rows.map((r) => r.id)
-  const attMap = await loadAttachmentsForMessageIds(db, ids)
+  const attMap = await loadAttachmentsForMessageIds(db, ids, attachmentUrlMode)
 
   return rows.map((row) =>
     mapMessageRow(
@@ -239,6 +265,7 @@ async function insertAttachmentRows(
     uploaderRole: WorkerAdminReaderRole
     uploaded: UploadedChatImage[]
   },
+  attachmentUrlMode: WorkerAdminAttachmentUrlMode = 'signed',
 ): Promise<WorkerAdminAttachmentRow[]> {
   if (params.uploaded.length === 0) return []
 
@@ -256,30 +283,39 @@ async function insertAttachmentRows(
 
   if (error || !data) throw new ApiError(400, error?.message || 'failed to save attachments')
 
-  const bucketClient = adminChatPhotoBucket()
-  const ttl = getWorkerPhotosSignedUrlTtl()
-  const paths = (data as Array<{ path?: string }>).map((r) => String(r.path || '')).filter(Boolean)
   const urlByPath = new Map<string, string>()
-  if (paths.length > 0) {
-    const { data: signed, error: signErr } = await bucketClient.createSignedUrls(paths, ttl)
-    if (!signErr && Array.isArray(signed)) {
-      for (const s of signed as { path?: string; signedUrl?: string }[]) {
-        const pp = s?.path ? String(s.path) : ''
-        const uu = s?.signedUrl ? String(s.signedUrl) : ''
-        if (pp && uu) urlByPath.set(pp, uu)
+  if (attachmentUrlMode === 'signed') {
+    const bucketClient = adminChatPhotoBucket()
+    const ttl = getWorkerPhotosSignedUrlTtl()
+    const paths = (data as Array<{ path?: string }>).map((r) => String(r.path || '')).filter(Boolean)
+    if (paths.length > 0) {
+      const { data: signed, error: signErr } = await bucketClient.createSignedUrls(paths, ttl)
+      if (!signErr && Array.isArray(signed)) {
+        for (const s of signed as { path?: string; signedUrl?: string }[]) {
+          const pp = s?.path ? String(s.path) : ''
+          const uu = s?.signedUrl ? String(s.signedUrl) : ''
+          if (pp && uu) urlByPath.set(pp, uu)
+        }
       }
     }
   }
 
-  return (data as Array<Record<string, unknown>>).map((r) => ({
-    id: String(r.id),
-    path: String(r.path || ''),
-    url: urlByPath.get(String(r.path || '')) ?? null,
-    mime_type: r.mime_type != null ? String(r.mime_type) : null,
-    size_bytes: r.size_bytes != null ? Number(r.size_bytes) : null,
-    created_at:
-      typeof r.created_at === 'string' ? r.created_at : new Date(r.created_at as unknown as string).toISOString(),
-  }))
+  return (data as Array<Record<string, unknown>>).map((r) => {
+    const id = String(r.id)
+    const path = String(r.path || '')
+    return {
+      id,
+      path,
+      url:
+        attachmentUrlMode === 'admin-proxy'
+          ? workerAdminChatAttachmentProxyUrl(id)
+          : urlByPath.get(path) ?? null,
+      mime_type: r.mime_type != null ? String(r.mime_type) : null,
+      size_bytes: r.size_bytes != null ? Number(r.size_bytes) : null,
+      created_at:
+        typeof r.created_at === 'string' ? r.created_at : new Date(r.created_at as unknown as string).toISOString(),
+    }
+  })
 }
 
 /** Create message with optional images (multipart flow). */
@@ -291,9 +327,12 @@ export async function createWorkerAdminMessageWithPhotos(
     authorRole: WorkerAdminReaderRole
     body: string | null
     files: IncomingImageFile[]
+    attachmentUrlMode?: WorkerAdminAttachmentUrlMode
   },
 ): Promise<WorkerAdminMessageRow> {
   assertMessageHasBodyOrPhotos(params.body, params.files.length)
+
+  const attachmentUrlMode: WorkerAdminAttachmentUrlMode = params.attachmentUrlMode ?? 'signed'
 
   const msg = await insertWorkerAdminMessage(db, {
     workerId: params.workerId,
@@ -308,13 +347,17 @@ export async function createWorkerAdminMessageWithPhotos(
 
   const bucketClient = adminChatPhotoBucket()
   const uploaded = await uploadChatImagesToBucket(bucketClient, params.workerId, msg.id, params.files)
-  const attachments = await insertAttachmentRows(db, {
-    messageId: msg.id,
-    workerId: params.workerId,
-    uploaderId: params.authorId,
-    uploaderRole: params.authorRole,
-    uploaded,
-  })
+  const attachments = await insertAttachmentRows(
+    db,
+    {
+      messageId: msg.id,
+      workerId: params.workerId,
+      uploaderId: params.authorId,
+      uploaderRole: params.authorRole,
+      uploaded,
+    },
+    attachmentUrlMode,
+  )
 
   return { ...msg, attachments }
 }
