@@ -111,9 +111,6 @@ type ScheduleItem = {
   scheduled_end_time?: string | null
   site_id: string | null
   site_name: string | null
-  site_address?: string | null
-  site_lat?: number | null
-  site_lng?: number | null
   worker_id: string | null
   worker_name: string | null
   started_at: string | null
@@ -2898,43 +2895,6 @@ const [editOpen, setEditOpen] = useState(false)
     return t('admin.main.coworkersLine', { names: names.join(', ') })
   }
 
-  function routeMissingWorkerMsg(locale: Lang): string {
-    if (locale === 'ru') return 'Нет адреса или координат — маршрут у работника не откроется.'
-    if (locale === 'uk') return 'Немає адреси чи координат — маршрут для працівника не відкриється.'
-    if (locale === 'nl') return 'Geen adres of coördinaten — de werknemer kan geen route openen.'
-    return 'No address or coordinates — the worker cannot open a route.'
-  }
-
-  function shiftSiteRouteAvailable(j: ScheduleItem): boolean {
-    const addr =
-      String(j.site_address ?? '').trim() ||
-      String((j.site_id ? sitesById.get(j.site_id) : null)?.address ?? '').trim()
-    if (addr) return true
-    const lat = j.site_lat ?? (j.site_id ? sitesById.get(j.site_id)?.lat : null)
-    const lng = j.site_lng ?? (j.site_id ? sitesById.get(j.site_id)?.lng : null)
-    return lat != null && lng != null && Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))
-  }
-
-  function shiftAssignedNamesLine(j: ScheduleItem): string | null {
-    const ids = participantWorkerIds(j)
-    if (!ids.length) return null
-    const primary = String(j.worker_id ?? '').trim()
-    const parts = ids.map((id) => {
-      if (primary && id === primary) return j.worker_name || workersById.get(id)?.full_name || id.slice(0, 8)
-      const c = coworkersForJob(j).find((x) => x.id === id)
-      if (c?.name) return c.name
-      return workersById.get(id)?.full_name || id.slice(0, 8)
-    })
-    return parts.join(', ')
-  }
-
-  function shiftParticipantsPrefix(locale: Lang): string {
-    if (locale === 'ru') return 'Назначены:'
-    if (locale === 'uk') return 'Призначені:'
-    if (locale === 'nl') return 'Toegewezen:'
-    return 'Assigned:'
-  }
-
   function isCoworkerOnJob(job: ScheduleItem, workerId: string): boolean {
     const w = String(workerId || '').trim()
     const primary = String(job.worker_id ?? '').trim()
@@ -3085,56 +3045,6 @@ const [editOpen, setEditOpen] = useState(false)
                 </div>
               )
             })()}
-            {(() => {
-              const assigned = shiftAssignedNamesLine(j)
-              if (!assigned) return null
-              return (
-                <div
-                  className={cn(
-                    'mt-0.5 max-w-full truncate text-zinc-300 [html[data-theme=light]_&]:text-zinc-700',
-                    compact ? 'text-[10px]' : 'text-[11px]'
-                  )}
-                  title={`${shiftParticipantsPrefix(lang)} ${assigned}`}
-                >
-                  <span className="font-semibold text-zinc-400">{shiftParticipantsPrefix(lang)}</span>{' '}
-                  <span className="text-zinc-200">{assigned}</span>
-                </div>
-              )
-            })()}
-            {(() => {
-              const sid = String(j.site_id ?? '').trim()
-              const ss = sid ? sitesById.get(sid) : null
-              const addr = String(j.site_address ?? ss?.address ?? '').trim()
-              const lat = j.site_lat ?? ss?.lat
-              const lng = j.site_lng ?? ss?.lng
-              const coordLine =
-                lat != null && lng != null && Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))
-                  ? `${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}`
-                  : ''
-              const bits = [addr, coordLine].filter(Boolean)
-              if (!bits.length) return null
-              return (
-                <div
-                  className={cn(
-                    'mt-0.5 max-w-full truncate text-zinc-400 [html[data-theme=light]_&]:text-zinc-600',
-                    compact ? 'text-[10px]' : 'text-[11px]'
-                  )}
-                  title={bits.join(' · ')}
-                >
-                  {bits.join(' · ')}
-                </div>
-              )
-            })()}
-            {!shiftSiteRouteAvailable(j) ? (
-              <div
-                className={cn(
-                  'mt-0.5 max-w-full text-amber-200/95 [html[data-theme=light]_&]:text-amber-900/90',
-                  compact ? 'text-[9px] leading-tight' : 'text-[10px] leading-snug'
-                )}
-              >
-                {routeMissingWorkerMsg(lang)}
-              </div>
-            ) : null}
           </div>
 
           {compact ? null : (
@@ -5070,35 +4980,6 @@ const [editOpen, setEditOpen] = useState(false)
     inputClassName="rounded-2xl border border-yellow-400/20 bg-black/40 px-3 py-3 text-sm outline-none transition focus:border-yellow-300/60"
   />
 </div>
-
-          {editSiteId ? (() => {
-            const ss = sitesById.get(editSiteId)
-            const addr = String(ss?.address ?? '').trim()
-            const lat = ss?.lat
-            const lng = ss?.lng
-            const coordLine =
-              lat != null && lng != null && Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))
-                ? `${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}`
-                : ''
-            const bits = [addr, coordLine].filter(Boolean)
-            const okRoute = !!(addr || (lat != null && lng != null && Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))))
-            return (
-              <div className="grid gap-1 rounded-2xl border border-yellow-400/10 bg-black/25 px-3 py-2 text-xs text-zinc-300">
-                {bits.length ? (
-                  <div className="break-words text-zinc-200" title={bits.join(' · ')}>
-                    {bits.join(' · ')}
-                  </div>
-                ) : (
-                  <div className="text-zinc-500">{t('admin.main.noCoords')}</div>
-                )}
-                {!okRoute ? (
-                  <div className="text-[11px] font-medium text-amber-200/95 [html[data-theme=light]_&]:text-amber-900/90">
-                    {routeMissingWorkerMsg(lang)}
-                  </div>
-                ) : null}
-              </div>
-            )
-          })() : null}
 
           <div className="grid gap-1">
             <span className="text-[11px] text-zinc-300">{t('admin.main.workerField')}</span>

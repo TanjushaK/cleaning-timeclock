@@ -1,11 +1,5 @@
 ﻿import { NextRequest, NextResponse } from 'next/server'
 import { AppApiErrorCodes } from '@/lib/app-error-codes'
-import {
-  expandTeamsByJob,
-  fetchJobWorkerLinksByJob,
-  normalizeWorkerId,
-  workerDisplayLabel,
-} from '@/lib/job-shift-team'
 import { localPhotoBucket } from '@/lib/server/local-photo-storage'
 import { requireActiveWorker, toErrorResponse } from '@/lib/route-db'
 import { workerApiErrorResponse } from '@/lib/worker-api-response'
@@ -136,7 +130,7 @@ async function getJobWorkerJobIds(db: any, workerId: string): Promise<string[]> 
   }
 }
 
-type ProfileLite = { id: string; full_name: string | null; email: string | null; active: boolean | null }
+type ProfileLite = { id: string; full_name: string | null; active: boolean | null }
 
 function chunk<T>(xs: T[], n: number): T[][] {
   const out: T[][] = []
@@ -144,18 +138,51 @@ function chunk<T>(xs: T[], n: number): T[][] {
   return out
 }
 
+function displayNameFromProfile(p: ProfileLite | undefined, id: string) {
+  const n = String(p?.full_name || '').trim()
+  if (n) return n
+  return id.slice(0, 8)
+}
+
+/** job_id -> worker ids linked via job_workers (additive; empty map if table missing). */
+async function fetchJobWorkerLinksByJob(db: any, jobIds: string[]): Promise<Map<string, Set<string>>> {
+  const linksByJob = new Map<string, Set<string>>()
+  if (!jobIds.length) return linksByJob
+  try {
+    for (const part of chunk(jobIds, 200)) {
+      const lwRes = await db.from('job_workers').select('job_id,worker_id').in('job_id', part)
+      if (lwRes.error) {
+        const msg = String(lwRes.error.message || '')
+        if (/does not exist|relation|schema cache/i.test(msg)) {
+          return new Map()
+        }
+        return new Map()
+      }
+      for (const row of (lwRes.data || []) as Array<{ job_id?: string | null; worker_id?: string | null }>) {
+        const jid = row.job_id ? String(row.job_id) : ''
+        const wid = row.worker_id ? String(row.worker_id) : ''
+        if (!jid || !wid) continue
+        if (!linksByJob.has(jid)) linksByJob.set(jid, new Set())
+        linksByJob.get(jid)!.add(wid)
+      }
+    }
+  } catch {
+    return new Map()
+  }
+  return linksByJob
+}
+
 async function fetchProfilesMap(db: any, ids: string[]): Promise<Map<string, ProfileLite>> {
   const profileById = new Map<string, ProfileLite>()
   if (!ids.length) return profileById
   try {
     for (const part of chunk(ids, 200)) {
-      const r = await db.from('profiles').select('id,full_name,email,active').in('id', part)
+      const r = await db.from('profiles').select('id,full_name,active').in('id', part)
       if (r.error) continue
       for (const p of (r.data || []) as any[]) {
         profileById.set(String(p.id), {
           id: String(p.id),
           full_name: p.full_name ?? null,
-          email: p.email ?? null,
           active: typeof p.active === 'boolean' ? p.active : null,
         })
       }
@@ -284,29 +311,15 @@ export async function GET(req: NextRequest) {
 
     const linksByJob = await fetchJobWorkerLinksByJob(db, jobIds)
 
-    let teamsByJob: Map<string, Set<string>>
-    try {
-      teamsByJob = await expandTeamsByJob(db, jobs, linksByJob)
-    } catch {
-      teamsByJob = new Map<string, Set<string>>()
-      for (const j of jobs) {
-        const jid = String(j?.id || '')
-        if (!jid) continue
-        const s = new Set<string>()
-        const pw = j.worker_id ? normalizeWorkerId(j.worker_id) : ''
-        if (pw) s.add(pw)
-        for (const w of linksByJob.get(jid) || []) {
-          const nw = normalizeWorkerId(w)
-          if (nw) s.add(nw)
-        }
-        teamsByJob.set(jid, s)
-      }
-    }
-
     const profileIds = new Set<string>()
-    for (const jid of jobIds) {
-      for (const wid of teamsByJob.get(jid) || []) {
-        if (wid) profileIds.add(wid)
+    for (const j of jobs) {
+      const pw = j.worker_id ? String(j.worker_id) : ''
+      if (pw) profileIds.add(pw)
+      const linked = linksByJob.get(String(j.id))
+      if (linked) {
+        for (const wid of linked) {
+          if (wid) profileIds.add(wid)
+        }
       }
     }
 
@@ -450,19 +463,23 @@ export async function GET(req: NextRequest) {
         (assignedViaSite || linkedViaJobWorkers)
 
       const jid = String(j.id)
-      const roster = Array.from(teamsByJob.get(jid) || [])
-        .map((id) => normalizeWorkerId(id))
-        .filter(Boolean)
-      const participant_worker_ids = Array.from(new Set(roster)).sort((a, b) => a.localeCompare(b))
+      const primaryWid = j.worker_id ? String(j.worker_id) : ''
+      const linkedAll = linksByJob.get(jid) ? Array.from(linksByJob.get(jid)!) : []
+      const coworkerIdsFromLinks = linkedAll.filter((id) => id && id !== primaryWid)
 
-      const uid = normalizeWorkerId(userId)
+      const participant_worker_ids: string[] = []
+      if (primaryWid) participant_worker_ids.push(primaryWid)
+      for (const cid of coworkerIdsFromLinks) {
+        if (cid && !participant_worker_ids.includes(cid)) participant_worker_ids.push(cid)
+      }
+
       const coworkers = participant_worker_ids
-        .filter((pid) => normalizeWorkerId(pid) !== uid)
+        .filter((pid) => pid !== userId)
         .map((pid) => {
           const prof = profileById.get(pid)
           return {
             id: pid,
-            name: workerDisplayLabel(prof ?? undefined, pid),
+            name: displayNameFromProfile(prof, pid),
             active: typeof prof?.active === 'boolean' ? prof.active : null,
           }
         })

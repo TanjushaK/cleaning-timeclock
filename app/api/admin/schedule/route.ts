@@ -1,12 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { AdminApiErrorCode } from '@/lib/api-error-codes'
-import {
-  expandTeamsByJob,
-  fetchJobWorkerLinksByJob,
-  normalizeWorkerId,
-  workerDisplayLabel,
-} from '@/lib/job-shift-team'
 import { ApiError, requireAdmin, toErrorResponse } from '@/lib/route-db'
 
 export const runtime = 'nodejs'
@@ -16,7 +10,13 @@ function isISODate(s: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(s)
 }
 
-type ProfileLite = { id: string; full_name: string | null; email: string | null; active: boolean | null }
+type ProfileLite = { id: string; full_name: string | null; active: boolean | null }
+
+function displayNameFromProfile(p: ProfileLite | undefined, id: string) {
+  const n = String(p?.full_name || '').trim()
+  if (n) return n
+  return id.slice(0, 8)
+}
 
 function chunk<T>(xs: T[], n: number): T[][] {
   const out: T[][] = []
@@ -155,25 +155,45 @@ export async function GET(req: NextRequest) {
     const siteIds = Array.from(new Set((jobs || []).map((j: any) => j.site_id).filter(Boolean)))
     const primaryWorkerIds = Array.from(new Set((jobs || []).map((j: any) => j.worker_id).filter(Boolean)))
 
-    const linksByJob = await fetchJobWorkerLinksByJob(admin, jobIds)
-
-    let teamsByJob: Map<string, Set<string>>
-    try {
-      teamsByJob = await expandTeamsByJob(admin, jobs || [], linksByJob)
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e)
-      throw new ApiError(500, msg || 'Team expansion failed', AdminApiErrorCode.DB_ERROR)
+    let links: Array<{ job_id: string | null; worker_id: string | null }> = []
+    if (jobIds.length) {
+      for (const part of chunk(jobIds, 200)) {
+        const lwRes = await admin.from('job_workers').select('job_id,worker_id').in('job_id', part)
+        if (lwRes.error) {
+          const msg = String(lwRes.error.message || '')
+          if (/does not exist|relation|schema cache/i.test(msg)) {
+            links = []
+            break
+          }
+          throw new ApiError(500, lwRes.error.message, AdminApiErrorCode.DB_ERROR)
+        }
+        links.push(...((lwRes.data || []) as Array<{ job_id: string | null; worker_id: string | null }>))
+      }
     }
 
-    const allWorkerIds = new Set<string>()
+    const linksByJob = new Map<string, Set<string>>()
+    for (const row of links) {
+      const jid = row.job_id ? String(row.job_id) : ''
+      const wid = row.worker_id ? String(row.worker_id) : ''
+      if (!jid || !wid) continue
+      if (!linksByJob.has(jid)) linksByJob.set(jid, new Set())
+      linksByJob.get(jid)!.add(wid)
+    }
+
+    const jobById = new Map<string, any>((jobs || []).map((x: any) => [String(x.id), x]))
+    const coworkerOnlyIds = new Set<string>()
     for (const jid of jobIds) {
-      for (const wid of teamsByJob.get(jid) || []) allWorkerIds.add(wid)
+      const job = jobById.get(jid)
+      const primary = job?.worker_id ? String(job.worker_id) : ''
+      for (const wid of linksByJob.get(jid) || []) {
+        if (wid && wid !== primary) coworkerOnlyIds.add(wid)
+      }
     }
+
+    const allWorkerIds = Array.from(new Set<string>([...primaryWorkerIds, ...coworkerOnlyIds]))
 
     const [sitesRes, logsRes] = await Promise.all([
-      siteIds.length
-        ? admin.from('sites').select('id,name,address,lat,lng').in('id', siteIds)
-        : Promise.resolve({ data: [], error: null } as any),
+      siteIds.length ? admin.from('sites').select('id,name').in('id', siteIds) : Promise.resolve({ data: [], error: null } as any),
       jobIds.length ? admin.from('time_logs').select('job_id,started_at,stopped_at').in('job_id', jobIds) : Promise.resolve({ data: [], error: null } as any),
     ])
 
@@ -181,16 +201,14 @@ export async function GET(req: NextRequest) {
     if (logsRes.error) throw new ApiError(500, logsRes.error.message, AdminApiErrorCode.DB_ERROR)
 
     const mergedProfiles: ProfileLite[] = []
-    const workerIdList = Array.from(allWorkerIds)
-    if (workerIdList.length) {
-      for (const part of chunk(workerIdList, 200)) {
-        const r = await admin.from('profiles').select('id,full_name,email,active').in('id', part)
+    if (allWorkerIds.length) {
+      for (const part of chunk(allWorkerIds, 200)) {
+        const r = await admin.from('profiles').select('id,full_name,active').in('id', part)
         if (r.error) throw new ApiError(500, r.error.message, AdminApiErrorCode.DB_ERROR)
         for (const p of (r.data || []) as any[]) {
           mergedProfiles.push({
             id: String(p.id),
             full_name: p.full_name ?? null,
-            email: p.email ?? null,
             active: typeof p.active === 'boolean' ? p.active : null,
           })
         }
@@ -203,21 +221,12 @@ export async function GET(req: NextRequest) {
     }
 
     const siteName = new Map<string, string>()
-    const siteMeta = new Map<string, { address: string | null; lat: number | null; lng: number | null }>()
-    for (const s of (sitesRes.data || []) as any[]) {
-      const sid = String(s.id)
-      siteName.set(sid, s.name || '')
-      siteMeta.set(sid, {
-        address: s.address ?? null,
-        lat: s.lat != null && Number.isFinite(Number(s.lat)) ? Number(s.lat) : null,
-        lng: s.lng != null && Number.isFinite(Number(s.lng)) ? Number(s.lng) : null,
-      })
-    }
+    for (const s of (sitesRes.data || []) as any[]) siteName.set(s.id, s.name || '')
 
     const workerName = new Map<string, string>()
     for (const wid of primaryWorkerIds) {
       const p = profileById.get(String(wid))
-      workerName.set(String(wid), workerDisplayLabel(p ?? undefined, String(wid)))
+      workerName.set(String(wid), displayNameFromProfile(p, String(wid)))
     }
 
     const logAgg = new Map<string, { started_at: string | null; stopped_at: string | null }>()
@@ -236,28 +245,27 @@ export async function GET(req: NextRequest) {
     const items = (jobs || []).map((j: any) => {
       const jid = String(j.id)
       const agg = logAgg.get(jid) || { started_at: null, stopped_at: null }
-      const primary = normalizeWorkerId(j.worker_id)
+      const primary = j.worker_id ? String(j.worker_id) : ''
 
-      const roster = Array.from(teamsByJob.get(jid) || [])
-        .map((id) => normalizeWorkerId(id))
-        .filter(Boolean)
-      const participant_worker_ids = Array.from(new Set(roster)).sort((a, b) => a.localeCompare(b))
+      const linked = linksByJob.get(jid) ? Array.from(linksByJob.get(jid)!) : []
+      const coworkerIds = linked.filter((id) => id && id !== primary)
 
-      const others = primary ? roster.filter((id) => normalizeWorkerId(id) !== primary) : roster
-
-      const coworkers = others
+      const coworkers = coworkerIds
         .map((cid) => {
           const prof = profileById.get(cid)
           return {
             id: cid,
-            name: workerDisplayLabel(prof ?? undefined, cid),
+            name: displayNameFromProfile(prof, cid),
             active: typeof prof?.active === 'boolean' ? prof.active : null,
           }
         })
         .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
 
-      const sid = j.site_id ? String(j.site_id) : ''
-      const sm = sid ? siteMeta.get(sid) : undefined
+      const participant_worker_ids: string[] = []
+      if (primary) participant_worker_ids.push(primary)
+      for (const cid of coworkerIds) {
+        if (cid && !participant_worker_ids.includes(cid)) participant_worker_ids.push(cid)
+      }
 
       return {
         id: jid,
@@ -266,14 +274,10 @@ export async function GET(req: NextRequest) {
         scheduled_time: j.scheduled_time,
         scheduled_end_time: (j as any).scheduled_end_time ?? null,
         site_id: j.site_id,
-        site_name: sid ? siteName.get(sid) || null : null,
-        site_address: sm?.address ?? null,
-        site_lat: sm?.lat ?? null,
-        site_lng: sm?.lng ?? null,
+        site_name: j.site_id ? siteName.get(String(j.site_id)) || null : null,
         worker_id: j.worker_id,
         worker_name: j.worker_id
-          ? workerName.get(String(j.worker_id)) ||
-            workerDisplayLabel(profileById.get(String(j.worker_id)) ?? undefined, String(j.worker_id))
+          ? workerName.get(String(j.worker_id)) || displayNameFromProfile(profileById.get(String(j.worker_id)), String(j.worker_id))
           : null,
         started_at: agg.started_at,
         stopped_at: agg.stopped_at,
