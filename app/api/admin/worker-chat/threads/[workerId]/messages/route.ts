@@ -34,7 +34,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ workerId: s
     if (!workerId) throw new ApiError(400, 'worker id required', AdminApiErrorCode.WORKER_ID_REQUIRED)
 
     await assertTargetWorker(db, workerId)
-    const messages = await listWorkerAdminMessages(db, workerId)
+    const messages = await listWorkerAdminMessages(db, workerId, { attachmentUrlMode: 'admin-proxy' })
     const unread_count = await getWorkerAdminUnreadCount(db, {
       workerId,
       userId,
@@ -66,6 +66,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ workerId: 
         authorRole: 'admin',
         body: bodyText,
         files,
+        attachmentUrlMode: 'admin-proxy',
       })
       return NextResponse.json({ message })
     }

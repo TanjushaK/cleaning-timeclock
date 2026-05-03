@@ -57,12 +57,14 @@ function safeFileName(name: string | null | undefined): string {
   return value || 'image'
 }
 
+const ADMIN_ATTACHMENT_PREFIX = '/api/admin/worker-chat/attachments/'
+
 function safeImageUrl(raw: string | null | undefined): string | null {
   if (!raw) return null
   const value = String(raw).trim()
   if (!value) return null
 
-  // Allow same-origin relative app/storage URLs only.
+  if (value.startsWith(ADMIN_ATTACHMENT_PREFIX)) return value
   if (value.startsWith('/api/storage/') || value.startsWith('/_next/image')) return value
 
   if (typeof window === 'undefined') return null
@@ -70,19 +72,67 @@ function safeImageUrl(raw: string | null | undefined): string | null {
   try {
     const parsed = new URL(value, window.location.origin)
 
-    // Allow only http/https.
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
-
-    // Allow only same origin.
     if (parsed.origin !== window.location.origin) return null
 
-    // Allow only storage/public API paths.
-    if (!parsed.pathname.startsWith('/api/storage/')) return null
-
-    return parsed.toString()
+    if (
+      parsed.pathname.startsWith('/api/storage/') ||
+      parsed.pathname.startsWith(ADMIN_ATTACHMENT_PREFIX)
+    ) {
+      return parsed.toString()
+    }
+    return null
   } catch {
     return null
   }
+}
+
+/** Loads attachment bytes with Bearer auth (plain img/a cannot send Authorization). */
+function WorkerChatAttachmentImage({ safeUrl }: { safeUrl: string }) {
+  const [blobSrc, setBlobSrc] = useState<string | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    let objectUrl: string | null = null
+    void (async () => {
+      try {
+        const res = await authFetch(safeUrl, { cache: 'no-store' })
+        if (!res.ok) throw new Error('load failed')
+        const blob = await res.blob()
+        objectUrl = URL.createObjectURL(blob)
+        if (!cancelled) setBlobSrc(objectUrl)
+      } catch {
+        if (!cancelled) setFailed(true)
+      }
+    })()
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [safeUrl])
+
+  if (failed) {
+    return (
+      <div className="flex h-20 w-[120px] items-center justify-center rounded-lg border border-dashed border-zinc-600/50 bg-black/40 text-[10px] text-zinc-500">
+        Фото недоступно
+      </div>
+    )
+  }
+  if (!blobSrc) {
+    return (
+      <div className="flex h-20 w-[120px] items-center justify-center rounded-lg border border-yellow-400/10 bg-black/40 text-[10px] text-zinc-500">
+        …
+      </div>
+    )
+  }
+  return (
+    <img
+      src={blobSrc}
+      alt="Фото"
+      className="max-h-28 max-w-[160px] rounded-lg border border-yellow-400/15 object-cover"
+    />
+  )
 }
 
 function pad2(n: number) {
@@ -389,21 +439,7 @@ export function WorkerAdminChatPanel() {
                                       </div>
                                     )
                                   }
-                                  return (
-                                    <a
-                                      key={a.id}
-                                      href={safeUrl}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="block"
-                                    >
-                                      <img
-                                        src={safeUrl}
-                                        alt="Фото"
-                                        className="max-h-28 max-w-[160px] rounded-lg border border-yellow-400/15 object-cover"
-                                      />
-                                    </a>
-                                  )
+                                  return <WorkerChatAttachmentImage key={a.id} safeUrl={safeUrl} />
                                 })}
                               </div>
                             ) : null}
