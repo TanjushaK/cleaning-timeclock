@@ -83,11 +83,36 @@
 
 `rsync -az --delete --filter='P .env.production' --filter='P var/uploads/***' --filter='P var/logs/***' --filter='P *.dump' --exclude='.git/' --exclude='node_modules/' --exclude='.next/' ./ root@<host>:/opt/timeclock/`
 
+**Обязательно защищать загрузки и логи** при `rsync --delete`, иначе каталог приложения перезапишется без `var/uploads` из архива и файлы пользователей пропадут:
+
+- `--filter='P var/uploads/***'`
+- `--filter='P var/logs/***'`
+
+(альтернатива: `--exclude='var/uploads'` / `--exclude='var'` — по политике команды.)
+
 Критично:
 
 - `EnvironmentFile` для systemd лучше держать вне deploy path: `/etc/timeclock/timeclock.env`.
 - Никогда не удалять вручную `/etc/timeclock/timeclock.env`.
 - Перед deploy всегда иметь rollback snapshot service/env.
+
+---
+
+## Очистка диска (storage cleanup)
+
+Скрипт **только вручную** на сервере (не в CI/deploy по умолчанию): удаляет **файлы** для уже soft-deleted вложений (старше N дней), «осиротевшие» файлы под `workers/*/admin-chat/**`, и старые tarball’ы rollback в `/var/tmp/tanjusha-rollback/` с префиксом `timeclock-`. **Строки БД не удаляет.** По умолчанию **dry-run** — без `--apply` удалений нет.
+
+Рекомендуемый порядок:
+
+1. Первый запуск только план:  
+   `cd /opt/timeclock && npm run cleanup:storage`  
+   (или явно `npm run cleanup:storage -- --dry-run`).
+2. После проверки вывода:  
+   `npm run cleanup:storage -- --apply`.
+
+Параметры: `--deleted-attachments-days=30`, `--orphan-days=30`, `--rollback-days=14`. Env: приоритет `/etc/timeclock/timeclock.env`, иначе `.env.production` в корне приложения (нужен `DATABASE_URL`, не логировать).
+
+**Systemd timer в этом репозитории не добавляется.** После успешного dry-run при необходимости на сервере вручную создайте unit + timer (daily), вызывающий ту же команду с `--apply` только когда процедура проверена.
 
 ---
 

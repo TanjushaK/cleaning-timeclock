@@ -10,6 +10,7 @@
     "db:migrate": "node scripts/apply-migration.mjs",
     "db:setup": "node scripts/setup-local-db.mjs",
     "bootstrap:admin": "node scripts/bootstrap-admin.mjs",
+    "cleanup:storage": "node scripts/cleanup-storage.mjs",
     "brand:generate": "node scripts/generate-tanija-assets.mjs",
     "cap:init": "npx cap init",
     "cap:sync": "npx cap sync",
