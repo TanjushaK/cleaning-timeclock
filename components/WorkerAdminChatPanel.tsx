@@ -178,6 +178,10 @@ export function WorkerAdminChatPanel() {
   const [sendErr, setSendErr] = useState<string | null>(null)
   const [deletingAttachmentId, setDeletingAttachmentId] = useState<string | null>(null)
   const [attachDeleteErr, setAttachDeleteErr] = useState<string | null>(null)
+  const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null)
+  const [messageDeleteErr, setMessageDeleteErr] = useState<string | null>(null)
+  const [cleanupBusy, setCleanupBusy] = useState(false)
+  const [cleanupNotice, setCleanupNotice] = useState<string | null>(null)
   const [showAllMessages, setShowAllMessages] = useState(false)
 
   const baseUrl = useMemo(() => '/api/admin/worker-chat', [])
@@ -236,6 +240,8 @@ export function WorkerAdminChatPanel() {
   }, [selectedId])
 
   useEffect(() => {
+    setMessageDeleteErr(null)
+    setCleanupNotice(null)
     setAttachDeleteErr(null)
     if (!selectedId) {
       setMessages([])
@@ -258,6 +264,46 @@ export function WorkerAdminChatPanel() {
   async function refresh() {
     await loadThreads()
     if (selectedId) await loadMessages(selectedId)
+  }
+
+  async function deleteMessage(messageId: string) {
+    if (!selectedId) return
+    if (typeof window !== 'undefined' && !window.confirm('Удалить сообщение из чата?')) return
+    setDeletingMessageId(messageId)
+    setMessageDeleteErr(null)
+    try {
+      const url = `${baseUrl}/threads/${encodeURIComponent(selectedId)}/messages/${encodeURIComponent(messageId)}`
+      await authFetchJson<{ ok?: boolean }>(url, { method: 'DELETE', cache: 'no-store' })
+      await loadThreads()
+      await loadMessages(selectedId)
+    } catch {
+      setMessageDeleteErr('Не удалось удалить сообщение')
+    } finally {
+      setDeletingMessageId(null)
+    }
+  }
+
+  async function cleanupOldMessages() {
+    if (!selectedId) return
+    if (typeof window !== 'undefined' && !window.confirm('Удалить сообщения старше 30 дней в этом чате?')) return
+    setCleanupBusy(true)
+    setCleanupNotice(null)
+    setMessageDeleteErr(null)
+    try {
+      const url = `${baseUrl}/threads/${encodeURIComponent(selectedId)}/messages/old?days=30`
+      const res = await authFetchJson<{ ok?: boolean; deleted_messages?: number }>(url, {
+        method: 'DELETE',
+        cache: 'no-store',
+      })
+      const n = typeof res?.deleted_messages === 'number' ? res.deleted_messages : 0
+      setCleanupNotice(`Удалено сообщений: ${n}`)
+      await loadThreads()
+      await loadMessages(selectedId)
+    } catch {
+      setMessageDeleteErr('Не удалось очистить старые сообщения')
+    } finally {
+      setCleanupBusy(false)
+    }
   }
 
   async function deleteAttachment(attachmentId: string) {
@@ -333,7 +379,7 @@ export function WorkerAdminChatPanel() {
   }
 
   const selectedThread = threads.find((t) => t.worker_id === selectedId)
-  const uiLocked = sendBusy || messagesLoading || threadsLoading
+  const uiLocked = sendBusy || messagesLoading || threadsLoading || !!deletingMessageId || cleanupBusy
 
   const visibleMessages = useMemo(() => {
     if (showAllMessages) return messages
@@ -431,17 +477,27 @@ export function WorkerAdminChatPanel() {
                     </div>
                   ) : null}
                 </div>
-                {messages.length > DEFAULT_VISIBLE_MESSAGES ? (
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
                   <button
                     type="button"
-                    onClick={() => setShowAllMessages((v) => !v)}
-                    className="shrink-0 rounded-xl border border-yellow-400/25 bg-black/40 px-3 py-1.5 text-[11px] font-semibold text-yellow-100 transition hover:border-yellow-300/45"
+                    onClick={() => void cleanupOldMessages()}
+                    disabled={cleanupBusy || messagesLoading}
+                    className="rounded-lg border border-zinc-600/40 bg-black/30 px-2 py-1 text-[10px] text-zinc-500 transition hover:border-zinc-500/50 hover:text-zinc-400 disabled:opacity-50"
                   >
-                    {showAllMessages
-                      ? `Показать последние ${DEFAULT_VISIBLE_MESSAGES}`
-                      : 'Показать все'}
+                    {cleanupBusy ? '…' : 'Очистить старые'}
                   </button>
-                ) : null}
+                  {messages.length > DEFAULT_VISIBLE_MESSAGES ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllMessages((v) => !v)}
+                      className="shrink-0 rounded-xl border border-yellow-400/25 bg-black/40 px-3 py-1.5 text-[11px] font-semibold text-yellow-100 transition hover:border-yellow-300/45"
+                    >
+                      {showAllMessages
+                        ? `Показать последние ${DEFAULT_VISIBLE_MESSAGES}`
+                        : 'Показать все'}
+                    </button>
+                  ) : null}
+                </div>
               </div>
 
               {messagesErr ? (
@@ -453,6 +509,18 @@ export function WorkerAdminChatPanel() {
               {attachDeleteErr ? (
                 <div className="mx-4 mt-3 rounded-xl border border-rose-500/35 bg-rose-950/25 px-3 py-2 text-[11px] text-rose-100">
                   {attachDeleteErr}
+                </div>
+              ) : null}
+
+              {messageDeleteErr ? (
+                <div className="mx-4 mt-3 rounded-xl border border-rose-500/35 bg-rose-950/25 px-3 py-2 text-[11px] text-rose-100">
+                  {messageDeleteErr}
+                </div>
+              ) : null}
+
+              {cleanupNotice ? (
+                <div className="mx-4 mt-3 rounded-xl border border-emerald-500/25 bg-emerald-950/20 px-3 py-2 text-[11px] text-emerald-100/95">
+                  {cleanupNotice}
                 </div>
               ) : null}
 
@@ -475,13 +543,23 @@ export function WorkerAdminChatPanel() {
                         >
                           <div
                             className={cn(
-                              'max-w-[min(100%,420px)] rounded-2xl border px-3 py-2 text-[11px]',
+                              'relative max-w-[min(100%,420px)] rounded-2xl border px-3 py-2 text-[11px]',
                               isAdmin
                                 ? 'border-yellow-400/25 bg-yellow-400/10 text-yellow-50'
                                 : 'border-zinc-600/35 bg-zinc-900/50 text-zinc-100',
                             )}
                           >
-                            <div className="flex flex-wrap items-baseline justify-between gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void deleteMessage(m.id)}
+                              disabled={deletingMessageId !== null}
+                              className="absolute -right-1 -top-1 flex h-6 min-w-[1.5rem] items-center justify-center rounded-full border border-zinc-500/55 bg-zinc-950/90 px-1 text-[11px] leading-none text-zinc-300 shadow hover:bg-zinc-900 disabled:opacity-50"
+                              aria-label="Удалить сообщение"
+                              title="Удалить сообщение"
+                            >
+                              {deletingMessageId === m.id ? '…' : '×'}
+                            </button>
+                            <div className="flex flex-wrap items-baseline justify-between gap-2 pr-5">
                               <span className="font-semibold">{m.author_name || '—'}</span>
                               <span className="text-[10px] text-zinc-500">
                                 {fmtThreadTime(m.created_at)}
