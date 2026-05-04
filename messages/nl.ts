@@ -259,6 +259,8 @@ export const nl: Messages = {
     removeSelected: "Foto verwijderen",
     photoTooLarge: "Foto te groot, maximaal 50 MB",
     noValidFilesAfterPick: "Geen geschikt bestand gekozen (afbeelding tot 50 MB)",
+    noFilePicked: "Geen bestand gekozen.",
+    fileRejectedDebug: "Bestand geweigerd: {{name}} · {{type}} · {{size}}",
     uploadFailedLine: "Fout {{status}}: {{detail}}",
     attachmentsMissingInResponse: "Geen bijlagen in antwoord; ververs het gesprek.",
   },

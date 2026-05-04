@@ -259,6 +259,8 @@ export const ru: Messages = {
     removeSelected: "Убрать фото",
     photoTooLarge: "Фото слишком большое, максимум 50 MB",
     noValidFilesAfterPick: "Не выбран подходящий файл (изображение до 50 MB)",
+    noFilePicked: "Файл не выбран.",
+    fileRejectedDebug: "Файл не принят: {{name}} · {{type}} · {{size}}",
     uploadFailedLine: "Ошибка {{status}}: {{detail}}",
     attachmentsMissingInResponse: "Вложения не пришли в ответе; проверьте сообщения после обновления.",
   },
