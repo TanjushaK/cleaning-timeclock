@@ -246,6 +246,10 @@ export const ru: Messages = {
     maxPhotosHint: "до 5 фото за сообщение",
     sending: "Отправка…",
     removeSelected: "Убрать фото",
+    photoTooLarge: "Фото слишком большое, максимум 15 MB",
+    noValidFilesAfterPick: "Не выбран подходящий файл (изображение до 15 MB)",
+    uploadFailedLine: "Ошибка {{status}}: {{detail}}",
+    attachmentsMissingInResponse: "Вложения не пришли в ответе; проверьте сообщения после обновления.",
   },
   appFooter: {
     tagline: "Чисто. Чётко. По времени.",

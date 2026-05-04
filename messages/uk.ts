@@ -246,6 +246,10 @@ export const uk: Messages = {
     maxPhotosHint: "до 5 фото на повідомлення",
     sending: "Надсилання…",
     removeSelected: "Прибрати фото",
+    photoTooLarge: "Фото завелике, максимум 15 MB",
+    noValidFilesAfterPick: "Не вибрано підходящий файл (зображення до 15 MB)",
+    uploadFailedLine: "Помилка {{status}}: {{detail}}",
+    attachmentsMissingInResponse: "Вкладення не повернув сервер; перевірте після оновлення.",
   },
   appFooter: {
     tagline: "Чисто. Чітко. Вчасно.",

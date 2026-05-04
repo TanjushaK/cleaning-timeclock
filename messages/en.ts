@@ -246,6 +246,10 @@ export const en: Messages = {
     maxPhotosHint: "up to 5 photos per message",
     sending: "Sending…",
     removeSelected: "Remove photo",
+    photoTooLarge: "Photo too large, maximum 15 MB",
+    noValidFilesAfterPick: "No suitable file selected (image up to 15 MB)",
+    uploadFailedLine: "Error {{status}}: {{detail}}",
+    attachmentsMissingInResponse: "Attachments missing in response; refresh the thread.",
   },
   appFooter: {
     tagline: "Clean. Clear. On time.",

@@ -227,6 +227,10 @@ export type Messages = {
     maxPhotosHint: string;
     sending: string;
     removeSelected: string;
+    photoTooLarge: string;
+    noValidFilesAfterPick: string;
+    uploadFailedLine: string;
+    attachmentsMissingInResponse: string;
   };
   appFooter: {
     tagline: string;
