@@ -38,6 +38,7 @@ type WorkerAdminMessage = {
 }
 
 const MAX_PHOTOS = 5
+const DEFAULT_VISIBLE_MESSAGES = 20
 
 const ALLOWED_CHAT_IMAGE_TYPES = new Set([
   'image/jpeg',
@@ -177,6 +178,7 @@ export function WorkerAdminChatPanel() {
   const [sendErr, setSendErr] = useState<string | null>(null)
   const [deletingAttachmentId, setDeletingAttachmentId] = useState<string | null>(null)
   const [attachDeleteErr, setAttachDeleteErr] = useState<string | null>(null)
+  const [showAllMessages, setShowAllMessages] = useState(false)
 
   const baseUrl = useMemo(() => '/api/admin/worker-chat', [])
 
@@ -228,6 +230,10 @@ export function WorkerAdminChatPanel() {
   useEffect(() => {
     void loadThreads()
   }, [loadThreads])
+
+  useEffect(() => {
+    setShowAllMessages(false)
+  }, [selectedId])
 
   useEffect(() => {
     setAttachDeleteErr(null)
@@ -329,6 +335,11 @@ export function WorkerAdminChatPanel() {
   const selectedThread = threads.find((t) => t.worker_id === selectedId)
   const uiLocked = sendBusy || messagesLoading || threadsLoading
 
+  const visibleMessages = useMemo(() => {
+    if (showAllMessages) return messages
+    return messages.slice(Math.max(0, messages.length - DEFAULT_VISIBLE_MESSAGES))
+  }, [messages, showAllMessages])
+
   return (
     <div className="rounded-3xl border border-yellow-400/15 bg-black/25 p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -406,12 +417,30 @@ export function WorkerAdminChatPanel() {
             </div>
           ) : (
             <>
-              <div className="border-b border-yellow-400/10 px-4 py-3">
-                <div className="text-sm font-semibold text-yellow-100">
-                  {selectedThread?.worker_name || selectedId.slice(0, 8)}
+              <div className="flex flex-wrap items-start justify-between gap-2 border-b border-yellow-400/10 px-4 py-3">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold text-yellow-100">
+                    {selectedThread?.worker_name || selectedId.slice(0, 8)}
+                  </div>
+                  {selectedThread?.worker_email ? (
+                    <div className="mt-0.5 text-[11px] text-zinc-500">{selectedThread.worker_email}</div>
+                  ) : null}
+                  {messages.length > DEFAULT_VISIBLE_MESSAGES && !showAllMessages ? (
+                    <div className="mt-1 text-[11px] text-zinc-500">
+                      Показаны последние {DEFAULT_VISIBLE_MESSAGES} из {messages.length}
+                    </div>
+                  ) : null}
                 </div>
-                {selectedThread?.worker_email ? (
-                  <div className="mt-0.5 text-[11px] text-zinc-500">{selectedThread.worker_email}</div>
+                {messages.length > DEFAULT_VISIBLE_MESSAGES ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllMessages((v) => !v)}
+                    className="shrink-0 rounded-xl border border-yellow-400/25 bg-black/40 px-3 py-1.5 text-[11px] font-semibold text-yellow-100 transition hover:border-yellow-300/45"
+                  >
+                    {showAllMessages
+                      ? `Показать последние ${DEFAULT_VISIBLE_MESSAGES}`
+                      : 'Показать все'}
+                  </button>
                 ) : null}
               </div>
 
@@ -434,7 +463,7 @@ export function WorkerAdminChatPanel() {
                   <div className="text-[11px] text-zinc-500">Нет сообщений</div>
                 ) : (
                   <ul className="grid gap-3">
-                    {messages.map((m) => {
+                    {visibleMessages.map((m) => {
                       const isAdmin = String(m.author_role).toLowerCase() === 'admin'
                       return (
                         <li
