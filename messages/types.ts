@@ -240,6 +240,8 @@ export type Messages = {
     removeSelected: string;
     photoTooLarge: string;
     noValidFilesAfterPick: string;
+    noFilePicked: string;
+    fileRejectedDebug: string;
     uploadFailedLine: string;
     attachmentsMissingInResponse: string;
   };

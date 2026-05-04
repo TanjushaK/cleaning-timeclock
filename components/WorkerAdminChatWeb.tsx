@@ -39,9 +39,92 @@ function sortByCreatedAtAsc(messages: ChatMessage[]): ChatMessage[] {
 }
 
 function isLikelyImageFile(f: File): boolean {
-  const mime = String(f.type || "").toLowerCase();
+  const mime = String(f.type || "").toLowerCase().trim();
+  const name = String(f.name || "").trim();
+
   if (mime.startsWith("image/")) return true;
-  return IMAGE_EXT_RE.test(f.name || "");
+  if (IMAGE_EXT_RE.test(name)) return true;
+
+  if (
+    (f.size || 0) > 0 &&
+    (mime === "" || mime === "application/octet-stream" || mime === "application/x-unknown")
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+type ProfileRejectReason = "too_large" | "not_image" | "limit";
+
+function pickProfileChatFiles(
+  list: FileList,
+  currentCount: number,
+): {
+  accepted: File[];
+  rejected: Array<{ name: string; type: string; size: number; reason: ProfileRejectReason }>;
+  sawTooLarge: boolean;
+} {
+  const accepted: File[] = [];
+  const rejected: Array<{ name: string; type: string; size: number; reason: ProfileRejectReason }> = [];
+  const slots = Math.max(0, MAX_PHOTOS - currentCount);
+
+  for (let i = 0; i < list.length; i++) {
+    const f = list.item(i);
+    if (!f) continue;
+
+    if (accepted.length >= slots) {
+      rejected.push({
+        name: f.name || "photo",
+        type: f.type || "empty",
+        size: f.size || 0,
+        reason: "limit",
+      });
+      continue;
+    }
+
+    if ((f.size || 0) > CLIENT_MAX_PHOTO_BYTES) {
+      rejected.push({
+        name: f.name || "photo",
+        type: f.type || "empty",
+        size: f.size || 0,
+        reason: "too_large",
+      });
+      continue;
+    }
+
+    if (!isLikelyImageFile(f)) {
+      rejected.push({
+        name: f.name || "photo",
+        type: f.type || "empty",
+        size: f.size || 0,
+        reason: "not_image",
+      });
+      continue;
+    }
+
+    accepted.push(f);
+  }
+
+  return {
+    accepted,
+    rejected,
+    sawTooLarge: rejected.some((r) => r.reason === "too_large"),
+  };
+}
+
+function uploadFileName(f: File): string {
+  const name = String(f.name || "").trim();
+  if (IMAGE_EXT_RE.test(name)) return name;
+
+  const mime = String(f.type || "").toLowerCase().trim();
+  if (mime === "image/png") return "photo.png";
+  if (mime === "image/webp") return "photo.webp";
+  if (mime === "image/heic" || mime === "image/heic-sequence") return "photo.heic";
+  if (mime === "image/heif" || mime === "image/heif-sequence") return "photo.heif";
+  if (mime === "image/jpeg" || mime === "image/jpg") return "photo.jpg";
+
+  return "photo.jpg";
 }
 
 function formatFileSize(n: number): string {
@@ -188,40 +271,35 @@ export default function WorkerAdminChatWeb() {
   const onPickFiles = useCallback(
     (list: FileList | null) => {
       if (!list?.length) {
+        setError(t("workerAdminChat.noFilePicked"));
         return;
       }
 
-      let added = 0;
-      let sawTooLarge = false;
+      const result = pickProfileChatFiles(list, selectedFiles.length);
 
-      setSelectedFiles((prev) => {
-        const next = [...prev];
-        for (let i = 0; i < list.length; i++) {
-          const f = list.item(i);
-          if (!f) continue;
-          if (next.length >= MAX_PHOTOS) break;
-          if (f.size > CLIENT_MAX_PHOTO_BYTES) {
-            sawTooLarge = true;
-            continue;
-          }
-          if (!isLikelyImageFile(f)) continue;
-          next.push(f);
-          added++;
-        }
-        return next;
-      });
-
-      if (added === 0 && list.length > 0) {
-        setError(sawTooLarge ? t("workerAdminChat.photoTooLarge") : t("workerAdminChat.noValidFilesAfterPick"));
-      } else if (sawTooLarge) {
-        setError(t("workerAdminChat.photoTooLarge"));
-      } else {
+      if (result.accepted.length > 0) {
+        setSelectedFiles((prev) => [...prev, ...result.accepted].slice(0, MAX_PHOTOS));
         setError(null);
+      } else {
+        const first = result.rejected[0];
+        if (first?.reason === "too_large") {
+          setError(t("workerAdminChat.photoTooLarge"));
+        } else if (first) {
+          setError(
+            t("workerAdminChat.fileRejectedDebug", {
+              name: first.name || "photo",
+              type: first.type || "empty",
+              size: formatFileSize(first.size || 0),
+            }),
+          );
+        } else {
+          setError(t("workerAdminChat.noValidFilesAfterPick"));
+        }
       }
 
       if (fileInputRef.current) fileInputRef.current.value = "";
     },
-    [t],
+    [selectedFiles.length, t],
   );
 
   const send = useCallback(async () => {
@@ -243,7 +321,7 @@ export default function WorkerAdminChatWeb() {
         const fd = new FormData();
         if (trimmed) fd.append("body", trimmed);
         for (const f of files) {
-          fd.append("photos", f, f.name || "photo.jpg");
+          fd.append("photos", f, uploadFileName(f));
         }
 
         const res = await authFetch("/api/me/admin-chat/messages", {
@@ -368,6 +446,9 @@ export default function WorkerAdminChatWeb() {
               multiple
               className="hidden"
               disabled={sending || selectedFiles.length >= MAX_PHOTOS}
+              onClick={(e) => {
+                e.currentTarget.value = "";
+              }}
               onChange={(e) => onPickFiles(e.target.files)}
             />
           </label>

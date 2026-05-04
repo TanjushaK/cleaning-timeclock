@@ -259,6 +259,8 @@ export const uk: Messages = {
     removeSelected: "Прибрати фото",
     photoTooLarge: "Фото завелике, максимум 50 MB",
     noValidFilesAfterPick: "Не вибрано підходящий файл (зображення до 50 MB)",
+    noFilePicked: "Файл не вибрано.",
+    fileRejectedDebug: "Файл не прийнято: {{name}} · {{type}} · {{size}}",
     uploadFailedLine: "Помилка {{status}}: {{detail}}",
     attachmentsMissingInResponse: "Вкладення не повернув сервер; перевірте після оновлення.",
   },

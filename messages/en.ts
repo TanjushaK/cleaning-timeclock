@@ -259,6 +259,8 @@ export const en: Messages = {
     removeSelected: "Remove photo",
     photoTooLarge: "Photo too large, maximum 50 MB",
     noValidFilesAfterPick: "No suitable file selected (image up to 50 MB)",
+    noFilePicked: "No file was selected.",
+    fileRejectedDebug: "File not accepted: {{name}} · {{type}} · {{size}}",
     uploadFailedLine: "Error {{status}}: {{detail}}",
     attachmentsMissingInResponse: "Attachments missing in response; refresh the thread.",
   },
