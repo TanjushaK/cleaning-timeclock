@@ -1,4 +1,5 @@
 import type { CompatClient } from '@/lib/server/compat/client'
+import { dbQuery } from '@/lib/server/pool'
 import {
   getWorkerAdminUnreadCount,
   type WorkerAdminMessageRow,
@@ -58,15 +59,17 @@ async function notifyWorkerAdminChatMessageSentInner(
     readerRole: 'worker',
   })
 
-  const { data: rows, error } = await db
-    .from('worker_push_tokens')
-    .select('id,token')
-    .eq('worker_id', workerId)
-    .is('disabled_at', null)
+  const { rows } = await dbQuery<{ id: string; token: string }>(
+    `select id, token from worker_push_tokens where worker_id = $1::uuid and disabled_at is null`,
+    [workerId],
+  )
 
-  if (error || !rows?.length) return
+  if (!rows?.length) {
+    console.warn('[push] admin chat: no active worker_push_tokens', { workerId })
+    return
+  }
 
-  const registered = rows as Array<{ id: string; token: string }>
+  const registered = rows
   const badge = Number.isFinite(unread_count) ? unread_count : 0
 
   for (let offset = 0; offset < registered.length; offset += EXPO_CHUNK_SIZE) {
@@ -109,10 +112,7 @@ async function notifyWorkerAdminChatMessageSentInner(
       if (ticket?.status !== 'error' || !ticketIsDeviceNotRegistered(ticket)) continue
       const row = chunk[i]
       if (!row?.id) continue
-      await db
-        .from('worker_push_tokens')
-        .update({ disabled_at: new Date().toISOString() })
-        .eq('id', row.id)
+      await dbQuery(`update worker_push_tokens set disabled_at = now() where id = $1::uuid`, [row.id])
     }
   }
 }
