@@ -236,6 +236,17 @@ export const uk: Messages = {
     phoneContactPlaceholder: "Телефон (контактний)",
     contactEmailMagicPlaceholder: "Email (контактний / для magic link)",
   },
+  workerAdminChat: {
+    title: "Чат з адміністратором",
+    empty: "Тут можна написати адміністратору.",
+    messagePlaceholder: "Напишіть повідомлення…",
+    send: "Надіслати",
+    attachPhotos: "Додати фото",
+    photoUnavailable: "Фото недоступне",
+    maxPhotosHint: "до 5 фото на повідомлення",
+    sending: "Надсилання…",
+    removeSelected: "Прибрати фото",
+  },
   appFooter: {
     tagline: "Чисто. Чітко. Вчасно.",
     legalNavAria: "Юридична інформація та підтримка",

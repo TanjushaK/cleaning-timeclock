@@ -236,6 +236,17 @@ export const ru: Messages = {
     phoneContactPlaceholder: "Телефон (контактный)",
     contactEmailMagicPlaceholder: "Email (контактный / для magic link)",
   },
+  workerAdminChat: {
+    title: "Чат с администратором",
+    empty: "Здесь можно написать администратору.",
+    messagePlaceholder: "Напишите сообщение…",
+    send: "Отправить",
+    attachPhotos: "Прикрепить фото",
+    photoUnavailable: "Фото недоступно",
+    maxPhotosHint: "до 5 фото за сообщение",
+    sending: "Отправка…",
+    removeSelected: "Убрать фото",
+  },
   appFooter: {
     tagline: "Чисто. Чётко. По времени.",
     legalNavAria: "Юридическая информация и поддержка",

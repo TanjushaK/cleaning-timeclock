@@ -236,6 +236,17 @@ export const en: Messages = {
     phoneContactPlaceholder: "Phone (contact)",
     contactEmailMagicPlaceholder: "Email (contact / for magic link)",
   },
+  workerAdminChat: {
+    title: "Chat with administrator",
+    empty: "You can message the administrator here.",
+    messagePlaceholder: "Type a message…",
+    send: "Send",
+    attachPhotos: "Attach photos",
+    photoUnavailable: "Photo unavailable",
+    maxPhotosHint: "up to 5 photos per message",
+    sending: "Sending…",
+    removeSelected: "Remove photo",
+  },
   appFooter: {
     tagline: "Clean. Clear. On time.",
     legalNavAria: "Legal information and support",
