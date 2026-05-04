@@ -236,6 +236,17 @@ export const nl: Messages = {
     phoneContactPlaceholder: "Telefoon (contact)",
     contactEmailMagicPlaceholder: "E-mail (contact / voor magic link)",
   },
+  workerAdminChat: {
+    title: "Chat met beheerder",
+    empty: "Hier kunt u de beheerder een bericht sturen.",
+    messagePlaceholder: "Schrijf een bericht…",
+    send: "Versturen",
+    attachPhotos: "Foto’s toevoegen",
+    photoUnavailable: "Foto niet beschikbaar",
+    maxPhotosHint: "max. 5 foto’s per bericht",
+    sending: "Verzenden…",
+    removeSelected: "Foto verwijderen",
+  },
   appFooter: {
     tagline: "Schoon. Duidelijk. Op tijd.",
     legalNavAria: "Juridische informatie en ondersteuning",
