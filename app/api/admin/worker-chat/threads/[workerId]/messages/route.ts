@@ -10,6 +10,7 @@ import {
   parseOptionalWorkerAdminBodyField,
   parseWorkerAdminBody,
 } from '@/lib/server/worker-admin-chat'
+import { notifyWorkerAdminChatMessageSent } from '@/lib/server/push-notifications'
 import { ApiError, requireAdmin, toErrorResponse } from '@/lib/route-db'
 
 export const runtime = 'nodejs'
@@ -68,6 +69,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ workerId: 
         files,
         attachmentUrlMode: 'admin-proxy',
       })
+      void notifyWorkerAdminChatMessageSent(db, workerId, message)
       return NextResponse.json({ message })
     }
 
@@ -80,6 +82,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ workerId: 
       authorRole: 'admin',
       body: bodyText,
     })
+    void notifyWorkerAdminChatMessageSent(db, workerId, message)
     return NextResponse.json({ message })
   } catch (e: unknown) {
     return toErrorResponse(e)
