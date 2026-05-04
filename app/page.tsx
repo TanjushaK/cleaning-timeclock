@@ -15,6 +15,7 @@ import { clientWorkerErrorMessage } from "@/lib/app-api-message";
 import { FetchApiError } from "@/lib/fetch-api-error";
 import { formatDateTimeShort, formatWallTime } from "@/lib/locale-format";
 import AppWorkerShell from "@/app/_components/AppWorkerShell";
+import { WorkerShiftJobChatPanel } from "@/components/WorkerShiftJobChatPanel";
 import { useI18n } from "@/components/I18nProvider";
 import { OutboxEvent, outboxAdd, outboxCount as outboxCountDb, outboxList, outboxRemove, outboxUpdate } from "@/lib/offline/outbox";
 import { openNavigation } from "@/lib/open-navigation";
@@ -2105,6 +2106,7 @@ const loadAll = useCallback(async () => {
                         {blockedByMissingCoords ? (
                           <div className="mt-2 text-xs text-amber-200">{tr("jobs.siteCoordsMissing")}</div>
                         ) : null}
+                        <WorkerShiftJobChatPanel jobId={j.id} />
                       </div>
                     );
                         })

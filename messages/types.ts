@@ -176,6 +176,17 @@ export type Messages = {
     timer: string;
     gpsMetrics: string;
     siteCoordsMissing: string;
+    shiftChatTitle: string;
+    shiftChatShow: string;
+    shiftChatHide: string;
+    shiftChatPlaceholder: string;
+    shiftChatSend: string;
+    shiftChatSending: string;
+    shiftChatRefresh: string;
+    shiftChatLoading: string;
+    shiftChatEmpty: string;
+    shiftChatErrLoad: string;
+    shiftChatErrSend: string;
   };
   profile: {
     title: string;
