@@ -217,6 +217,17 @@ export type Messages = {
     phoneContactPlaceholder: string;
     contactEmailMagicPlaceholder: string;
   };
+  workerAdminChat: {
+    title: string;
+    empty: string;
+    messagePlaceholder: string;
+    send: string;
+    attachPhotos: string;
+    photoUnavailable: string;
+    maxPhotosHint: string;
+    sending: string;
+    removeSelected: string;
+  };
   appFooter: {
     tagline: string;
     legalNavAria: string;

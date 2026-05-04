@@ -7,6 +7,7 @@ import { authFetchJson, clearAuthTokens, getAccessToken } from "@/lib/auth-fetch
 import { FetchApiError } from "@/lib/fetch-api-error";
 import AppWorkerShell from "@/app/_components/AppWorkerShell";
 import { useI18n } from "@/components/I18nProvider";
+import WorkerAdminChatWeb from "@/components/WorkerAdminChatWeb";
 
 type Profile = {
   id: string;
@@ -400,60 +401,64 @@ export default function WorkerProfilePage() {
           </div>
         </div>
 
-        <div className="mt-4 rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-5 shadow-xl">
-          <div className="flex items-baseline justify-between">
-            <div className="text-lg font-semibold">{t("profile.photosTitle")}</div>
-            <div className="text-sm opacity-70">{photos.length}/5</div>
-          </div>
+        <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+          <div className="rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-5 shadow-xl">
+            <div className="flex items-baseline justify-between">
+              <div className="text-lg font-semibold">{t("profile.photosTitle")}</div>
+              <div className="text-sm opacity-70">{photos.length}/5</div>
+            </div>
 
-          <div className="mt-3">
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              className="block w-full text-sm"
-              disabled={busy}
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) void uploadPhoto(f);
-              }}
-            />
-          </div>
+            <div className="mt-3">
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                className="block w-full text-sm"
+                disabled={busy}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) void uploadPhoto(f);
+                }}
+              />
+            </div>
 
-          <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-3">
-            {photos.map((p) => {
-              const isAvatar = avatarPath && p.path === avatarPath;
-              return (
-                <div key={p.path} className="rounded-xl border border-amber-500/15 bg-zinc-900/30 overflow-hidden">
-                  <div className="aspect-square bg-black/30 flex items-center justify-center">
-                    {p.url ? (
-                      <img src={p.url} alt="" className="h-full w-full object-cover" />
-                    ) : (
-                      <div className="text-xs opacity-60">{t("status.unknown")}</div>
-                    )}
+            <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-3">
+              {photos.map((p) => {
+                const isAvatar = avatarPath && p.path === avatarPath;
+                return (
+                  <div key={p.path} className="rounded-xl border border-amber-500/15 bg-zinc-900/30 overflow-hidden">
+                    <div className="aspect-square bg-black/30 flex items-center justify-center">
+                      {p.url ? (
+                        <img src={p.url} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="text-xs opacity-60">{t("status.unknown")}</div>
+                      )}
+                    </div>
+                    <div className="p-2 space-y-2">
+                      <button
+                        className="w-full rounded-lg bg-amber-500 text-zinc-950 px-2 py-1 text-xs font-semibold hover:bg-amber-400 disabled:opacity-60"
+                        disabled={busy}
+                        onClick={() => void makeAvatar(p.path)}
+                      >
+                        {isAvatar ? t("profile.avatar") : t("profile.makeAvatar")}
+                      </button>
+                      <button
+                        className="w-full rounded-lg border border-amber-500/30 px-2 py-1 text-xs hover:bg-amber-500/10 disabled:opacity-60"
+                        disabled={busy}
+                        onClick={() => void delPhoto(p.path)}
+                      >
+                        {t("profile.delete")}
+                      </button>
+                    </div>
                   </div>
-                  <div className="p-2 space-y-2">
-                    <button
-                      className="w-full rounded-lg bg-amber-500 text-zinc-950 px-2 py-1 text-xs font-semibold hover:bg-amber-400 disabled:opacity-60"
-                      disabled={busy}
-                      onClick={() => void makeAvatar(p.path)}
-                    >
-                      {isAvatar ? t("profile.avatar") : t("profile.makeAvatar")}
-                    </button>
-                    <button
-                      className="w-full rounded-lg border border-amber-500/30 px-2 py-1 text-xs hover:bg-amber-500/10 disabled:opacity-60"
-                      disabled={busy}
-                      onClick={() => void delPhoto(p.path)}
-                    >
-                      {t("profile.delete")}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
+
+            {photos.length === 0 ? <div className="mt-3 text-sm opacity-70">{t("profile.photosEmptyHint")}</div> : null}
           </div>
 
-          {photos.length === 0 ? <div className="mt-3 text-sm opacity-70">{t("profile.photosEmptyHint")}</div> : null}
+          <WorkerAdminChatWeb />
         </div>
       </div>
     </AppWorkerShell>
