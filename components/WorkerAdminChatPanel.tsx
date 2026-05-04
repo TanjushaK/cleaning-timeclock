@@ -175,6 +175,8 @@ export function WorkerAdminChatPanel() {
   const [pickFiles, setPickFiles] = useState<File[]>([])
   const [sendBusy, setSendBusy] = useState(false)
   const [sendErr, setSendErr] = useState<string | null>(null)
+  const [deletingAttachmentId, setDeletingAttachmentId] = useState<string | null>(null)
+  const [attachDeleteErr, setAttachDeleteErr] = useState<string | null>(null)
 
   const baseUrl = useMemo(() => '/api/admin/worker-chat', [])
 
@@ -228,6 +230,7 @@ export function WorkerAdminChatPanel() {
   }, [loadThreads])
 
   useEffect(() => {
+    setAttachDeleteErr(null)
     if (!selectedId) {
       setMessages([])
       return
@@ -249,6 +252,25 @@ export function WorkerAdminChatPanel() {
   async function refresh() {
     await loadThreads()
     if (selectedId) await loadMessages(selectedId)
+  }
+
+  async function deleteAttachment(attachmentId: string) {
+    if (!selectedId) return
+    if (typeof window !== 'undefined' && !window.confirm('Удалить фото из чата?')) return
+    setDeletingAttachmentId(attachmentId)
+    setAttachDeleteErr(null)
+    try {
+      await authFetchJson<{ ok?: boolean }>(
+        `${ADMIN_ATTACHMENT_PREFIX}${encodeURIComponent(attachmentId)}`,
+        { method: 'DELETE', cache: 'no-store' },
+      )
+      await loadThreads()
+      await loadMessages(selectedId)
+    } catch {
+      setAttachDeleteErr('Не удалось удалить фото')
+    } finally {
+      setDeletingAttachmentId(null)
+    }
   }
 
   async function send() {
@@ -399,6 +421,12 @@ export function WorkerAdminChatPanel() {
                 </div>
               ) : null}
 
+              {attachDeleteErr ? (
+                <div className="mx-4 mt-3 rounded-xl border border-rose-500/35 bg-rose-950/25 px-3 py-2 text-[11px] text-rose-100">
+                  {attachDeleteErr}
+                </div>
+              ) : null}
+
               <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
                 {messagesLoading && messages.length === 0 ? (
                   <div className="text-[11px] text-zinc-500">…</div>
@@ -437,17 +465,27 @@ export function WorkerAdminChatPanel() {
                               <div className="mt-2 flex flex-wrap gap-2">
                                 {m.attachments.map((a) => {
                                   const safeUrl = safeImageUrl(a.url)
-                                  if (!safeUrl) {
-                                    return (
-                                      <div
-                                        key={a.id}
-                                        className="flex h-20 w-[120px] items-center justify-center rounded-lg border border-dashed border-zinc-600/50 bg-black/40 text-[10px] text-zinc-500"
+                                  return (
+                                    <div key={a.id} className="relative inline-block">
+                                      {safeUrl ? (
+                                        <WorkerChatAttachmentImage safeUrl={safeUrl} />
+                                      ) : (
+                                        <div className="flex h-20 w-[120px] items-center justify-center rounded-lg border border-dashed border-zinc-600/50 bg-black/40 text-[10px] text-zinc-500">
+                                          Фото недоступно
+                                        </div>
+                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={() => void deleteAttachment(a.id)}
+                                        disabled={deletingAttachmentId === a.id}
+                                        className="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full border border-rose-400/50 bg-rose-950 text-[11px] leading-none text-rose-100 shadow hover:bg-rose-900 disabled:opacity-50"
+                                        aria-label="Удалить"
+                                        title="Удалить"
                                       >
-                                        Фото недоступно
-                                      </div>
-                                    )
-                                  }
-                                  return <WorkerChatAttachmentImage key={a.id} safeUrl={safeUrl} />
+                                        ×
+                                      </button>
+                                    </div>
+                                  )
                                 })}
                               </div>
                             ) : null}
