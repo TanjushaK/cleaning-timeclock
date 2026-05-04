@@ -379,6 +379,15 @@ export function WorkerAdminChatPanel() {
   }
 
   const selectedThread = threads.find((t) => t.worker_id === selectedId)
+  const selectedWorkerLabel = selectedThread?.worker_name?.trim()
+    ? selectedThread.worker_name
+    : selectedId
+      ? selectedId.slice(0, 8)
+      : ''
+  const messagePlaceholder =
+    selectedWorkerLabel.length > 0
+      ? `Сообщение для ${selectedWorkerLabel}…`
+      : 'Сообщение для сотрудника…'
   const uiLocked = sendBusy || messagesLoading || threadsLoading || !!deletingMessageId || cleanupBusy
 
   const visibleMessages = useMemo(() => {
@@ -418,7 +427,7 @@ export function WorkerAdminChatPanel() {
             {threadsLoading && threads.length === 0 ? (
               <div className="px-2 py-4 text-[11px] text-zinc-500">…</div>
             ) : threads.length === 0 ? (
-              <div className="px-2 py-4 text-[11px] text-zinc-500">Нет сообщений</div>
+              <div className="px-2 py-4 text-[11px] text-zinc-500">Нет активных сотрудников</div>
             ) : (
               <ul className="grid gap-1.5">
                 {threads.map((th) => (
@@ -446,8 +455,14 @@ export function WorkerAdminChatPanel() {
                       {th.worker_email ? (
                         <div className="mt-0.5 truncate text-[10px] text-zinc-500">{th.worker_email}</div>
                       ) : null}
-                      <div className="mt-1 line-clamp-2 text-[10px] text-zinc-400">{th.last_message || '—'}</div>
-                      <div className="mt-1 text-[10px] text-zinc-600">{fmtThreadTime(th.last_message_at)}</div>
+                      <div className="mt-1 line-clamp-2 text-[10px] text-zinc-400">
+                        {th.last_message?.trim() ? th.last_message : 'Нет сообщений'}
+                      </div>
+                      {th.last_message_at?.trim() ? (
+                        <div className="mt-1 text-[10px] text-zinc-600">{fmtThreadTime(th.last_message_at)}</div>
+                      ) : (
+                        <div className="mt-1 text-[10px] text-zinc-600">—</div>
+                      )}
                     </button>
                   </li>
                 ))}
@@ -466,7 +481,7 @@ export function WorkerAdminChatPanel() {
               <div className="flex flex-wrap items-start justify-between gap-2 border-b border-yellow-400/10 px-4 py-3">
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-semibold text-yellow-100">
-                    {selectedThread?.worker_name || selectedId.slice(0, 8)}
+                    Выбран сотрудник: {selectedWorkerLabel || selectedId.slice(0, 8)}
                   </div>
                   {selectedThread?.worker_email ? (
                     <div className="mt-0.5 text-[11px] text-zinc-500">{selectedThread.worker_email}</div>
@@ -616,7 +631,7 @@ export function WorkerAdminChatPanel() {
                   onChange={(e) => setDraft(e.target.value)}
                   rows={3}
                   disabled={sendBusy}
-                  placeholder="Написать сообщение"
+                  placeholder={messagePlaceholder}
                   className="mb-2 w-full resize-y rounded-xl border border-yellow-400/20 bg-black/45 px-3 py-2 text-xs text-zinc-100 outline-none transition focus:border-yellow-300/55 disabled:opacity-60"
                 />
 
