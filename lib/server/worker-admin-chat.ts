@@ -444,36 +444,50 @@ export async function listWorkerAdminThreads(_db: CompatClient, adminUserId: str
             coalesce(nullif(trim(p.full_name), ''), '') as worker_name,
             coalesce(nullif(trim(p.email), ''), '') as worker_email,
             coalesce(
-              nullif(trim(coalesce(le.body, '')), ''),
-              case when le.has_attachments then 'Фото' else '' end
+              case
+                when le.worker_id is null then ''
+                else coalesce(
+                  nullif(trim(coalesce(le.body, '')), ''),
+                  case when coalesce(le.has_attachments, false) then 'Фото' else '' end
+                )
+              end,
+              ''
             ) as last_message,
-            le.created_at::text as last_message_at,
-            (
-              select count(*)::text
-                from worker_admin_messages m
-               where m.worker_id = p.id
-                 and m.deleted_at is null
-                 and m.author_role = 'worker'
-                 and (
-                   not exists (
-                     select 1 from worker_admin_message_reads r
-                      where r.worker_id = m.worker_id
-                        and r.user_id = $1::uuid
-                        and r.reader_role = 'admin'
+            coalesce(le.created_at::text, '') as last_message_at,
+            coalesce(
+              (
+                select count(*)::text
+                  from worker_admin_messages m
+                 where m.worker_id = p.id
+                   and m.deleted_at is null
+                   and m.author_role = 'worker'
+                   and (
+                     not exists (
+                       select 1 from worker_admin_message_reads r
+                        where r.worker_id = m.worker_id
+                          and r.user_id = $1::uuid
+                          and r.reader_role = 'admin'
+                     )
+                     or m.created_at > (
+                       select r2.last_read_at from worker_admin_message_reads r2
+                        where r2.worker_id = m.worker_id
+                          and r2.user_id = $1::uuid
+                          and r2.reader_role = 'admin'
+                        limit 1
+                     )
                    )
-                   or m.created_at > (
-                     select r2.last_read_at from worker_admin_message_reads r2
-                      where r2.worker_id = m.worker_id
-                        and r2.user_id = $1::uuid
-                        and r2.reader_role = 'admin'
-                      limit 1
-                   )
-                 )
+              ),
+              '0'
             ) as unread_count
        from profiles p
-       join latest_enriched le on le.worker_id = p.id
+       left join latest_enriched le on le.worker_id = p.id
       where p.role = 'worker'
-      order by le.created_at desc`,
+        and coalesce(p.active, true) = true
+      order by
+        case when le.created_at is null then 1 else 0 end,
+        le.created_at desc nulls last,
+        p.full_name asc nulls last,
+        p.email asc nulls last`,
     [adminUserId],
   )
 
