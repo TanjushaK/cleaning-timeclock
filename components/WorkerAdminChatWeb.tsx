@@ -367,7 +367,7 @@ export default function WorkerAdminChatWeb() {
   const locale = lang === "ru" ? "ru-RU" : lang === "uk" ? "uk-UA" : lang === "nl" ? "nl-NL" : "en-GB";
 
   return (
-    <div className="rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-5 shadow-xl flex flex-col min-h-0 min-w-0 max-h-[min(520px,70vh)] lg:max-h-[520px]">
+    <div className="rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-5 shadow-xl flex flex-col min-h-0 min-w-0 lg:max-h-[520px]">
       <div className="flex items-center justify-between gap-2 shrink-0">
         <div className="text-lg font-semibold">{t("workerAdminChat.title")}</div>
         <button
@@ -386,7 +386,7 @@ export default function WorkerAdminChatWeb() {
 
       <div
         ref={listRef}
-        className="mt-3 flex-1 min-h-[200px] max-h-[420px] overflow-y-auto rounded-xl border border-amber-500/15 bg-zinc-900/40 p-3 space-y-3"
+        className="mt-3 flex-1 min-h-[200px] max-h-[260px] sm:max-h-[320px] lg:max-h-[420px] overflow-y-auto rounded-xl border border-amber-500/15 bg-zinc-900/40 p-3 space-y-3"
       >
         {loading && messages.length === 0 ? (
           <div className="text-sm opacity-70">{t("common.loading")}</div>
@@ -426,7 +426,7 @@ export default function WorkerAdminChatWeb() {
         ))}
       </div>
 
-      <div className="mt-3 shrink-0 space-y-2">
+      <div className="mt-3 shrink-0 space-y-2 pb-6 sm:pb-4">
         <textarea
           className="w-full min-h-[88px] rounded-xl bg-zinc-900/60 border border-amber-500/20 px-3 py-2 text-sm outline-none focus:border-amber-400/50 resize-y"
           placeholder={t("workerAdminChat.messagePlaceholder")}
@@ -489,7 +489,7 @@ export default function WorkerAdminChatWeb() {
 
         <button
           type="button"
-          className="w-full rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60"
+          className="w-full rounded-xl bg-amber-500 text-zinc-950 px-4 py-2 text-sm font-semibold hover:bg-amber-400 disabled:opacity-60 mb-2"
           disabled={sending || (!body.trim() && selectedFiles.length === 0)}
           onClick={() => void send()}
         >
