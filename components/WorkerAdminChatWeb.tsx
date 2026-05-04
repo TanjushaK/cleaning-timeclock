@@ -59,6 +59,38 @@ function uploadFileName(f: File): string {
   return "photo.jpg";
 }
 
+type PickFilesResult = {
+  toAdd: File[];
+  sawTooLarge: boolean;
+  rejectDiag: string | null;
+};
+
+function pickFilesFromList(list: FileList, maxAdd: number): PickFilesResult {
+  const toAdd: File[] = [];
+  let sawTooLarge = false;
+  let rejectDiag: string | null = null;
+
+  for (let i = 0; i < list.length; i++) {
+    const f = list.item(i);
+    if (!f) continue;
+    if (toAdd.length >= maxAdd) break;
+    if (f.size > CLIENT_MAX_PHOTO_BYTES) {
+      sawTooLarge = true;
+      continue;
+    }
+    if (!isLikelyImageFile(f)) {
+      if (!rejectDiag) {
+        const typeLabel = f.type?.trim() ? f.type : "empty";
+        rejectDiag = `Rejected file: ${f.name || "unnamed"} · ${typeLabel} · ${formatFileSize(f.size)}`;
+      }
+      continue;
+    }
+    toAdd.push(f);
+  }
+
+  return { toAdd, sawTooLarge, rejectDiag };
+}
+
 function formatFileSize(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
@@ -206,46 +238,33 @@ export default function WorkerAdminChatWeb() {
         return;
       }
 
-      let added = 0;
-      let sawTooLarge = false;
-      let rejectDiag: string | null = null;
-
       setSelectedFiles((prev) => {
-        const next = [...prev];
-        for (let i = 0; i < list.length; i++) {
-          const f = list.item(i);
-          if (!f) continue;
-          if (next.length >= MAX_PHOTOS) break;
-          if (f.size > CLIENT_MAX_PHOTO_BYTES) {
-            sawTooLarge = true;
-            continue;
-          }
-          if (!isLikelyImageFile(f)) {
-            if (!rejectDiag) {
-              const typeLabel = f.type?.trim() ? f.type : "empty";
-              rejectDiag = `Rejected file: ${f.name || "unnamed"} · ${typeLabel} · ${formatFileSize(f.size)}`;
-            }
-            continue;
-          }
-          next.push(f);
-          added++;
+        const slots = Math.max(0, MAX_PHOTOS - prev.length);
+        if (slots <= 0) {
+          return prev;
         }
-        return next;
-      });
 
-      if (added === 0 && list.length > 0) {
-        if (rejectDiag) {
-          setError(rejectDiag);
-        } else if (sawTooLarge) {
-          setError(t("workerAdminChat.photoTooLarge"));
-        } else {
-          setError(t("workerAdminChat.noValidFilesAfterPick"));
-        }
-      } else if (sawTooLarge) {
-        setError(t("workerAdminChat.photoTooLarge"));
-      } else {
-        setError(null);
-      }
+        const r = pickFilesFromList(list, slots);
+
+        queueMicrotask(() => {
+          const added = r.toAdd.length;
+          if (added === 0 && list.length > 0) {
+            if (r.rejectDiag) {
+              setError(r.rejectDiag);
+            } else if (r.sawTooLarge) {
+              setError(t("workerAdminChat.photoTooLarge"));
+            } else {
+              setError(t("workerAdminChat.noValidFilesAfterPick"));
+            }
+          } else if (r.sawTooLarge) {
+            setError(t("workerAdminChat.photoTooLarge"));
+          } else {
+            setError(null);
+          }
+        });
+
+        return r.toAdd.length ? [...prev, ...r.toAdd] : prev;
+      });
 
       if (fileInputRef.current) fileInputRef.current.value = "";
     },
