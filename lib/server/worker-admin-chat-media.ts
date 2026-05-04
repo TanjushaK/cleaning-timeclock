@@ -10,10 +10,10 @@ import { ApiError } from '@/lib/route-db'
 export const WORKER_ADMIN_CHAT_MAX_PHOTOS_PER_MESSAGE = 5
 
 const MAX_UPLOAD_BYTES = (() => {
-  const raw = process.env.WORKER_PHOTOS_MAX_BYTES || process.env.MAX_UPLOAD_BYTES || '15728640'
+  const raw = process.env.WORKER_PHOTOS_MAX_BYTES || process.env.MAX_UPLOAD_BYTES || '52428800'
   const n = Number.parseInt(String(raw), 10)
-  if (!Number.isFinite(n) || n <= 0) return 15 * 1024 * 1024
-  return Math.min(Math.max(n, 256 * 1024), 25 * 1024 * 1024)
+  if (!Number.isFinite(n) || n <= 0) return 50 * 1024 * 1024
+  return Math.min(Math.max(n, 256 * 1024), 50 * 1024 * 1024)
 })()
 
 const ALLOWED_IMAGE_TYPES = new Set([

@@ -7,8 +7,8 @@ import { FetchApiError } from "@/lib/fetch-api-error";
 import { useI18n } from "@/components/I18nProvider";
 
 const MAX_PHOTOS = 5;
-/** Client-side guard aligned with typical 15 MB server limit (see worker-admin-chat-media). */
-const CLIENT_MAX_PHOTO_BYTES = 15 * 1024 * 1024;
+/** Client-side guard aligned with worker-admin-chat-media MAX_UPLOAD_BYTES (default 50 MB). */
+const CLIENT_MAX_PHOTO_BYTES = 50 * 1024 * 1024;
 const IMAGE_EXT_RE = /\.(jpe?g|png|webp|heic|heif)$/i;
 
 type ChatAttachment = {
