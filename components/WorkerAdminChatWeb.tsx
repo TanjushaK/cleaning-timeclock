@@ -7,6 +7,9 @@ import { FetchApiError } from "@/lib/fetch-api-error";
 import { useI18n } from "@/components/I18nProvider";
 
 const MAX_PHOTOS = 5;
+/** Client-side guard aligned with typical 15 MB server limit (see worker-admin-chat-media). */
+const CLIENT_MAX_PHOTO_BYTES = 15 * 1024 * 1024;
+const IMAGE_EXT_RE = /\.(jpe?g|png|webp|heic|heif)$/i;
 
 type ChatAttachment = {
   id: string;
@@ -35,18 +38,40 @@ function sortByCreatedAtAsc(messages: ChatMessage[]): ChatMessage[] {
   );
 }
 
-async function throwIfAuthMultipartNotOk(res: Response): Promise<void> {
-  if (res.ok) return;
+function isLikelyImageFile(f: File): boolean {
+  const mime = String(f.type || "").toLowerCase();
+  if (mime.startsWith("image/")) return true;
+  return IMAGE_EXT_RE.test(f.name || "");
+}
+
+function formatFileSize(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+async function parseMultipartErrorResponse(res: Response): Promise<string> {
   const ct = res.headers.get("content-type") || "";
-  const payload = ct.includes("application/json") ? await res.json().catch(() => null) : await res.text();
-  const obj = payload && typeof payload === "object" ? (payload as { errorCode?: string; error?: string }) : null;
-  const code = obj?.errorCode ? String(obj.errorCode) : "";
-  const fallback =
-    obj?.error || (typeof payload === "string" && payload.trim()) || `HTTP ${res.status}`;
-  throw new FetchApiError(code ? `admin.api.${code}` : String(fallback), {
-    status: res.status,
-    errorCode: code || undefined,
-  });
+  try {
+    if (ct.includes("application/json")) {
+      const j = (await res.json().catch(() => null)) as {
+        error?: string;
+        errorCode?: string;
+        message?: string;
+      } | null;
+      if (j && typeof j === "object") {
+        const parts = [j.errorCode, j.error || j.message].filter(Boolean);
+        if (parts.length) return parts.join(" — ");
+      }
+    } else {
+      const text = await res.text().catch(() => "");
+      const s = text.trim();
+      if (s) return s.length > 400 ? `${s.slice(0, 400)}…` : s;
+    }
+  } catch {
+    // ignore
+  }
+  return `HTTP ${res.status}`;
 }
 
 function AttachmentImage({
@@ -162,20 +187,41 @@ export default function WorkerAdminChatWeb() {
 
   const onPickFiles = useCallback(
     (list: FileList | null) => {
-      if (!list?.length) return;
+      if (!list?.length) {
+        return;
+      }
+
+      let added = 0;
+      let sawTooLarge = false;
+
       setSelectedFiles((prev) => {
         const next = [...prev];
         for (let i = 0; i < list.length; i++) {
           const f = list.item(i);
           if (!f) continue;
           if (next.length >= MAX_PHOTOS) break;
+          if (f.size > CLIENT_MAX_PHOTO_BYTES) {
+            sawTooLarge = true;
+            continue;
+          }
+          if (!isLikelyImageFile(f)) continue;
           next.push(f);
+          added++;
         }
         return next;
       });
+
+      if (added === 0 && list.length > 0) {
+        setError(sawTooLarge ? t("workerAdminChat.photoTooLarge") : t("workerAdminChat.noValidFilesAfterPick"));
+      } else if (sawTooLarge) {
+        setError(t("workerAdminChat.photoTooLarge"));
+      } else {
+        setError(null);
+      }
+
       if (fileInputRef.current) fileInputRef.current.value = "";
     },
-    [],
+    [t],
   );
 
   const send = useCallback(async () => {
@@ -185,6 +231,7 @@ export default function WorkerAdminChatWeb() {
 
     setSending(true);
     setError(null);
+    let warnAttachmentsMissing = false;
     try {
       if (files.length === 0) {
         await authFetchJson("/api/me/admin-chat/messages", {
@@ -196,15 +243,41 @@ export default function WorkerAdminChatWeb() {
         const fd = new FormData();
         if (trimmed) fd.append("body", trimmed);
         for (const f of files) {
-          fd.append("photos", f);
+          fd.append("photos", f, f.name || "photo.jpg");
         }
-        const res = await authFetch("/api/me/admin-chat/messages", { method: "POST", body: fd });
-        await throwIfAuthMultipartNotOk(res);
+
+        const res = await authFetch("/api/me/admin-chat/messages", {
+          method: "POST",
+          body: fd,
+        });
+
+        if (!res.ok) {
+          const detail = await parseMultipartErrorResponse(res);
+          const line = t("workerAdminChat.uploadFailedLine", {
+            status: String(res.status),
+            detail,
+          });
+          throw new FetchApiError(line, { status: res.status });
+        }
+
+        const payload = (await res.json().catch(() => ({}))) as {
+          message?: { attachments?: ChatAttachment[] };
+        };
+        warnAttachmentsMissing =
+          files.length > 0 && (!payload?.message?.attachments || payload.message.attachments.length === 0);
+
+        if (fileInputRef.current) fileInputRef.current.value = "";
       }
 
       setBody("");
       setSelectedFiles([]);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+
       await loadMessages();
+
+      if (warnAttachmentsMissing) {
+        setError(t("workerAdminChat.attachmentsMissingInResponse"));
+      }
       requestAnimationFrame(() => scrollToBottom());
     } catch (e: unknown) {
       setError(clientWorkerErrorMessage(t, e));
@@ -289,8 +362,9 @@ export default function WorkerAdminChatWeb() {
             <span>{t("workerAdminChat.attachPhotos")}</span>
             <input
               ref={fileInputRef}
+              name="photos"
               type="file"
-              accept="image/*"
+              accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/*"
               multiple
               className="hidden"
               disabled={sending || selectedFiles.length >= MAX_PHOTOS}
@@ -303,20 +377,32 @@ export default function WorkerAdminChatWeb() {
         </div>
 
         {selectedFiles.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
-            {selectedFiles.map((f, i) => (
-              <div key={`${f.name}-${i}-${f.lastModified}`} className="relative h-16 w-16 overflow-hidden rounded-lg border border-amber-500/20">
-                <img src={photoPreviews[i] || ""} alt="" className="h-full w-full object-cover" />
-                <button
-                  type="button"
-                  className="absolute inset-0 flex items-center justify-center bg-black/50 text-xs text-white hover:bg-black/65"
-                  onClick={() => removePreviewAt(i)}
-                  aria-label={t("workerAdminChat.removeSelected")}
+          <div className="space-y-2">
+            <div className="flex flex-wrap gap-2">
+              {selectedFiles.map((f, i) => (
+                <div
+                  key={`${f.name}-${i}-${f.lastModified}`}
+                  className="relative h-16 w-16 overflow-hidden rounded-lg border border-amber-500/20"
                 >
-                  ×
-                </button>
-              </div>
-            ))}
+                  <img src={photoPreviews[i] || ""} alt="" className="h-full w-full object-cover" />
+                  <button
+                    type="button"
+                    className="absolute inset-0 flex items-center justify-center bg-black/50 text-xs text-white hover:bg-black/65"
+                    onClick={() => removePreviewAt(i)}
+                    aria-label={t("workerAdminChat.removeSelected")}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+            <ul className="text-[11px] text-zinc-400 space-y-0.5">
+              {selectedFiles.map((f, i) => (
+                <li key={`meta-${f.name}-${i}-${f.lastModified}`} className="truncate">
+                  {f.name || "photo"} · {formatFileSize(f.size)}
+                </li>
+              ))}
+            </ul>
           </div>
         ) : null}
 

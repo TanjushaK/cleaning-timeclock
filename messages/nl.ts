@@ -246,6 +246,10 @@ export const nl: Messages = {
     maxPhotosHint: "max. 5 foto’s per bericht",
     sending: "Verzenden…",
     removeSelected: "Foto verwijderen",
+    photoTooLarge: "Foto te groot, maximaal 15 MB",
+    noValidFilesAfterPick: "Geen geschikt bestand gekozen (afbeelding tot 15 MB)",
+    uploadFailedLine: "Fout {{status}}: {{detail}}",
+    attachmentsMissingInResponse: "Geen bijlagen in antwoord; ververs het gesprek.",
   },
   appFooter: {
     tagline: "Schoon. Duidelijk. Op tijd.",

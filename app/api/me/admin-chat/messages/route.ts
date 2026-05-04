@@ -31,12 +31,12 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const contentTypeLower = (req.headers.get('content-type') || '').toLowerCase()
   try {
     const { db, userId } = await requireActiveWorker(req)
     const workerId = userId
-    const contentType = req.headers.get('content-type') || ''
 
-    if (contentType.includes('multipart/form-data')) {
+    if (contentTypeLower.includes('multipart/form-data')) {
       const form = await req.formData()
       const bodyText = parseOptionalWorkerAdminBodyField(form.get('body'))
       const files = collectMultipartImages(form)
@@ -61,6 +61,10 @@ export async function POST(req: NextRequest) {
     })
     return NextResponse.json({ message })
   } catch (e: unknown) {
+    if (contentTypeLower.includes('multipart/form-data')) {
+      const msg = e instanceof Error ? e.message : String(e)
+      console.error('[worker-admin-chat] worker multipart send failed', { error: msg })
+    }
     return toErrorResponse(e)
   }
 }

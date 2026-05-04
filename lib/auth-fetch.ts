@@ -65,6 +65,19 @@ function buildAuthHeaders(existing?: HeadersInit, accessOverride?: string | null
   return headers;
 }
 
+/** Fresh multipart body for each fetch — FormData must not be reused after a failed/consumed upload + 401 retry. */
+function cloneFormData(fd: FormData): FormData {
+  const next = new FormData();
+  for (const [key, val] of fd.entries()) {
+    if (val instanceof File) {
+      next.append(key, val, val.name || 'file');
+    } else {
+      next.append(key, val);
+    }
+  }
+  return next;
+}
+
 async function refreshViaApi(refreshToken: string): Promise<{ access_token: string; refresh_token: string | null } | null> {
   try {
     const res = await fetch('/api/auth/refresh', {
@@ -88,10 +101,12 @@ async function refreshViaApi(refreshToken: string): Promise<{ access_token: stri
 
 export async function authFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const rt = getRefreshToken();
+  const fdTemplate = init?.body instanceof FormData ? cloneFormData(init.body) : null;
 
   let res: Response;
   try {
-    res = await fetch(input, { ...init, headers: buildAuthHeaders(init?.headers) });
+    const body = fdTemplate ? cloneFormData(fdTemplate) : init?.body;
+    res = await fetch(input, { ...init, body, headers: buildAuthHeaders(init?.headers) });
   } catch (e: any) {
     const msg = String(e?.message || e || '');
     if (msg.includes('ByteString') || msg.includes('65279') || msg.includes('FEFF')) clearAuthTokens();
@@ -105,7 +120,12 @@ export async function authFetch(input: RequestInfo | URL, init?: RequestInit): P
   const refreshed = await refreshViaApi(rt);
   if (!refreshed?.access_token) { clearAuthTokens(); return res; }
 
-  const res2 = await fetch(input, { ...init, headers: buildAuthHeaders(init?.headers, refreshed.access_token) });
+  const retryBody = fdTemplate ? cloneFormData(fdTemplate) : init?.body;
+  const res2 = await fetch(input, {
+    ...init,
+    body: retryBody,
+    headers: buildAuthHeaders(init?.headers, refreshed.access_token),
+  });
   if (res2.status === 401) clearAuthTokens();
   return res2;
 }
