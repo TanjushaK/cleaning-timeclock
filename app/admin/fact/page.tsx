@@ -50,11 +50,11 @@ function toISODate(d: Date) {
 }
 
 function fmtD(iso?: string | null) {
-  if (!iso) return 'вЂ”'
+  if (!iso) return '—'
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
   if (m) return `${m[3]}-${m[2]}-${m[1]}`
   const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return 'вЂ”'
+  if (Number.isNaN(d.getTime())) return '—'
   return `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}-${d.getFullYear()}`
 }
 
@@ -307,10 +307,10 @@ export default function AdminFactPage() {
       const jobDate = manualDate.trim()
       const start = manualStart.trim()
       const hm = manualHM.trim()
-      if (!siteId) throw new Error('Р’С‹Р±РµСЂРё РѕР±СЉРµРєС‚')
-      if (!workerId) throw new Error('Р’С‹Р±РµСЂРё СЂР°Р±РѕС‚РЅРёРєР°')
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(jobDate)) throw new Error('Р’С‹Р±РµСЂРё РґР°С‚Сѓ')
-      if (!/^\d{2}:\d{2}$/.test(start)) throw new Error('РќР°С‡Р°Р»Рѕ РґРѕР»Р¶РЅРѕ Р±С‹С‚СЊ HH:MM')
+      if (!siteId) throw new Error('Выбери объект')
+      if (!workerId) throw new Error('Выбери работника')
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(jobDate)) throw new Error('Выбери дату')
+      if (!/^\d{2}:\d{2}$/.test(start)) throw new Error('Начало должно быть HH:MM')
       const mins = parseHM(hm)
       if (mins == null) throw new Error(t('admin.fact.errFactFormat'))
 
@@ -330,7 +330,7 @@ export default function AdminFactPage() {
       })
 
       const jobId = String(created?.created?.[0]?.id || '').trim()
-      if (!jobId) throw new Error('РЎРјРµРЅР° СЃРѕР·РґР°РЅР°, РЅРѕ ID РЅРµ РІРµСЂРЅСѓР»СЃСЏ')
+      if (!jobId) throw new Error('Смена создана, но ID не вернулся')
 
       await authFetchJson('/api/admin/jobs/set-actual', {
         method: 'POST',
@@ -339,7 +339,7 @@ export default function AdminFactPage() {
       })
 
       setManualHM('')
-      setNotice('Р¤Р°РєС‚ СЃРѕР·РґР°РЅ РІСЂСѓС‡РЅСѓСЋ.')
+      setNotice('Факт создан вручную.')
       await refresh()
     } catch (e: unknown) {
       setError(mapAdminErr(e, t) || String((e as { message?: string })?.message || e || t('admin.fact.errSave')))
@@ -534,11 +534,11 @@ export default function AdminFactPage() {
         ) : null}
 
         <div className="mt-6 rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-4">
-          <div className="text-sm font-semibold">РЎРѕР·РґР°С‚СЊ С„Р°РєС‚ РІСЂСѓС‡РЅСѓСЋ</div>
-          <div className="mt-1 text-xs opacity-70">Р”Р»СЏ СЃР»СѓС‡Р°СЏ, РєРѕРіРґР° СЂР°Р±РѕС‚РЅРёРє РЅРµ РѕС‚РјРµС‚РёР»СЃСЏ: СЃРѕР·РґР°С‘С‚ СЃРјРµРЅСѓ Рё СЃСЂР°Р·Сѓ Р·Р°РїРёСЃС‹РІР°РµС‚ С„Р°РєС‚РёС‡РµСЃРєРёРµ С‡Р°СЃС‹.</div>
+          <div className="text-sm font-semibold">Создать факт вручную</div>
+          <div className="mt-1 text-xs opacity-70">Для случая, когда работник не отметился: создаёт смену и сразу записывает фактические часы.</div>
           <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-6">
             <label className="grid gap-1">
-              <span className="text-xs opacity-80">Р”Р°С‚Р°</span>
+              <span className="text-xs opacity-80">Дата</span>
               <input
                 type="date"
                 value={manualDate}
@@ -547,33 +547,33 @@ export default function AdminFactPage() {
               />
             </label>
             <label className="grid gap-1 md:col-span-2">
-              <span className="text-xs opacity-80">РћР±СЉРµРєС‚</span>
+              <span className="text-xs opacity-80">Объект</span>
               <select
                 value={manualSiteId}
                 onChange={(e) => setManualSiteId(e.target.value)}
                 className="rounded-xl border border-amber-500/20 bg-zinc-900/40 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
               >
-                <option value="">Р’С‹Р±РµСЂРё РѕР±СЉРµРєС‚...</option>
+                <option value="">Выбери объект...</option>
                 {sites.map((s) => (
                   <option key={s.id} value={s.id}>{s.name || s.id}</option>
                 ))}
               </select>
             </label>
             <label className="grid gap-1 md:col-span-2">
-              <span className="text-xs opacity-80">Р Р°Р±РѕС‚РЅРёРє</span>
+              <span className="text-xs opacity-80">Работник</span>
               <select
                 value={manualWorkerId}
                 onChange={(e) => setManualWorkerId(e.target.value)}
                 className="rounded-xl border border-amber-500/20 bg-zinc-900/40 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
               >
-                <option value="">Р’С‹Р±РµСЂРё СЂР°Р±РѕС‚РЅРёРєР°...</option>
+                <option value="">Выбери работника...</option>
                 {workers.map((w) => (
                   <option key={w.id} value={w.id}>{w.full_name || w.id}</option>
                 ))}
               </select>
             </label>
             <label className="grid gap-1">
-              <span className="text-xs opacity-80">РќР°С‡Р°Р»Рѕ</span>
+              <span className="text-xs opacity-80">Начало</span>
               <input
                 type="time"
                 value={manualStart}
@@ -582,7 +582,7 @@ export default function AdminFactPage() {
               />
             </label>
             <label className="grid gap-1">
-              <span className="text-xs opacity-80">Р¤Р°РєС‚</span>
+              <span className="text-xs opacity-80">Факт</span>
               <input
                 value={manualHM}
                 onChange={(e) => setManualHM(e.target.value)}
@@ -596,7 +596,7 @@ export default function AdminFactPage() {
                 disabled={busy || !manualDate || !manualSiteId || !manualWorkerId || !manualStart || !manualHM}
                 className="w-full rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm font-semibold hover:bg-amber-500/15 disabled:opacity-60"
               >
-                РЎРѕР·РґР°С‚СЊ С„Р°РєС‚
+                Создать факт
               </button>
             </div>
           </div>
@@ -613,7 +613,7 @@ export default function AdminFactPage() {
           </div>
 
           {editableItems.length === 0 ? (
-            <div className="px-4 py-6 text-sm opacity-70">РќРµС‚ СЃРјРµРЅ РґР»СЏ РїСЂР°РІРєРё РІ РІС‹Р±СЂР°РЅРЅРѕРј РґРёР°РїР°Р·РѕРЅРµ.</div>
+            <div className="px-4 py-6 text-sm opacity-70">Нет смен для правки в выбранном диапазоне.</div>
           ) : (
             editableItems.map((j) => {
               const from = timeHHMM(j.scheduled_time)
@@ -623,7 +623,7 @@ export default function AdminFactPage() {
               const factStr = factM != null ? fmtDur(factM) : t('admin.common.dash')
               const planStr =
                 from && to
-                  ? `${from}вЂ“${to}${planM != null ? ` вЂў ${fmtDur(planM)}` : ''}`
+                  ? `${from}–${to}${planM != null ? ` • ${fmtDur(planM)}` : ''}`
                   : from || t('admin.common.dash')
 
               return (
@@ -654,7 +654,7 @@ export default function AdminFactPage() {
                       aria-label={t('admin.fact.clearHoursTitle')}
                       className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-100 hover:bg-red-500/15 disabled:opacity-60"
                     >
-                      рџ—‘
+                      🗑
                     </button>
 
                     <button
@@ -664,7 +664,7 @@ export default function AdminFactPage() {
                       aria-label={t('admin.fact.deleteShiftTitle')}
                       className="rounded-xl border border-zinc-500/30 bg-zinc-900/30 px-3 py-2 text-xs text-zinc-100 hover:bg-zinc-900/50 disabled:opacity-60"
                     >
-                      вњ–
+                      ✖
                     </button>
                   </div>
                 </div>

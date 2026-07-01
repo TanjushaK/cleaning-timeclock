@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic'
 function hhmm(raw: string | null | undefined): string {
   const s = String(raw || '').trim()
   if (!s) return '00:00'
-  // "HH:MM" or "HH:MM:SS" в†’ "HH:MM"
+  // "HH:MM" or "HH:MM:SS" → "HH:MM"
   const m = /^(\d{2}):(\d{2})/.exec(s)
   if (!m) return '00:00'
   return `${m[1]}:${m[2]}`
@@ -54,7 +54,7 @@ export async function POST(req: Request) {
     if (minutes == null)
       throw new ApiError(400, 'minutes (number) or hm (e.g. "3:30") is required', AdminApiErrorCode.JOB_MINUTES_OR_HM_REQUIRED)
 
-    // Р‘РµСЂС‘Рј РІСЃРµ Р»РѕРіРё РїРѕ СЃРјРµРЅРµ.
+    // Берём все логи по смене.
     const { data: logs, error: logsErr } = await sb
       .from('time_logs')
       .select('id, started_at')
@@ -63,7 +63,7 @@ export async function POST(req: Request) {
 
     if (logsErr) throw new ApiError(400, logsErr.message, AdminApiErrorCode.DB_ERROR)
 
-    // Р•СЃР»Рё Р»РѕРіРѕРІ РЅРµС‚ вЂ” СЃРѕР·РґР°С‘Рј "СЂСѓС‡РЅРѕР№" Р»РѕРі РїРѕ СЂР°СЃРїРёСЃР°РЅРёСЋ СЃРјРµРЅС‹.
+    // Если логов нет — создаём "ручной" лог по расписанию смены.
     if (!logs || logs.length === 0) {
       const { data: job, error: jobErr } = await sb
         .from('jobs')
@@ -98,7 +98,7 @@ export async function POST(req: Request) {
     const keepId = String(first.id)
     if (!keepId) throw new ApiError(400, 'time_logs.id is empty', AdminApiErrorCode.JOB_TIME_LOG_ID_MISSING)
 
-    // Р•СЃР»Рё Сѓ Р»РѕРіР° РЅРµС‚ started_at вЂ” РІРѕСЃСЃС‚Р°РЅР°РІР»РёРІР°РµРј РёР· СЂР°СЃРїРёСЃР°РЅРёСЏ.
+    // Если у лога нет started_at — восстанавливаем из расписания.
     let startedAt = String(first.started_at || '').trim()
     if (!startedAt) {
       const { data: job, error: jobErr } = await sb
@@ -120,7 +120,7 @@ export async function POST(req: Request) {
     const { error: updErr } = await sb.from('time_logs').update({ stopped_at: stoppedAt }).eq('id', keepId)
     if (updErr) throw new ApiError(400, updErr.message, AdminApiErrorCode.DB_ERROR)
 
-    // Р§С‚РѕР±С‹ РёС‚РѕРі РІСЃРµРіРґР° Р±С‹Р» СЂРѕРІРЅРѕ С‚РѕС‚, С‡С‚Рѕ РІС‹СЃС‚Р°РІРёР» Р°РґРјРёРЅ вЂ” СѓР±РёСЂР°РµРј РѕСЃС‚Р°Р»СЊРЅС‹Рµ Р»РѕРіРё.
+    // Чтобы итог всегда был ровно тот, что выставил админ — убираем остальные логи.
     const otherIds = (logs as any[]).slice(1).map((x) => String(x.id)).filter(Boolean)
     let removed = 0
     if (otherIds.length) {
