@@ -2394,7 +2394,7 @@ const [editOpen, setEditOpen] = useState(false)
         })),
       }))
       setNotice(t('admin.main.coworkerAdded'))
-      await refreshSchedule()
+      await Promise.all([refreshSchedule(), refreshCore()])
     } catch (e: unknown) {
       setError(mapAdminErr(e, t) || t('admin.main.coworkerAddFailed'))
     } finally {
