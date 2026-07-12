@@ -1,4 +1,4 @@
-﻿// app/api/me/jobs/start/route.ts
+// app/api/me/jobs/start/route.ts
 import { NextResponse } from 'next/server';
 import { AppApiErrorCodes } from '@/lib/app-error-codes';
 import { ApiError, requireActiveWorker, toErrorResponse } from '@/lib/route-db';
@@ -23,6 +23,7 @@ type JobRow = {
 };
 
 type JobWorkerRow = { job_id: string | null };
+type OpenTimeLogRow = { id: string; started_at: string | null };
 
 function toNum(v: unknown): number | null {
   const n = Number(v);
@@ -71,10 +72,6 @@ export async function POST(req: Request) {
 
     const job: JobRow = jobRaw as unknown as JobRow;
 
-    if (job.status !== 'planned') {
-      throw new ApiError(400, 'Invalid job status for start', AppApiErrorCodes.JOB_START_STATUS_INVALID);
-    }
-
     let allowed = job.worker_id === uid;
 
     if (!allowed) {
@@ -92,6 +89,11 @@ export async function POST(req: Request) {
     }
 
     if (!allowed) throw new ApiError(403, 'Job access denied', AppApiErrorCodes.JOB_ACCESS_DENIED);
+
+    const jobStatus = String(job.status || '').toLowerCase();
+    if (!['planned', 'in_progress', 'done'].includes(jobStatus)) {
+      throw new ApiError(400, 'Invalid job status for start', AppApiErrorCodes.JOB_START_STATUS_INVALID);
+    }
 
     const siteId = job.site_id;
     if (!siteId) {
@@ -135,6 +137,23 @@ export async function POST(req: Request) {
       );
     }
 
+    const { data: openLogRaw, error: openLogErr } = await db
+      .from('time_logs')
+      .select('id,started_at')
+      .eq('job_id', jobId)
+      .eq('worker_id', uid)
+      .is('stopped_at', null)
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (openLogErr) throw new ApiError(400, openLogErr.message, AppApiErrorCodes.JOB_LIST_QUERY_FAILED);
+
+    const openLog = (openLogRaw as unknown as OpenTimeLogRow | null) ?? null;
+    if (openLog) {
+      return NextResponse.json({ ok: true, already_started: true, started_at: openLog.started_at }, { status: 200 });
+    }
+
     const startedAt = new Date().toISOString();
 
     const { error: insErr } = await db.from('time_logs').insert({
@@ -148,13 +167,11 @@ export async function POST(req: Request) {
 
     if (insErr) throw new ApiError(400, insErr.message, AppApiErrorCodes.JOB_ACCEPT_UPDATE_FAILED);
 
-    const { error: updErr } = await db.from('jobs').update({ status: 'in_progress' }).eq('id', jobId);
+    const { error: updErr } = await guard.service.from('jobs').update({ status: 'in_progress' }).eq('id', jobId);
     if (updErr) throw new ApiError(400, updErr.message, AppApiErrorCodes.JOB_ACCEPT_UPDATE_FAILED);
 
-    return NextResponse.json({ ok: true }, { status: 200 });
+    return NextResponse.json({ ok: true, started_at: startedAt }, { status: 200 });
   } catch (err) {
     return toErrorResponse(err);
   }
 }
-
-
