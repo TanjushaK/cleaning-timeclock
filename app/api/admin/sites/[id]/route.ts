@@ -29,6 +29,10 @@ function toFiniteOrNull(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function isValidCoordinatePair(lat: number | null, lng: number | null): boolean {
+  return lat != null && lng != null && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+}
+
 function toCategoryOrNull(v: unknown): number | null {
   if (v == null || v === "" || v === 0 || v === "0") return null;
   const n = Number(v);
@@ -121,7 +125,8 @@ export async function PUT(req: NextRequest, ctx: { params?: Promise<{ id?: strin
     const editLocale: Lang = parseLang(body?.editLocale) ?? "ru";
     const addressConfirmed = body?.address_confirmed === true;
     const hasAddressSelection = body?.address_selection != null && typeof body.address_selection === "object";
-    const manualPinConfirmed = body?.coordinates_source === "manual_pin" && body?.manual_coordinates_confirmed === true;
+    const manualPinRequested = body?.coordinates_source === "manual_pin";
+    const manualPinConfirmed = manualPinRequested && body?.manual_coordinates_confirmed === true;
     const hasAddressRu = Object.prototype.hasOwnProperty.call(body, "address_ru");
     const addressRu = hasAddressRu ? normTextField(body.address_ru) : null;
 
@@ -175,6 +180,10 @@ export async function PUT(req: NextRequest, ctx: { params?: Promise<{ id?: strin
     if (radiusRaw !== undefined) patch.radius = toFiniteOrNull(radiusRaw);
     if (body?.category !== undefined) patch.category = toCategoryOrNull(body.category);
 
+    if (manualPinRequested && !manualPinConfirmed) {
+      throw new ApiError(400, "Manual pin correction requires explicit confirmation", AdminApiErrorCode.SITE_UPDATE_FAILED);
+    }
+
     if (Object.keys(patch).length === 0 && !hasAddressSelection && !manualPinConfirmed) {
       const { data, error } = await db.from("sites").select(SITE_FIELDS).eq("id", siteId).single();
 
@@ -223,11 +232,20 @@ export async function PUT(req: NextRequest, ctx: { params?: Promise<{ id?: strin
 
     const previousAddress = normTextField(row.address);
     const addressChanged = Object.prototype.hasOwnProperty.call(patch, "address") && nextAddress !== previousAddress;
+    const previousLat = toFiniteOrNull(row.lat);
+    const previousLng = toFiniteOrNull(row.lng);
+    const clientCoordinatesChanged =
+      (Object.prototype.hasOwnProperty.call(body, "lat") && nextLat !== previousLat) ||
+      (Object.prototype.hasOwnProperty.call(body, "lng") && nextLng !== previousLng);
+
+    if (clientCoordinatesChanged && !hasAddressSelection && !manualPinConfirmed) {
+      throw new ApiError(400, "Coordinate changes require a selected address or confirmed manual pin", AdminApiErrorCode.SITE_UPDATE_FAILED);
+    }
 
     if (manualPinConfirmed) {
       const hasManualLat = Object.prototype.hasOwnProperty.call(body, "lat") && nextLat != null;
       const hasManualLng = Object.prototype.hasOwnProperty.call(body, "lng") && nextLng != null;
-      if (!hasManualLat || !hasManualLng || !siteHasCoordinates(nextLat, nextLng, nextRadius)) {
+      if (!hasManualLat || !hasManualLng || !isValidCoordinatePair(nextLat, nextLng) || !siteHasCoordinates(nextLat, nextLng, nextRadius)) {
         throw new ApiError(400, siteCoordinatesMissingErrorMessage(), AdminApiErrorCode.SITE_COORDINATES_REQUIRED);
       }
       if (addressChanged || hasAddressSelection) {
