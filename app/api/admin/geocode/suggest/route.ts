@@ -81,15 +81,42 @@ function splitHouseNumber(value: unknown): { number: string | null; addition: st
 }
 
 function queryVariants(query: string): string[] {
-  const values = [query.trim()];
-  const separated = query.replace(/(\d)([A-Za-z])\b/g, "$1 $2").trim();
-  if (separated && separated !== values[0]) values.push(separated);
+  const values: string[] = [];
+  const add = (value: string) => {
+    const normalized = value.trim().replace(/\s+/g, " ");
+    if (normalized && !values.includes(normalized)) values.push(normalized);
+  };
+
+  add(query);
+  add(query.replace(/(\d)([A-Za-z])\b/g, "$1 $2"));
+  add(query.replace(/(\d+)\s*[A-Za-z](?=\s*(?:,|$))/g, "$1"));
   return values;
 }
 
-function dedupeSuggestions(items: AddressSuggestion[]): AddressSuggestion[] {
+function requestedHouse(query: string): { number: string | null; addition: string | null } {
+  const streetLine = query.split(",", 1)[0]?.trim() || query.trim();
+  const match = /(\d+)\s*([A-Za-z0-9\-\/]*)\s*$/.exec(streetLine);
+  return match
+    ? { number: match[1] || null, addition: text(match[2])?.toUpperCase() || null }
+    : { number: null, addition: null };
+}
+
+function suggestionScore(item: AddressSuggestion, requested: ReturnType<typeof requestedHouse>): number {
+  if (!requested.number) return 0;
+  if (item.house_number !== requested.number) return 0;
+
+  const actualAddition = text(item.house_number_addition)?.toUpperCase() || null;
+  if (!requested.addition) return actualAddition ? 80 : 100;
+  if (actualAddition === requested.addition) return 150;
+  if (!actualAddition) return 100;
+  return 60;
+}
+
+function dedupeSuggestions(items: AddressSuggestion[], query?: string): AddressSuggestion[] {
+  const requested = requestedHouse(query || "");
+  const sorted = [...items].sort((a, b) => suggestionScore(b, requested) - suggestionScore(a, requested));
   const seen = new Set<string>();
-  return items.filter((item) => {
+  return sorted.filter((item) => {
     const key = `${item.formatted_address.toLowerCase()}|${item.lat.toFixed(6)}|${item.lng.toFixed(6)}`;
     if (seen.has(key)) return false;
     seen.add(key);
@@ -152,9 +179,8 @@ async function searchPdok(query: string): Promise<AddressSuggestion[]> {
         geocode_provider: "pdok",
       });
     }
-    if (output.length >= 5) break;
   }
-  return dedupeSuggestions(output);
+  return dedupeSuggestions(output, query);
 }
 
 async function searchNominatim(query: string): Promise<AddressSuggestion[]> {
