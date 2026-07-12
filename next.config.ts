@@ -34,5 +34,12 @@ const nextConfig: NextConfig = {
   },
 }
 
-export default nextConfig
+const __tanjushaPhotoUploadNextConfig = {
+  ...nextConfig,
+  experimental: {
+    ...(nextConfig.experimental || {}),
+    proxyClientMaxBodySize: '25mb',
+  },
+}
 
+export default __tanjushaPhotoUploadNextConfig
