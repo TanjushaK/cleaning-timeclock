@@ -88,6 +88,9 @@ export async function POST(req: Request) {
       })
       if (insErr) throw new ApiError(400, insErr.message, AdminApiErrorCode.DB_ERROR)
 
+      const { error: doneErr } = await sb.from('jobs').update({ status: 'done' }).eq('id', jobId)
+      if (doneErr) throw new ApiError(400, doneErr.message, AdminApiErrorCode.DB_ERROR)
+
       return NextResponse.json({ ok: true, created: true, started_at: startedAt, stopped_at: stoppedAt, minutes, logs_removed: 0 })
     }
 
@@ -125,6 +128,9 @@ export async function POST(req: Request) {
       if (delErr) throw new ApiError(400, delErr.message, AdminApiErrorCode.DB_ERROR)
       removed = otherIds.length
     }
+
+    const { error: doneErr } = await sb.from('jobs').update({ status: 'done' }).eq('id', jobId)
+    if (doneErr) throw new ApiError(400, doneErr.message, AdminApiErrorCode.DB_ERROR)
 
     return NextResponse.json({ ok: true, created: false, started_at: startedAt, stopped_at: stoppedAt, minutes, logs_removed: removed })
   } catch (e) {

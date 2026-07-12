@@ -4,6 +4,40 @@ import { localPhotoBucket } from '@/lib/server/local-photo-storage'
 import { routeDynamicId } from '@/lib/server/route-dynamic-id'
 import { ApiError, requireAdmin, toErrorResponse } from '@/lib/route-db'
 import { withCookieBearer } from '@/lib/server/with-cookie-bearer'
+const TANJUSHA_PHOTO_UPLOAD_LIMIT_MB = 25
+const TANJUSHA_PHOTO_UPLOAD_LIMIT_BYTES = TANJUSHA_PHOTO_UPLOAD_LIMIT_MB * 1024 * 1024
+
+function tanjushaPhotoTooLargeResponse() {
+  return Response.json(
+    { ok: false, error: '\u0424\u043e\u0442\u043e \u0431\u043e\u043b\u044c\u0448\u0435 25 MB', code: 'PHOTO_TOO_LARGE' },
+    { status: 413 },
+  )
+}
+
+function tanjushaPhotoParseFailedResponse() {
+  return Response.json(
+    { ok: false, error: '\u0424\u043e\u0442\u043e \u0431\u043e\u043b\u044c\u0448\u0435 25 MB \u0438\u043b\u0438 \u0444\u0430\u0439\u043b \u043f\u043e\u0432\u0440\u0435\u0436\u0434\u0451\u043d', code: 'PHOTO_FORMDATA_PARSE_FAILED' },
+    { status: 413 },
+  )
+}
+
+function isTanjushaPhotoUploadTooLarge(request: Request) {
+  const raw = request.headers.get('content-length')
+  if (!raw) return false
+  const n = Number(raw)
+  return Number.isFinite(n) && n > TANJUSHA_PHOTO_UPLOAD_LIMIT_BYTES
+}
+
+async function readTanjushaPhotoFormData(request: Request): Promise<{ formData: FormData } | { response: Response }> {
+  if (isTanjushaPhotoUploadTooLarge(request)) return { response: tanjushaPhotoTooLargeResponse() }
+
+  try {
+    return { formData: await request.formData() }
+  } catch {
+    return { response: tanjushaPhotoParseFailedResponse() }
+  }
+}
+
 
 export const runtime = 'nodejs'
 
@@ -165,7 +199,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
     const { db } = await requireAdmin(withCookieBearer(req))
 
-    const form = await req.formData()
+    const __tanjushaPhotoBody1 = await readTanjushaPhotoFormData(req)
+    if ('response' in __tanjushaPhotoBody1) return __tanjushaPhotoBody1.response
+    const form = __tanjushaPhotoBody1.formData
     const file = asIncomingFile(form.get('file'))
     if (!file) throw new ApiError(400, 'file_required')
 

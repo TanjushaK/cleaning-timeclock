@@ -25,6 +25,19 @@ type ScheduleItem = {
   stopped_at: string | null
 }
 
+type WorkerOption = {
+  id: string
+  full_name: string | null
+  role?: string | null
+  active?: boolean | null
+}
+
+type SiteOption = {
+  id: string
+  name: string | null
+  archived_at?: string | null
+}
+
 function pad2(n: number) {
   return String(n).padStart(2, '0')
 }
@@ -68,6 +81,13 @@ function parseHM(s: string): number | null {
   if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null
   if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null
   return hh * 60 + mm
+}
+
+function hhmmFromMinutes(total: number) {
+  const m = ((Math.floor(total) % (24 * 60)) + 24 * 60) % (24 * 60)
+  const h = Math.floor(m / 60)
+  const r = m % 60
+  return `${pad2(h)}:${pad2(r)}`
 }
 
 function plannedMinutes(from?: string | null, to?: string | null) {
@@ -139,15 +159,44 @@ export default function AdminFactPage() {
 
   const [editHM, setEditHM] = useState<Record<string, string>>({})
 
+  const [workers, setWorkers] = useState<WorkerOption[]>([])
+  const [sites, setSites] = useState<SiteOption[]>([])
+  const [manualDate, setManualDate] = useState(() => toISODate(new Date()))
+  const [manualSiteId, setManualSiteId] = useState('')
+  const [manualWorkerId, setManualWorkerId] = useState('')
+  const [manualStart, setManualStart] = useState('09:00')
+  const [manualHM, setManualHM] = useState('')
+
   const authed = !!token
 
   const refresh = useCallback(async () => {
     setError(null)
     setNotice(null)
     const url = `/api/admin/schedule?date_from=${encodeURIComponent(dateFrom)}&date_to=${encodeURIComponent(dateTo)}`
-    const res = await authFetchJson<{ items: ScheduleItem[] }>(url, { cache: 'no-store' })
+    const [res, workersRes, sitesRes] = await Promise.all([
+      authFetchJson<{ items: ScheduleItem[] }>(url, { cache: 'no-store' }),
+      authFetchJson<{ workers: WorkerOption[] }>('/api/admin/workers/list', { cache: 'no-store' }).catch(() => ({ workers: [] })),
+      authFetchJson<{ sites: SiteOption[] }>('/api/admin/sites/list', { cache: 'no-store' }).catch(() => ({ sites: [] })),
+    ])
+
     const list = Array.isArray(res?.items) ? res.items : []
     setItems(list)
+
+    const workerList = Array.isArray(workersRes?.workers) ? workersRes.workers : []
+    setWorkers(
+      workerList
+        .filter((w) => String(w?.role || 'worker') === 'worker')
+        .filter((w) => w?.active !== false)
+        .sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || ''), undefined, { sensitivity: 'base' })),
+    )
+
+    const siteList = Array.isArray(sitesRes?.sites) ? sitesRes.sites : []
+    setSites(
+      siteList
+        .filter((s) => !s?.archived_at)
+        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' })),
+    )
+
     const next: Record<string, string> = {}
     for (const j of list) {
       const am = actualMinutes(j.started_at, j.stopped_at)
@@ -208,9 +257,10 @@ export default function AdminFactPage() {
     setNotice(t('admin.common.noticeLogout'))
   }, [t])
 
-  const doneItems = useMemo(() => {
+  const editableItems = useMemo(() => {
     return items
-      .filter((x) => String(x.status || '') === 'done')
+      .filter((x) => !!x.site_id && !!x.worker_id)
+      .filter((x) => !['cancelled', 'canceled', 'deleted'].includes(String(x.status || '').toLowerCase()))
       .sort((a, b) => {
         const da = String(a.job_date || '')
         const db = String(b.job_date || '')
@@ -246,6 +296,57 @@ export default function AdminFactPage() {
     },
     [editHM, refresh, t],
   )
+
+  const createManualFact = useCallback(async () => {
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    try {
+      const siteId = manualSiteId.trim()
+      const workerId = manualWorkerId.trim()
+      const jobDate = manualDate.trim()
+      const start = manualStart.trim()
+      const hm = manualHM.trim()
+      if (!siteId) throw new Error('Выбери объект')
+      if (!workerId) throw new Error('Выбери работника')
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(jobDate)) throw new Error('Выбери дату')
+      if (!/^\d{2}:\d{2}$/.test(start)) throw new Error('Начало должно быть HH:MM')
+      const mins = parseHM(hm)
+      if (mins == null) throw new Error(t('admin.fact.errFactFormat'))
+
+      const startM = minutesFromHHMM(start)
+      const end = startM == null ? null : hhmmFromMinutes(startM + mins)
+
+      const created = await authFetchJson<{ created?: Array<{ id?: string }> }>('/api/admin/jobs/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          site_id: siteId,
+          worker_ids: [workerId],
+          job_date: jobDate,
+          scheduled_time: start,
+          scheduled_end_time: end,
+        }),
+      })
+
+      const jobId = String(created?.created?.[0]?.id || '').trim()
+      if (!jobId) throw new Error('Смена создана, но ID не вернулся')
+
+      await authFetchJson('/api/admin/jobs/set-actual', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ job_id: jobId, hm }),
+      })
+
+      setManualHM('')
+      setNotice('Факт создан вручную.')
+      await refresh()
+    } catch (e: unknown) {
+      setError(mapAdminErr(e, t) || String((e as { message?: string })?.message || e || t('admin.fact.errSave')))
+    } finally {
+      setBusy(false)
+    }
+  }, [manualDate, manualHM, manualSiteId, manualStart, manualWorkerId, refresh, t])
 
   const clearActual = useCallback(
     async (jobId: string) => {
@@ -432,6 +533,75 @@ export default function AdminFactPage() {
           <div className="mt-4 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">{notice}</div>
         ) : null}
 
+        <div className="mt-6 rounded-2xl border border-amber-500/20 bg-zinc-950/60 p-4">
+          <div className="text-sm font-semibold">Создать факт вручную</div>
+          <div className="mt-1 text-xs opacity-70">Для случая, когда работник не отметился: создаёт смену и сразу записывает фактические часы.</div>
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-6">
+            <label className="grid gap-1">
+              <span className="text-xs opacity-80">Дата</span>
+              <input
+                type="date"
+                value={manualDate}
+                onChange={(e) => setManualDate(e.target.value)}
+                className="rounded-xl border border-amber-500/20 bg-zinc-900/40 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
+              />
+            </label>
+            <label className="grid gap-1 md:col-span-2">
+              <span className="text-xs opacity-80">Объект</span>
+              <select
+                value={manualSiteId}
+                onChange={(e) => setManualSiteId(e.target.value)}
+                className="rounded-xl border border-amber-500/20 bg-zinc-900/40 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
+              >
+                <option value="">Выбери объект...</option>
+                {sites.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name || s.id}</option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-1 md:col-span-2">
+              <span className="text-xs opacity-80">Работник</span>
+              <select
+                value={manualWorkerId}
+                onChange={(e) => setManualWorkerId(e.target.value)}
+                className="rounded-xl border border-amber-500/20 bg-zinc-900/40 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
+              >
+                <option value="">Выбери работника...</option>
+                {workers.map((w) => (
+                  <option key={w.id} value={w.id}>{w.full_name || w.id}</option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-1">
+              <span className="text-xs opacity-80">Начало</span>
+              <input
+                type="time"
+                value={manualStart}
+                onChange={(e) => setManualStart(e.target.value)}
+                className="rounded-xl border border-amber-500/20 bg-zinc-900/40 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
+              />
+            </label>
+            <label className="grid gap-1">
+              <span className="text-xs opacity-80">Факт</span>
+              <input
+                value={manualHM}
+                onChange={(e) => setManualHM(e.target.value)}
+                placeholder="3:00"
+                className="rounded-xl border border-amber-500/20 bg-zinc-900/40 px-3 py-2 text-sm outline-none focus:border-amber-400/50"
+              />
+            </label>
+            <div className="flex items-end md:col-span-2">
+              <button
+                onClick={createManualFact}
+                disabled={busy || !manualDate || !manualSiteId || !manualWorkerId || !manualStart || !manualHM}
+                className="w-full rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm font-semibold hover:bg-amber-500/15 disabled:opacity-60"
+              >
+                Создать факт
+              </button>
+            </div>
+          </div>
+        </div>
+
         <div className="mt-6 rounded-2xl border border-amber-500/20 bg-zinc-950/60 overflow-hidden">
           <div className="grid grid-cols-12 gap-0 border-b border-amber-500/10 bg-black/20 px-4 py-3 text-xs text-zinc-200">
             <div className="col-span-2">{t('admin.fact.theadDate')}</div>
@@ -442,10 +612,10 @@ export default function AdminFactPage() {
             <div className="col-span-3">{t('admin.fact.theadEdit')}</div>
           </div>
 
-          {doneItems.length === 0 ? (
-            <div className="px-4 py-6 text-sm opacity-70">{t('admin.fact.emptyDone')}</div>
+          {editableItems.length === 0 ? (
+            <div className="px-4 py-6 text-sm opacity-70">Нет смен для правки в выбранном диапазоне.</div>
           ) : (
-            doneItems.map((j) => {
+            editableItems.map((j) => {
               const from = timeHHMM(j.scheduled_time)
               const to = timeHHMM(j.scheduled_end_time ?? null)
               const planM = plannedMinutes(from, to)

@@ -36,6 +36,28 @@ async function fetchEmailsForIds(db: any, ids: string[]): Promise<Record<string,
   return map
 }
 
+async function ensureAssignmentForCoworker(db: any, siteId: string | null | undefined, workerId: string) {
+  const sid = String(siteId || '').trim()
+  const wid = String(workerId || '').trim()
+  if (!sid || !wid) return
+
+  const { data: existing, error: existingErr } = await db
+    .from('assignments')
+    .select('site_id,worker_id')
+    .eq('site_id', sid)
+    .eq('worker_id', wid)
+    .limit(1)
+
+  if (existingErr) throw new ApiError(400, existingErr.message, AdminApiErrorCode.DB_ERROR)
+  if (Array.isArray(existing) && existing.length > 0) return
+
+  const { error: insertErr } = await db.from('assignments').insert({ site_id: sid, worker_id: wid })
+  if (!insertErr) return
+
+  const msg = String(insertErr.message || '')
+  if (/duplicate|unique/i.test(msg)) return
+  throw new ApiError(400, insertErr.message, AdminApiErrorCode.DB_ERROR)
+}
 async function listCoworkersForJob(db: any, jobId: string): Promise<CoworkerOut[]> {
   const { data: links, error: lwErr } = await db.from('job_workers').select('worker_id').eq('job_id', jobId)
   if (lwErr) {
@@ -101,7 +123,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     const worker_id = typeof body?.worker_id === 'string' ? body.worker_id.trim() : ''
     if (!worker_id) throw new ApiError(400, 'worker_id is required', AdminApiErrorCode.WORKER_ID_REQUIRED)
 
-    const { data: job, error: jErr } = await db.from('jobs').select('id,worker_id').eq('id', jobId).maybeSingle()
+    const { data: job, error: jErr } = await db.from('jobs').select('id,worker_id,site_id').eq('id', jobId).maybeSingle()
     if (jErr) throw new ApiError(400, jErr.message, AdminApiErrorCode.DB_ERROR)
     if (!job) throw new ApiError(404, 'Shift not found', AdminApiErrorCode.JOB_NOT_FOUND)
 
@@ -133,6 +155,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       .maybeSingle()
 
     if (existing) {
+      await ensureAssignmentForCoworker(db, job.site_id, worker_id)
       const coworkers = await listCoworkersForJob(db, jobId)
       return NextResponse.json({ ok: true, coworkers })
     }
