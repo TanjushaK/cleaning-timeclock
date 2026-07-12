@@ -1,4 +1,4 @@
-﻿// app/api/me/jobs/stop/route.ts
+// app/api/me/jobs/stop/route.ts
 import { NextResponse } from 'next/server';
 import { AppApiErrorCodes } from '@/lib/app-error-codes';
 import { ApiError, requireActiveWorker, toErrorResponse } from '@/lib/route-db';
@@ -23,10 +23,10 @@ type JobRow = {
 };
 
 type SiteRow = { id: string; lat: number | null; lng: number | null; radius: number | null };
-
 type JobWorkerRow = { job_id: string | null };
-
 type TimeLogRow = { id: string; started_at: string | null };
+type ParticipantRow = { worker_id: string | null };
+type TeamTimeLogRow = { worker_id: string | null; started_at: string | null; stopped_at: string | null };
 
 function toNum(v: unknown): number | null {
   const n = Number(v);
@@ -43,6 +43,52 @@ function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number)
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
+}
+
+async function recomputeSharedJobStatus(service: any, job: JobRow) {
+  const rawStatus = String(job.status || '').toLowerCase();
+  if (rawStatus === 'cancelled' || rawStatus === 'canceled') return;
+
+  const participants = new Set<string>();
+  if (job.worker_id) participants.add(String(job.worker_id));
+
+  const { data: linkedRaw, error: linkedErr } = await service
+    .from('job_workers')
+    .select('worker_id')
+    .eq('job_id', job.id);
+
+  if (linkedErr) throw new ApiError(400, linkedErr.message, AppApiErrorCodes.JOB_LIST_QUERY_FAILED);
+
+  for (const row of (linkedRaw || []) as ParticipantRow[]) {
+    if (row.worker_id) participants.add(String(row.worker_id));
+  }
+
+  const { data: logsRaw, error: logsErr } = await service
+    .from('time_logs')
+    .select('worker_id,started_at,stopped_at')
+    .eq('job_id', job.id);
+
+  if (logsErr) throw new ApiError(400, logsErr.message, AppApiErrorCodes.JOB_LIST_QUERY_FAILED);
+
+  let hasOpenLog = false;
+  const completedWorkers = new Set<string>();
+
+  for (const row of (logsRaw || []) as TeamTimeLogRow[]) {
+    const workerId = row.worker_id ? String(row.worker_id) : '';
+    if (!workerId || !row.started_at) continue;
+    if (!row.stopped_at) hasOpenLog = true;
+    else completedWorkers.add(workerId);
+  }
+
+  let nextStatus = 'planned';
+  if (hasOpenLog) {
+    nextStatus = 'in_progress';
+  } else if (participants.size > 0 && Array.from(participants).every((workerId) => completedWorkers.has(workerId))) {
+    nextStatus = 'done';
+  }
+
+  const { error: updateErr } = await service.from('jobs').update({ status: nextStatus }).eq('id', job.id);
+  if (updateErr) throw new ApiError(400, updateErr.message, AppApiErrorCodes.JOB_ACCEPT_UPDATE_FAILED);
 }
 
 export async function POST(req: Request) {
@@ -75,10 +121,6 @@ export async function POST(req: Request) {
 
     const job: JobRow = jobRaw as unknown as JobRow;
 
-    if (job.status !== 'in_progress') {
-      throw new ApiError(400, 'Invalid job status for stop', AppApiErrorCodes.JOB_STOP_STATUS_INVALID);
-    }
-
     let allowed = job.worker_id === uid;
 
     if (!allowed) {
@@ -101,7 +143,7 @@ export async function POST(req: Request) {
       throw new ApiError(400, 'Site coordinates missing', AppApiErrorCodes.SITE_COORDINATES_MISSING);
     }
 
-    const { data: siteRaw, error: siteErr } = await db
+    const { data: siteRaw, error: siteErr } = await guard.service
       .from('sites')
       .select('id,lat,lng,radius')
       .eq('id', job.site_id)
@@ -151,7 +193,6 @@ export async function POST(req: Request) {
     if (!logRaw) throw new ApiError(400, 'No open time log', AppApiErrorCodes.TIME_LOG_NOT_OPEN);
 
     const log: TimeLogRow = logRaw as unknown as TimeLogRow;
-
     const stoppedAt = new Date().toISOString();
 
     const { error: updLogErr } = await db
@@ -166,13 +207,10 @@ export async function POST(req: Request) {
 
     if (updLogErr) throw new ApiError(400, updLogErr.message, AppApiErrorCodes.JOB_ACCEPT_UPDATE_FAILED);
 
-    const { error: updJobErr } = await db.from('jobs').update({ status: 'done' }).eq('id', jobId);
-    if (updJobErr) throw new ApiError(400, updJobErr.message, AppApiErrorCodes.JOB_ACCEPT_UPDATE_FAILED);
+    await recomputeSharedJobStatus(guard.service, job);
 
-    return NextResponse.json({ ok: true }, { status: 200 });
+    return NextResponse.json({ ok: true, stopped_at: stoppedAt }, { status: 200 });
   } catch (err) {
     return toErrorResponse(err);
   }
 }
-
-
