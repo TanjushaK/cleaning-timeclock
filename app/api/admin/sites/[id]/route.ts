@@ -16,11 +16,12 @@ import {
   siteCoordinatesMissingErrorMessage,
   siteHasCoordinates,
 } from "@/lib/server/admin-geocode";
+import { emptyStructuredAddressPatch, structuredAddressFromBody } from "@/lib/server/site-address-structure";
 
 export const runtime = "nodejs";
 
 const SITE_FIELDS =
-  "id,name,address,lat,lng,radius,category,notes,photos,archived_at,name_i18n,address_i18n,notes_i18n";
+  "id,name,address,lat,lng,radius,category,notes,photos,archived_at,name_i18n,address_i18n,notes_i18n,street,house_number,house_number_addition,postal_code,city,country_code,formatted_address,geocode_provider,coordinates_source,coordinates_verified_at,coordinates_verified_by";
 
 function toFiniteOrNull(v: unknown): number | null {
   if (v == null) return null;
@@ -67,7 +68,7 @@ export async function GET(req: NextRequest, ctx: { params?: Promise<{ id?: strin
 
 export async function PUT(req: NextRequest, ctx: { params?: Promise<{ id?: string }> }) {
   try {
-    const { db } = await requireAdmin(withCookieBearer(req));
+    const { db, userId } = await requireAdmin(withCookieBearer(req));
     const siteId = await getSiteIdFromReq(req, ctx);
     const loc = requestLocale(req);
     const body = await req.json().catch(() => ({}));
@@ -119,6 +120,7 @@ export async function PUT(req: NextRequest, ctx: { params?: Promise<{ id?: strin
 
     const editLocale: Lang = parseLang(body?.editLocale) ?? "ru";
     const addressConfirmed = body?.address_confirmed === true;
+    const hasAddressSelection = body?.address_selection != null && typeof body.address_selection === "object";
     const hasAddressRu = Object.prototype.hasOwnProperty.call(body, "address_ru");
     const addressRu = hasAddressRu ? normTextField(body.address_ru) : null;
 
@@ -172,7 +174,7 @@ export async function PUT(req: NextRequest, ctx: { params?: Promise<{ id?: strin
     if (radiusRaw !== undefined) patch.radius = toFiniteOrNull(radiusRaw);
     if (body?.category !== undefined) patch.category = toCategoryOrNull(body.category);
 
-    if (Object.keys(patch).length === 0) {
+    if (Object.keys(patch).length === 0 && !hasAddressSelection) {
       const { data, error } = await db.from("sites").select(SITE_FIELDS).eq("id", siteId).single();
 
       if (error) throw new ApiError(404, "Site not found", AdminApiErrorCode.SITE_NOT_FOUND);
@@ -187,7 +189,6 @@ export async function PUT(req: NextRequest, ctx: { params?: Promise<{ id?: strin
     const nextAddress = Object.prototype.hasOwnProperty.call(patch, "address")
       ? (patch.address as string | null)
       : ((row.address as string | null) ?? null);
-    const geocodeAddressText = nextAddress || addressRu;
     let nextLat = Object.prototype.hasOwnProperty.call(patch, "lat")
       ? (patch.lat as number | null)
       : ((row.lat as number | null) ?? null);
@@ -217,6 +218,21 @@ export async function PUT(req: NextRequest, ctx: { params?: Promise<{ id?: strin
     }
     if (!nextAddress && (nextLat != null || nextLng != null)) {
       throw new ApiError(400, siteAddressRequiredErrorMessage(), AdminApiErrorCode.SITE_ADDRESS_REQUIRED_FOR_COORDINATES);
+    }
+
+    const previousAddress = normTextField(row.address);
+    const addressChanged = Object.prototype.hasOwnProperty.call(patch, "address") && nextAddress !== previousAddress;
+
+    if (!nextAddress) {
+      Object.assign(patch, emptyStructuredAddressPatch());
+    } else if (addressConfirmed && (addressChanged || hasAddressSelection)) {
+      Object.assign(patch, structuredAddressFromBody(body as Record<string, unknown>, nextAddress), {
+        coordinates_source: "geocoder_confirmed",
+        coordinates_verified_at: new Date().toISOString(),
+        coordinates_verified_by: userId,
+      });
+    } else if (addressChanged) {
+      Object.assign(patch, emptyStructuredAddressPatch());
     }
 
     const { data, error } = await db

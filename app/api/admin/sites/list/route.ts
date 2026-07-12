@@ -40,7 +40,7 @@ function normalizePhotos(v: unknown): SitePhoto[] {
 }
 
 const SITE_FIELDS =
-  "id,name,address,lat,lng,radius,category,notes,photos,archived_at,name_i18n,address_i18n,notes_i18n";
+  "id,name,address,lat,lng,radius,category,notes,photos,archived_at,name_i18n,address_i18n,notes_i18n,street,house_number,house_number_addition,postal_code,city,country_code,formatted_address,geocode_provider,coordinates_source,coordinates_verified_at,coordinates_verified_by";
 
 export async function GET(req: NextRequest) {
   try {
