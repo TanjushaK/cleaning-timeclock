@@ -8,6 +8,7 @@ import {
   siteCoordinatesMissingErrorMessage,
   siteHasCoordinates,
 } from "@/lib/server/admin-geocode";
+import { structuredAddressFromBody } from "@/lib/server/site-address-structure";
 import type { I18nJson } from "@/lib/localized-records";
 import { requestLocale } from "@/lib/request-lang";
 import { ApiError, requireAdmin, toErrorResponse } from "@/lib/route-db";
@@ -15,7 +16,7 @@ import { ApiError, requireAdmin, toErrorResponse } from "@/lib/route-db";
 export const runtime = "nodejs";
 
 const SITE_FIELDS =
-  "id,name,address,lat,lng,radius,category,notes,photos,archived_at,name_i18n,address_i18n,notes_i18n";
+  "id,name,address,lat,lng,radius,category,notes,photos,archived_at,name_i18n,address_i18n,notes_i18n,street,house_number,house_number_addition,postal_code,city,country_code,formatted_address,geocode_provider,coordinates_source,coordinates_verified_at,coordinates_verified_by";
 
 function toFiniteOrNull(v: unknown): number | null {
   if (v == null) return null;
@@ -34,7 +35,7 @@ function toCategoryOrNull(v: unknown): number | null {
 
 export async function POST(req: Request) {
   try {
-    const { db } = await requireAdmin(req.headers);
+    const { db, userId } = await requireAdmin(req.headers);
     const body = await req.json();
     const loc = requestLocale(req);
 
@@ -67,6 +68,8 @@ export async function POST(req: Request) {
         AdminApiErrorCode.SITE_COORDINATES_REQUIRED,
       );
     }
+
+    const structured = structuredAddressFromBody(body as Record<string, unknown>, address);
 
     let nameI18n: I18nJson = { ru: name };
     let addressI18n: I18nJson = address ? { ru: address } : {};
@@ -104,6 +107,10 @@ export async function POST(req: Request) {
         name_i18n: nameI18n,
         address_i18n: addressI18n,
         notes_i18n: notesI18n,
+        ...structured,
+        coordinates_source: addressConfirmed ? "geocoder_confirmed" : "legacy_unverified",
+        coordinates_verified_at: addressConfirmed ? new Date().toISOString() : null,
+        coordinates_verified_by: addressConfirmed ? userId : null,
       })
       .select(SITE_FIELDS)
       .single();
