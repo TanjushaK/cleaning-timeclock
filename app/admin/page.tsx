@@ -1462,6 +1462,9 @@ export default function AdminPage() {
   const [siteCardLng, setSiteCardLng] = useState('')
   const [siteCardAddressConfirmed, setSiteCardAddressConfirmed] = useState(false)
   const [siteCardAddressSelection, setSiteCardAddressSelection] = useState<AddressSuggestion | null>(null)
+  const [siteCardManualPin, setSiteCardManualPin] = useState(false)
+  const [siteCardOriginalLat, setSiteCardOriginalLat] = useState('')
+  const [siteCardOriginalLng, setSiteCardOriginalLng] = useState('')
   const [siteCardPhotos, setSiteCardPhotos] = useState<SitePhoto[]>([])
 
 
@@ -2054,8 +2057,13 @@ const [editOpen, setEditOpen] = useState(false)
     setSiteLocDraft(siteToLocDraft(s))
     setSiteCardRadius(String(s.radius ?? 150))
     setSiteCardCategory(s.category ?? null)
-    setSiteCardLat(s.lat == null ? '' : String(s.lat))
-    setSiteCardLng(s.lng == null ? '' : String(s.lng))
+    const nextLat = s.lat == null ? '' : String(s.lat)
+    const nextLng = s.lng == null ? '' : String(s.lng)
+    setSiteCardLat(nextLat)
+    setSiteCardLng(nextLng)
+    setSiteCardOriginalLat(nextLat)
+    setSiteCardOriginalLng(nextLng)
+    setSiteCardManualPin(false)
     setSiteCardAddressConfirmed(Boolean(String(s.address || '').trim() && s.lat != null && s.lng != null))
     setSiteCardAddressSelection(null)
     setSiteCardPhotos(Array.isArray(s.photos) ? (s.photos as any) : [])
@@ -2184,7 +2192,9 @@ const [editOpen, setEditOpen] = useState(false)
           address: locDraftValueRaw(siteLocDraft.address, lang).trim() || null,
           address_ru: addressRu,
           address_confirmed: true,
-          address_selection: siteCardAddressSelection || undefined,
+          address_selection: siteCardManualPin ? undefined : siteCardAddressSelection || undefined,
+          coordinates_source: siteCardManualPin ? 'manual_pin' : undefined,
+          manual_coordinates_confirmed: siteCardManualPin ? true : undefined,
           radius,
           lat,
           lng,
@@ -2194,6 +2204,7 @@ const [editOpen, setEditOpen] = useState(false)
       })
 
       if (res?.site) applySiteUpdate(res.site)
+      setSiteCardManualPin(false)
       setSiteCardOpen(false)
       await refreshCore()
     } catch (e: unknown) {
@@ -4253,9 +4264,14 @@ const [editOpen, setEditOpen] = useState(false)
                                       ...prev,
                                       address: { ...prev.address, ru: suggestion.formatted_address },
                                     }))
+                                    const nextLat = String(suggestion.lat)
+                                    const nextLng = String(suggestion.lng)
                                     setSiteCardAddressConfirmed(true)
-                                    setSiteCardLat(String(suggestion.lat))
-                                    setSiteCardLng(String(suggestion.lng))
+                                    setSiteCardLat(nextLat)
+                                    setSiteCardLng(nextLng)
+                                    setSiteCardOriginalLat(nextLat)
+                                    setSiteCardOriginalLng(nextLng)
+                                    setSiteCardManualPin(false)
                                     setSiteCardAddressSelection(suggestion)
                                   }}
                                 />
@@ -4274,12 +4290,53 @@ const [editOpen, setEditOpen] = useState(false)
                                   <CategoryPicker value={siteCardCategory} onChange={setSiteCardCategory} disabled={busy} />
                                 </div>
 
+                                <div className="sm:col-span-2 rounded-2xl border border-yellow-400/15 bg-black/20 p-3">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div>
+                                      <div className="text-sm font-semibold text-yellow-100">
+                                        {lang === 'ru' ? 'Координаты объекта' : lang === 'uk' ? 'Координати об’єкта' : lang === 'nl' ? 'Objectcoördinaten' : 'Site coordinates'}
+                                      </div>
+                                      <div className="text-xs text-yellow-100/55">
+                                        {siteCardManualPin
+                                          ? lang === 'ru' ? 'Ручной режим включён. Проверьте точку на карте перед сохранением.' : lang === 'uk' ? 'Ручний режим увімкнено. Перевірте точку на карті перед збереженням.' : lang === 'nl' ? 'Handmatige modus is ingeschakeld. Controleer de pin op de kaart voordat u opslaat.' : 'Manual mode is enabled. Verify the pin on the map before saving.'
+                                          : lang === 'ru' ? 'По умолчанию координаты берутся из выбранного адреса PDOK.' : lang === 'uk' ? 'За замовчуванням координати беруться з вибраної адреси PDOK.' : lang === 'nl' ? 'Standaard komen de coördinaten van het gekozen PDOK-adres.' : 'Coordinates normally come from the selected PDOK address.'}
+                                      </div>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (siteCardManualPin) {
+                                          setSiteCardLat(siteCardOriginalLat)
+                                          setSiteCardLng(siteCardOriginalLng)
+                                          setSiteCardManualPin(false)
+                                        } else {
+                                          setSiteCardOriginalLat(siteCardLat)
+                                          setSiteCardOriginalLng(siteCardLng)
+                                          setSiteCardManualPin(true)
+                                          setSiteCardAddressSelection(null)
+                                        }
+                                      }}
+                                      disabled={busy}
+                                      className="rounded-xl border border-yellow-300/35 bg-yellow-400/10 px-3 py-2 text-xs font-semibold text-yellow-100 hover:border-yellow-200/60 disabled:opacity-50"
+                                    >
+                                      {siteCardManualPin
+                                        ? lang === 'ru' ? 'Отменить ручную точку' : lang === 'uk' ? 'Скасувати ручну точку' : lang === 'nl' ? 'Handmatige pin annuleren' : 'Cancel manual pin'
+                                        : lang === 'ru' ? 'Исправить точку вручную' : lang === 'uk' ? 'Виправити точку вручну' : lang === 'nl' ? 'Pin handmatig corrigeren' : 'Correct pin manually'}
+                                    </button>
+                                  </div>
+                                </div>
+
                                 <label className="grid gap-1">
                                   <span className="text-[11px] text-zinc-300">{t('admin.main.lat')}</span>
                                   <input
                                     value={siteCardLat}
-                                    readOnly
-                                    className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm text-zinc-300 outline-none"
+                                    onChange={(e) => setSiteCardLat(e.target.value)}
+                                    readOnly={!siteCardManualPin}
+                                    inputMode="decimal"
+                                    className={cn(
+                                      'rounded-2xl border bg-black/30 px-4 py-3 text-sm outline-none',
+                                      siteCardManualPin ? 'border-yellow-300/45 text-yellow-50 focus:border-yellow-200/70' : 'border-yellow-400/15 text-zinc-300'
+                                    )}
                                     placeholder={t('admin.main.phLat')}
                                   />
                                 </label>
@@ -4288,8 +4345,13 @@ const [editOpen, setEditOpen] = useState(false)
                                   <span className="text-[11px] text-zinc-300">{t('admin.main.lng')}</span>
                                   <input
                                     value={siteCardLng}
-                                    readOnly
-                                    className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm text-zinc-300 outline-none"
+                                    onChange={(e) => setSiteCardLng(e.target.value)}
+                                    readOnly={!siteCardManualPin}
+                                    inputMode="decimal"
+                                    className={cn(
+                                      'rounded-2xl border bg-black/30 px-4 py-3 text-sm outline-none',
+                                      siteCardManualPin ? 'border-yellow-300/45 text-yellow-50 focus:border-yellow-200/70' : 'border-yellow-400/15 text-zinc-300'
+                                    )}
                                     placeholder={t('admin.main.phLng')}
                                   />
                                 </label>
