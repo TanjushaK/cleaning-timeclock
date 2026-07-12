@@ -9,14 +9,14 @@ const TANJUSHA_PHOTO_UPLOAD_LIMIT_BYTES = TANJUSHA_PHOTO_UPLOAD_LIMIT_MB * 1024 
 
 function tanjushaPhotoTooLargeResponse() {
   return Response.json(
-    { ok: false, error: 'Р¤РѕС‚Рѕ Р±РѕР»СЊС€Рµ 25 MB', code: 'PHOTO_TOO_LARGE' },
+    { ok: false, error: '\u0424\u043e\u0442\u043e \u0431\u043e\u043b\u044c\u0448\u0435 25 MB', code: 'PHOTO_TOO_LARGE' },
     { status: 413 },
   )
 }
 
 function tanjushaPhotoParseFailedResponse() {
   return Response.json(
-    { ok: false, error: 'Р¤РѕС‚Рѕ Р±РѕР»СЊС€Рµ 25 MB РёР»Рё С„Р°Р№Р» РїРѕРІСЂРµР¶РґС‘РЅ', code: 'PHOTO_FORMDATA_PARSE_FAILED' },
+    { ok: false, error: '\u0424\u043e\u0442\u043e \u0431\u043e\u043b\u044c\u0448\u0435 25 MB \u0438\u043b\u0438 \u0444\u0430\u0439\u043b \u043f\u043e\u0432\u0440\u0435\u0436\u0434\u0451\u043d', code: 'PHOTO_FORMDATA_PARSE_FAILED' },
     { status: 413 },
   )
 }
