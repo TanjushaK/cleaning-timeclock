@@ -121,6 +121,7 @@ export async function PUT(req: NextRequest, ctx: { params?: Promise<{ id?: strin
     const editLocale: Lang = parseLang(body?.editLocale) ?? "ru";
     const addressConfirmed = body?.address_confirmed === true;
     const hasAddressSelection = body?.address_selection != null && typeof body.address_selection === "object";
+    const manualPinConfirmed = body?.coordinates_source === "manual_pin" && body?.manual_coordinates_confirmed === true;
     const hasAddressRu = Object.prototype.hasOwnProperty.call(body, "address_ru");
     const addressRu = hasAddressRu ? normTextField(body.address_ru) : null;
 
@@ -174,7 +175,7 @@ export async function PUT(req: NextRequest, ctx: { params?: Promise<{ id?: strin
     if (radiusRaw !== undefined) patch.radius = toFiniteOrNull(radiusRaw);
     if (body?.category !== undefined) patch.category = toCategoryOrNull(body.category);
 
-    if (Object.keys(patch).length === 0 && !hasAddressSelection) {
+    if (Object.keys(patch).length === 0 && !hasAddressSelection && !manualPinConfirmed) {
       const { data, error } = await db.from("sites").select(SITE_FIELDS).eq("id", siteId).single();
 
       if (error) throw new ApiError(404, "Site not found", AdminApiErrorCode.SITE_NOT_FOUND);
@@ -223,7 +224,21 @@ export async function PUT(req: NextRequest, ctx: { params?: Promise<{ id?: strin
     const previousAddress = normTextField(row.address);
     const addressChanged = Object.prototype.hasOwnProperty.call(patch, "address") && nextAddress !== previousAddress;
 
-    if (!nextAddress) {
+    if (manualPinConfirmed) {
+      const hasManualLat = Object.prototype.hasOwnProperty.call(body, "lat") && nextLat != null;
+      const hasManualLng = Object.prototype.hasOwnProperty.call(body, "lng") && nextLng != null;
+      if (!hasManualLat || !hasManualLng || !siteHasCoordinates(nextLat, nextLng, nextRadius)) {
+        throw new ApiError(400, siteCoordinatesMissingErrorMessage(), AdminApiErrorCode.SITE_COORDINATES_REQUIRED);
+      }
+      if (addressChanged || hasAddressSelection) {
+        throw new ApiError(400, "Manual pin correction cannot change the selected address", AdminApiErrorCode.SITE_UPDATE_FAILED);
+      }
+      Object.assign(patch, {
+        coordinates_source: "manual_pin",
+        coordinates_verified_at: new Date().toISOString(),
+        coordinates_verified_by: userId,
+      });
+    } else if (!nextAddress) {
       Object.assign(patch, emptyStructuredAddressPatch());
     } else if (addressConfirmed && (addressChanged || hasAddressSelection)) {
       Object.assign(patch, structuredAddressFromBody(body as Record<string, unknown>, nextAddress), {
