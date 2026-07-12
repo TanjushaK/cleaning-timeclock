@@ -1,0 +1,35 @@
+name: Apply site address selection metadata patch
+
+on:
+  push:
+    branches:
+      - fix/site-address-selection-metadata-v1-20260712
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/site-address-selection-metadata-v1-20260712
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Apply patch
+        run: node scripts/patch-site-address-selection-metadata.mjs
+      - name: Remove one-time files
+        run: |
+          rm -f scripts/patch-site-address-selection-metadata.mjs
+          rm -f .github/workflows/apply-site-address-selection-metadata.yml
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/admin/page.tsx scripts/patch-site-address-selection-metadata.mjs .github/workflows/apply-site-address-selection-metadata.yml
+          git commit -m "Send structured address selection metadata"
+          git push origin HEAD:fix/site-address-selection-metadata-v1-20260712
