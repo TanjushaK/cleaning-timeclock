@@ -71,20 +71,27 @@ async function recomputeSharedJobStatus(service: any, job: JobRow) {
   if (logsErr) throw new ApiError(400, logsErr.message, AppApiErrorCodes.JOB_LIST_QUERY_FAILED);
 
   let hasOpenLog = false;
+  let hasAnyStartedLog = false;
   const completedWorkers = new Set<string>();
 
   for (const row of (logsRaw || []) as TeamTimeLogRow[]) {
     const workerId = row.worker_id ? String(row.worker_id) : '';
     if (!workerId || !row.started_at) continue;
+    hasAnyStartedLog = true;
     if (!row.stopped_at) hasOpenLog = true;
     else completedWorkers.add(workerId);
   }
 
+  const allParticipantsCompleted =
+    participants.size > 0 && Array.from(participants).every((workerId) => completedWorkers.has(workerId));
+
   let nextStatus = 'planned';
   if (hasOpenLog) {
     nextStatus = 'in_progress';
-  } else if (participants.size > 0 && Array.from(participants).every((workerId) => completedWorkers.has(workerId))) {
+  } else if (allParticipantsCompleted) {
     nextStatus = 'done';
+  } else if (hasAnyStartedLog) {
+    nextStatus = 'in_progress';
   }
 
   const { error: updateErr } = await service.from('jobs').update({ status: nextStatus }).eq('id', job.id);
