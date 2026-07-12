@@ -80,7 +80,7 @@ export function structuredAddressFromBody(
     city,
     country_code: normalizeCountryCode(nested.country_code) || 'NL',
     formatted_address: formattedAddress,
-    geocode_provider: textOrNull(nested.geocode_provider) || 'nominatim',
+    geocode_provider: textOrNull(nested.geocode_provider) || 'address_suggestion',
   }
 }
 
