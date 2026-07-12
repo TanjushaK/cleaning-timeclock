@@ -205,6 +205,29 @@ function fmtDT(v?: string | null) {
   return `${pad2(d.getDate())}-${pad2(d.getMonth() + 1)}-${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
 }
 
+function buildOpenStreetMapEmbedUrl(latRaw: string, lngRaw: string, radiusRaw: string): string | null {
+  const lat = Number(latRaw)
+  const lng = Number(lngRaw)
+  const radius = Number(radiusRaw)
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null
+
+  const safeRadius = Number.isFinite(radius) && radius > 0 ? Math.min(Math.max(radius, 50), 5000) : 150
+  const latDelta = Math.max(safeRadius / 111320, 0.0015)
+  const cosLat = Math.max(Math.cos((lat * Math.PI) / 180), 0.2)
+  const lngDelta = Math.max(safeRadius / (111320 * cosLat), 0.0015)
+  const bbox = [lng - lngDelta, lat - latDelta, lng + lngDelta, lat + latDelta]
+    .map((value) => value.toFixed(6))
+    .join(',')
+
+  const params = new URLSearchParams({
+    bbox,
+    layer: 'mapnik',
+    marker: `${lat.toFixed(7)},${lng.toFixed(7)}`,
+  })
+  return `https://www.openstreetmap.org/export/embed.html?${params.toString()}`
+}
+
 function fmtD(v?: string | null) {
   if (!v) return '—'
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v)
@@ -1465,6 +1488,10 @@ export default function AdminPage() {
   const [siteCardManualPin, setSiteCardManualPin] = useState(false)
   const [siteCardOriginalLat, setSiteCardOriginalLat] = useState('')
   const [siteCardOriginalLng, setSiteCardOriginalLng] = useState('')
+  const siteCardMapUrl = useMemo(
+    () => buildOpenStreetMapEmbedUrl(siteCardLat, siteCardLng, siteCardRadius),
+    [siteCardLat, siteCardLng, siteCardRadius],
+  )
   const [siteCardPhotos, setSiteCardPhotos] = useState<SitePhoto[]>([])
 
 
@@ -4355,6 +4382,56 @@ const [editOpen, setEditOpen] = useState(false)
                                     placeholder={t('admin.main.phLng')}
                                   />
                                 </label>
+
+                                <div className="sm:col-span-2 overflow-hidden rounded-2xl border border-yellow-400/15 bg-black/25">
+                                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-yellow-400/10 px-4 py-3">
+                                    <div>
+                                      <div className="text-sm font-semibold text-yellow-100">
+                                        {lang === 'ru' ? 'Точка и радиус на карте' : lang === 'uk' ? 'Точка і радіус на карті' : lang === 'nl' ? 'Punt en straal op de kaart' : 'Pin and radius on the map'}
+                                      </div>
+                                      <div className="text-xs text-yellow-100/55">
+                                        {lang === 'ru' ? 'Карта обновляется при изменении координат или радиуса.' : lang === 'uk' ? 'Карта оновлюється при зміні координат або радіуса.' : lang === 'nl' ? 'De kaart wordt bijgewerkt bij wijzigingen in coördinaten of straal.' : 'The map updates when coordinates or radius change.'}
+                                      </div>
+                                    </div>
+                                    {siteCardMapUrl ? (
+                                      <a
+                                        href={`https://www.openstreetmap.org/?mlat=${encodeURIComponent(siteCardLat)}&mlon=${encodeURIComponent(siteCardLng)}#map=18/${encodeURIComponent(siteCardLat)}/${encodeURIComponent(siteCardLng)}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="rounded-xl border border-yellow-300/30 px-3 py-2 text-xs font-semibold text-yellow-100 hover:border-yellow-200/60"
+                                      >
+                                        {lang === 'ru' ? 'Открыть карту' : lang === 'uk' ? 'Відкрити карту' : lang === 'nl' ? 'Kaart openen' : 'Open map'}
+                                      </a>
+                                    ) : null}
+                                  </div>
+                                  {siteCardMapUrl ? (
+                                    <div className="relative">
+                                      <iframe
+                                        title={lang === 'ru' ? 'Карта координат объекта' : lang === 'uk' ? 'Карта координат об’єкта' : lang === 'nl' ? 'Kaart met objectcoördinaten' : 'Site coordinate map'}
+                                        src={siteCardMapUrl}
+                                        loading="lazy"
+                                        referrerPolicy="no-referrer"
+                                        className="h-[320px] w-full border-0"
+                                      />
+                                      <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                                        <div
+                                          className="rounded-full border-2 border-yellow-300/80 bg-yellow-300/10"
+                                          style={{
+                                            width: `${Math.min(Math.max(Number(siteCardRadius) / 2, 44), 240)}px`,
+                                            height: `${Math.min(Math.max(Number(siteCardRadius) / 2, 44), 240)}px`,
+                                          }}
+                                        />
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className="px-4 py-10 text-center text-sm text-yellow-100/55">
+                                      {lang === 'ru' ? 'Введите корректные координаты, чтобы увидеть карту.' : lang === 'uk' ? 'Введіть коректні координати, щоб побачити карту.' : lang === 'nl' ? 'Voer geldige coördinaten in om de kaart te bekijken.' : 'Enter valid coordinates to view the map.'}
+                                    </div>
+                                  )}
+                                  <div className="border-t border-yellow-400/10 px-4 py-2 text-[11px] text-yellow-100/40">
+                                    © OpenStreetMap contributors
+                                  </div>
+                                </div>
 
                                 <label className="grid gap-1 sm:col-span-2">
                                   <span className="text-[11px] text-zinc-300">{t('admin.main.notes')}</span>
