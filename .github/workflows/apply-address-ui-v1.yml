@@ -1,9 +1,9 @@
 name: Apply address selection UI v1
 
 on:
-  push:
+  pull_request:
     branches:
-      - fix/site-address-selection-ui-v1-20260712
+      - main
     paths:
       - '.github/workflows/apply-address-ui-v1.yml'
 
@@ -12,6 +12,7 @@ permissions:
 
 jobs:
   apply:
+    if: github.event.pull_request.head.ref == 'fix/site-address-selection-ui-v1-20260712'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout branch
