@@ -949,6 +949,48 @@ const T = {
     uk: "Адреса",
     nl: "Adres",
   },
+  addressStreetHousePlaceholder: {
+    ru: "Улица и номер дома",
+    en: "Street and house number",
+    uk: "Вулиця та номер будинку",
+    nl: "Straat en huisnummer",
+  },
+  addressSearching: {
+    ru: "Ищу адреса в Нидерландах…",
+    en: "Searching Dutch addresses…",
+    uk: "Шукаю адреси в Нідерландах…",
+    nl: "Nederlandse adressen zoeken…",
+  },
+  addressSelectHint: {
+    ru: "Выберите точный адрес из списка.",
+    en: "Select the exact address from the list.",
+    uk: "Виберіть точну адресу зі списку.",
+    nl: "Kies het exacte adres uit de lijst.",
+  },
+  addressSelected: {
+    ru: "Адрес и координаты выбраны.",
+    en: "Address and coordinates selected.",
+    uk: "Адресу та координати вибрано.",
+    nl: "Adres en coördinaten geselecteerd.",
+  },
+  addressNoResults: {
+    ru: "Подходящие адреса не найдены.",
+    en: "No matching addresses found.",
+    uk: "Відповідних адрес не знайдено.",
+    nl: "Geen passende adressen gevonden.",
+  },
+  addressSearchFailed: {
+    ru: "Поиск адреса временно недоступен. Повторите ввод.",
+    en: "Address search is temporarily unavailable. Try typing again.",
+    uk: "Пошук адреси тимчасово недоступний. Повторіть введення.",
+    nl: "Adres zoeken is tijdelijk niet beschikbaar. Typ opnieuw.",
+  },
+  addressSelectionRequired: {
+    ru: "Выберите точный адрес из предложенного списка.",
+    en: "Select the exact address from the suggestion list.",
+    uk: "Виберіть точну адресу із запропонованого списку.",
+    nl: "Kies het exacte adres uit de suggestielijst.",
+  },
   phSiteExample: {
     ru: "Например: Дом, офис, объект №1",
     en: "e.g. Home, office, site #1",

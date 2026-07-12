@@ -40,6 +40,7 @@ export async function POST(req: Request) {
 
     const name = (body?.name ?? "").toString().trim();
     const address = body?.address == null ? null : String(body.address).trim() || null;
+    const addressConfirmed = body?.address_confirmed === true;
 
     let lat = toFiniteOrNull(body?.lat);
     let lng = toFiniteOrNull(body?.lng);
@@ -51,7 +52,7 @@ export async function POST(req: Request) {
     if (!name) throw new ApiError(400, "Site name required", AdminApiErrorCode.SITE_NAME_REQUIRED);
     const safeRadius = normalizeRadius(radius);
 
-    if (address && (lat == null || lng == null)) {
+    if (!addressConfirmed && address && (lat == null || lng == null)) {
       const geo = await geocodeAddressViaNominatim(address);
       if (geo) {
         lat = geo.lat;

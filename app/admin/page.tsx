@@ -90,6 +90,21 @@ type Site = {
   archived_at?: string | null
 }
 
+type AddressSuggestion = {
+  id: string
+  street: string | null
+  house_number: string | null
+  house_number_addition: string | null
+  postal_code: string | null
+  city: string | null
+  province: string | null
+  country: string
+  country_code: 'NL'
+  formatted_address: string
+  lat: number
+  lng: number
+}
+
 type Worker = {
   id: string
   full_name?: string | null
@@ -574,6 +589,107 @@ async function authFetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   } finally {
     clearTimeout(t)
   }
+}
+
+
+function AddressSuggestionField(props: {
+  value: string
+  confirmed: boolean
+  disabled?: boolean
+  className?: string
+  onChange: (value: string) => void
+  onSelect: (suggestion: AddressSuggestion) => void
+}) {
+  const { t } = useI18n()
+  const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([])
+  const [searching, setSearching] = useState(false)
+  const [searched, setSearched] = useState(false)
+  const [searchError, setSearchError] = useState(false)
+  const requestSeq = useRef(0)
+
+  useEffect(() => {
+    const seq = ++requestSeq.current
+    const query = props.value.trim()
+    setSearchError(false)
+    setSearched(false)
+
+    if (props.disabled || props.confirmed || query.length < 3) {
+      setSuggestions([])
+      setSearching(false)
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      setSearching(true)
+      void authFetchJson<{ suggestions?: AddressSuggestion[] }>(
+        `/api/admin/geocode/suggest?q=${encodeURIComponent(query)}`,
+      )
+        .then((result) => {
+          if (requestSeq.current !== seq) return
+          setSuggestions(Array.isArray(result?.suggestions) ? result.suggestions : [])
+          setSearched(true)
+        })
+        .catch(() => {
+          if (requestSeq.current !== seq) return
+          setSuggestions([])
+          setSearchError(true)
+          setSearched(true)
+        })
+        .finally(() => {
+          if (requestSeq.current === seq) setSearching(false)
+        })
+    }, 500)
+
+    return () => window.clearTimeout(timer)
+  }, [props.confirmed, props.disabled, props.value])
+
+  return (
+    <div className={cn('grid gap-1', props.className)}>
+      <label className="grid gap-1">
+        <span className="text-[11px] text-zinc-300">{t('admin.main.fieldAddress')}</span>
+        <input
+        value={props.value}
+        onChange={(e) => props.onChange(e.target.value)}
+        disabled={props.disabled}
+        autoComplete="street-address"
+        className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50 disabled:opacity-60"
+          placeholder={t('admin.main.addressStreetHousePlaceholder')}
+        />
+      </label>
+
+      {props.confirmed ? (
+        <div className="rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-100">
+          {t('admin.main.addressSelected')}
+        </div>
+      ) : null}
+
+      {!props.confirmed && props.value.trim().length >= 3 ? (
+        <div className="grid gap-1 rounded-2xl border border-yellow-400/15 bg-black/45 p-2">
+          {searching ? <div className="px-2 py-2 text-xs text-zinc-300">{t('admin.main.addressSearching')}</div> : null}
+          {!searching && searchError ? (
+            <div className="px-2 py-2 text-xs text-red-200">{t('admin.main.addressSearchFailed')}</div>
+          ) : null}
+          {!searching && !searchError && searched && suggestions.length === 0 ? (
+            <div className="px-2 py-2 text-xs text-zinc-400">{t('admin.main.addressNoResults')}</div>
+          ) : null}
+          {suggestions.map((suggestion) => (
+            <button
+              key={suggestion.id}
+              type="button"
+              onClick={() => props.onSelect(suggestion)}
+              className="rounded-xl border border-yellow-400/10 bg-black/30 px-3 py-2 text-left text-xs text-zinc-100 transition hover:border-yellow-300/45 hover:bg-yellow-400/10"
+            >
+              <span className="block font-semibold text-yellow-100">{suggestion.formatted_address}</span>
+              {suggestion.province ? <span className="mt-0.5 block text-[11px] text-zinc-400">{suggestion.province}</span> : null}
+            </button>
+          ))}
+          {!searching && !searchError && !searched ? (
+            <div className="px-2 py-2 text-xs text-zinc-400">{t('admin.main.addressSelectHint')}</div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  )
 }
 
 
@@ -1328,6 +1444,9 @@ export default function AdminPage() {
   const [siteCreateOpen, setSiteCreateOpen] = useState(false)
   const [newObjName, setNewObjName] = useState('')
   const [newObjAddress, setNewObjAddress] = useState('')
+  const [newObjAddressConfirmed, setNewObjAddressConfirmed] = useState(false)
+  const [newObjLat, setNewObjLat] = useState<number | null>(null)
+  const [newObjLng, setNewObjLng] = useState<number | null>(null)
   const [newObjRadius, setNewObjRadius] = useState('150')
   const [newObjCategory, setNewObjCategory] = useState<number | null>(null)
   const [newObjNotes, setNewObjNotes] = useState('')
@@ -1339,6 +1458,7 @@ export default function AdminPage() {
   const [siteCardCategory, setSiteCardCategory] = useState<number | null>(null)
   const [siteCardLat, setSiteCardLat] = useState('')
   const [siteCardLng, setSiteCardLng] = useState('')
+  const [siteCardAddressConfirmed, setSiteCardAddressConfirmed] = useState(false)
   const [siteCardPhotos, setSiteCardPhotos] = useState<SitePhoto[]>([])
 
 
@@ -1933,6 +2053,7 @@ const [editOpen, setEditOpen] = useState(false)
     setSiteCardCategory(s.category ?? null)
     setSiteCardLat(s.lat == null ? '' : String(s.lat))
     setSiteCardLng(s.lng == null ? '' : String(s.lng))
+    setSiteCardAddressConfirmed(Boolean(String(s.address || '').trim() && s.lat != null && s.lng != null))
     setSiteCardPhotos(Array.isArray(s.photos) ? (s.photos as any) : [])
     setPhotoUiError(null)
     setPhotoUiNotice(null)
@@ -1952,6 +2073,18 @@ const [editOpen, setEditOpen] = useState(false)
     }
   }
 
+  function openSiteCreate() {
+    setNewObjName('')
+    setNewObjAddress('')
+    setNewObjAddressConfirmed(false)
+    setNewObjLat(null)
+    setNewObjLng(null)
+    setNewObjRadius('150')
+    setNewObjCategory(null)
+    setNewObjNotes('')
+    setSiteCreateOpen(true)
+  }
+
   function openSiteCard(s: Site) {
     fillSiteCardFromSite(s)
     setSiteCardOpen(true)
@@ -1963,6 +2096,10 @@ const [editOpen, setEditOpen] = useState(false)
     const address = newObjAddress.trim()
     if (!address) {
       setError(addressRequiredForCoordsMsg)
+      return
+    }
+    if (!newObjAddressConfirmed || newObjLat == null || newObjLng == null) {
+      setError(t('admin.main.addressSelectionRequired'))
       return
     }
 
@@ -1978,6 +2115,9 @@ const [editOpen, setEditOpen] = useState(false)
         body: JSON.stringify({
           name,
           address,
+          lat: newObjLat,
+          lng: newObjLng,
+          address_confirmed: true,
           radius,
           category: newObjCategory,
           notes: newObjNotes || null,
@@ -1987,6 +2127,9 @@ const [editOpen, setEditOpen] = useState(false)
       setSiteCreateOpen(false)
       setNewObjName('')
       setNewObjAddress('')
+      setNewObjAddressConfirmed(false)
+      setNewObjLat(null)
+      setNewObjLng(null)
       setNewObjRadius('150')
       setNewObjCategory(null)
       setNewObjNotes('')
@@ -2017,6 +2160,10 @@ const [editOpen, setEditOpen] = useState(false)
       setError(addressRequiredForCoordsMsg)
       return
     }
+    if (!siteCardAddressConfirmed || lat == null || lng == null) {
+      setError(t('admin.main.addressSelectionRequired'))
+      return
+    }
 
     setBusy(true)
     setError(null)
@@ -2029,6 +2176,7 @@ const [editOpen, setEditOpen] = useState(false)
           name,
           address: locDraftValueRaw(siteLocDraft.address, lang).trim() || null,
           address_ru: addressRu,
+          address_confirmed: true,
           radius,
           lat,
           lng,
@@ -3698,7 +3846,7 @@ const [editOpen, setEditOpen] = useState(false)
                             </div>
 
                             <button
-                              onClick={() => setSiteCreateOpen(true)}
+                              onClick={openSiteCreate}
                               disabled={busy}
                               className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-4 py-2 text-xs font-semibold text-yellow-100 transition hover:border-yellow-200/70 hover:bg-yellow-400/15 disabled:opacity-60"
                             >
@@ -3976,15 +4124,23 @@ const [editOpen, setEditOpen] = useState(false)
                               />
                             </label>
 
-                            <label className="grid gap-1">
-                              <span className="text-[11px] text-zinc-300">{t('admin.main.fieldAddress')}</span>
-                              <input
-                                value={newObjAddress}
-                                onChange={(e) => setNewObjAddress(e.target.value)}
-                                className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
-                                placeholder={t('admin.main.optional')}
-                              />
-                            </label>
+                            <AddressSuggestionField
+                              value={newObjAddress}
+                              confirmed={newObjAddressConfirmed}
+                              disabled={busy}
+                              onChange={(value) => {
+                                setNewObjAddress(value)
+                                setNewObjAddressConfirmed(false)
+                                setNewObjLat(null)
+                                setNewObjLng(null)
+                              }}
+                              onSelect={(suggestion) => {
+                                setNewObjAddress(suggestion.formatted_address)
+                                setNewObjAddressConfirmed(true)
+                                setNewObjLat(suggestion.lat)
+                                setNewObjLng(suggestion.lng)
+                              }}
+                            />
 
                             <div className="grid gap-3 sm:grid-cols-2">
                               <label className="grid gap-1">
@@ -4016,7 +4172,7 @@ const [editOpen, setEditOpen] = useState(false)
                             <div className="flex flex-wrap gap-2">
                               <button
                                 onClick={createObjectSite}
-                                disabled={busy || !newObjName.trim()}
+                                disabled={busy || !newObjName.trim() || !newObjAddressConfirmed}
                                 className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-yellow-100 transition hover:border-yellow-200/70 disabled:opacity-60"
                               >
                                 {t('admin.main.create')}
@@ -4067,19 +4223,30 @@ const [editOpen, setEditOpen] = useState(false)
                                   />
                                 </label>
 
-                                <label className="grid gap-1 sm:col-span-2">
-                                  <span className="text-[11px] text-zinc-300">{t('admin.main.fieldAddress')}</span>
-                                  <input
-                                    value={locDraftValueRaw(siteLocDraft.address, lang)}
-                                    onChange={(e) =>
-                                      setSiteLocDraft((prev) => ({
-                                        ...prev,
-                                        address: { ...prev.address, [lang]: e.target.value },
-                                      }))
-                                    }
-                                    className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
-                                  />
-                                </label>
+                                <AddressSuggestionField
+                                  className="sm:col-span-2"
+                                  value={locDraftValueRaw(siteLocDraft.address, 'ru')}
+                                  confirmed={siteCardAddressConfirmed}
+                                  disabled={busy}
+                                  onChange={(value) => {
+                                    setSiteLocDraft((prev) => ({
+                                      ...prev,
+                                      address: { ...prev.address, ru: value },
+                                    }))
+                                    setSiteCardAddressConfirmed(false)
+                                    setSiteCardLat('')
+                                    setSiteCardLng('')
+                                  }}
+                                  onSelect={(suggestion) => {
+                                    setSiteLocDraft((prev) => ({
+                                      ...prev,
+                                      address: { ...prev.address, ru: suggestion.formatted_address },
+                                    }))
+                                    setSiteCardAddressConfirmed(true)
+                                    setSiteCardLat(String(suggestion.lat))
+                                    setSiteCardLng(String(suggestion.lng))
+                                  }}
+                                />
 
                                 <label className="grid gap-1">
                                   <span className="text-[11px] text-zinc-300">{t('admin.main.radiusM')}</span>
@@ -4099,8 +4266,8 @@ const [editOpen, setEditOpen] = useState(false)
                                   <span className="text-[11px] text-zinc-300">{t('admin.main.lat')}</span>
                                   <input
                                     value={siteCardLat}
-                                    onChange={(e) => setSiteCardLat(e.target.value)}
-                                    className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
+                                    readOnly
+                                    className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm text-zinc-300 outline-none"
                                     placeholder={t('admin.main.phLat')}
                                   />
                                 </label>
@@ -4109,8 +4276,8 @@ const [editOpen, setEditOpen] = useState(false)
                                   <span className="text-[11px] text-zinc-300">{t('admin.main.lng')}</span>
                                   <input
                                     value={siteCardLng}
-                                    onChange={(e) => setSiteCardLng(e.target.value)}
-                                    className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm outline-none focus:border-yellow-300/50"
+                                    readOnly
+                                    className="rounded-2xl border border-yellow-400/15 bg-black/30 px-4 py-3 text-sm text-zinc-300 outline-none"
                                     placeholder={t('admin.main.phLng')}
                                   />
                                 </label>
@@ -4133,7 +4300,9 @@ const [editOpen, setEditOpen] = useState(false)
                                   <button
                                     onClick={saveSiteCard}
                                     disabled={
-                                      busy || (lang === 'ru' && !locDraftValueRaw(siteLocDraft.name, lang).trim())
+                                      busy ||
+                                      !siteCardAddressConfirmed ||
+                                      (lang === 'ru' && !locDraftValueRaw(siteLocDraft.name, lang).trim())
                                     }
                                     className="rounded-2xl border border-yellow-300/45 bg-yellow-400/10 px-5 py-3 text-sm font-semibold text-yellow-100 transition hover:border-yellow-200/70 disabled:opacity-60"
                                   >

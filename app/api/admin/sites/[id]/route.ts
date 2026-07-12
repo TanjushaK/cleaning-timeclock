@@ -118,10 +118,14 @@ export async function PUT(req: NextRequest, ctx: { params?: Promise<{ id?: strin
     }
 
     const editLocale: Lang = parseLang(body?.editLocale) ?? "ru";
+    const addressConfirmed = body?.address_confirmed === true;
+    const hasAddressRu = Object.prototype.hasOwnProperty.call(body, "address_ru");
+    const addressRu = hasAddressRu ? normTextField(body.address_ru) : null;
 
     const touchesText =
       Object.prototype.hasOwnProperty.call(body, "name") ||
       Object.prototype.hasOwnProperty.call(body, "address") ||
+      hasAddressRu ||
       Object.prototype.hasOwnProperty.call(body, "notes");
 
     let nameI18n: I18nJson = parseI18nJson(row.name_i18n);
@@ -143,6 +147,11 @@ export async function PUT(req: NextRequest, ctx: { params?: Promise<{ id?: strin
       const v = normTextField(body.address);
       addressI18n = setI18nLocale(addressI18n, editLocale, v);
       if (editLocale === "ru") patch.address = v;
+    }
+
+    if (hasAddressRu) {
+      addressI18n = setI18nLocale(addressI18n, "ru", addressRu);
+      patch.address = addressRu;
     }
 
     if (body?.notes !== undefined) {
@@ -175,8 +184,6 @@ export async function PUT(req: NextRequest, ctx: { params?: Promise<{ id?: strin
       if (!n || !String(n).trim()) throw new ApiError(400, "Site name required", AdminApiErrorCode.SITE_NAME_REQUIRED);
     }
 
-    const addressRuRaw = body?.address_ru;
-    const addressRu = addressRuRaw == null ? null : String(addressRuRaw).trim() || null;
     const nextAddress = Object.prototype.hasOwnProperty.call(patch, "address")
       ? (patch.address as string | null)
       : ((row.address as string | null) ?? null);
@@ -195,7 +202,7 @@ export async function PUT(req: NextRequest, ctx: { params?: Promise<{ id?: strin
       patch.radius = nextRadius;
     }
 
-    if (nextAddress && (nextLat == null || nextLng == null)) {
+    if (!addressConfirmed && nextAddress && (nextLat == null || nextLng == null)) {
       const geo = await geocodeAddress(nextAddress);
       if (geo) {
         nextLat = geo.lat;
