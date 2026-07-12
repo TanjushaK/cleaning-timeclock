@@ -330,8 +330,9 @@ export async function GET(req: NextRequest) {
       jobIds.length
         ? db
             .from('time_logs')
-            .select('job_id,started_at,stopped_at,start_lat,start_lng,start_accuracy')
+            .select('job_id,worker_id,started_at,stopped_at,start_lat,start_lng,start_accuracy')
             .in('job_id', jobIds)
+            .eq('worker_id', userId)
         : Promise.resolve({ data: [], error: null } as any),
       fetchProfilesMap(db, Array.from(profileIds)),
     ])
@@ -404,13 +405,16 @@ export async function GET(req: NextRequest) {
       })
     }
 
-    // logs aggregate
+    // Worker-specific logs aggregate. A shared job can have several workers, but each
+    // worker must see and control only their own clock-in/clock-out state.
     const logAgg = new Map<string, any>()
     for (const l of (logsRes.data || []) as any[]) {
       const id = String(l.job_id)
       const cur = logAgg.get(id) || {
         started_at: null,
         stopped_at: null,
+        open_started_at: null,
+        has_any_log: false,
         actual_minutes: 0,
         latest_start_at: null,
         latest_start_lat: null,
@@ -421,7 +425,11 @@ export async function GET(req: NextRequest) {
       const sa = l.started_at ? String(l.started_at) : null
       const so = l.stopped_at ? String(l.stopped_at) : null
 
-      if (sa) if (!cur.started_at || sa < cur.started_at) cur.started_at = sa
+      if (sa) {
+        cur.has_any_log = true
+        if (!cur.started_at || sa < cur.started_at) cur.started_at = sa
+        if (!so && (!cur.open_started_at || sa > cur.open_started_at)) cur.open_started_at = sa
+      }
       if (so) if (!cur.stopped_at || so > cur.stopped_at) cur.stopped_at = so
       if (sa && so) cur.actual_minutes += minutesBetween(sa, so)
 
@@ -441,6 +449,8 @@ export async function GET(req: NextRequest) {
       const agg = logAgg.get(String(j.id)) || {
         started_at: null,
         stopped_at: null,
+        open_started_at: null,
+        has_any_log: false,
         actual_minutes: 0,
         latest_start_at: null,
         latest_start_lat: null,
@@ -484,9 +494,16 @@ export async function GET(req: NextRequest) {
           }
         })
 
+      const rawStatus = String(j.status || '').toLowerCase()
+      const hasOpenLog = Boolean(agg.open_started_at)
+      const isCancelled = rawStatus === 'cancelled' || rawStatus === 'canceled'
+      const workerStatus = isCancelled ? rawStatus : hasOpenLog ? 'in_progress' : agg.has_any_log ? 'done' : 'planned'
+      const workerStartedAt = hasOpenLog ? agg.open_started_at : agg.started_at
+      const workerStoppedAt = hasOpenLog ? null : agg.stopped_at
+
       return {
         id: String(j.id),
-        status: j.status,
+        status: workerStatus,
         job_date: j.job_date,
         scheduled_time: j.scheduled_time,
         scheduled_end_time: (j as any).scheduled_end_time ?? null,
@@ -500,8 +517,8 @@ export async function GET(req: NextRequest) {
         site_photos_count: si?.photos?.length ?? 0,
 
         accepted_at: null,
-        started_at: agg.started_at,
-        stopped_at: agg.stopped_at,
+        started_at: workerStartedAt,
+        stopped_at: workerStoppedAt,
         distance_m,
         accuracy_m: agg.latest_start_accuracy,
         worker_note: null,
