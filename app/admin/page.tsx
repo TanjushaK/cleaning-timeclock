@@ -103,6 +103,7 @@ type AddressSuggestion = {
   formatted_address: string
   lat: number
   lng: number
+  geocode_provider: 'pdok' | 'nominatim'
 }
 
 type Worker = {
@@ -1447,6 +1448,7 @@ export default function AdminPage() {
   const [newObjAddressConfirmed, setNewObjAddressConfirmed] = useState(false)
   const [newObjLat, setNewObjLat] = useState<number | null>(null)
   const [newObjLng, setNewObjLng] = useState<number | null>(null)
+  const [newObjAddressSelection, setNewObjAddressSelection] = useState<AddressSuggestion | null>(null)
   const [newObjRadius, setNewObjRadius] = useState('150')
   const [newObjCategory, setNewObjCategory] = useState<number | null>(null)
   const [newObjNotes, setNewObjNotes] = useState('')
@@ -1459,6 +1461,7 @@ export default function AdminPage() {
   const [siteCardLat, setSiteCardLat] = useState('')
   const [siteCardLng, setSiteCardLng] = useState('')
   const [siteCardAddressConfirmed, setSiteCardAddressConfirmed] = useState(false)
+  const [siteCardAddressSelection, setSiteCardAddressSelection] = useState<AddressSuggestion | null>(null)
   const [siteCardPhotos, setSiteCardPhotos] = useState<SitePhoto[]>([])
 
 
@@ -2054,6 +2057,7 @@ const [editOpen, setEditOpen] = useState(false)
     setSiteCardLat(s.lat == null ? '' : String(s.lat))
     setSiteCardLng(s.lng == null ? '' : String(s.lng))
     setSiteCardAddressConfirmed(Boolean(String(s.address || '').trim() && s.lat != null && s.lng != null))
+    setSiteCardAddressSelection(null)
     setSiteCardPhotos(Array.isArray(s.photos) ? (s.photos as any) : [])
     setPhotoUiError(null)
     setPhotoUiNotice(null)
@@ -2079,6 +2083,7 @@ const [editOpen, setEditOpen] = useState(false)
     setNewObjAddressConfirmed(false)
     setNewObjLat(null)
     setNewObjLng(null)
+    setNewObjAddressSelection(null)
     setNewObjRadius('150')
     setNewObjCategory(null)
     setNewObjNotes('')
@@ -2118,6 +2123,7 @@ const [editOpen, setEditOpen] = useState(false)
           lat: newObjLat,
           lng: newObjLng,
           address_confirmed: true,
+          address_selection: newObjAddressSelection,
           radius,
           category: newObjCategory,
           notes: newObjNotes || null,
@@ -2130,6 +2136,7 @@ const [editOpen, setEditOpen] = useState(false)
       setNewObjAddressConfirmed(false)
       setNewObjLat(null)
       setNewObjLng(null)
+      setNewObjAddressSelection(null)
       setNewObjRadius('150')
       setNewObjCategory(null)
       setNewObjNotes('')
@@ -2177,6 +2184,7 @@ const [editOpen, setEditOpen] = useState(false)
           address: locDraftValueRaw(siteLocDraft.address, lang).trim() || null,
           address_ru: addressRu,
           address_confirmed: true,
+          address_selection: siteCardAddressSelection || undefined,
           radius,
           lat,
           lng,
@@ -4133,12 +4141,14 @@ const [editOpen, setEditOpen] = useState(false)
                                 setNewObjAddressConfirmed(false)
                                 setNewObjLat(null)
                                 setNewObjLng(null)
+                                setNewObjAddressSelection(null)
                               }}
                               onSelect={(suggestion) => {
                                 setNewObjAddress(suggestion.formatted_address)
                                 setNewObjAddressConfirmed(true)
                                 setNewObjLat(suggestion.lat)
                                 setNewObjLng(suggestion.lng)
+                                setNewObjAddressSelection(suggestion)
                               }}
                             />
 
@@ -4236,6 +4246,7 @@ const [editOpen, setEditOpen] = useState(false)
                                     setSiteCardAddressConfirmed(false)
                                     setSiteCardLat('')
                                     setSiteCardLng('')
+                                    setSiteCardAddressSelection(null)
                                   }}
                                   onSelect={(suggestion) => {
                                     setSiteLocDraft((prev) => ({
@@ -4245,6 +4256,7 @@ const [editOpen, setEditOpen] = useState(false)
                                     setSiteCardAddressConfirmed(true)
                                     setSiteCardLat(String(suggestion.lat))
                                     setSiteCardLng(String(suggestion.lng))
+                                    setSiteCardAddressSelection(suggestion)
                                   }}
                                 />
 
