@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import { AppApiErrorCodes } from '@/lib/app-error-codes';
 import { ApiError, requireActiveWorker, toErrorResponse } from '@/lib/route-db';
+import { withClient } from '@/lib/server/pool';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -24,7 +25,7 @@ type JobRow = {
 
 type SiteRow = { id: string; lat: number | null; lng: number | null; radius: number | null };
 type JobWorkerRow = { job_id: string | null };
-type TimeLogRow = { id: string; started_at: string | null };
+type OpenLogRow = { id: string; started_at: string | null };
 type ParticipantRow = { worker_id: string | null };
 type TeamTimeLogRow = { worker_id: string | null; started_at: string | null; stopped_at: string | null };
 
@@ -45,36 +46,26 @@ function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number)
   return R * c;
 }
 
-async function recomputeSharedJobStatus(service: any, job: JobRow) {
-  const rawStatus = String(job.status || '').toLowerCase();
-  if (rawStatus === 'cancelled' || rawStatus === 'canceled') return;
+function computeJobStatus(
+  currentStatus: string | null,
+  primaryWorkerId: string | null,
+  linkedWorkers: ParticipantRow[],
+  logs: TeamTimeLogRow[],
+) {
+  const rawStatus = String(currentStatus || '').toLowerCase();
+  if (rawStatus === 'cancelled' || rawStatus === 'canceled') return rawStatus;
 
   const participants = new Set<string>();
-  if (job.worker_id) participants.add(String(job.worker_id));
-
-  const { data: linkedRaw, error: linkedErr } = await service
-    .from('job_workers')
-    .select('worker_id')
-    .eq('job_id', job.id);
-
-  if (linkedErr) throw new ApiError(400, linkedErr.message, AppApiErrorCodes.JOB_LIST_QUERY_FAILED);
-
-  for (const row of (linkedRaw || []) as ParticipantRow[]) {
+  if (primaryWorkerId) participants.add(String(primaryWorkerId));
+  for (const row of linkedWorkers) {
     if (row.worker_id) participants.add(String(row.worker_id));
   }
-
-  const { data: logsRaw, error: logsErr } = await service
-    .from('time_logs')
-    .select('worker_id,started_at,stopped_at')
-    .eq('job_id', job.id);
-
-  if (logsErr) throw new ApiError(400, logsErr.message, AppApiErrorCodes.JOB_LIST_QUERY_FAILED);
 
   let hasOpenLog = false;
   let hasAnyStartedLog = false;
   const completedWorkers = new Set<string>();
 
-  for (const row of (logsRaw || []) as TeamTimeLogRow[]) {
+  for (const row of logs) {
     const workerId = row.worker_id ? String(row.worker_id) : '';
     if (!workerId || !row.started_at) continue;
     hasAnyStartedLog = true;
@@ -85,17 +76,10 @@ async function recomputeSharedJobStatus(service: any, job: JobRow) {
   const allParticipantsCompleted =
     participants.size > 0 && Array.from(participants).every((workerId) => completedWorkers.has(workerId));
 
-  let nextStatus = 'planned';
-  if (hasOpenLog) {
-    nextStatus = 'in_progress';
-  } else if (allParticipantsCompleted) {
-    nextStatus = 'done';
-  } else if (hasAnyStartedLog) {
-    nextStatus = 'in_progress';
-  }
-
-  const { error: updateErr } = await service.from('jobs').update({ status: nextStatus }).eq('id', job.id);
-  if (updateErr) throw new ApiError(400, updateErr.message, AppApiErrorCodes.JOB_ACCEPT_UPDATE_FAILED);
+  if (hasOpenLog) return 'in_progress';
+  if (allParticipantsCompleted) return 'done';
+  if (hasAnyStartedLog) return 'in_progress';
+  return 'planned';
 }
 
 export async function POST(req: Request) {
@@ -186,37 +170,96 @@ export async function POST(req: Request) {
       );
     }
 
-    const { data: openLogsRaw, error: logErr } = await db
-      .from('time_logs')
-      .select('id,started_at')
-      .eq('job_id', jobId)
-      .eq('worker_id', uid)
-      .is('stopped_at', null)
-      .order('started_at', { ascending: false });
+    const result = await withClient(async (client) => {
+      await client.query('BEGIN');
+      try {
+        // Match the Start lock order: shared job status first, participant second.
+        await client.query("SELECT pg_advisory_xact_lock(hashtext('job-status'), hashtext($1))", [jobId]);
+        await client.query('SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))', [jobId, uid]);
 
-    if (logErr) throw new ApiError(400, logErr.message, AppApiErrorCodes.JOB_LIST_QUERY_FAILED);
+        const openResult = await client.query<OpenLogRow>(
+          `SELECT id, started_at
+             FROM time_logs
+            WHERE job_id = $1
+              AND worker_id = $2
+              AND stopped_at IS NULL
+            ORDER BY started_at DESC
+            FOR UPDATE`,
+          [jobId, uid],
+        );
 
-    const openLogs = (openLogsRaw || []) as TimeLogRow[];
-    if (!openLogs.length) throw new ApiError(400, 'No open time log', AppApiErrorCodes.TIME_LOG_NOT_OPEN);
+        const openLogs = openResult.rows;
+        if (!openLogs.length) {
+          await client.query('COMMIT');
+          return { alreadyStopped: true, stoppedAt: null as string | null, closedLogs: 0, status: null as string | null };
+        }
 
-    const stoppedAt = new Date().toISOString();
-    const openLogIds = openLogs.map((log) => log.id).filter(Boolean);
+        const stoppedAt = new Date().toISOString();
+        const openLogIds = openLogs.map((row) => row.id);
 
-    const { error: updLogErr } = await db
-      .from('time_logs')
-      .update({
-        stopped_at: stoppedAt,
-        stop_lat: lat,
-        stop_lng: lng,
-        stop_accuracy: acc,
-      })
-      .in('id', openLogIds);
+        await client.query(
+          `UPDATE time_logs
+              SET stopped_at = $1,
+                  stop_lat = $2,
+                  stop_lng = $3,
+                  stop_accuracy = $4
+            WHERE id = ANY($5::uuid[])`,
+          [stoppedAt, lat, lng, acc, openLogIds],
+        );
 
-    if (updLogErr) throw new ApiError(400, updLogErr.message, AppApiErrorCodes.JOB_ACCEPT_UPDATE_FAILED);
+        const currentJobResult = await client.query<JobRow>(
+          `SELECT id, status, worker_id, site_id
+             FROM jobs
+            WHERE id = $1
+            FOR UPDATE`,
+          [jobId],
+        );
+        const currentJob = currentJobResult.rows[0] || job;
 
-    await recomputeSharedJobStatus(guard.service, job);
+        const linkedResult = await client.query<ParticipantRow>(
+          `SELECT worker_id
+             FROM job_workers
+            WHERE job_id = $1`,
+          [jobId],
+        );
 
-    return NextResponse.json({ ok: true, stopped_at: stoppedAt, closed_logs: openLogIds.length }, { status: 200 });
+        const logsResult = await client.query<TeamTimeLogRow>(
+          `SELECT worker_id, started_at, stopped_at
+             FROM time_logs
+            WHERE job_id = $1`,
+          [jobId],
+        );
+
+        const nextStatus = computeJobStatus(
+          currentJob.status,
+          currentJob.worker_id,
+          linkedResult.rows,
+          logsResult.rows,
+        );
+
+        if (nextStatus !== String(currentJob.status || '').toLowerCase()) {
+          await client.query('UPDATE jobs SET status = $1 WHERE id = $2', [nextStatus, jobId]);
+        }
+
+        await client.query('COMMIT');
+        return { alreadyStopped: false, stoppedAt, closedLogs: openLogIds.length, status: nextStatus };
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      }
+    });
+
+    if (result.alreadyStopped) {
+      return NextResponse.json(
+        { ok: true, already_stopped: true, stopped_at: result.stoppedAt, closed_logs: 0 },
+        { status: 200 },
+      );
+    }
+
+    return NextResponse.json(
+      { ok: true, stopped_at: result.stoppedAt, closed_logs: result.closedLogs, job_status: result.status },
+      { status: 200 },
+    );
   } catch (err) {
     return toErrorResponse(err);
   }

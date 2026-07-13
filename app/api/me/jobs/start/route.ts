@@ -141,6 +141,11 @@ export async function POST(req: Request) {
     const result = await withClient(async (client) => {
       await client.query('BEGIN');
       try {
+        // All Start/Stop operations for the same job update one shared status.
+        // Keep this lock first in both routes to avoid status races and deadlocks.
+        await client.query("SELECT pg_advisory_xact_lock(hashtext('job-status'), hashtext($1))", [jobId]);
+        // Worker-specific lock keeps two requests for the same participant idempotent,
+        // while other workers on the same job remain independent.
         await client.query('SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))', [jobId, uid]);
 
         const openResult = await client.query<OpenTimeLogRow>(
