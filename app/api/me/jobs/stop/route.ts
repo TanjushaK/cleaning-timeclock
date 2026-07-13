@@ -186,21 +186,21 @@ export async function POST(req: Request) {
       );
     }
 
-    const { data: logRaw, error: logErr } = await db
+    const { data: openLogsRaw, error: logErr } = await db
       .from('time_logs')
       .select('id,started_at')
       .eq('job_id', jobId)
       .eq('worker_id', uid)
       .is('stopped_at', null)
-      .order('started_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .order('started_at', { ascending: false });
 
     if (logErr) throw new ApiError(400, logErr.message, AppApiErrorCodes.JOB_LIST_QUERY_FAILED);
-    if (!logRaw) throw new ApiError(400, 'No open time log', AppApiErrorCodes.TIME_LOG_NOT_OPEN);
 
-    const log: TimeLogRow = logRaw as unknown as TimeLogRow;
+    const openLogs = (openLogsRaw || []) as TimeLogRow[];
+    if (!openLogs.length) throw new ApiError(400, 'No open time log', AppApiErrorCodes.TIME_LOG_NOT_OPEN);
+
     const stoppedAt = new Date().toISOString();
+    const openLogIds = openLogs.map((log) => log.id).filter(Boolean);
 
     const { error: updLogErr } = await db
       .from('time_logs')
@@ -210,13 +210,13 @@ export async function POST(req: Request) {
         stop_lng: lng,
         stop_accuracy: acc,
       })
-      .eq('id', log.id);
+      .in('id', openLogIds);
 
     if (updLogErr) throw new ApiError(400, updLogErr.message, AppApiErrorCodes.JOB_ACCEPT_UPDATE_FAILED);
 
     await recomputeSharedJobStatus(guard.service, job);
 
-    return NextResponse.json({ ok: true, stopped_at: stoppedAt }, { status: 200 });
+    return NextResponse.json({ ok: true, stopped_at: stoppedAt, closed_logs: openLogIds.length }, { status: 200 });
   } catch (err) {
     return toErrorResponse(err);
   }
