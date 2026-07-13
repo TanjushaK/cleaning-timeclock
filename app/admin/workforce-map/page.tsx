@@ -65,6 +65,8 @@ type MapTile = {
 type PositionedPoint = MapPoint & {
   left: number
   top: number
+  anchorLeft: number
+  anchorTop: number
 }
 
 type MapLayout = {
@@ -182,6 +184,45 @@ function fitZoom(points: MapPoint[], width: number, height: number, padding: num
   return MIN_ZOOM
 }
 
+function spreadClosePoints(
+  points: Array<MapPoint & { left: number; top: number }>,
+  width: number,
+  height: number,
+): PositionedPoint[] {
+  const minimumDistance = width < 640 ? 44 : 50
+  const edge = width < 640 ? 22 : 26
+  const placed: PositionedPoint[] = []
+
+  for (const point of points) {
+    const anchorLeft = point.left
+    const anchorTop = point.top
+    let left = anchorLeft
+    let top = anchorTop
+
+    const overlaps = (candidateLeft: number, candidateTop: number) =>
+      placed.some((current) => Math.hypot(current.left - candidateLeft, current.top - candidateTop) < minimumDistance)
+
+    if (overlaps(left, top)) {
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        const ring = 1 + Math.floor(attempt / 8)
+        const radius = Math.min(72, minimumDistance * 0.72 * ring)
+        const angle = (attempt * 137.508 * Math.PI) / 180
+        const candidateLeft = Math.max(edge, Math.min(width - edge, anchorLeft + Math.cos(angle) * radius))
+        const candidateTop = Math.max(edge, Math.min(height - edge, anchorTop + Math.sin(angle) * radius))
+        if (!overlaps(candidateLeft, candidateTop)) {
+          left = candidateLeft
+          top = candidateTop
+          break
+        }
+      }
+    }
+
+    placed.push({ ...point, left, top, anchorLeft, anchorTop })
+  }
+
+  return placed
+}
+
 function buildMapLayout(points: MapPoint[], width: number, height: number, zoomOffset: number): MapLayout | null {
   if (!points.length || width <= 0 || height <= 0) return null
 
@@ -215,14 +256,16 @@ function buildMapLayout(points: MapPoint[], width: number, height: number, zoomO
     }
   }
 
+  const screenPoints = projected.map(({ point, x, y }) => ({
+    ...point,
+    left: x - originX,
+    top: y - originY,
+  }))
+
   return {
     zoom,
     tiles,
-    points: projected.map(({ point, x, y }) => ({
-      ...point,
-      left: x - originX,
-      top: y - originY,
-    })),
+    points: spreadClosePoints(screenPoints, width, height),
   }
 }
 
@@ -238,6 +281,7 @@ function WorkforceOverviewMap({
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [viewport, setViewport] = useState({ width: 0, height: 0 })
   const [zoomOffset, setZoomOffset] = useState(0)
+  const [mobileDetailsSiteId, setMobileDetailsSiteId] = useState<string | null>(null)
 
   useEffect(() => {
     const element = containerRef.current
@@ -249,13 +293,21 @@ function WorkforceOverviewMap({
     return () => observer.disconnect()
   }, [])
 
-  useEffect(() => setZoomOffset(0), [points])
+  useEffect(() => {
+    setZoomOffset(0)
+    setMobileDetailsSiteId(null)
+  }, [points])
 
   const layout = useMemo(
     () => buildMapLayout(points, viewport.width, viewport.height, zoomOffset),
     [points, viewport.height, viewport.width, zoomOffset],
   )
-  const selectedPoint = points.find((point) => point.siteId === selectedSiteId) || null
+  const mobileDetailsPoint = points.find((point) => point.siteId === mobileDetailsSiteId) || null
+
+  const choosePoint = (point: MapPoint) => {
+    setMobileDetailsSiteId(point.siteId)
+    onChoose(point)
+  }
 
   return (
     <div ref={containerRef} className="relative h-[54vh] min-h-[420px] overflow-hidden bg-zinc-900 sm:h-[58vh] sm:min-h-[460px]">
@@ -276,6 +328,24 @@ function WorkforceOverviewMap({
             ))}
           </div>
 
+          <svg className="pointer-events-none absolute inset-0 z-[5] h-full w-full" aria-hidden="true">
+            {layout.points.map((point) => {
+              const moved = Math.hypot(point.left - point.anchorLeft, point.top - point.anchorTop) > 5
+              return moved ? (
+                <line
+                  key={`line:${point.siteId}`}
+                  x1={point.anchorLeft}
+                  y1={point.anchorTop}
+                  x2={point.left}
+                  y2={point.top}
+                  stroke="rgba(24,24,27,0.55)"
+                  strokeWidth="1.5"
+                  strokeDasharray="3 3"
+                />
+              ) : null
+            })}
+          </svg>
+
           <div className="absolute inset-0 z-10">
             {layout.points.map((point) => {
               const selected = selectedSiteId === point.siteId
@@ -283,41 +353,50 @@ function WorkforceOverviewMap({
                 <button
                   key={point.siteId}
                   type="button"
-                  onClick={() => onChoose(point)}
+                  onClick={() => choosePoint(point)}
                   style={{ left: point.left, top: point.top }}
-                  className="group absolute -translate-x-1/2 -translate-y-1/2 text-left"
+                  className={`group absolute -translate-x-1/2 -translate-y-1/2 text-left ${selected ? 'z-20' : 'z-10'}`}
                   aria-label={`${point.siteName}, ${point.address}`}
                   title={`${point.siteName}: ${point.address}`}
                 >
-                  <div className={`flex items-center rounded-full border bg-black/85 p-1 shadow-[0_6px_22px_rgba(0,0,0,0.65)] backdrop-blur transition group-hover:scale-105 sm:gap-2 sm:rounded-2xl sm:pr-3 ${selected ? 'ring-2 ring-yellow-300' : 'ring-1 ring-black/50'}`}>
-                    <span className={`flex h-7 min-w-7 items-center justify-center rounded-full border-2 px-1.5 text-[10px] font-black shadow sm:h-9 sm:min-w-9 sm:px-2 sm:text-xs ${markerClasses(point.status)}`}>
+                  <div className={`relative flex items-center rounded-full border bg-black/85 p-1 shadow-[0_6px_22px_rgba(0,0,0,0.65)] backdrop-blur transition group-hover:scale-105 ${selected ? 'ring-2 ring-yellow-300 sm:gap-2 sm:rounded-2xl sm:pr-3' : 'ring-1 ring-black/50'}`}>
+                    <span className={`flex h-8 min-w-8 items-center justify-center rounded-full border-2 px-1.5 text-[10px] font-black shadow sm:h-9 sm:min-w-9 sm:px-2 sm:text-xs ${markerClasses(point.status)}`}>
                       {point.participants.length || '!'}
                     </span>
-                    <span className="hidden max-w-[230px] sm:block">
-                      <span className="block truncate text-xs font-bold text-white">{point.siteName}</span>
-                      <span className="mt-0.5 block truncate text-[10px] text-zinc-200">{point.address}</span>
-                    </span>
+                    {selected ? (
+                      <span className="hidden max-w-[230px] sm:block">
+                        <span className="block truncate text-xs font-bold text-white">{point.siteName}</span>
+                        <span className="mt-0.5 block truncate text-[10px] text-zinc-200">{point.address}</span>
+                      </span>
+                    ) : (
+                      <span className="pointer-events-none absolute left-1/2 top-full mt-2 hidden w-max max-w-[220px] -translate-x-1/2 rounded-lg border border-white/15 bg-black/90 px-2 py-1 text-center text-[10px] text-white shadow-lg group-hover:sm:block">
+                        <span className="block font-semibold">{point.siteName}</span>
+                        <span className="block truncate text-zinc-300">{point.address}</span>
+                      </span>
+                    )}
                   </div>
                 </button>
               )
             })}
           </div>
 
-          <div className="absolute right-3 top-3 z-20 grid gap-1 rounded-xl border border-black/15 bg-white/90 p-1 shadow-lg">
+          <div className="absolute right-3 top-3 z-30 grid gap-1 rounded-xl border border-black/15 bg-white/90 p-1 shadow-lg">
             <button type="button" aria-label="Увеличить карту" onClick={() => setZoomOffset((value) => Math.min(3, value + 1))} className="flex h-9 w-9 items-center justify-center rounded-lg text-xl font-bold text-black hover:bg-zinc-200">+</button>
             <button type="button" aria-label="Уменьшить карту" onClick={() => setZoomOffset((value) => Math.max(-3, value - 1))} className="flex h-9 w-9 items-center justify-center rounded-lg text-xl font-bold text-black hover:bg-zinc-200">−</button>
             <button type="button" aria-label="Показать все объекты" onClick={() => setZoomOffset(0)} className="flex h-9 w-9 items-center justify-center rounded-lg text-[11px] font-bold text-black hover:bg-zinc-200">Все</button>
           </div>
 
-          {selectedPoint ? (
-            <div className="absolute inset-x-2 bottom-7 z-20 rounded-2xl border border-yellow-300/40 bg-black/92 p-3 text-left shadow-2xl backdrop-blur sm:hidden">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-bold text-white">{selectedPoint.siteName}</div>
-                  <div className="mt-1 text-xs leading-5 text-zinc-200">{selectedPoint.address}</div>
-                  <div className="mt-1 truncate text-[11px] text-zinc-400">{markerWorkerLine(selectedPoint)}</div>
+          {mobileDetailsPoint ? (
+            <div className="absolute inset-x-2 bottom-2 z-30 rounded-xl border border-yellow-300/40 bg-black/94 px-3 py-2 text-left shadow-2xl backdrop-blur sm:hidden">
+              <div className="flex items-start gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <div className="truncate text-xs font-bold text-white">{mobileDetailsPoint.siteName}</div>
+                    <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold ${statusClasses(mobileDetailsPoint.status)}`}>{statusLabel(mobileDetailsPoint.status)}</span>
+                  </div>
+                  <div className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-zinc-200">{mobileDetailsPoint.address}</div>
                 </div>
-                <span className={`shrink-0 rounded-full border px-2 py-1 text-[10px] font-semibold ${statusClasses(selectedPoint.status)}`}>{statusLabel(selectedPoint.status)}</span>
+                <button type="button" aria-label="Закрыть карточку объекта" onClick={() => setMobileDetailsSiteId(null)} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/15 text-sm text-white">×</button>
               </div>
             </div>
           ) : null}
