@@ -43,6 +43,27 @@ type WorkforceResponse = {
   items: WorkforceItem[]
 }
 
+type MapPoint = {
+  siteId: string
+  siteName: string
+  address: string
+  lat: number
+  lng: number
+  status: SummaryStatus
+  jobs: WorkforceItem[]
+  participants: Participant[]
+}
+
+type PositionedMapPoint = MapPoint & {
+  left: number
+  top: number
+}
+
+type OverviewMap = {
+  url: string
+  points: PositionedMapPoint[]
+}
+
 function pad2(value: number) {
   return String(value).padStart(2, '0')
 }
@@ -68,24 +89,6 @@ function formatTime(value: string | null) {
   return value ? String(value).slice(0, 5) : '—'
 }
 
-function buildMapUrl(item: WorkforceItem | null) {
-  const lat = item?.site?.lat
-  const lng = item?.site?.lng
-  if (lat == null || lng == null || !Number.isFinite(lat) || !Number.isFinite(lng)) return null
-  const radius = item?.site?.radius && item.site.radius > 0 ? Math.min(Math.max(item.site.radius, 50), 5000) : 150
-  const latDelta = Math.max(radius / 111320, 0.003)
-  const cosLat = Math.max(Math.cos((lat * Math.PI) / 180), 0.2)
-  const lngDelta = Math.max(radius / (111320 * cosLat), 0.003)
-  const bbox = [lng - lngDelta, lat - latDelta, lng + lngDelta, lat + latDelta]
-    .map((value) => value.toFixed(6))
-    .join(',')
-  return `https://www.openstreetmap.org/export/embed.html?${new URLSearchParams({
-    bbox,
-    layer: 'mapnik',
-    marker: `${lat.toFixed(7)},${lng.toFixed(7)}`,
-  }).toString()}`
-}
-
 function statusLabel(status: SummaryStatus) {
   return ({
     scheduled: 'Запланировано',
@@ -97,6 +100,17 @@ function statusLabel(status: SummaryStatus) {
   } as Record<SummaryStatus, string>)[status]
 }
 
+function statusRank(status: SummaryStatus) {
+  return ({
+    completed: 0,
+    scheduled: 1,
+    working: 2,
+    late: 3,
+    unassigned: 4,
+    missing: 5,
+  } as Record<SummaryStatus, number>)[status]
+}
+
 function statusClasses(status: SummaryStatus) {
   if (status === 'working') return 'border-emerald-400/40 bg-emerald-500/20 text-emerald-100'
   if (status === 'completed') return 'border-sky-400/40 bg-sky-500/20 text-sky-100'
@@ -104,6 +118,66 @@ function statusClasses(status: SummaryStatus) {
   if (status === 'missing') return 'border-rose-400/50 bg-rose-500/20 text-rose-100'
   if (status === 'unassigned') return 'border-fuchsia-400/50 bg-fuchsia-500/20 text-fuchsia-100'
   return 'border-zinc-400/30 bg-zinc-500/15 text-zinc-100'
+}
+
+function markerClasses(status: SummaryStatus) {
+  if (status === 'working') return 'border-emerald-200 bg-emerald-500 text-white'
+  if (status === 'completed') return 'border-sky-200 bg-sky-500 text-white'
+  if (status === 'late') return 'border-amber-100 bg-amber-500 text-black'
+  if (status === 'missing') return 'border-rose-100 bg-rose-600 text-white'
+  if (status === 'unassigned') return 'border-fuchsia-100 bg-fuchsia-600 text-white'
+  return 'border-zinc-100 bg-zinc-700 text-white'
+}
+
+function validCoordinate(value: number | null, min: number, max: number): value is number {
+  return value != null && Number.isFinite(value) && value >= min && value <= max
+}
+
+function mercatorY(lat: number) {
+  const safe = Math.min(85, Math.max(-85, lat))
+  const radians = (safe * Math.PI) / 180
+  return Math.log(Math.tan(Math.PI / 4 + radians / 2))
+}
+
+function buildOverviewMap(points: MapPoint[]): OverviewMap | null {
+  if (!points.length) return null
+
+  const minLat0 = Math.min(...points.map((point) => point.lat))
+  const maxLat0 = Math.max(...points.map((point) => point.lat))
+  const minLng0 = Math.min(...points.map((point) => point.lng))
+  const maxLng0 = Math.max(...points.map((point) => point.lng))
+
+  const latSpan = Math.max(maxLat0 - minLat0, 0.015)
+  const lngSpan = Math.max(maxLng0 - minLng0, 0.02)
+  const latPad = Math.max(latSpan * 0.2, 0.006)
+  const lngPad = Math.max(lngSpan * 0.2, 0.008)
+
+  const minLat = Math.max(-85, minLat0 - latPad)
+  const maxLat = Math.min(85, maxLat0 + latPad)
+  const minLng = Math.max(-180, minLng0 - lngPad)
+  const maxLng = Math.min(180, maxLng0 + lngPad)
+
+  const yNorth = mercatorY(maxLat)
+  const ySouth = mercatorY(minLat)
+  const ySpan = Math.max(yNorth - ySouth, Number.EPSILON)
+  const xSpan = Math.max(maxLng - minLng, Number.EPSILON)
+
+  const positioned = points.map((point) => ({
+    ...point,
+    left: Math.min(98, Math.max(2, ((point.lng - minLng) / xSpan) * 100)),
+    top: Math.min(96, Math.max(4, ((yNorth - mercatorY(point.lat)) / ySpan) * 100)),
+  }))
+
+  const bbox = [minLng, minLat, maxLng, maxLat].map((value) => value.toFixed(6)).join(',')
+  const url = `https://www.openstreetmap.org/export/embed.html?${new URLSearchParams({ bbox, layer: 'mapnik' }).toString()}`
+  return { url, points: positioned }
+}
+
+function markerWorkerLine(point: MapPoint) {
+  const names = point.participants.map((participant) => participant.worker_name).filter(Boolean)
+  if (!names.length) return 'Работник не назначен'
+  if (names.length <= 3) return names.join(', ')
+  return `${names.slice(0, 3).join(', ')} +${names.length - 3}`
 }
 
 export default function WorkforceMapPage() {
@@ -157,8 +231,56 @@ export default function WorkforceMapPage() {
 
   const filtered = useMemo(() => status ? items.filter((item) => item.summary_status === status) : items, [items, status])
   const selected = filtered.find((item) => item.job_id === selectedId) || filtered[0] || null
-  const mapUrl = buildMapUrl(selected)
   const problems = filtered.filter((item) => ['late', 'missing', 'unassigned'].includes(item.summary_status))
+
+  const mapPoints = useMemo(() => {
+    const bySite = new Map<string, MapPoint>()
+
+    for (const item of filtered) {
+      const lat = item.site?.lat ?? null
+      const lng = item.site?.lng ?? null
+      if (!validCoordinate(lat, -90, 90) || !validCoordinate(lng, -180, 180)) continue
+
+      const siteId = item.site?.id || `${lat.toFixed(7)}:${lng.toFixed(7)}`
+      let point = bySite.get(siteId)
+      if (!point) {
+        point = {
+          siteId,
+          siteName: item.site?.name || 'Объект не указан',
+          address: item.site?.address || 'Адрес не указан',
+          lat,
+          lng,
+          status: item.summary_status,
+          jobs: [],
+          participants: [],
+        }
+        bySite.set(siteId, point)
+      }
+
+      point.jobs.push(item)
+      if (statusRank(item.summary_status) > statusRank(point.status)) point.status = item.summary_status
+
+      for (const participant of item.participants) {
+        const existingIndex = point.participants.findIndex((current) => current.worker_id === participant.worker_id)
+        if (existingIndex === -1) {
+          point.participants.push(participant)
+        } else if (statusRank(participant.status) > statusRank(point.participants[existingIndex].status)) {
+          point.participants[existingIndex] = participant
+        }
+      }
+    }
+
+    return Array.from(bySite.values()).sort((a, b) => a.siteName.localeCompare(b.siteName))
+  }, [filtered])
+
+  const overviewMap = useMemo(() => buildOverviewMap(mapPoints), [mapPoints])
+  const mapWorkerCount = useMemo(() => new Set(mapPoints.flatMap((point) => point.participants.map((participant) => participant.worker_id))).size, [mapPoints])
+  const selectedSiteId = selected?.site?.id || null
+
+  const choosePoint = (point: MapPoint) => {
+    const best = point.jobs.slice().sort((a, b) => statusRank(b.summary_status) - statusRank(a.summary_status))[0]
+    if (best) setSelectedId(best.job_id)
+  }
 
   const setRange = (mode: 'today' | 'now' | 'week') => {
     const now = new Date()
@@ -170,11 +292,11 @@ export default function WorkforceMapPage() {
 
   return (
     <main className="min-h-screen bg-zinc-950 px-4 py-5 text-zinc-100 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl">
+      <div className="mx-auto max-w-[1500px]">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold">Карта смен</h1>
-            <p className="mt-1 text-sm text-zinc-400">Объекты, назначенные работники и фактический статус смен.</p>
+            <p className="mt-1 text-sm text-zinc-400">Все объекты и назначенные работники одновременно на одной карте.</p>
           </div>
           <button onClick={() => router.push('/admin')} className="rounded-xl border border-yellow-400/25 bg-black/30 px-4 py-2 text-sm hover:border-yellow-300/60">Назад в админку</button>
         </div>
@@ -196,6 +318,50 @@ export default function WorkforceMapPage() {
 
         {error ? <div className="mt-4 rounded-2xl border border-rose-400/30 bg-rose-500/10 p-4 text-sm text-rose-100">{error}</div> : null}
 
+        <section className="mt-5 overflow-hidden rounded-3xl border border-yellow-400/15 bg-black/30">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-yellow-400/10 px-5 py-3 text-sm">
+            <div className="font-semibold text-yellow-100">Общая карта</div>
+            <div className="text-zinc-400">Объектов: {mapPoints.length} · работников: {mapWorkerCount} · смен: {filtered.length}</div>
+          </div>
+          <div className="relative h-[58vh] min-h-[460px] overflow-hidden bg-zinc-900">
+            {overviewMap ? (
+              <>
+                <iframe title="Общая карта смен" src={overviewMap.url} className="pointer-events-none absolute inset-0 h-full w-full select-none border-0" loading="lazy" />
+                <div className="absolute inset-0 z-10">
+                  {overviewMap.points.map((point) => {
+                    const selectedPoint = selectedSiteId === point.siteId
+                    return (
+                      <button
+                        key={point.siteId}
+                        type="button"
+                        onClick={() => choosePoint(point)}
+                        style={{ left: `${point.left}%`, top: `${point.top}%` }}
+                        className="group absolute -translate-x-1/2 -translate-y-1/2 text-left"
+                        title={`${point.siteName}: ${markerWorkerLine(point)}`}
+                      >
+                        <div className={`flex items-center gap-2 rounded-2xl border bg-black/85 p-1.5 pr-3 shadow-[0_8px_28px_rgba(0,0,0,0.65)] backdrop-blur transition group-hover:scale-105 ${selectedPoint ? 'ring-2 ring-yellow-300' : 'ring-1 ring-black/50'}`}>
+                          <span className={`flex h-9 min-w-9 items-center justify-center rounded-full border-2 px-2 text-xs font-black shadow ${markerClasses(point.status)}`}>
+                            {point.participants.length || '!'}
+                          </span>
+                          <span className="hidden max-w-[230px] sm:block">
+                            <span className="block truncate text-xs font-bold text-white">{point.siteName}</span>
+                            <span className="mt-0.5 block truncate text-[10px] text-zinc-200">{markerWorkerLine(point)}</span>
+                          </span>
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+                <div className="pointer-events-none absolute bottom-3 left-3 z-20 rounded-xl border border-white/20 bg-black/80 px-3 py-2 text-[11px] text-zinc-200 shadow-lg">
+                  Число в маркере — количество работников на объекте. Нажмите маркер для подробностей.
+                </div>
+              </>
+            ) : (
+              <div className="flex h-full min-h-[460px] items-center justify-center p-8 text-center text-sm text-zinc-500">У объектов в выбранном периоде нет корректных координат.</div>
+            )}
+          </div>
+        </section>
+
         <div className="mt-5 grid gap-5 xl:grid-cols-[420px_1fr]">
           <section className="grid content-start gap-3">
             <div className="flex items-center justify-between text-sm text-zinc-400"><span>Смен: {filtered.length}</span><span>Проблемных: {problems.length}</span></div>
@@ -212,11 +378,8 @@ export default function WorkforceMapPage() {
             </div>
           </section>
 
-          <section className="overflow-hidden rounded-3xl border border-yellow-400/15 bg-black/30">
-            <div className="min-h-[420px] bg-zinc-900">
-              {mapUrl ? <iframe title="Карта объекта" src={mapUrl} className="h-[52vh] min-h-[420px] w-full border-0" loading="lazy" /> : <div className="flex min-h-[420px] items-center justify-center p-8 text-center text-sm text-zinc-500">Для выбранного объекта нет корректных координат.</div>}
-            </div>
-            {selected ? <div className="grid gap-4 p-5 lg:grid-cols-2"><div><div className="text-lg font-semibold">{selected.site?.name || 'Объект не указан'}</div><div className="mt-1 text-sm text-zinc-400">{selected.site?.address || 'Адрес не указан'}</div><div className="mt-3 text-sm">План: {formatTime(selected.scheduled_time)}–{formatTime(selected.scheduled_end_time)}</div><div className="mt-1 text-sm">Радиус: {selected.site?.radius ?? '—'} м</div></div><div className="space-y-2">{selected.participants.map((participant) => <div key={participant.worker_id} className="rounded-2xl border border-zinc-800 bg-black/30 p-3"><div className="flex items-center justify-between gap-2"><span className="font-medium">{participant.worker_name}</span><span className={`rounded-full border px-2 py-1 text-[11px] ${statusClasses(participant.status)}`}>{statusLabel(participant.status)}</span></div><div className="mt-2 text-xs text-zinc-400">Старт: {formatDateTime(participant.started_at)} · Финиш: {formatDateTime(participant.stopped_at)}</div></div>)}{!selected.participants.length ? <div className="text-sm text-zinc-500">Работники не назначены.</div> : null}</div></div> : null}
+          <section className="rounded-3xl border border-yellow-400/15 bg-black/30">
+            {selected ? <div className="grid gap-4 p-5 lg:grid-cols-2"><div><div className="text-lg font-semibold">{selected.site?.name || 'Объект не указан'}</div><div className="mt-1 text-sm text-zinc-400">{selected.site?.address || 'Адрес не указан'}</div><div className="mt-3 text-sm">План: {formatTime(selected.scheduled_time)}–{formatTime(selected.scheduled_end_time)}</div><div className="mt-1 text-sm">Радиус: {selected.site?.radius ?? '—'} м</div></div><div className="space-y-2">{selected.participants.map((participant) => <div key={participant.worker_id} className="rounded-2xl border border-zinc-800 bg-black/30 p-3"><div className="flex items-center justify-between gap-2"><span className="font-medium">{participant.worker_name}</span><span className={`rounded-full border px-2 py-1 text-[11px] ${statusClasses(participant.status)}`}>{statusLabel(participant.status)}</span></div><div className="mt-2 text-xs text-zinc-400">Старт: {formatDateTime(participant.started_at)} · Финиш: {formatDateTime(participant.stopped_at)}</div></div>)}{!selected.participants.length ? <div className="text-sm text-zinc-500">Работники не назначены.</div> : null}</div></div> : <div className="p-8 text-center text-sm text-zinc-500">Выберите объект или смену.</div>}
           </section>
         </div>
 
