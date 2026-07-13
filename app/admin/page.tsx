@@ -206,8 +206,12 @@ function fmtDT(v?: string | null) {
 }
 
 function buildOpenStreetMapEmbedUrl(latRaw: string, lngRaw: string, radiusRaw: string): string | null {
-  const lat = Number(latRaw)
-  const lng = Number(lngRaw)
+  const latValue = latRaw.trim()
+  const lngValue = lngRaw.trim()
+  if (!latValue || !lngValue) return null
+
+  const lat = Number(latValue)
+  const lng = Number(lngValue)
   const radius = Number(radiusRaw)
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
   if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null
