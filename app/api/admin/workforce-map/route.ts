@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { AdminApiErrorCode } from '@/lib/api-error-codes'
 import { ApiError, requireAdmin, toErrorResponse } from '@/lib/route-db'
+import {
+  aggregateParticipantLogs,
+  amsterdamScheduleDateTime,
+  deriveParticipantStatus,
+  deriveSummaryStatus,
+} from '@/lib/workforce-map-status.mjs'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -65,30 +71,16 @@ function displayName(profile: ProfileRow | undefined, workerId: string) {
   return value || workerId.slice(0, 8)
 }
 
-function scheduleDateTime(job: JobRow): Date | null {
-  if (!job.job_date || !job.scheduled_time) return null
-  const date = String(job.job_date).slice(0, 10)
-  const time = String(job.scheduled_time).slice(0, 8)
-  const parsed = new Date(`${date}T${time}`)
-  return Number.isNaN(parsed.getTime()) ? null : parsed
+function chunk<T>(items: T[], size: number): T[][] {
+  const result: T[][] = []
+  for (let index = 0; index < items.length; index += size) {
+    result.push(items.slice(index, index + size))
+  }
+  return result
 }
 
-function deriveParticipantStatus(
-  job: JobRow,
-  log: TimeLogRow | undefined,
-  now: Date,
-): 'scheduled' | 'working' | 'completed' | 'late' | 'missing' {
-  if (log?.started_at && !log.stopped_at) return 'working'
-  if (log?.started_at && log.stopped_at) return 'completed'
-
-  const scheduled = scheduleDateTime(job)
-  if (!scheduled) return 'scheduled'
-
-  const graceMs = 15 * 60 * 1000
-  const diff = now.getTime() - scheduled.getTime()
-  if (diff > 24 * 60 * 60 * 1000) return 'missing'
-  if (diff > graceMs) return 'late'
-  return 'scheduled'
+function isMissingJobWorkersSchema(message: string) {
+  return /does not exist|relation|schema cache/i.test(message)
 }
 
 export async function GET(req: NextRequest) {
@@ -101,7 +93,7 @@ export async function GET(req: NextRequest) {
     if (!dateFrom || !dateTo) {
       throw new ApiError(400, 'from and to are required', AdminApiErrorCode.SCHEDULE_DATES_REQUIRED)
     }
-    if (!isISODate(dateFrom) || !isISODate(dateTo)) {
+    if (!isISODate(dateFrom) || !isISODate(dateTo) || dateFrom > dateTo) {
       throw new ApiError(400, 'Invalid date range', AdminApiErrorCode.SCHEDULE_DATES_INVALID)
     }
 
@@ -130,16 +122,46 @@ export async function GET(req: NextRequest) {
     }
     if (jobsError) throw new ApiError(500, jobsError.message, AdminApiErrorCode.DB_ERROR)
 
-    const jobs = (jobsRaw || []) as JobRow[]
+    const allJobs = (jobsRaw || []) as JobRow[]
+    const allJobIds = allJobs.map((job) => job.id)
+
+    const links: JobWorkerRow[] = []
+    let jobWorkersAvailable = true
+    for (const jobIdChunk of chunk(allJobIds, 200)) {
+      const result = await admin.from('job_workers').select('job_id,worker_id').in('job_id', jobIdChunk)
+      if (result.error) {
+        const message = String(result.error.message || '')
+        if (isMissingJobWorkersSchema(message)) {
+          jobWorkersAvailable = false
+          links.length = 0
+          console.warn('[workforce-map] job_workers unavailable; using jobs.worker_id only:', message)
+          break
+        }
+        throw new ApiError(500, result.error.message, AdminApiErrorCode.DB_ERROR)
+      }
+      links.push(...((result.data || []) as JobWorkerRow[]))
+    }
+
+    const linkedByJob = new Map<string, Set<string>>()
+    for (const link of links) {
+      if (!link.job_id || !link.worker_id) continue
+      if (!linkedByJob.has(link.job_id)) linkedByJob.set(link.job_id, new Set())
+      linkedByJob.get(link.job_id)!.add(link.worker_id)
+    }
+
+    const workerFilter = (sp.get('worker_id') || '').trim()
+    const jobs = workerFilter
+      ? allJobs.filter(
+          (job) => job.worker_id === workerFilter || linkedByJob.get(job.id)?.has(workerFilter),
+        )
+      : allJobs
+
     const jobIds = jobs.map((job) => job.id)
     const siteIds = Array.from(new Set(jobs.map((job) => job.site_id).filter(Boolean))) as string[]
 
-    const [sitesResult, workersResult, logsResult] = await Promise.all([
+    const [sitesResult, logsResult] = await Promise.all([
       siteIds.length
         ? admin.from('sites').select('id,name,address,lat,lng,radius').in('id', siteIds)
-        : Promise.resolve({ data: [], error: null } as const),
-      jobIds.length
-        ? admin.from('job_workers').select('job_id,worker_id').in('job_id', jobIds)
         : Promise.resolve({ data: [], error: null } as const),
       jobIds.length
         ? admin.from('time_logs').select('job_id,worker_id,started_at,stopped_at').in('job_id', jobIds)
@@ -147,15 +169,15 @@ export async function GET(req: NextRequest) {
     ])
 
     if (sitesResult.error) throw new ApiError(500, sitesResult.error.message, AdminApiErrorCode.DB_ERROR)
-    if (workersResult.error) throw new ApiError(500, workersResult.error.message, AdminApiErrorCode.DB_ERROR)
     if (logsResult.error) throw new ApiError(500, logsResult.error.message, AdminApiErrorCode.DB_ERROR)
 
-    const links = (workersResult.data || []) as JobWorkerRow[]
     const logs = (logsResult.data || []) as TimeLogRow[]
 
     const participantIds = new Set<string>()
     for (const job of jobs) if (job.worker_id) participantIds.add(job.worker_id)
-    for (const link of links) if (link.worker_id) participantIds.add(link.worker_id)
+    for (const job of jobs) {
+      for (const workerId of linkedByJob.get(job.id) || []) participantIds.add(workerId)
+    }
 
     const profilesResult = participantIds.size
       ? await admin.from('profiles').select('id,full_name,active').in('id', Array.from(participantIds))
@@ -168,21 +190,12 @@ export async function GET(req: NextRequest) {
     const profileById = new Map<string, ProfileRow>()
     for (const profile of (profilesResult.data || []) as ProfileRow[]) profileById.set(profile.id, profile)
 
-    const linkedByJob = new Map<string, Set<string>>()
-    for (const link of links) {
-      if (!link.job_id || !link.worker_id) continue
-      if (!linkedByJob.has(link.job_id)) linkedByJob.set(link.job_id, new Set())
-      linkedByJob.get(link.job_id)!.add(link.worker_id)
-    }
-
-    const latestLogByParticipant = new Map<string, TimeLogRow>()
+    const logsByParticipant = new Map<string, TimeLogRow[]>()
     for (const log of logs) {
       if (!log.job_id || !log.worker_id) continue
       const key = `${log.job_id}:${log.worker_id}`
-      const current = latestLogByParticipant.get(key)
-      if (!current || String(log.started_at || '') > String(current.started_at || '')) {
-        latestLogByParticipant.set(key, log)
-      }
+      if (!logsByParticipant.has(key)) logsByParticipant.set(key, [])
+      logsByParticipant.get(key)!.push(log)
     }
 
     const now = new Date()
@@ -191,30 +204,28 @@ export async function GET(req: NextRequest) {
       if (job.worker_id) workerIds.add(job.worker_id)
       for (const workerId of linkedByJob.get(job.id) || []) workerIds.add(workerId)
 
+      const scheduledAt = amsterdamScheduleDateTime(job.job_date, job.scheduled_time)
       const participants = Array.from(workerIds).map((workerId) => {
-        const log = latestLogByParticipant.get(`${job.id}:${workerId}`)
+        const log = aggregateParticipantLogs(logsByParticipant.get(`${job.id}:${workerId}`) || [])
         return {
           worker_id: workerId,
           worker_name: displayName(profileById.get(workerId), workerId),
           active: profileById.get(workerId)?.active ?? null,
-          status: deriveParticipantStatus(job, log, now),
-          started_at: log?.started_at ?? null,
-          stopped_at: log?.stopped_at ?? null,
+          status: deriveParticipantStatus({
+            jobStatus: job.status,
+            scheduledAt,
+            log,
+            now,
+          }),
+          started_at: log.started_at,
+          stopped_at: log.stopped_at,
         }
       })
 
-      const statuses = participants.map((participant) => participant.status)
-      const summaryStatus = statuses.includes('working')
-        ? 'working'
-        : statuses.includes('late')
-          ? 'late'
-          : statuses.includes('missing')
-            ? 'missing'
-            : statuses.length > 0 && statuses.every((status) => status === 'completed')
-              ? 'completed'
-              : participants.length === 0
-                ? 'unassigned'
-                : 'scheduled'
+      const summaryStatus = deriveSummaryStatus(
+        job.status,
+        participants.map((participant) => participant.status),
+      )
 
       const site = job.site_id ? siteById.get(job.site_id) : undefined
       return {
@@ -243,6 +254,7 @@ export async function GET(req: NextRequest) {
       date_from: dateFrom,
       date_to: dateTo,
       generated_at: now.toISOString(),
+      job_workers_available: jobWorkersAvailable,
       items,
     })
   } catch (error) {
