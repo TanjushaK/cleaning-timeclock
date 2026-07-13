@@ -1,0 +1,16 @@
+name: One-time guarded site map coordinate fix
+
+on:
+  pull_request:
+    types: [synchronize, ready_for_review]
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-and-cleanup:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'fix/site-map-empty-coordinates-v1-20260713'
+    runs-on: ubuntu-latest
+    timeout-minutes:
