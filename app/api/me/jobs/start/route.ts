@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import { AppApiErrorCodes } from '@/lib/app-error-codes';
 import { ApiError, requireActiveWorker, toErrorResponse } from '@/lib/route-db';
+import { withClient } from '@/lib/server/pool';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -137,40 +138,51 @@ export async function POST(req: Request) {
       );
     }
 
-    const { data: openLogRaw, error: openLogErr } = await db
-      .from('time_logs')
-      .select('id,started_at')
-      .eq('job_id', jobId)
-      .eq('worker_id', uid)
-      .is('stopped_at', null)
-      .order('started_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const result = await withClient(async (client) => {
+      await client.query('BEGIN');
+      try {
+        await client.query('SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))', [jobId, uid]);
 
-    if (openLogErr) throw new ApiError(400, openLogErr.message, AppApiErrorCodes.JOB_LIST_QUERY_FAILED);
+        const openResult = await client.query<OpenTimeLogRow>(
+          `SELECT id, started_at
+             FROM time_logs
+            WHERE job_id = $1
+              AND worker_id = $2
+              AND stopped_at IS NULL
+            ORDER BY started_at DESC
+            LIMIT 1`,
+          [jobId, uid],
+        );
 
-    const openLog = (openLogRaw as unknown as OpenTimeLogRow | null) ?? null;
-    if (openLog) {
-      return NextResponse.json({ ok: true, already_started: true, started_at: openLog.started_at }, { status: 200 });
-    }
+        const openLog = openResult.rows[0] || null;
+        if (openLog) {
+          await client.query('COMMIT');
+          return { alreadyStarted: true, startedAt: openLog.started_at };
+        }
 
-    const startedAt = new Date().toISOString();
-
-    const { error: insErr } = await db.from('time_logs').insert({
-      job_id: jobId,
-      worker_id: uid,
-      started_at: startedAt,
-      start_lat: lat,
-      start_lng: lng,
-      start_accuracy: acc,
+        const startedAt = new Date().toISOString();
+        await client.query(
+          `INSERT INTO time_logs (job_id, worker_id, started_at, start_lat, start_lng, start_accuracy)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [jobId, uid, startedAt, lat, lng, acc],
+        );
+        await client.query(`UPDATE jobs SET status = 'in_progress' WHERE id = $1`, [jobId]);
+        await client.query('COMMIT');
+        return { alreadyStarted: false, startedAt };
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      }
     });
 
-    if (insErr) throw new ApiError(400, insErr.message, AppApiErrorCodes.JOB_ACCEPT_UPDATE_FAILED);
+    if (result.alreadyStarted) {
+      return NextResponse.json(
+        { ok: true, already_started: true, started_at: result.startedAt },
+        { status: 200 },
+      );
+    }
 
-    const { error: updErr } = await guard.service.from('jobs').update({ status: 'in_progress' }).eq('id', jobId);
-    if (updErr) throw new ApiError(400, updErr.message, AppApiErrorCodes.JOB_ACCEPT_UPDATE_FAILED);
-
-    return NextResponse.json({ ok: true, started_at: startedAt }, { status: 200 });
+    return NextResponse.json({ ok: true, started_at: result.startedAt }, { status: 200 });
   } catch (err) {
     return toErrorResponse(err);
   }
