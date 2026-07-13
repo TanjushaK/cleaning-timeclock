@@ -1,11 +1,12 @@
+/* eslint-disable @next/next/no-img-element */
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 import { clearClientAuthState, getAccessToken } from '@/lib/auth-fetch'
 
-type ParticipantStatus = 'scheduled' | 'working' | 'completed' | 'late' | 'missing'
+type ParticipantStatus = 'scheduled' | 'working' | 'completed' | 'late' | 'missing' | 'cancelled'
 type SummaryStatus = ParticipantStatus | 'unassigned'
 
 type Participant = {
@@ -54,15 +55,28 @@ type MapPoint = {
   participants: Participant[]
 }
 
-type PositionedMapPoint = MapPoint & {
+type MapTile = {
+  key: string
+  url: string
   left: number
   top: number
 }
 
-type OverviewMap = {
-  url: string
-  points: PositionedMapPoint[]
+type PositionedPoint = MapPoint & {
+  left: number
+  top: number
 }
+
+type MapLayout = {
+  tiles: MapTile[]
+  points: PositionedPoint[]
+  zoom: number
+}
+
+const TILE_SIZE = 256
+const MIN_ZOOM = 4
+const MAX_ZOOM = 18
+const MAX_MERCATOR_LATITUDE = 85.05112878
 
 function pad2(value: number) {
   return String(value).padStart(2, '0')
@@ -96,18 +110,20 @@ function statusLabel(status: SummaryStatus) {
     completed: 'Завершено',
     late: 'Опаздывает',
     missing: 'Не вышел',
+    cancelled: 'Отменено',
     unassigned: 'Без работника',
   } as Record<SummaryStatus, string>)[status]
 }
 
 function statusRank(status: SummaryStatus) {
   return ({
-    completed: 0,
-    scheduled: 1,
-    working: 2,
-    late: 3,
-    unassigned: 4,
-    missing: 5,
+    cancelled: 0,
+    completed: 1,
+    scheduled: 2,
+    working: 3,
+    late: 4,
+    unassigned: 5,
+    missing: 6,
   } as Record<SummaryStatus, number>)[status]
 }
 
@@ -117,6 +133,7 @@ function statusClasses(status: SummaryStatus) {
   if (status === 'late') return 'border-amber-400/50 bg-amber-500/20 text-amber-100'
   if (status === 'missing') return 'border-rose-400/50 bg-rose-500/20 text-rose-100'
   if (status === 'unassigned') return 'border-fuchsia-400/50 bg-fuchsia-500/20 text-fuchsia-100'
+  if (status === 'cancelled') return 'border-zinc-500/40 bg-zinc-700/30 text-zinc-300'
   return 'border-zinc-400/30 bg-zinc-500/15 text-zinc-100'
 }
 
@@ -126,6 +143,7 @@ function markerClasses(status: SummaryStatus) {
   if (status === 'late') return 'border-amber-100 bg-amber-500 text-black'
   if (status === 'missing') return 'border-rose-100 bg-rose-600 text-white'
   if (status === 'unassigned') return 'border-fuchsia-100 bg-fuchsia-600 text-white'
+  if (status === 'cancelled') return 'border-zinc-300 bg-zinc-600 text-white'
   return 'border-zinc-100 bg-zinc-700 text-white'
 }
 
@@ -133,51 +151,186 @@ function validCoordinate(value: number | null, min: number, max: number): value 
   return value != null && Number.isFinite(value) && value >= min && value <= max
 }
 
-function mercatorY(lat: number) {
-  const safe = Math.min(85, Math.max(-85, lat))
-  const radians = (safe * Math.PI) / 180
-  return Math.log(Math.tan(Math.PI / 4 + radians / 2))
-}
-
-function buildOverviewMap(points: MapPoint[]): OverviewMap | null {
-  if (!points.length) return null
-
-  const minLat0 = Math.min(...points.map((point) => point.lat))
-  const maxLat0 = Math.max(...points.map((point) => point.lat))
-  const minLng0 = Math.min(...points.map((point) => point.lng))
-  const maxLng0 = Math.max(...points.map((point) => point.lng))
-
-  const latSpan = Math.max(maxLat0 - minLat0, 0.015)
-  const lngSpan = Math.max(maxLng0 - minLng0, 0.02)
-  const latPad = Math.max(latSpan * 0.2, 0.006)
-  const lngPad = Math.max(lngSpan * 0.2, 0.008)
-
-  const minLat = Math.max(-85, minLat0 - latPad)
-  const maxLat = Math.min(85, maxLat0 + latPad)
-  const minLng = Math.max(-180, minLng0 - lngPad)
-  const maxLng = Math.min(180, maxLng0 + lngPad)
-
-  const yNorth = mercatorY(maxLat)
-  const ySouth = mercatorY(minLat)
-  const ySpan = Math.max(yNorth - ySouth, Number.EPSILON)
-  const xSpan = Math.max(maxLng - minLng, Number.EPSILON)
-
-  const positioned = points.map((point) => ({
-    ...point,
-    left: Math.min(98, Math.max(2, ((point.lng - minLng) / xSpan) * 100)),
-    top: Math.min(96, Math.max(4, ((yNorth - mercatorY(point.lat)) / ySpan) * 100)),
-  }))
-
-  const bbox = [minLng, minLat, maxLng, maxLat].map((value) => value.toFixed(6)).join(',')
-  const url = `https://www.openstreetmap.org/export/embed.html?${new URLSearchParams({ bbox, layer: 'mapnik' }).toString()}`
-  return { url, points: positioned }
-}
-
 function markerWorkerLine(point: MapPoint) {
   const names = point.participants.map((participant) => participant.worker_name).filter(Boolean)
   if (!names.length) return 'Работник не назначен'
   if (names.length <= 3) return names.join(', ')
   return `${names.slice(0, 3).join(', ')} +${names.length - 3}`
+}
+
+function worldPixel(lat: number, lng: number, zoom: number) {
+  const safeLat = Math.max(-MAX_MERCATOR_LATITUDE, Math.min(MAX_MERCATOR_LATITUDE, lat))
+  const scale = TILE_SIZE * 2 ** zoom
+  const sin = Math.sin((safeLat * Math.PI) / 180)
+  return {
+    x: ((lng + 180) / 360) * scale,
+    y: (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * scale,
+  }
+}
+
+function fitZoom(points: MapPoint[], width: number, height: number, padding: number) {
+  for (let zoom = MAX_ZOOM; zoom >= MIN_ZOOM; zoom -= 1) {
+    const pixels = points.map((point) => worldPixel(point.lat, point.lng, zoom))
+    const xs = pixels.map((point) => point.x)
+    const ys = pixels.map((point) => point.y)
+    const spanX = Math.max(...xs) - Math.min(...xs)
+    const spanY = Math.max(...ys) - Math.min(...ys)
+    if (spanX <= Math.max(1, width - padding * 2) && spanY <= Math.max(1, height - padding * 2)) {
+      return zoom
+    }
+  }
+  return MIN_ZOOM
+}
+
+function buildMapLayout(points: MapPoint[], width: number, height: number, zoomOffset: number): MapLayout | null {
+  if (!points.length || width <= 0 || height <= 0) return null
+
+  const padding = width < 640 ? 42 : 100
+  const fittedZoom = fitZoom(points, width, height, padding)
+  const zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, fittedZoom + zoomOffset))
+  const projected = points.map((point) => ({ point, ...worldPixel(point.lat, point.lng, zoom) }))
+  const xs = projected.map((point) => point.x)
+  const ys = projected.map((point) => point.y)
+  const centerX = (Math.min(...xs) + Math.max(...xs)) / 2
+  const centerY = (Math.min(...ys) + Math.max(...ys)) / 2
+  const originX = centerX - width / 2
+  const originY = centerY - height / 2
+  const tileCount = 2 ** zoom
+  const firstTileX = Math.floor(originX / TILE_SIZE)
+  const lastTileX = Math.floor((originX + width) / TILE_SIZE)
+  const firstTileY = Math.floor(originY / TILE_SIZE)
+  const lastTileY = Math.floor((originY + height) / TILE_SIZE)
+  const tiles: MapTile[] = []
+
+  for (let tileY = firstTileY; tileY <= lastTileY; tileY += 1) {
+    if (tileY < 0 || tileY >= tileCount) continue
+    for (let tileX = firstTileX; tileX <= lastTileX; tileX += 1) {
+      const wrappedX = ((tileX % tileCount) + tileCount) % tileCount
+      tiles.push({
+        key: `${zoom}:${tileX}:${tileY}`,
+        url: `https://tile.openstreetmap.org/${zoom}/${wrappedX}/${tileY}.png`,
+        left: tileX * TILE_SIZE - originX,
+        top: tileY * TILE_SIZE - originY,
+      })
+    }
+  }
+
+  return {
+    zoom,
+    tiles,
+    points: projected.map(({ point, x, y }) => ({
+      ...point,
+      left: x - originX,
+      top: y - originY,
+    })),
+  }
+}
+
+function WorkforceOverviewMap({
+  points,
+  selectedSiteId,
+  onChoose,
+}: {
+  points: MapPoint[]
+  selectedSiteId: string | null
+  onChoose: (point: MapPoint) => void
+}) {
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const [viewport, setViewport] = useState({ width: 0, height: 0 })
+  const [zoomOffset, setZoomOffset] = useState(0)
+
+  useEffect(() => {
+    const element = containerRef.current
+    if (!element) return
+    const update = () => setViewport({ width: element.clientWidth, height: element.clientHeight })
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => setZoomOffset(0), [points])
+
+  const layout = useMemo(
+    () => buildMapLayout(points, viewport.width, viewport.height, zoomOffset),
+    [points, viewport.height, viewport.width, zoomOffset],
+  )
+  const selectedPoint = points.find((point) => point.siteId === selectedSiteId) || null
+
+  return (
+    <div ref={containerRef} className="relative h-[54vh] min-h-[420px] overflow-hidden bg-zinc-900 sm:h-[58vh] sm:min-h-[460px]">
+      {layout ? (
+        <>
+          <div className="absolute inset-0 overflow-hidden bg-[#d8e5cf]">
+            {layout.tiles.map((tile) => (
+              <img
+                key={tile.key}
+                src={tile.url}
+                alt=""
+                draggable={false}
+                loading="lazy"
+                referrerPolicy="no-referrer"
+                className="pointer-events-none absolute h-64 w-64 max-w-none select-none"
+                style={{ left: tile.left, top: tile.top }}
+              />
+            ))}
+          </div>
+
+          <div className="absolute inset-0 z-10">
+            {layout.points.map((point) => {
+              const selected = selectedSiteId === point.siteId
+              return (
+                <button
+                  key={point.siteId}
+                  type="button"
+                  onClick={() => onChoose(point)}
+                  style={{ left: point.left, top: point.top }}
+                  className="group absolute -translate-x-1/2 -translate-y-1/2 text-left"
+                  aria-label={`${point.siteName}, ${point.address}`}
+                  title={`${point.siteName}: ${point.address}`}
+                >
+                  <div className={`flex items-center rounded-full border bg-black/85 p-1 shadow-[0_6px_22px_rgba(0,0,0,0.65)] backdrop-blur transition group-hover:scale-105 sm:gap-2 sm:rounded-2xl sm:pr-3 ${selected ? 'ring-2 ring-yellow-300' : 'ring-1 ring-black/50'}`}>
+                    <span className={`flex h-7 min-w-7 items-center justify-center rounded-full border-2 px-1.5 text-[10px] font-black shadow sm:h-9 sm:min-w-9 sm:px-2 sm:text-xs ${markerClasses(point.status)}`}>
+                      {point.participants.length || '!'}
+                    </span>
+                    <span className="hidden max-w-[230px] sm:block">
+                      <span className="block truncate text-xs font-bold text-white">{point.siteName}</span>
+                      <span className="mt-0.5 block truncate text-[10px] text-zinc-200">{point.address}</span>
+                    </span>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="absolute right-3 top-3 z-20 grid gap-1 rounded-xl border border-black/15 bg-white/90 p-1 shadow-lg">
+            <button type="button" aria-label="Увеличить карту" onClick={() => setZoomOffset((value) => Math.min(3, value + 1))} className="flex h-9 w-9 items-center justify-center rounded-lg text-xl font-bold text-black hover:bg-zinc-200">+</button>
+            <button type="button" aria-label="Уменьшить карту" onClick={() => setZoomOffset((value) => Math.max(-3, value - 1))} className="flex h-9 w-9 items-center justify-center rounded-lg text-xl font-bold text-black hover:bg-zinc-200">−</button>
+            <button type="button" aria-label="Показать все объекты" onClick={() => setZoomOffset(0)} className="flex h-9 w-9 items-center justify-center rounded-lg text-[11px] font-bold text-black hover:bg-zinc-200">Все</button>
+          </div>
+
+          {selectedPoint ? (
+            <div className="absolute inset-x-2 bottom-7 z-20 rounded-2xl border border-yellow-300/40 bg-black/92 p-3 text-left shadow-2xl backdrop-blur sm:hidden">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-bold text-white">{selectedPoint.siteName}</div>
+                  <div className="mt-1 text-xs leading-5 text-zinc-200">{selectedPoint.address}</div>
+                  <div className="mt-1 truncate text-[11px] text-zinc-400">{markerWorkerLine(selectedPoint)}</div>
+                </div>
+                <span className={`shrink-0 rounded-full border px-2 py-1 text-[10px] font-semibold ${statusClasses(selectedPoint.status)}`}>{statusLabel(selectedPoint.status)}</span>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="pointer-events-none absolute bottom-1 left-2 z-20 text-[9px] text-zinc-700 drop-shadow-[0_1px_1px_rgba(255,255,255,0.9)] sm:text-[10px]">
+            © OpenStreetMap contributors
+          </div>
+        </>
+      ) : (
+        <div className="flex h-full items-center justify-center p-8 text-center text-sm text-zinc-500">У объектов в выбранном периоде нет корректных координат.</div>
+      )}
+    </div>
+  )
 }
 
 export default function WorkforceMapPage() {
@@ -273,7 +426,6 @@ export default function WorkforceMapPage() {
     return Array.from(bySite.values()).sort((a, b) => a.siteName.localeCompare(b.siteName))
   }, [filtered])
 
-  const overviewMap = useMemo(() => buildOverviewMap(mapPoints), [mapPoints])
   const mapWorkerCount = useMemo(() => new Set(mapPoints.flatMap((point) => point.participants.map((participant) => participant.worker_id))).size, [mapPoints])
   const selectedSiteId = selected?.site?.id || null
 
@@ -302,11 +454,11 @@ export default function WorkforceMapPage() {
         </div>
 
         <div className="mt-5 grid gap-3 rounded-3xl border border-yellow-400/15 bg-black/30 p-4 lg:grid-cols-[auto_auto_auto_1fr_auto]">
-          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="rounded-xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-sm" />
-          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="rounded-xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-sm" />
-          <select value={status} onChange={(e) => setStatus(e.target.value as SummaryStatus | '')} className="rounded-xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-sm">
+          <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} className="rounded-xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-sm" />
+          <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} className="rounded-xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-sm" />
+          <select value={status} onChange={(event) => setStatus(event.target.value as SummaryStatus | '')} className="rounded-xl border border-yellow-400/20 bg-black/40 px-3 py-2 text-sm">
             <option value="">Все статусы</option>
-            {(['scheduled', 'working', 'completed', 'late', 'missing', 'unassigned'] as SummaryStatus[]).map((value) => <option key={value} value={value}>{statusLabel(value)}</option>)}
+            {(['scheduled', 'working', 'completed', 'late', 'missing', 'cancelled', 'unassigned'] as SummaryStatus[]).map((value) => <option key={value} value={value}>{statusLabel(value)}</option>)}
           </select>
           <div className="flex flex-wrap gap-2">
             <button onClick={() => setRange('today')} className="rounded-xl border border-zinc-700 px-3 py-2 text-sm">Сегодня</button>
@@ -323,43 +475,7 @@ export default function WorkforceMapPage() {
             <div className="font-semibold text-yellow-100">Общая карта</div>
             <div className="text-zinc-400">Объектов: {mapPoints.length} · работников: {mapWorkerCount} · смен: {filtered.length}</div>
           </div>
-          <div className="relative h-[58vh] min-h-[460px] overflow-hidden bg-zinc-900">
-            {overviewMap ? (
-              <>
-                <iframe title="Общая карта смен" src={overviewMap.url} className="pointer-events-none absolute inset-0 h-full w-full select-none border-0" loading="lazy" />
-                <div className="absolute inset-0 z-10">
-                  {overviewMap.points.map((point) => {
-                    const selectedPoint = selectedSiteId === point.siteId
-                    return (
-                      <button
-                        key={point.siteId}
-                        type="button"
-                        onClick={() => choosePoint(point)}
-                        style={{ left: `${point.left}%`, top: `${point.top}%` }}
-                        className="group absolute -translate-x-1/2 -translate-y-1/2 text-left"
-                        title={`${point.siteName}: ${markerWorkerLine(point)}`}
-                      >
-                        <div className={`flex items-center gap-2 rounded-2xl border bg-black/85 p-1.5 pr-3 shadow-[0_8px_28px_rgba(0,0,0,0.65)] backdrop-blur transition group-hover:scale-105 ${selectedPoint ? 'ring-2 ring-yellow-300' : 'ring-1 ring-black/50'}`}>
-                          <span className={`flex h-9 min-w-9 items-center justify-center rounded-full border-2 px-2 text-xs font-black shadow ${markerClasses(point.status)}`}>
-                            {point.participants.length || '!'}
-                          </span>
-                          <span className="hidden max-w-[230px] sm:block">
-                            <span className="block truncate text-xs font-bold text-white">{point.siteName}</span>
-                            <span className="mt-0.5 block truncate text-[10px] text-zinc-200">{markerWorkerLine(point)}</span>
-                          </span>
-                        </div>
-                      </button>
-                    )
-                  })}
-                </div>
-                <div className="pointer-events-none absolute bottom-3 left-3 z-20 rounded-xl border border-white/20 bg-black/80 px-3 py-2 text-[11px] text-zinc-200 shadow-lg">
-                  Число в маркере — количество работников на объекте. Нажмите маркер для подробностей.
-                </div>
-              </>
-            ) : (
-              <div className="flex h-full min-h-[460px] items-center justify-center p-8 text-center text-sm text-zinc-500">У объектов в выбранном периоде нет корректных координат.</div>
-            )}
-          </div>
+          <WorkforceOverviewMap points={mapPoints} selectedSiteId={selectedSiteId} onChoose={choosePoint} />
         </section>
 
         <div className="mt-5 grid gap-5 xl:grid-cols-[420px_1fr]">
