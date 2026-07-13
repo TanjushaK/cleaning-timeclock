@@ -17,7 +17,8 @@
     "cap:add-android": "npx cap add android",
     "cap:add-ios": "npx cap add ios",
     "cap:open:android": "npx cap open android",
-    "cap:open:ios": "npx cap open ios"
+    "cap:open:ios": "npx cap open ios",
+    "test:workforce-map": "node --test tests/workforce-map-status.test.mjs"
   },
   "dependencies": {
     "@capacitor/app": "^6.0.3",
