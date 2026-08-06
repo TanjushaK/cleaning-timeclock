@@ -1273,20 +1273,8 @@ const loadAll = useCallback(async () => {
       setNotice(null);
       const event_id = newEventId();
 
-      const stoppedLocal = Date.now();
-      setLocalStartMs((p) => {
-        const n: Record<string, number> = { ...p };
-        delete n[jobId];
-        return n;
-      });
-      setJobs((prev) =>
-        prev.map((x) =>
-          x.id === jobId
-            ? { ...x, status: "done", stopped_at: x.stopped_at ?? new Date(stoppedLocal).toISOString() }
-            : x
-        )
-      );
-
+      // Do not mark the shift as done before the server confirms Check-out.
+      // A rejected geofence request or an offline queued Stop must remain visibly active.
       let gps: { lat: number; lng: number; accuracy: number } | null = null;
 
       try {
@@ -1296,6 +1284,11 @@ const loadAll = useCallback(async () => {
           body: JSON.stringify({ id: jobId, event_id, ...gps }),
         });
         if (res?.error) throw new Error(String(res.error));
+        setLocalStartMs((p) => {
+          const n: Record<string, number> = { ...p };
+          delete n[jobId];
+          return n;
+        });
         await loadAll();
         setNotice(tr("feedback.stopped"));
         if (outboxN > 0) syncOutbox({ silent: true }).catch(() => {});
@@ -1315,7 +1308,6 @@ const loadAll = useCallback(async () => {
               last_error: null,
             });
             await refreshOutbox();
-            setJobs((prev) => prev.map((x) => (x.id === jobId ? { ...x, status: "done" } : x)));
             setNotice(tr("feedback.stoppedQueued"));
           } catch (e2: any) {
             setError(clientWorkerErrorMessage(tr, e2));
@@ -1982,7 +1974,7 @@ const loadAll = useCallback(async () => {
                     const hasOpenStartLog = Boolean(j.started_at && !j.stopped_at);
                     const baseStatus = hasOpenStartLog ? "in_progress" : rawStatus;
                     const effStatus = pending
-                      ? (pending.kind === "start" ? "in_progress" : pending.kind === "stop" ? "done" : baseStatus)
+                      ? (pending.kind === "start" ? "in_progress" : baseStatus)
                       : baseStatus;
                     const planned = effStatus === "planned";
                     const inProg = effStatus === "in_progress";
@@ -2074,7 +2066,11 @@ const loadAll = useCallback(async () => {
                               </button>
                             )}
                             {inProg && (
-                              <button className={btnStopSolid} onClick={() => doStop(j.id)} disabled={busy}>
+                              <button
+                                className={btnStopSolid}
+                                onClick={() => doStop(j.id)}
+                                disabled={busy || Boolean(pending && pending.kind === "stop")}
+                              >
                                 {pending && pending.kind === "stop" ? tr("jobs.stopQueued") : tr("jobs.stop")}
                               </button>
                             )}
