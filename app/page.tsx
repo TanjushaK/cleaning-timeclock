@@ -437,6 +437,8 @@ export default function AppPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [activeActionJobId, setActiveActionJobId] = useState<string | null>(null);
+  const [jobActionError, setJobActionError] = useState<Record<string, string>>({});
 
   const [offline, setOffline] = useState(false);
   const [outboxN, setOutboxN] = useState(0);
@@ -1188,57 +1190,121 @@ const loadAll = useCallback(async () => {
       const currentStatus = String(currentJob?.status || "").toLowerCase();
       const hasOpenStartLog = Boolean(currentJob?.started_at && !currentJob?.stopped_at);
       const hasSiteCoords = hasValidSiteStartCoords(currentJob);
+
+      const clearInlineActionError = () => {
+        setJobActionError((prev) => {
+          if (!prev[jobId]) return prev;
+          const next = { ...prev };
+          delete next[jobId];
+          return next;
+        });
+      };
+
+      const showInlineActionError = (reason: unknown) => {
+        const message = clientWorkerErrorMessage(tr, reason);
+        setJobActionError((prev) => ({ ...prev, [jobId]: message }));
+        setError(message);
+      };
+
       if (!hasSiteCoords) {
         setNotice(null);
-        setError(tr("jobs.siteCoordsMissing"));
+        const message = tr("jobs.siteCoordsMissing");
+        setError(message);
+        setJobActionError((prev) => ({ ...prev, [jobId]: message }));
         return;
       }
+
       if (pending?.kind === "start" || currentStatus === "in_progress" || hasOpenStartLog) return;
 
       setBusy(true);
+      setActiveActionJobId(jobId);
       setError(null);
       setNotice(null);
+      clearInlineActionError();
+
       const event_id = newEventId();
 
-      // IMPORTANT: no optimistic START. We switch to "in_progress" only after server GPS validation.
+      // No optimistic Start: the card changes only after server GPS validation.
       let gps: { lat: number; lng: number; accuracy: number } | null = null;
 
       try {
         gps = await getGpsOnce(gpsErrorMessages);
+
         const response = await authFetch("/api/me/jobs/start", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id: jobId, event_id, ...gps }),
         });
+
         const payload = await response.json().catch(() => ({} as any));
+
         if (!response.ok) {
           const errorCode = typeof payload?.errorCode === "string" ? payload.errorCode : "";
           const errorText = typeof payload?.error === "string" ? payload.error : "";
+
           if (response.status === 400 && (errorCode || errorText)) {
-            throw new Error(errorCode && errorText ? `${errorCode}: ${errorText}` : errorCode || errorText);
+            throw new Error(
+              errorCode && errorText
+                ? `${errorCode}: ${errorText}`
+                : errorCode || errorText
+            );
           }
+
           if (errorCode) {
-            throw new FetchApiError(`admin.api.${errorCode}`, { status: response.status, errorCode });
+            throw new FetchApiError(`admin.api.${errorCode}`, {
+              status: response.status,
+              errorCode,
+            });
           }
+
           throw new Error(errorText || `HTTP ${response.status}`);
         }
+
         if (payload?.error) throw new Error(String(payload.error));
-        const startedLocal = Date.now();
-        setLocalStartMs((p) => ({ ...p, [jobId]: startedLocal }));
+
+        const startedAt =
+          typeof payload?.started_at === "string" && payload.started_at
+            ? payload.started_at
+            : new Date().toISOString();
+
+        const parsedStartedMs = Date.parse(startedAt);
+        const startedLocal = Number.isFinite(parsedStartedMs)
+          ? parsedStartedMs
+          : Date.now();
+
+        setLocalStartMs((prev) => ({
+          ...prev,
+          [jobId]: startedLocal,
+        }));
+
         setJobs((prev) =>
-          prev.map((x) =>
-            x.id === jobId
-              ? { ...x, status: "in_progress", started_at: x.started_at ?? new Date(startedLocal).toISOString() }
-              : x
+          prev.map((job) =>
+            job.id === jobId
+              ? {
+                  ...job,
+                  status: "in_progress",
+                  started_at: job.started_at ?? startedAt,
+                }
+              : job
           )
         );
-        await loadAll();
+
+        clearInlineActionError();
+
+        // The confirmed server Start is authoritative.
+        // A transient refresh failure must not enqueue a duplicate Start.
+        await loadAll().catch(() => {});
+
         setNotice(tr("feedback.started"));
-        if (outboxN > 0) syncOutbox({ silent: true }).catch(() => {});
+
+        if (outboxN > 0) {
+          syncOutbox({ silent: true }).catch(() => {});
+        }
       } catch (e: any) {
         if (isOfflineishError(e)) {
           try {
             if (!gps) gps = await getGpsOnce(gpsErrorMessages);
+
             await outboxAdd({
               event_id,
               kind: "start",
@@ -1250,20 +1316,34 @@ const loadAll = useCallback(async () => {
               tries: 0,
               last_error: null,
             });
+
             await refreshOutbox();
-            // Do not start locally while offline — START requires server GPS validation.
+
+            // Start stays visibly inactive until the server validates GPS.
             setNotice(tr("feedback.startedOfflineBlocked"));
           } catch (e2: any) {
-            setError(clientWorkerErrorMessage(tr, e2));
+            showInlineActionError(e2);
           }
         } else {
-          setError(clientWorkerErrorMessage(tr, e));
+          showInlineActionError(e);
         }
       } finally {
+        setActiveActionJobId((current) =>
+          current === jobId ? null : current
+        );
         setBusy(false);
       }
     },
-    [gpsErrorMessages, jobs, loadAll, outboxItems, outboxN, refreshOutbox, syncOutbox, tr]
+    [
+      gpsErrorMessages,
+      jobs,
+      loadAll,
+      outboxItems,
+      outboxN,
+      refreshOutbox,
+      syncOutbox,
+      tr,
+    ]
   );
 
   const doStop = useCallback(
@@ -2094,9 +2174,27 @@ const loadAll = useCallback(async () => {
                               </button>
                             )}
                             {planned && !Boolean(j.can_accept) && !Boolean(j.started_at && !j.stopped_at) && !blockedByMissingCoords && (
-                              <button className={btnStartSolid} onClick={() => doStart(j.id)} disabled={busy}>
-                                {pending && pending.kind === "start" ? tr("jobs.startQueued") : tr("jobs.start")}
+                              <button
+                                className={btnStartSolid}
+                                onClick={() => doStart(j.id)}
+                                disabled={busy || activeActionJobId === j.id}
+                                aria-busy={activeActionJobId === j.id}
+                              >
+                                {activeActionJobId === j.id
+                                  ? `${tr("common.loading")} GPS`
+                                  : pending && pending.kind === "start"
+                                    ? tr("jobs.startQueued")
+                                    : tr("jobs.start")}
                               </button>
+                            )}
+                            {jobActionError[j.id] && (
+                              <div
+                                role="alert"
+                                aria-live="assertive"
+                                className="max-w-sm rounded-xl border border-red-400/40 bg-red-500/10 px-3 py-2 text-xs text-red-100"
+                              >
+                                {jobActionError[j.id]}
+                              </div>
                             )}
                           </div>
                         </div>
