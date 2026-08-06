@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { AppApiErrorCodes } from '@/lib/app-error-codes';
 import { ApiError, requireActiveWorker, toErrorResponse } from '@/lib/route-db';
 import { withClient } from '@/lib/server/pool';
+import { evaluateCheckoutGeofence } from '@/lib/checkout-geofence.mjs';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -32,18 +33,6 @@ type TeamTimeLogRow = { worker_id: string | null; started_at: string | null; sto
 function toNum(v: unknown): number | null {
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
-}
-
-function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const R = 6371000;
-  const toRad = (x: number) => (x * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
 }
 
 function computeJobStatus(
@@ -97,7 +86,16 @@ export async function POST(req: Request) {
     const lng = toNum(body.lng);
     const acc = toNum(body.accuracy);
 
-    if (lat === null || lng === null || acc === null) {
+    if (
+      lat === null ||
+      lng === null ||
+      acc === null ||
+      lat < -90 ||
+      lat > 90 ||
+      lng < -180 ||
+      lng > 180 ||
+      acc < 0
+    ) {
       throw new ApiError(400, 'GPS lat/lng/accuracy required', AppApiErrorCodes.GPS_LAT_LNG_ACCURACY_REQUIRED);
     }
 
@@ -153,19 +151,36 @@ export async function POST(req: Request) {
       throw new ApiError(400, 'Site radius missing', AppApiErrorCodes.SITE_RADIUS_MISSING);
     }
 
-    if (acc > 80) {
-      throw new ApiError(
-        400,
-        `GPS accuracy too low: ${Math.round(acc)} m`,
-        AppApiErrorCodes.GPS_ACCURACY_TOO_LOW,
-      );
-    }
+    const checkoutGps = evaluateCheckoutGeofence({
+      lat,
+      lng,
+      accuracy: acc,
+      siteLat: site.lat,
+      siteLng: site.lng,
+      radius,
+    });
 
-    const dist = haversineMeters(lat, lng, site.lat, site.lng);
-    if (dist > radius) {
+    if (!checkoutGps.allowed) {
+      console.warn('[worker-stop-geofence-rejected]', {
+        workerId: uid,
+        jobId,
+        reason: checkoutGps.reason,
+        distanceM: Math.round(checkoutGps.distanceM),
+        accuracyM: Math.round(checkoutGps.accuracyM),
+        radiusM: Math.round(checkoutGps.radiusM),
+      });
+
+      if (checkoutGps.reason === 'accuracy_too_low') {
+        throw new ApiError(
+          400,
+          `GPS accuracy too low: ${Math.round(checkoutGps.accuracyM)} m`,
+          AppApiErrorCodes.GPS_ACCURACY_TOO_LOW,
+        );
+      }
+
       throw new ApiError(
         400,
-        `Too far from site: ${Math.round(dist)} m`,
+        `Too far from site: ${Math.round(checkoutGps.distanceM)} m`,
         AppApiErrorCodes.TOO_FAR_FROM_SITE,
       );
     }
@@ -257,7 +272,19 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json(
-      { ok: true, stopped_at: result.stoppedAt, closed_logs: result.closedLogs, job_status: result.status },
+      {
+        ok: true,
+        stopped_at: result.stoppedAt,
+        closed_logs: result.closedLogs,
+        job_status: result.status,
+        checkout_gps: {
+          status: checkoutGps.reviewRequired ? 'review' : 'ok',
+          reason: checkoutGps.reason,
+          distance_m: Math.round(checkoutGps.distanceM),
+          accuracy_m: Math.round(checkoutGps.accuracyM),
+          radius_m: Math.round(checkoutGps.radiusM),
+        },
+      },
       { status: 200 },
     );
   } catch (err) {
