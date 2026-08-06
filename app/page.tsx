@@ -160,6 +160,36 @@ function formatHMS(ms: number) {
   return `${hh}:${mm}:${ss}`;
 }
 
+type LiveElapsedTimerProps = {
+  startMs: number;
+  label: string;
+  valueClassName?: string;
+};
+
+const LiveElapsedTimer = React.memo(function LiveElapsedTimer({
+  startMs,
+  label,
+  valueClassName,
+}: LiveElapsedTimerProps) {
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+
+  useEffect(() => {
+    const tick = () => setNowMs(Date.now());
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  return (
+    <div className="mt-2 text-xs">
+      <span className="opacity-70">{label}: </span>
+      <span className={clsx("font-semibold", valueClassName)}>
+        {formatHMS(Math.max(0, nowMs - startMs))}
+      </span>
+    </div>
+  );
+});
+
 function appLocaleToBCP47(lang: string): string {
   const v = String(lang || "en").toLowerCase();
   if (v === "ru") return "ru-RU";
@@ -451,7 +481,9 @@ export default function AppPage() {
   /** User chose to save refresh token behind biometrics */
   const [bioSaved, setBioSaved] = useState(false);
 
-  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  // Snapshot for worked-minute summaries. It changes only when job data is refreshed,
+  // so the full worker dashboard no longer rerenders every second.
+  const [workedSnapshotMs, setWorkedSnapshotMs] = useState<number>(() => Date.now());
   const [localStartMs, setLocalStartMs] = useState<Record<string, number>>({});
   const [selectedDateKey, setSelectedDateKey] = useState<string>("");
   const [plannedPeriod, setPlannedPeriod] = useState<PlannedPeriod>("week");
@@ -489,11 +521,6 @@ export default function AppPage() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!authed) return;
-    const t = setInterval(() => setNowMs(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, [authed]);
 
   useEffect(() => {
     // Drop stale translated messages when language changes.
@@ -553,6 +580,7 @@ const loadAll = useCallback(async () => {
       : Array.isArray(jobsRes?.items)
         ? jobsRes.items
         : [];
+    setWorkedSnapshotMs(Date.now());
     setJobs(Array.isArray(list) ? list : []);
 
     setLocalStartMs((prev) => {
@@ -1455,10 +1483,10 @@ const loadAll = useCallback(async () => {
         const dateKey = day ? toDateKeyLocal(day) : "";
         const tm = parseScheduledTimeWindow(j.scheduled_time, j.scheduled_end_time);
         const durationMin = calcDurationMin(tm.startMin, tm.endMin);
-        const workedMin = calcWorkedDurationMin(j, nowMs);
+        const workedMin = calcWorkedDurationMin(j, workedSnapshotMs);
         return { j, day, dateKey, durationMin, workedMin };
       }),
-    [jobsSorted, nowMs]
+    [jobsSorted, workedSnapshotMs]
   );
 
   const weekAnchorDate = useMemo(() => {
@@ -2081,9 +2109,8 @@ const loadAll = useCallback(async () => {
                     const hasSiteCoords = hasValidSiteStartCoords(j);
                     const blockedByMissingCoords = planned && !hasSiteCoords;
 
-                    const baseStart = (localStartMs as any)[j.id] ?? (j.started_at ? new Date(j.started_at).getTime() : null);
-                    const elapsedMs = inProg && baseStart ? Math.max(0, nowMs - baseStart) : null;
-                    const elapsedStr = elapsedMs != null ? formatHMS(elapsedMs) : null;
+                    const baseStartRaw = (localStartMs as any)[j.id] ?? (j.started_at ? new Date(j.started_at).getTime() : null);
+                    const baseStart = Number.isFinite(baseStartRaw) ? Number(baseStartRaw) : null;
 
                     return (
                       <div key={j.id} className={clsx("rounded-2xl p-4", border, "bg-zinc-900/70")}>
@@ -2203,11 +2230,12 @@ const loadAll = useCallback(async () => {
                           <div>{tr("jobs.stoppedAt")}: {formatDateTimeShort(lang, j.stopped_at)}</div>
                         </div>
 
-                        {inProg && elapsedStr ? (
-                          <div className="mt-2 text-xs">
-                            <span className="opacity-70">{tr("jobs.timer")}: </span>
-                            <span className={clsx("font-semibold", gold)}>{elapsedStr}</span>
-                          </div>
+                        {inProg && baseStart != null ? (
+                          <LiveElapsedTimer
+                            startMs={baseStart}
+                            label={tr("jobs.timer")}
+                            valueClassName={gold}
+                          />
                         ) : null}
 
 
