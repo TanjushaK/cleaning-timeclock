@@ -18,7 +18,8 @@
     "cap:add-ios": "npx cap add ios",
     "cap:open:android": "npx cap open android",
     "cap:open:ios": "npx cap open ios",
-    "test:workforce-map": "node --test tests/workforce-map-status.test.mjs"
+    "test:workforce-map": "node --test tests/workforce-map-status.test.mjs",
+    "test:checkout-geofence": "node --test tests/checkout-geofence.test.mjs"
   },
   "dependencies": {
     "@capacitor/app": "^6.0.3",
@@ -28,21 +29,21 @@
     "@capgo/capacitor-native-biometric": "^6.0.4",
     "dexie": "^4.3.0",
     "jose": "^6.1.0",
-    "mime-types": "^2.1.35",
+    "js-yaml": "^4.3.0",
+    "lucide-react": "^0.468.0",
     "next": "16.2.6",
     "pg": "^8.16.3",
-    "react": "19.2.3",
-    "react-dom": "19.2.3",
-    "sharp": "^0.33.5"
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "sharp": "^0.34.4",
+    "uuid": "^11.1.0",
+    "zod": "^4.1.12"
   },
   "devDependencies": {
-    "@capacitor/android": "^6.2.1",
     "@capacitor/cli": "^6.2.1",
-    "@capacitor/ios": "^6.2.1",
-    "@tailwindcss/postcss": "^4",
-    "@types/mime-types": "^2.1.4",
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^20",
-    "@types/pg": "^8.15.5",
+    "@types/pg": "^8.15.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
