@@ -1284,12 +1284,31 @@ const loadAll = useCallback(async () => {
           body: JSON.stringify({ id: jobId, event_id, ...gps }),
         });
         if (res?.error) throw new Error(String(res.error));
+
+        const stoppedAt =
+          typeof res?.stopped_at === "string" && res.stopped_at
+            ? res.stopped_at
+            : new Date().toISOString();
+
         setLocalStartMs((p) => {
           const n: Record<string, number> = { ...p };
           delete n[jobId];
           return n;
         });
-        await loadAll();
+
+        setJobs((prev) =>
+          prev.map((job) =>
+            job.id === jobId
+              ? {
+                  ...job,
+                  status: "done",
+                  stopped_at: job.stopped_at ?? stoppedAt,
+                }
+              : job
+          )
+        );
+
+        await loadAll().catch(() => {});
         setNotice(tr("feedback.stopped"));
         if (outboxN > 0) syncOutbox({ silent: true }).catch(() => {});
       } catch (e: any) {
