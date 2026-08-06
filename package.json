@@ -18,7 +18,8 @@
     "cap:add-ios": "npx cap add ios",
     "cap:open:android": "npx cap open android",
     "cap:open:ios": "npx cap open ios",
-    "test:workforce-map": "node --test tests/workforce-map-status.test.mjs"
+    "test:workforce-map": "node --test tests/workforce-map-status.test.mjs",
+    "test:checkout-geofence": "node --test tests/checkout-geofence.test.mjs"
   },
   "dependencies": {
     "@capacitor/app": "^6.0.3",
