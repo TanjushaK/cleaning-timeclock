@@ -28,11 +28,14 @@ async function fetchKillInfo(): Promise<KillInfo | null> {
   }
 }
 
-async function killServiceWorkerAndCaches() {
+async function killServiceWorkerAndCaches(): Promise<boolean> {
+  let changed = false;
+
   try {
     if ("serviceWorker" in navigator) {
       const regs = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(regs.map((r) => r.unregister()));
+      const results = await Promise.all(regs.map((r) => r.unregister()));
+      if (results.some(Boolean)) changed = true;
     }
   } catch {
     // ignore
@@ -41,11 +44,15 @@ async function killServiceWorkerAndCaches() {
   try {
     if ("caches" in window) {
       const keys = await caches.keys();
-      await Promise.all(keys.filter((k) => k.startsWith("ct-")).map((k) => caches.delete(k)));
+      const ctKeys = keys.filter((k) => k.startsWith("ct-"));
+      const results = await Promise.all(ctKeys.map((k) => caches.delete(k)));
+      if (results.some(Boolean)) changed = true;
     }
   } catch {
     // ignore
   }
+
+  return changed;
 }
 
 function reloadOnce(key: string) {
@@ -74,9 +81,9 @@ export default function SWRegister() {
       const kill = info ? !!info.kill : false;
 
       if (!enabled || kill) {
-        await killServiceWorkerAndCaches();
-        if (!cancelled && (kill || !enabled)) {
-          // Reload ONCE so the app continues without SW (no reload loop).
+        const changed = await killServiceWorkerAndCaches();
+        if (!cancelled && changed) {
+          // Reload only when an existing SW or cache was actually removed.
           reloadOnce("sw-killed");
         }
         return;
@@ -118,7 +125,9 @@ export default function SWRegister() {
         navigator.serviceWorker.addEventListener("message", (evt) => {
           const data = evt.data || {};
           if (data?.type === "SW_KILL" || data?.type === "SW_CLEAR" || data?.type === "CLEAR_CACHES") {
-            killServiceWorkerAndCaches().finally(() => reloadOnce("sw-killed"));
+            killServiceWorkerAndCaches().then((changed) => {
+              if (changed) reloadOnce("sw-killed");
+            });
           }
         });
 
