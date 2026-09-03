@@ -1,0 +1,97 @@
+name: One-time admin shifts order patch
+
+on:
+  push:
+    branches:
+      - fix/admin-shifts-today-backwards-20260903
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test-commit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/admin-shifts-today-backwards-20260903
+          fetch-depth: 0
+
+      - name: Guard branch base
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^1)" = "8330fc528ddafa7e648dc4bb20a57d280d4c2015"
+
+      - name: Patch only admin shifts list ordering
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('app/admin/page.tsx')
+          text = path.read_text(encoding='utf-8-sig')
+
+          marker = "function timeHHMM(t?: string | null) {\n"
+          if text.count(marker) != 1:
+              raise SystemExit(f'unexpected timeHHMM marker count: {text.count(marker)}')
+
+          helper = '''function compareShiftListTodayBackwards(a: ScheduleItem, b: ScheduleItem) {\n  const today = toISODate(new Date())\n  const aDate = jobDateKey(a.job_date)\n  const bDate = jobDateKey(b.job_date)\n  const aFuture = aDate > today\n  const bFuture = bDate > today\n\n  if (aFuture !== bFuture) return aFuture ? 1 : -1\n\n  if (aDate !== bDate) {\n    if (aFuture) return aDate.localeCompare(bDate)\n    return bDate.localeCompare(aDate)\n  }\n\n  const timeOrder = timeHHMM(a.scheduled_time).localeCompare(timeHHMM(b.scheduled_time))\n  if (timeOrder !== 0) return timeOrder\n\n  return String(a.id).localeCompare(String(b.id))\n}\n\n'''
+
+          text = text.replace(marker, helper + marker, 1)
+
+          old_sort = ".sort((a, b) => `${a.job_date || ''} ${timeHHMM(a.scheduled_time)}`.localeCompare(`${b.job_date || ''} ${timeHHMM(b.scheduled_time)}`))"
+          count = text.count(old_sort)
+          if count != 2:
+              raise SystemExit(f'unexpected admin shifts ascending sort count: {count}')
+
+          text = text.replace(old_sort, '.sort(compareShiftListTodayBackwards)')
+
+          if text.count('.sort(compareShiftListTodayBackwards)') != 2:
+              raise SystemExit('expected exactly two admin shifts list sort call sites')
+          if old_sort in text:
+              raise SystemExit('old ascending admin shifts sort still present')
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Verify patch scope and semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git diff --name-only)" = "app/admin/page.tsx"
+          grep -Fq 'function compareShiftListTodayBackwards(a: ScheduleItem, b: ScheduleItem)' app/admin/page.tsx
+          test "$(grep -Fc '.sort(compareShiftListTodayBackwards)' app/admin/page.tsx)" = "2"
+          grep -Fq 'if (aFuture !== bFuture) return aFuture ? 1 : -1' app/admin/page.tsx
+          grep -Fq 'return bDate.localeCompare(aDate)' app/admin/page.tsx
+          grep -Fq 'if (aFuture) return aDate.localeCompare(bDate)' app/admin/page.tsx
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Workforce map tests
+        run: npm run test:workforce-map
+
+      - name: Checkout geofence tests
+        run: npm run test:checkout-geofence
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Commit patch and remove one-time workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/one-time-admin-shifts-order.yml
+          git add app/admin/page.tsx
+          git diff --cached --check
+          git commit -m 'Show admin shifts from today backwards'
+          git push origin HEAD:fix/admin-shifts-today-backwards-20260903
