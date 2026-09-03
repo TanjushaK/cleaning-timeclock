@@ -22,6 +22,16 @@ function parseDateISO(s: string): Date | null {
   return d
 }
 
+function normalizeJobDateKey(raw: string | null | undefined): string {
+  if (raw == null || raw === '') return ''
+  const s = String(raw).trim()
+  const head = /^(\d{4}-\d{2}-\d{2})/.exec(s)
+  if (head) return head[1]
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime())) return ''
+  return asDateISO(d)
+}
+
 function minutesBetween(startISO: string, stopISO: string): number {
   const a = new Date(startISO).getTime()
   const b = new Date(stopISO).getTime()
@@ -207,7 +217,7 @@ export async function GET(req: Request) {
         id: String(j.id),
         worker_id: j.worker_id ? String(j.worker_id) : null,
         site_id: j.site_id ? String(j.site_id) : null,
-        job_date: j.job_date ? String(j.job_date) : null,
+        job_date: j.job_date ? normalizeJobDateKey(String(j.job_date)) || String(j.job_date) : null,
         scheduled_time: j.scheduled_time ? String(j.scheduled_time) : null,
         scheduled_end_time: (j as any).scheduled_end_time ? String((j as any).scheduled_end_time) : null,
       }))
