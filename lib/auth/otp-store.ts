@@ -10,7 +10,7 @@ function hashCode(code: string): string {
 }
 
 function generateCode(): string {
-  return String(Math.floor(100000 + Math.random() * 900000))
+  return crypto.randomInt(100000, 1_000_000).toString()
 }
 
 /** E.164-like string for SMS gateways (digits only → leading +). */

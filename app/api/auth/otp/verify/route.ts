@@ -4,6 +4,7 @@ import { consumeSmsOtp } from '@/lib/auth/otp-store'
 import { getUserByPhone, updateUserById } from '@/lib/auth/user-store'
 import { createAccessToken } from '@/lib/auth/jwt'
 import { issueRefreshToken } from '@/lib/auth/refresh-store'
+import { checkRateLimit, clientIpFromRequest } from '@/lib/rate-limit'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -18,6 +19,14 @@ export async function POST(req: Request) {
     }
     if (!token) {
       return NextResponse.json({ errorCode: AppApiErrorCodes.AUTH_TOKEN_INVALID, error: 'token required' }, { status: 400 })
+    }
+
+    const ip = clientIpFromRequest(req)
+    if (!checkRateLimit(`auth:otp-verify:ip:${ip}`, 20, 60_000)) {
+      return NextResponse.json({ errorCode: AppApiErrorCodes.AUTH_RATE_LIMITED, error: 'Too many requests' }, { status: 429 })
+    }
+    if (!checkRateLimit(`auth:otp-verify:phone:${phone}`, 5, 10 * 60_000)) {
+      return NextResponse.json({ errorCode: AppApiErrorCodes.AUTH_RATE_LIMITED, error: 'Too many requests' }, { status: 429 })
     }
 
     const ok = await consumeSmsOtp(phone, token)
