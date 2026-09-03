@@ -1,0 +1,153 @@
+name: One-time report worker date normalization
+
+on:
+  push:
+    branches:
+      - fix/report-worker-date-normalization-20260903
+
+permissions:
+  contents: write
+
+concurrency:
+  group: one-time-report-worker-date-normalization
+  cancel-in-progress: false
+
+jobs:
+  patch-test-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Guard exact base and branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED_BRANCH='fix/report-worker-date-normalization-20260903'
+          EXPECTED_BASE='9361d6f0240ecb0581adfdc15a5a692309d95c62'
+          WORKFLOW='.github/workflows/one-time-report-worker-date-normalization.yml'
+
+          test "$(git branch --show-current)" = "$EXPECTED_BRANCH"
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_BASE"
+
+          mapfile -t changed < <(git diff --name-only "$EXPECTED_BASE"...HEAD)
+          test "${#changed[@]}" -eq 1
+          test "${changed[0]}" = "$WORKFLOW"
+
+      - name: Patch report date normalization only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          hours = Path('app/admin/hours/page.tsx')
+          text = hours.read_text()
+
+          anchor = """function isISODate(s: string) {\n  return /^\\d{4}-\\d{2}-\\d{2}$/.test(s)\n}\n\n"""
+          helper = """function isISODate(s: string) {\n  return /^\\d{4}-\\d{2}-\\d{2}$/.test(s)\n}\n\nfunction jobDateKey(raw: string | null | undefined): string {\n  if (raw == null || raw === '') return ''\n  const s = String(raw).trim()\n  const head = /^(\\d{4}-\\d{2}-\\d{2})/.exec(s)\n  if (head) return head[1]\n  const d = new Date(s)\n  if (!Number.isNaN(d.getTime())) return toISODate(d)\n  return ''\n}\n\n"""
+          if text.count(anchor) != 1:
+              raise SystemExit('hours helper anchor mismatch')
+          text = text.replace(anchor, helper, 1)
+
+          old_compare = """  const a = isISODate(aDate) ? aDate : ''\n  const b = isISODate(bDate) ? bDate : ''\n"""
+          new_compare = """  const a = jobDateKey(aDate)\n  const b = jobDateKey(bDate)\n"""
+          if text.count(old_compare) != 1:
+              raise SystemExit('hours comparator anchor mismatch')
+          text = text.replace(old_compare, new_compare, 1)
+          hours.write_text(text)
+
+          route = Path('app/api/admin/reports/route.ts')
+          text = route.read_text()
+
+          route_anchor = """function parseDateISO(s: string): Date | null {\n  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(s)) return null\n  const d = new Date(`${s}T00:00:00.000Z`)\n  if (Number.isNaN(d.getTime())) return null\n  return d\n}\n\n"""
+          route_helper = """function parseDateISO(s: string): Date | null {\n  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(s)) return null\n  const d = new Date(`${s}T00:00:00.000Z`)\n  if (Number.isNaN(d.getTime())) return null\n  return d\n}\n\nfunction normalizeJobDateKey(raw: string | null | undefined): string {\n  if (raw == null || raw === '') return ''\n  const s = String(raw).trim()\n  const head = /^(\\d{4}-\\d{2}-\\d{2})/.exec(s)\n  if (head) return head[1]\n  const d = new Date(s)\n  if (Number.isNaN(d.getTime())) return ''\n  return asDateISO(d)\n}\n\n"""
+          if text.count(route_anchor) != 1:
+              raise SystemExit('reports route helper anchor mismatch')
+          text = text.replace(route_anchor, route_helper, 1)
+
+          old_date = "        job_date: j.job_date ? String(j.job_date) : null,"
+          new_date = "        job_date: j.job_date ? normalizeJobDateKey(String(j.job_date)) || String(j.job_date) : null,"
+          if text.count(old_date) != 1:
+              raise SystemExit('reports route job_date anchor mismatch')
+          text = text.replace(old_date, new_date, 1)
+          route.write_text(text)
+          PY
+
+      - name: Verify patch scope and semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test "$(grep -Fc 'function jobDateKey(raw: string | null | undefined): string' app/admin/hours/page.tsx)" -eq 1
+          test "$(grep -Fc 'const a = jobDateKey(aDate)' app/admin/hours/page.tsx)" -eq 1
+          test "$(grep -Fc 'const b = jobDateKey(bDate)' app/admin/hours/page.tsx)" -eq 1
+          test "$(grep -Fc 'function normalizeJobDateKey(raw: string | null | undefined): string' app/api/admin/reports/route.ts)" -eq 1
+          test "$(grep -Fc 'normalizeJobDateKey(String(j.job_date))' app/api/admin/reports/route.ts)" -eq 1
+
+          python3 - <<'PY'
+          import re
+          from datetime import datetime
+
+          def key(raw):
+              s = str(raw or '').strip()
+              m = re.match(r'^(\d{4}-\d{2}-\d{2})', s)
+              if m:
+                  return m.group(1)
+              return ''
+
+          samples = [
+              ('2026-09-02', '2026-09-02'),
+              ('2026-09-02T00:00:00.000Z', '2026-09-02'),
+              ('2026-08-30 00:00:00+00', '2026-08-30'),
+          ]
+          for raw, expected in samples:
+              actual = key(raw)
+              if actual != expected:
+                  raise SystemExit(f'date key mismatch: {raw} -> {actual}, expected {expected}')
+          PY
+
+          mapfile -t changed < <(git diff --name-only)
+          printf 'WORKTREE_CHANGED=%s\n' "${changed[*]}"
+          test "${#changed[@]}" -eq 2
+          test "${changed[0]}" = 'app/admin/hours/page.tsx'
+          test "${changed[1]}" = 'app/api/admin/reports/route.ts'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Workforce map tests
+        run: npm run test:workforce-map
+
+      - name: Checkout geofence tests
+        run: npm run test:checkout-geofence
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Commit patch and remove one-time workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED_BASE='9361d6f0240ecb0581adfdc15a5a692309d95c62'
+          WORKFLOW='.github/workflows/one-time-report-worker-date-normalization.yml'
+
+          rm -f "$WORKFLOW"
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+
+          mapfile -t net < <(git diff --cached --name-only "$EXPECTED_BASE")
+          printf 'NET_CHANGED=%s\n' "${net[*]}"
+          test "${#net[@]}" -eq 2
+          test "${net[0]}" = 'app/admin/hours/page.tsx'
+          test "${net[1]}" = 'app/api/admin/reports/route.ts'
+
+          git commit -m 'Normalize report worker dates before sorting'
+          git push origin HEAD
