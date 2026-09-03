@@ -322,6 +322,26 @@ function jobDateKey(raw: string | null | undefined): string {
   return ''
 }
 
+function compareShiftListTodayBackwards(a: ScheduleItem, b: ScheduleItem) {
+  const today = toISODate(new Date())
+  const aDate = jobDateKey(a.job_date)
+  const bDate = jobDateKey(b.job_date)
+  const aFuture = aDate > today
+  const bFuture = bDate > today
+
+  if (aFuture !== bFuture) return aFuture ? 1 : -1
+
+  if (aDate !== bDate) {
+    if (aFuture) return aDate.localeCompare(bDate)
+    return bDate.localeCompare(aDate)
+  }
+
+  const timeOrder = timeHHMM(a.scheduled_time).localeCompare(timeHHMM(b.scheduled_time))
+  if (timeOrder !== 0) return timeOrder
+
+  return String(a.id).localeCompare(String(b.id))
+}
+
 function timeHHMM(t?: string | null) {
   if (!t) return '—'
   const x = String(t)
@@ -5065,7 +5085,7 @@ const [editOpen, setEditOpen] = useState(false)
                     <div className="grid gap-2 lg:hidden">
                     {scheduleFiltered
                       .slice()
-                      .sort((a, b) => `${a.job_date || ''} ${timeHHMM(a.scheduled_time)}`.localeCompare(`${b.job_date || ''} ${timeHHMM(b.scheduled_time)}`))
+                      .sort(compareShiftListTodayBackwards)
                       .map((j) => (
                         <div key={j.id} className="rounded-3xl border border-yellow-400/10 bg-black/20 p-4">
                           <div className="flex items-start justify-between gap-3">
@@ -5150,7 +5170,7 @@ const [editOpen, setEditOpen] = useState(false)
                       <tbody className="text-sm text-zinc-100">
                         {scheduleFiltered
                           .slice()
-                          .sort((a, b) => `${a.job_date || ''} ${timeHHMM(a.scheduled_time)}`.localeCompare(`${b.job_date || ''} ${timeHHMM(b.scheduled_time)}`))
+                          .sort(compareShiftListTodayBackwards)
                           .map((j) => (
                             <tr key={j.id} className="border-t border-yellow-400/5 hover:bg-yellow-400/5">
                               <td className="px-4 py-3">{fmtD(j.job_date)}</td>
