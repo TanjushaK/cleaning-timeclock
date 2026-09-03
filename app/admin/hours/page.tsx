@@ -107,6 +107,35 @@ function isISODate(s: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(s)
 }
 
+function compareReportDatesTodayBackwards(aDate: string, bDate: string) {
+  const today = toISODate(new Date())
+  const a = isISODate(aDate) ? aDate : ''
+  const b = isISODate(bDate) ? bDate : ''
+
+  if (!a || !b) {
+    if (!a && !b) return 0
+    return a ? -1 : 1
+  }
+
+  const aFuture = a > today
+  const bFuture = b > today
+
+  if (aFuture !== bFuture) return aFuture ? 1 : -1
+  if (a === b) return 0
+  if (aFuture) return a.localeCompare(b)
+  return b.localeCompare(a)
+}
+
+function compareReportJobsTodayBackwards(a: ReportJobDetail, b: ReportJobDetail) {
+  const dateOrder = compareReportDatesTodayBackwards(a.job_date, b.job_date)
+  if (dateOrder !== 0) return dateOrder
+
+  const timeOrder = String(a.scheduled_time || '').localeCompare(String(b.scheduled_time || ''))
+  if (timeOrder !== 0) return timeOrder
+
+  return String(a.job_id).localeCompare(String(b.job_id))
+}
+
 export default function AdminHoursPage() {
   const { t } = useI18n()
 
@@ -467,7 +496,7 @@ export default function AdminHoursPage() {
             {!data?.by_day?.length ? (
               <div className="px-4 py-6 text-sm opacity-70">{t('admin.common.dash')}</div>
             ) : (
-              data.by_day.map((d) => (
+              [...data.by_day].sort((a, b) => compareReportDatesTodayBackwards(a.date, b.date)).map((d) => (
                 <div key={d.date} className="grid grid-cols-12 items-center gap-0 border-t border-amber-500/10 px-4 py-3 text-sm">
                   <div className="col-span-3 opacity-90">{fmtD(d.date)}</div>
                   <div className="col-span-3 text-xs opacity-80">
@@ -500,7 +529,7 @@ export default function AdminHoursPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {data.job_details.map((j) => (
+                    {[...data.job_details].sort(compareReportJobsTodayBackwards).map((j) => (
                       <tr key={j.job_id} className="border-t border-amber-500/10">
                         <td className="px-4 py-3 whitespace-nowrap">{fmtD(j.job_date)}</td>
                         <td className="px-4 py-3 whitespace-nowrap">
