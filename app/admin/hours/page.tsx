@@ -107,10 +107,20 @@ function isISODate(s: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(s)
 }
 
+function jobDateKey(raw: string | null | undefined): string {
+  if (raw == null || raw === '') return ''
+  const s = String(raw).trim()
+  const head = /^(\d{4}-\d{2}-\d{2})/.exec(s)
+  if (head) return head[1]
+  const d = new Date(s)
+  if (!Number.isNaN(d.getTime())) return toISODate(d)
+  return ''
+}
+
 function compareReportDatesTodayBackwards(aDate: string, bDate: string) {
   const today = toISODate(new Date())
-  const a = isISODate(aDate) ? aDate : ''
-  const b = isISODate(bDate) ? bDate : ''
+  const a = jobDateKey(aDate)
+  const b = jobDateKey(bDate)
 
   if (!a || !b) {
     if (!a && !b) return 0
