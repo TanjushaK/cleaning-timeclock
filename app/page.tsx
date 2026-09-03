@@ -280,13 +280,17 @@ function calcDurationMin(startMin: number | null, endMin: number | null): number
   return diff >= 0 ? diff : 24 * 60 + diff;
 }
 
-function formatDurationHoursLabel(lang: string, durationMin: number, tr: (key: any) => string): string {
-  const hours = durationMin / 60;
-  const asText = Number(hours.toFixed(2)).toString();
-  if (lang === "ru" || lang === "uk") {
-    return `${asText.replace(".", ",")}${tr("jobs.hoursShort")}`;
-  }
-  return `${asText}${tr("jobs.hoursShort")}`;
+function formatDurationHoursLabel(lang: string, durationMin: number): string {
+  const totalMinutes = Math.max(0, Math.floor(durationMin || 0));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const minutesText = String(minutes).padStart(2, "0");
+  const locale = String(lang || "en").toLowerCase();
+
+  if (locale === "ru") return `${hours} ч ${minutesText} мин`;
+  if (locale === "uk") return `${hours} год ${minutesText} хв`;
+  if (locale === "nl") return `${hours} u ${minutesText} min`;
+  return `${hours} h ${minutesText} min`;
 }
 
 function formatScheduleRangeLabel(
@@ -2012,24 +2016,24 @@ const loadAll = useCallback(async () => {
                         <div>
                           <div className="text-xs opacity-70">{tr("jobs.plannedDay")}</div>
                           <div className="font-semibold">
-                            {formatDurationHoursLabel(lang, plannedDayMinutes, tr)}
+                            {formatDurationHoursLabel(lang, plannedDayMinutes)}
                           </div>
                           <div className="mt-2 text-xs opacity-70">{tr("jobs.workedDay")}</div>
                           <div className="font-semibold">
-                            {formatDurationHoursLabel(lang, workedDayMinutes, tr)}
+                            {formatDurationHoursLabel(lang, workedDayMinutes)}
                           </div>
                         </div>
                         <div>
                           <div className="flex items-center justify-between gap-2">
                             <div className="text-xs opacity-70">{tr("jobs.plannedPeriod")}</div>
                             <div className="font-semibold">
-                              {formatDurationHoursLabel(lang, plannedPeriodMinutes, tr)}
+                              {formatDurationHoursLabel(lang, plannedPeriodMinutes)}
                             </div>
                           </div>
                           <div className="mt-1 flex items-center justify-between gap-2">
                             <div className="text-xs opacity-70">{tr("jobs.workedPeriod")}</div>
                             <div className="font-semibold">
-                              {formatDurationHoursLabel(lang, workedPeriodMinutes, tr)}
+                              {formatDurationHoursLabel(lang, workedPeriodMinutes)}
                             </div>
                           </div>
                           <div className="mt-2 flex flex-wrap gap-1.5">
@@ -2156,10 +2160,10 @@ const loadAll = useCallback(async () => {
                               <div className="text-xs opacity-80 mt-1">
                                 {formatScheduleRangeLabel(lang, j.scheduled_time, j.scheduled_end_time)}
                                 {durationMin != null ? (
-                                  <span> • {tr("jobs.estimated")} ({formatDurationHoursLabel(lang, durationMin, tr)})</span>
+                                  <span> • {tr("jobs.estimated")} ({formatDurationHoursLabel(lang, durationMin)})</span>
                                 ) : null}
                                 {workedMin > 0 ? (
-                                  <span> • {tr("jobs.worked")} ({formatDurationHoursLabel(lang, workedMin, tr)})</span>
+                                  <span> • {tr("jobs.worked")} ({formatDurationHoursLabel(lang, workedMin)})</span>
                                 ) : null}
                               </div>
                               {(() => {
